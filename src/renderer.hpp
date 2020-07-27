@@ -21,8 +21,10 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
-#include "shaders.hpp"
+#include <png.h>
 #include "fbx_loader.hpp"
+#include "util.hpp"
+#include "terrain.hpp"
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 800
@@ -45,7 +47,7 @@ struct Camera {
 };
 
 struct Mesh {
-  Shader shader;
+  GLuint shader;
   GLuint vertex_buffer_;
   GLuint uv_buffer_;
   GLuint normal_buffer_;
@@ -56,7 +58,6 @@ struct Mesh {
 };
 
 struct Object3D {
-  Shader shader;
   Mesh mesh;
   vec3 position;
   vec3 rotation;
@@ -85,35 +86,26 @@ class Renderer {
   mat4 view_matrix_;
   Camera camera_;
 
-  vector<mat4> joint_transforms_0;
-  vector<mat4> joint_transforms_1;
+  vector<vector<mat4>> joint_transforms_;
+  GLuint texture_;
+  shared_ptr<Terrain> terrain_;
 
-  unordered_map<string, Shader> shaders_;
+  unordered_map<string, GLuint> shaders_;
   unordered_map<string, FBO> fbos_;
   unordered_map<string, Mesh> meshes_;
   std::vector<shared_ptr<Object3D>> objects_;
 
   void CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint> node);
-  void CreateSkeletonAux2(mat4 parent_transform, shared_ptr<SkeletonJoint> node);
   void LoadShaders(const std::string& directory);
   FBO CreateFramebuffer(int width, int height);
   Mesh CreateMesh(
-    Shader& shader,
+    GLuint shader_id,
     vector<vec3>& vertices, 
     vector<vec2>& uvs, 
     vector<unsigned int>& indices
   );
   
-  Mesh CreateMesh(
-    Shader& shader,
-    vector<vec3>& vertices, 
-    vector<vec2>& uvs, 
-    vector<vec3>& normals, 
-    vector<unsigned int>& indices
-  );
-
   void DrawCube(GLuint vao, glm::vec3 position, GLfloat rotation);
-
   void DrawFBO(const FBO& fbo);
   void DrawObjects();
 

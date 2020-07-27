@@ -19,14 +19,14 @@
 #include <unordered_map>
 #include "renderer.hpp"
 
-#define PLAYER_SPEED 0.05f
+#define PLAYER_SPEED 0.5f
 #define PLAYER_HEIGHT 1.5
 
 using namespace std;
 using namespace glm;
 
 struct Player {
-  glm::vec3 position = glm::vec3(0, 0, 0);
+  glm::vec3 position = glm::vec3(2000, 31, 2000);
   glm::vec3 next_position = glm::vec3(0, 0, 0);
   glm::vec3 speed = glm::vec3(0, 0, 0);
   float h_angle = -230.991;
@@ -104,9 +104,8 @@ void ProcessGameInput(){
 
 int main() {
   renderer.Init("shaders");
-  renderer.LoadFbx("fish3.fbx");
   renderer.CreateCube(vec3(1.0, 1.0, 1.0));
-  renderer.CreateJoint(vec3(0, 0, 0), vec3(-1, 0, 1));
+  renderer.LoadFbx("fish10.fbx");
 
   renderer.Run(ProcessGameInput);
   return 0;

@@ -4,7 +4,8 @@
 layout(location = 0) in vec3 vertexPosition_modelspace;
 layout(location = 1) in vec2 vertexUV;
 layout(location = 2) in vec3 vertexNormal_modelspace;
-layout(location = 3) in vec3 bone_weights;
+layout(location = 3) in ivec3 bone_ids;
+layout(location = 4) in vec3 bone_weights;
 
 out VertexData {
   vec3 position;
@@ -18,7 +19,7 @@ uniform mat4 M;
 uniform mat4 V;
 
 // Animation.
-uniform mat4 joint_transforms[2];
+uniform mat4 joint_transforms[10];
 
 void main(){
   out_data.UV = vertexUV;
@@ -28,14 +29,16 @@ void main(){
 
   vec4 position = vec4(0.0);
   vec4 normal = vec4(0.0);
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < 3; i++) {
+    int index = bone_ids[i];
+    if (index == -1) continue;
+
     float weight = bone_weights[i];
-    // float weight = 0.5;
    
-    vec4 pos_ = joint_transforms[i] * vec4(vertexPosition_modelspace.xzy, 1.0);
+    vec4 pos_ = joint_transforms[index] * vec4(vertexPosition_modelspace, 1.0);
     position += pos_ * weight;
 
-    vec4 normal_ = joint_transforms[i] * vec4(vertexNormal_modelspace.xzy, 0.0);
+    vec4 normal_ = joint_transforms[index] * vec4(vertexNormal_modelspace, 0.0);
     normal += normal_ * weight;
   }
 

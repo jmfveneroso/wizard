@@ -13,16 +13,20 @@ set(ALL_LIBS
   boost_system 
   boost_filesystem
   fbxsdk
+  png
 )
 
 set(INCLUDE_DIRS
   ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37
   /usr/local/Cellar/glew/2.1.0/include
   /usr/local/Cellar/glfw/3.2.1/include
   /usr/local/Cellar/glm/0.9.9.4/include
   /usr/local/Cellar/boost/1.70.0/include
   /usr/local/Cellar/freetype/2.10.1/include/freetype2
   /Applications/Autodesk/FBX\ SDK/2020.0.1/include
+  ${ZLIB_INCLUDE_DIR}
+  ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
 )
 
 set(LINK_DIRS
@@ -32,17 +36,22 @@ set(LINK_DIRS
   /usr/local/Cellar/boost/1.70.0/lib
   /usr/local/Cellar/freetype/2.10.1/lib
   "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/"
+  ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
 )
 add_definitions(-DAPPLE)
 
 file(COPY "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/libfbxsdk.dylib"
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
+# Include external libs
+add_subdirectory(${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37)
+
 set(
   SRC
-  src/shaders.cpp 
   src/renderer.cpp 
   src/fbx_loader.cpp 
+  src/terrain.cpp 
+  src/util.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

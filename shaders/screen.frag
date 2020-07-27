@@ -5,11 +5,11 @@ in FragData {
   vec2 uv;
 } in_data;
 
-uniform sampler2D TextureSampler;
+uniform sampler2D texture_sampler;
 
 // Output data
 layout(location = 0) out vec3 color;
 
 void main(){
-  color = texture(TextureSampler, in_data.uv).xyz;
+  color = texture(texture_sampler, in_data.uv).xyz;
 }

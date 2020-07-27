@@ -21,62 +21,54 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
-#include "shaders.hpp"
+#include "util.hpp"
 
 using namespace std;
 using namespace glm;
 
-#define MAT_HEADER_LENGTH 200
+// Useful references:
+// - OpenGL Skeletal Animation: https://www.youtube.com/watch?v=f3Cr8Yx3GGA
+// - Github for yt above: https://github.com/TheThinMatrix/OpenGL-Animation/tree/master/Engine/openglObjects
+// - How to Work with FBX SDK: https://www.gamedev.net/articles/programming/graphics/how-to-work-with-fbx-sdk-r3582/
+// - Github for text above: https://github.com/lang1991/FBXExporter/tree/master/FBXExporter
+// - Skinned Mesh Animation Using Matrices: https://www.gamedev.net/tutorials/graphics-programming-and-theory/skinned-mesh-animation-using-matrices-r3577/
+// - FBX SDK docs: https://help.autodesk.com/view/FBX/2015/ENU/?guid=__files_GUID_9481A726_315C_4A58_A347_8AC95C2AF0F2_htm
+// - Spatial transformation matrices: https://www.brainvoyager.com/bv/doc/UsersGuide/CoordsAndTransforms/SpatialTransformationMatrices.html
+// - OpenGL Matrices: http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#scaling-matrices
 
 struct Keyframe {
   int time;
-  mat4 transformation;
-  vec3 translation;
-  vec3 rotation;
-  Keyframe(int time, vec3 translation, vec3 rotation) : time(time), 
-    translation(translation), rotation(rotation) {}
-  Keyframe(int time, mat4 transformation) : time(time), 
-    transformation(transformation) {}
+  vector<mat4> transforms;
+};
+
+struct Animation {
+  string name;
+  vector<Keyframe> keyframes;
 };
 
 struct SkeletonJoint {
   string name;
   shared_ptr<SkeletonJoint> parent;
   vector<shared_ptr<SkeletonJoint>> children;
-  double length;
-  vector<unsigned int> indices;
-  vector<double> weights;
-  mat4 global_bindpose;
-  mat4 global_bindpose_inverse;
-  vec3 translation;
-  vec3 rotation;
-  vector<Keyframe> keyframes;
-  vector<tuple<int, float>> tx;
-  vector<tuple<int, float>> ty;
-  vector<tuple<int, float>> tz;
-  vector<tuple<int, float>> rx;
-  vector<tuple<int, float>> ry;
-  vector<tuple<int, float>> rz;
+  mat4 global_bindpose_inverse; 
+  mat4 global_bindpose; // Probably don't need this.
+  FbxCluster* cluster; // Remove from here.
 };
 
+// TODO: should change this name to something more general. Maybe AnimatedMesh.
 struct FbxData {
   vector<vec3> vertices;
   vector<vec2> uvs;
   vector<vec3> normals;
-  vector<vector<unsigned int>> bone_ids;
-  vector<vector<float>> bone_weights;
   vector<unsigned int> indices;
+  vector<ivec3> bone_ids;
+  vector<vec3> bone_weights;
   shared_ptr<SkeletonJoint> skeleton;
-  vector<shared_ptr<SkeletonJoint>> joint_vector;
+  vector<shared_ptr<SkeletonJoint>> joints;
   unordered_map<string, shared_ptr<SkeletonJoint>> joint_map;
-  FbxData() {}
+  vector<Animation> animations;
 };
 
 FbxData FbxLoad(const std::string& filename);
-
-ostream& operator<<(ostream& os, const vec2& v);
-ostream& operator<<(ostream& os, const vec3& v);
-ostream& operator<<(ostream& os, const vec4& v);
-ostream& operator<<(ostream& os, const mat4& m);
 
 #endif
