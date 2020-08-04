@@ -52,6 +52,7 @@ set(
   src/fbx_loader.cpp 
   src/terrain.cpp 
   src/util.cpp 
+  src/collision.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

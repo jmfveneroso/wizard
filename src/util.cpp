@@ -188,3 +188,10 @@ ostream& operator<<(ostream& os, const mat4& m) {
   return os;
 }
 
+template<typename First, typename ...Rest>
+void sample_log(First&& first, Rest&& ...rest) {
+  static int i = 0;
+  if (i++ % 100 == 0) return;
+  cout << forward<First>(first) << endl;
+  sample_log(forward<Rest>(rest)...);
+}

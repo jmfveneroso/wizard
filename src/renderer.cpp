@@ -152,7 +152,9 @@ void Renderer::Init(const string& shader_dir) {
   // To make MacOS happy; should not be needed.
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); 
 
-  window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, NULL, NULL);
+  // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, NULL, NULL);
+  window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
+    glfwGetPrimaryMonitor(), NULL);
   if (window_ == NULL) {
     glfwTerminate();
     throw "Failed to open GLFW window";
@@ -197,6 +199,32 @@ void Renderer::DrawObjects() {
   glEnable(GL_CULL_FACE);
   terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
   glDisable(GL_CULL_FACE);
+ 
+  static int counter = 0;
+  if (counter++ == 100) { 
+    // mat4 ModelMatrix = glm::translate(glm::mat4(1.0), vec3(0, 0, 0));
+    // mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
+    // mat4 MVP = projection_matrix_ * ModelViewMatrix;
+
+    // vec4 lft, rgt, bot, top, ner, far;
+    // ExtractFrustumPlanes(MVP, lft, rgt, bot, top, ner, far);
+
+    // cout << "lft: " << lft << endl;
+    // cout << "rgt: " << rgt << endl;
+    // cout << "bot: " << bot << endl;
+    // cout << "top: " << top << endl;
+    // cout << "ner: " << ner << endl;
+    // cout << "far: " << far << endl;
+    // CreatePlane(vec3(2010, 40, 2010) , vec3(2010, 41,  2010), vec3(lft.x, lft.y, lft.z));
+    // CreatePlane(vec3(2010, 80, 2010) , vec3(2010, 81,  2010), vec3(rgt.x, rgt.y, rgt.z));
+    // CreatePlane(vec3(2010, 120, 2010), vec3(2011, 120, 2010), vec3(bot.x, bot.y, bot.z));
+    // CreatePlane(vec3(2010, 160, 2010), vec3(2011, 160, 2010), vec3(top.x, top.y, top.z));
+    // CreatePlane(vec3(2010, 200, 2010), vec3(2011, 200, 2010), vec3(ner.x, ner.y, ner.z));
+    // CreatePlane(vec3(2010, 240, 2010), vec3(2011, 240, 2010), vec3(far.x, far.y, far.z));
+    // CreatePlane(vec3(2010, 260, 2010), vec3(0, 0, 1));
+    // CreatePlane(vec3(2010, 280, 2010), vec3(0, 1, 0));
+    // kcout << "is we" << endl;
+  }
 
   // TODO: START - this code must go away.
   static int frame_num = 0;
@@ -225,6 +253,7 @@ void Renderer::DrawObjects() {
       int effective_frame_num = frame_num;
       vector<mat4> joint_transforms;
 
+
       // TODO: max 10 joints. Enforce limit here.
       for (int i = 0; i < joint_transforms_.size(); i++) {
         joint_transforms.push_back(joint_transforms_[i][effective_frame_num]);
@@ -235,7 +264,9 @@ void Renderer::DrawObjects() {
       BindTexture("texture_sampler", program_id, texture_);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else {
+      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
       glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
+      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
     glBindVertexArray(0);
   }
@@ -275,6 +306,8 @@ void Renderer::Run(const function<void()>& process_frame) {
 
     process_frame();
 
+   // View matrix:
+   // https://www.3dgep.com/understanding-the-view-matrix/#:~:text=The%20view%20matrix%20is%20used,things%20are%20the%20same%20thing!&text=The%20View%20Matrix%3A%20This%20matrix,of%20the%20camera's%20transformation%20matrix.
     view_matrix_ = glm::lookAt(
       camera_.position,                     // Camera is here
       camera_.position + camera_.direction, // and looks here : at the same position, plus "direction"
@@ -370,7 +403,7 @@ Mesh Renderer::CreateMesh(
   return m;
 }
 
-shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions) {
+shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   float w = dimensions.x;
   float h = dimensions.y;
   float l = dimensions.z;
@@ -409,7 +442,45 @@ shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions) {
 
   Mesh mesh = CreateMesh(shaders_["object"], vertices, uvs, indices);
 
-  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(2010, 30, 2000));
+  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, position);
+  objects_.push_back(obj);
+  return obj; 
+}
+
+shared_ptr<Object3D> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
+  // vec3 p2 = vec3(1, 0, 0);
+  // if (abs(dot(p2, normal)) > 0.99) {
+  //   // Normal cannot be parallel to (1, 0, 0) and (0, 1, 0) at the same time.
+  //   p2 = vec3(0, 1, 0);
+  // }
+
+  // // Project p2 on to the plane.
+  // p2 = p2 - (dot(p2, normal) * normalize(normal));
+
+  vec3 t = normalize(p2 - p1);
+  vec3 b = cross(t, normal);
+
+  float D = 10; 
+  vector<vec3> vertices {
+    p1 - t * D - b * D, // (-1, -1)
+    p1 + t * D - b * D, // (+1, -1)
+    p1 + t * D + b * D, // (+1, +1)
+    p1 - t * D - b * D, // (-1, -1)
+    p1 + t * D + b * D, // (+1, +1)
+    p1 - t * D + b * D  // (-1, +1)
+  };
+
+  vector<vec2> uvs = {
+    vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(1, 1), vec2(0, 1)
+  };
+
+  vector<unsigned int> indices(6);
+  for (int i = 0; i < 6; i++) { indices[i] = i; }
+
+  Mesh mesh = CreateMesh(shaders_["object"], vertices, uvs, indices);
+
+  // shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(2010, 20, 2000));
+  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
   objects_.push_back(obj);
   return obj; 
 }
@@ -480,7 +551,7 @@ void Renderer::CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint
 }
 
 // TODO: convert FBX to game model outside this file.
-void Renderer::LoadFbx(const std::string& filename) {
+void Renderer::LoadFbx(const std::string& filename, vec3 position) {
   FbxData data = FbxLoad(filename);
   auto& vertices = data.vertices;
   auto& uvs = data.uvs;
@@ -560,7 +631,7 @@ void Renderer::LoadFbx(const std::string& filename) {
     glDisableVertexAttribArray(slot);
   }
 
-  vec3 position = vec3(1990, 30, 2000);
+  // vec3 position = vec3(1990, 16, 2000);
   shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
   objects_.push_back(obj);
   position += vec3(0, 0, 5);

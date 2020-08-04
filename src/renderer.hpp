@@ -29,8 +29,8 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 800
 #define APP_NAME "test"
-#define NEAR_CLIPPING 0.05f
-#define FAR_CLIPPING 2000.0f
+#define NEAR_CLIPPING 1.00f
+#define FAR_CLIPPING 10000.0f
 #define FIELD_OF_VIEW 45.0f
 
 using namespace std;
@@ -105,7 +105,6 @@ class Renderer {
     vector<unsigned int>& indices
   );
   
-  void DrawCube(GLuint vao, glm::vec3 position, GLfloat rotation);
   void DrawFBO(const FBO& fbo);
   void DrawObjects();
 
@@ -113,9 +112,10 @@ class Renderer {
   void Init(const string& shader_dir);  
   void Run(const function<void()>& process_frame);
   void SetCamera(const Camera& camera) { camera_ = camera; }
-  shared_ptr<Object3D> CreateCube(vec3 dimensions);
+  shared_ptr<Object3D> CreateCube(vec3 dimensions, vec3 position);
+  shared_ptr<Object3D> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
   shared_ptr<Object3D> CreateJoint(vec3 start, vec3 end);
-  void LoadFbx(const std::string& filename);
+  void LoadFbx(const std::string& filename, vec3 position);
   
   GLFWwindow* window() { return window_; }
 };

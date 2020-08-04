@@ -20,6 +20,7 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <png.h>
 #include "boost/filesystem.hpp"
 #include <boost/algorithm/string/predicate.hpp>
@@ -40,3 +41,5 @@ ostream& operator<<(ostream& os, const ivec3& v);
 ostream& operator<<(ostream& os, const vec4& v);
 ostream& operator<<(ostream& os, const mat4& m);
 
+template<typename First, typename ...Rest>
+void sample_log(First&& first, Rest&& ...rest);

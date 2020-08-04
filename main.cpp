@@ -29,7 +29,8 @@ struct Player {
   glm::vec3 position = glm::vec3(2000, 31, 2000);
   glm::vec3 next_position = glm::vec3(0, 0, 0);
   glm::vec3 speed = glm::vec3(0, 0, 0);
-  float h_angle = -230.991;
+  // float h_angle = -230.991;
+  float h_angle = 0;
   float v_angle = 0;
 };
 
@@ -80,11 +81,11 @@ void ProcessGameInput(){
 
   // Move up.
   if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-    player_.position += up * PLAYER_SPEED;
+    player_.position += vec3(0, 1, 0) * PLAYER_SPEED;
 
   // Move down.
   if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-    player_.position -= up * PLAYER_SPEED;
+    player_.position -= vec3(0, 1, 0) * PLAYER_SPEED;
 
   double x_pos, y_pos;
   glfwGetCursorPos(window, &x_pos, &y_pos);
@@ -104,8 +105,40 @@ void ProcessGameInput(){
 
 int main() {
   renderer.Init("shaders");
-  renderer.CreateCube(vec3(1.0, 1.0, 1.0));
-  renderer.LoadFbx("fish10.fbx");
+  renderer.CreateCube(vec3(1.0, 1.0, 1.0), vec3(2010, 0, 2010));
+  // renderer.CreateCube(vec3(100, 20, 100), vec3(2040, 20, 2040));
+  renderer.LoadFbx("fish10.fbx", vec3(2000, 0, 2000));
+
+  // Subregion: 0
+  // renderer.CreateCube(vec3(50, 20, 202), vec3(1900, 0, 1900));
+  
+  // Subregion: 1
+  // renderer.CreateCube(vec3(101, 20, 50), vec3(1950, 0, 1900));
+  
+  // Subregion: 2
+  // renderer.CreateCube(vec3(101, 20, 51), vec3(1950, 0, 2051));
+  
+  // Subregion: 3
+  // renderer.CreateCube(vec3(51, 20, 202), vec3(2051, 0, 1900));
+  
+  // Subregion: 4
+  // renderer.CreateCube(vec3(101, 20, 101), vec3(1950, 0, 1950));
+
+
+  // CLIPMAP 2
+  // // Subregion: 0
+  // renderer.CreateCube(vec3(100, 20, 404), vec3(1800, 0, 1800));
+
+  // // Subregion: 1
+  // renderer.CreateCube(vec3(202, 20, 100), vec3(1900, 0, 1800));
+
+  // // Subregion: 2
+  // renderer.CreateCube(vec3(202, 20, 102), vec3(1900, 0, 2102));
+  // 
+  // // Subregion: 3
+  // renderer.CreateCube(vec3(102, 20, 404), vec3(2102, 0, 1800));
+  
+
 
   renderer.Run(ProcessGameInput);
   return 0;

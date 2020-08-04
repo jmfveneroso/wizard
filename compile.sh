@@ -1,5 +1,6 @@
 cd build
 cmake ..
-make
-cd ..
-./build/main
+if make; then
+  cd ..
+  ./build/main
+fi
