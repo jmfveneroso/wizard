@@ -21,9 +21,9 @@
 
 #define CLIPMAP_SIZE 202
 #define CLIPMAP_OFFSET ((CLIPMAP_SIZE - 2) / 2)
-#define CLIPMAP_LEVELS 7
+#define CLIPMAP_LEVELS 8
 #define MAX_HEIGHT 400.0f
-#define TILES_PER_TEXTURE 16
+#define TILES_PER_TEXTURE 4
 #define HEIGHT_MAP_SIZE 5000
 #define NUM_SUBREGIONS 13
 
@@ -73,6 +73,7 @@ class Terrain {
 
   vector<shared_ptr<Clipmap>> clipmaps_;
   GLuint program_id_;
+  GLuint water_program_id_;
   GLuint vao_;
   GLuint subregion_buffers_[NUM_SUBREGIONS][2][2];
   GLuint subregion_uv_buffers_[NUM_SUBREGIONS][2][2];
@@ -80,6 +81,8 @@ class Terrain {
 
   GLuint vertex_buffer_;
   GLuint texture_;
+  GLuint water_texture_;
+  GLuint water_normal_texture_;
 
   // TODO: comments explaining all functions.
   void CreateSubregionBuffer(
@@ -98,11 +101,12 @@ class Terrain {
   void UpdateClipmaps(vec3 player_pos);
 
  public:
-  Terrain(GLuint program_id);
+  Terrain(GLuint program_id, GLuint water_program_id);
 
   void LoadTerrain(const string& filename);
   float GetHeight(float x, float y);
-  void Draw(glm::mat4, glm::mat4, glm::vec3);
+  void Draw(mat4, mat4, vec3);
+  void DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos);
 };
 
 #endif

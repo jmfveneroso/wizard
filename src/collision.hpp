@@ -32,3 +32,7 @@ void ExtractFrustumPlanes(const mat4 MVP, vec4 planes[6]);
 
 bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6], 
   const vec3& player_pos);
+
+vec3 ClosestPtPointTriangle(vec3 p, vec3 a, vec3 b, vec3 c, bool* inside);
+
+vec3 ClosestPtPointSegment(vec3 c, vec3 a, vec3 b);

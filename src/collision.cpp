@@ -86,8 +86,8 @@ bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6],
     bool inside = true;
     for (int i = 0; i < 6; i++ ) {
       // TODO: apparently its working.
-      // if (i == 2) continue; // Bot culling is not working properly.
-      // if (i == 3) continue; // Top culling is not working properly.
+      if (i == 2) continue; // Bot culling is not working properly.
+      if (i == 3) continue; // Top culling is not working properly.
       const vec4& plane = planes[i];
       float p_result = dot(p_vertex, vec3(plane.x, plane.y, plane.z)) + plane.w;
       float n_result = dot(n_vertex, vec3(plane.x, plane.y, plane.z)) + plane.w;
@@ -99,4 +99,75 @@ bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6],
     if (inside) return true;
   }
   return false;
+}
+
+vec3 ClosestPtPointTriangle(vec3 p, vec3 a, vec3 b, vec3 c, bool* inside) {
+  vec3 ab = b - a;
+  vec3 ac = c - a;
+  vec3 bc = c - b;
+
+  *inside = false;
+
+  // Compute parametric position s for projection P’ of P on AB,
+  // P’ = A + s*AB, s = snom/(snom+sdenom)
+  float snom = dot(p - a, ab), sdenom = dot(p - b, a - b);
+
+  // Compute parametric position t for projection P’ of P on AC,
+  // P’ = A + t*AC, s = tnom/(tnom+tdenom)
+  float tnom = dot(p - a, ac), tdenom = dot(p - c, a - c);
+
+  if (snom <= 0.0f && tnom <= 0.0f) return a; // Vertex region early out
+
+  // Compute parametric position u for projection P’ of P on BC,
+  // P’ = B + u*BC, u = unom/(unom+udenom)
+  float unom = dot(p - b, bc), udenom = dot(p - c, b - c);
+
+  if (sdenom <= 0.0f && unom <= 0.0f) return b; // Vertex region early out
+  if (tdenom <= 0.0f && udenom <= 0.0f) return c; // Vertex region early out
+
+  // P is outside (or on) AB if the triple scalar product [N PA PB] <= 0
+  vec3 n = cross(b - a, c - a);
+  float vc = dot(n, cross(a - p, b - p));
+
+  // If P outside AB and within feature region of AB,
+  // return projection of P onto AB
+  if (vc <= 0.0f && snom >= 0.0f && sdenom >= 0.0f)
+    return a + snom / (snom + sdenom) * ab;
+
+  // P is outside (or on) BC if the triple scalar product [N PB PC] <= 0
+  float va = dot(n, cross(b - p, c - p));
+
+  // If P outside BC and within feature region of BC,
+  // return projection of P onto BC
+  if (va <= 0.0f && unom >= 0.0f && udenom >= 0.0f)
+    return b + unom / (unom + udenom) * bc;
+
+  // P is outside (or on) CA if the triple scalar product [N PC PA] <= 0
+  float vb = dot(n, cross(c - p, a - p));
+
+  // If P outside CA and within feature region of CA,
+  // return projection of P onto CA
+  if (vb <= 0.0f && tnom >= 0.0f && tdenom >= 0.0f)
+    return a + tnom / (tnom + tdenom) * ac;
+
+  // P must project inside face region. Compute Q using barycentric coordinates
+  *inside = true;
+  float u = va / (va + vb + vc);
+  float v = vb / (va + vb + vc);
+  float w = 1.0f - u - v; // = vc / (va + vb + vc)
+  return u * a + v * b + w * c;
+}
+
+vec3 ClosestPtPointSegment(vec3 c, vec3 a, vec3 b) {
+  vec3 ab = b - a;
+
+  // Project c onto ab, computing parameterized position d(t)=a+ t*(b – a)
+  float t = dot(c - a, ab) / dot(ab, ab);
+
+  // If outside segment, clamp t (and therefore d) to the closest endpoint
+  if (t < 0.0f) t = 0.0f;
+  if (t > 1.0f) t = 1.0f;
+
+  // Compute projected position from the clamped t
+  return a + t * ab;
 }

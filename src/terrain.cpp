@@ -137,10 +137,15 @@ float GetGridHeight(float x, float y) {
   // return h + height_map_[buffer_x][buffer_y];
 
   // Cos wave.
-  double long_wave = 5 * (cos(x * 0.05) + cos(y * 0.05))
-    + 1 * (cos(x * 0.25) + cos(y * 0.25)) +
-    + 75 * (cos(x * 0.005) + cos(y * 0.005));
-  return long_wave;
+  double long_wave = 0.02 * (cos(x * 0.05) + cos(y * 0.05))
+    + 0.25 * (cos(x * 0.25) + cos(y * 0.25)) +
+    + 15 * (cos(x * 0.005) + cos(y * 0.005));
+
+  x -= 2000;
+  y -= 2000;
+  // return 200 - 420 * (((sqrt(x * x + y * y) / 40000))) + long_wave;
+  float radius = 4000;
+  return 200 - 420 * (((sqrt(x * x + y * y) / (radius * 2)))) + long_wave;
 }
 
 float Terrain::GetHeight(float x, float y) { 
@@ -221,7 +226,8 @@ void CreateOffsetIndices(std::vector<unsigned int>& indices,
   }
 }
 
-Terrain::Terrain(GLuint program_id) : program_id_(program_id) {
+Terrain::Terrain(GLuint program_id, GLuint water_program_id) 
+  : program_id_(program_id), water_program_id_(water_program_id) {
   // LoadTerrain("./terrain.data");
 
   glm::vec3 vertices[(CLIPMAP_SIZE+1) * (CLIPMAP_SIZE+1)];
@@ -243,6 +249,8 @@ Terrain::Terrain(GLuint program_id) : program_id_(program_id) {
 
   // TODO: take the tiles file as input.
   texture_ = LoadPng("tiles2.png");
+  water_texture_ = LoadPng("water_dudv.png");
+  water_normal_texture_ = LoadPng("water_normal.png");
 
   for (int i = 0; i < CLIPMAP_LEVELS; i++) {
     clipmaps_.push_back(make_shared<Clipmap>(i));
@@ -447,7 +455,7 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
     clipmap->invalid = true;
   }
 
-  int max_updates_per_frame = 5;
+  int max_updates_per_frame = 6;
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
     unsigned int level = i + 1;
     shared_ptr<Clipmap> clipmap = clipmaps_[i];
@@ -547,8 +555,63 @@ bool Terrain::FrustumCullSubregion(shared_ptr<Clipmap> clipmap,
   return !CollideAABBFrustum(aabb, planes, player_pos);
 }
 
-void Terrain::Draw(glm::mat4 ProjectionMatrix, glm::mat4 ViewMatrix, 
+void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, 
   vec3 player_pos) {
+  static float move_factor = 0.0f;
+  move_factor += 0.0005f;
+
+  glBindVertexArray(vao_);
+  glUseProgram(water_program_id_);
+
+  int level = CLIPMAP_LEVELS - 1;
+  shared_ptr<Clipmap> clipmap = clipmaps_[level];
+
+  // Remove this PURE_TILE_SIZE / TILE_SIZE mess.
+  // These uniforms can probably be bound with the VAO.
+  glUniform3fv(GetUniformId(water_program_id_, "camera_position"), 1, (float*) &player_pos);
+  glUniformMatrix4fv(GetUniformId(water_program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
+  BindBuffer(vertex_buffer_, 0, 3);
+
+  const glm::ivec2& top_left = clipmap->clipmap_top_left;
+  mat4 ModelMatrix = glm::translate(glm::mat4(1.0), glm::vec3(top_left.x * TILE_SIZE, 0, top_left.y * TILE_SIZE));
+  mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
+  mat3 ModelView3x3Matrix = glm::mat3(ModelViewMatrix);
+  mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
+  glUniformMatrix4fv(GetUniformId(water_program_id_, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+  glUniformMatrix4fv(GetUniformId(water_program_id_, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+  glUniformMatrix3fv(GetUniformId(water_program_id_, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
+
+  glUniform1i(GetUniformId(water_program_id_, "TILE_SIZE"), TILE_SIZE * GetTileSize(level + 1));
+
+  glUniform2iv(GetUniformId(water_program_id_, "buffer_top_left"), 1, (int*) &clipmap->top_left);
+  glUniform1f(GetUniformId(water_program_id_, "move_factor"), move_factor);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, water_texture_);
+  glUniform1i(GetUniformId(water_program_id_, "dudv_map"), 0);
+
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, water_normal_texture_);
+  glUniform1i(GetUniformId(water_program_id_, "normal_map"), 1);
+
+  for (int region = 0 ; region < NUM_SUBREGIONS; region++) {
+    mat4 ModelMatrix = translate(mat4(1.0), player_pos);
+    mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
+    mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+    mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
+    if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
+      continue;
+    }
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][0][0]);
+    glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][0][0], 
+      GL_UNSIGNED_INT, (void*) 0);
+  }
+
+  glBindVertexArray(0);
+}
+
+void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos) {
   UpdateClipmaps(player_pos);
 
   glBindVertexArray(vao_);
@@ -645,6 +708,8 @@ void Terrain::Draw(glm::mat4 ProjectionMatrix, glm::mat4 ViewMatrix,
     cull_count++;
   }
   glBindVertexArray(0);
+
+  DrawWater(ProjectionMatrix, ViewMatrix, player_pos);
 }
 
 // TODO: load the terrain. Everything else is flat. Save another height map

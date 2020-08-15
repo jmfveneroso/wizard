@@ -99,6 +99,111 @@ void ExtractSkeleton(FbxScene* scene, FbxData* data) {
   BuildJointMap(data->skeleton, data);
 }
 
+void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
+  vector<unsigned int> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+
+  int polygon_size = mesh->GetPolygonSize(i);
+  for (int j = 0; j < polygon_size; j++, vertex_id++) {
+    int vertex_index = mesh->GetPolygonVertex(i, j);
+    if (vertex_index < 0) {
+      throw runtime_error("Invalid vertex index.");
+    } else {
+      vertices.push_back(vertex_index);
+    }
+
+    for (int k = 0; k < mesh->GetElementUVCount(); ++k) {
+      FbxGeometryElementUV* uv = mesh->GetElementUV(k);
+      switch (uv->GetMappingMode()) {
+        default:
+          break;
+        case FbxGeometryElement::eByControlPoint:
+          switch (uv->GetReferenceMode()) {
+            case FbxGeometryElement::eDirect:
+              uvs.push_back(Get2DVector(uv->GetDirectArray()
+                .GetAt(vertex_index)));
+              break;
+            case FbxGeometryElement::eIndexToDirect: {
+              int id = uv->GetIndexArray().GetAt(vertex_index);
+              uvs.push_back(
+                Get2DVector(uv->GetDirectArray().GetAt(id)));
+            }
+            break;
+            default:
+              break;
+          }
+          break;
+        case FbxGeometryElement::eByPolygonVertex: {
+          int lTextureUVIndex = mesh->GetTextureUVIndex(i, j);
+          switch (uv->GetReferenceMode()) {
+            case FbxGeometryElement::eDirect:
+            case FbxGeometryElement::eIndexToDirect: {
+              uvs.push_back(Get2DVector(
+                uv->GetDirectArray().GetAt(lTextureUVIndex)));
+            }
+            break;
+            default:
+              break;
+          }
+        }
+        break;
+      }
+    }
+
+    for (int k = 0; k < mesh->GetElementNormalCount(); ++k) {
+      FbxGeometryElementNormal* normal = mesh->GetElementNormal(k);
+      if (normal->GetMappingMode() == 
+        FbxGeometryElement::eByPolygonVertex) {
+        switch (normal->GetReferenceMode()) {
+          case FbxGeometryElement::eDirect:
+            normals.push_back(Get3DVector(normal->GetDirectArray()
+              .GetAt(vertex_id)));
+            break;
+          case FbxGeometryElement::eIndexToDirect: {
+            int id = normal->GetIndexArray().GetAt(vertex_id);
+            normals.push_back(Get3DVector(normal->GetDirectArray()
+              .GetAt(id)));
+          }
+          break;
+          default:
+            break;
+        }
+      }
+    }
+  }
+
+  // For collision detection.
+  // Polygon polygon;
+  // for (int k = 0; k < polygon_size; k++) {
+  //   polygon.vertices.push_back(data->vertices[vertices[k]]);
+  //   polygon.normals.push_back(normals[k]);
+  // }
+  // data->polygons.push_back(polygon);
+
+  // Triangulate the polygon with the triangle fan triangulation method.
+  for (int j = 1; j < polygon_size - 1; j++) {
+    data->indices.push_back(vertices[0]);
+    data->uvs.push_back(uvs[0]);
+    data->normals.push_back(normals[0]);
+    data->indices.push_back(vertices[j]);
+    data->uvs.push_back(uvs[j]);
+    data->normals.push_back(normals[j]);
+    data->indices.push_back(vertices[j+1]);
+    data->uvs.push_back(uvs[j+1]);
+    data->normals.push_back(normals[j+1]);
+
+    Polygon polygon;
+    polygon.vertices.push_back(data->vertices[vertices[0]]);
+    polygon.normals.push_back(normals[0]);
+    polygon.vertices.push_back(data->vertices[vertices[j]]);
+    polygon.normals.push_back(normals[j+1]);
+    polygon.vertices.push_back(data->vertices[vertices[j+1]]);
+    polygon.normals.push_back(normals[j+1]);
+    data->polygons.push_back(polygon);
+  }
+}
+
 // Extract polygon data.
 void ExtractMesh(FbxScene* scene, FbxData* data) {
   FbxNode* node = 
@@ -113,73 +218,7 @@ void ExtractMesh(FbxScene* scene, FbxData* data) {
 
   int vertex_id = 0;
   for (int i = 0; i < mesh->GetPolygonCount(); i++) {
-    for (int j = 0; j < mesh->GetPolygonSize(i); j++, vertex_id++) {
-      int vertex_index = mesh->GetPolygonVertex(i, j);
-      if (vertex_index < 0) {
-        throw runtime_error("Invalid vertex index.");
-      } else {
-        data->indices.push_back(vertex_index);
-      }
-
-      for (int k = 0; k < mesh->GetElementUVCount(); ++k) {
-        FbxGeometryElementUV* uv = mesh->GetElementUV(k);
-        switch (uv->GetMappingMode()) {
-          default:
-            break;
-          case FbxGeometryElement::eByControlPoint:
-            switch (uv->GetReferenceMode()) {
-              case FbxGeometryElement::eDirect:
-                data->uvs.push_back(Get2DVector(uv->GetDirectArray()
-                  .GetAt(vertex_index)));
-                break;
-              case FbxGeometryElement::eIndexToDirect: {
-                int id = uv->GetIndexArray().GetAt(vertex_index);
-                data->uvs.push_back(
-                  Get2DVector(uv->GetDirectArray().GetAt(id)));
-              }
-              break;
-              default:
-                break;
-            }
-            break;
-          case FbxGeometryElement::eByPolygonVertex: {
-            int lTextureUVIndex = mesh->GetTextureUVIndex(i, j);
-            switch (uv->GetReferenceMode()) {
-              case FbxGeometryElement::eDirect:
-              case FbxGeometryElement::eIndexToDirect: {
-                data->uvs.push_back(Get2DVector(
-                  uv->GetDirectArray().GetAt(lTextureUVIndex)));
-              }
-              break;
-              default:
-                break;
-            }
-          }
-          break;
-        }
-      }
-
-      for (int k = 0; k < mesh->GetElementNormalCount(); ++k) {
-        FbxGeometryElementNormal* normal = mesh->GetElementNormal(k);
-        if (normal->GetMappingMode() == 
-          FbxGeometryElement::eByPolygonVertex) {
-          switch (normal->GetReferenceMode()) {
-            case FbxGeometryElement::eDirect:
-              data->normals.push_back(Get3DVector(normal->GetDirectArray()
-                .GetAt(vertex_id)));
-              break;
-            case FbxGeometryElement::eIndexToDirect: {
-              int id = normal->GetIndexArray().GetAt(vertex_id);
-              data->normals.push_back(Get3DVector(normal->GetDirectArray()
-                .GetAt(id)));
-            }
-            break;
-            default:
-              break;
-          }
-        }
-      }
-    }
+    ExtractPolygon(mesh, i, data, vertex_id);
   }
 }
 

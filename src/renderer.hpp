@@ -61,9 +61,11 @@ struct Object3D {
   Mesh mesh;
   vec3 position;
   vec3 rotation;
+  vector<Polygon> polygons;
   Object3D() {}
   Object3D(Mesh mesh, vec3 position) : mesh(mesh), position(position) {}
   Object3D(Mesh mesh, vec3 position, vec3 rotation) : mesh(mesh), position(position), rotation(rotation) {}
+  bool collide = false;
 };
 
 struct FBO {
@@ -88,6 +90,7 @@ class Renderer {
 
   vector<vector<mat4>> joint_transforms_;
   GLuint texture_;
+  GLuint building_texture_;
   shared_ptr<Terrain> terrain_;
 
   unordered_map<string, GLuint> shaders_;
@@ -116,6 +119,9 @@ class Renderer {
   shared_ptr<Object3D> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
   shared_ptr<Object3D> CreateJoint(vec3 start, vec3 end);
   void LoadFbx(const std::string& filename, vec3 position);
+  void LoadStaticFbx(const std::string& filename, vec3 position);
+  void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
   
   GLFWwindow* window() { return window_; }
+  shared_ptr<Terrain> terrain() { return terrain_; }
 };

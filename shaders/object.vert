@@ -18,8 +18,9 @@ uniform mat4 V;
 
 void main(){
   out_data.UV = vertexUV;
-  out_data.position = (M * vec4(vertexPosition_modelspace, 1)).xyz;
-  gl_Position = MVP * vec4(vertexPosition_modelspace, 1);
-
-  out_data.normal = (V * M * vec4(vertexNormal_modelspace,0)).xyz; 
+  vec4 position = vec4(vertexPosition_modelspace, 1.0);
+  vec4 normal = vec4(vertexNormal_modelspace, 0.0);
+  out_data.position = (M * position).xyz;
+  gl_Position = MVP * position;
+  out_data.normal = (V * M * normal).xyz; 
 }

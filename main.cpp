@@ -19,8 +19,14 @@
 #include <unordered_map>
 #include "renderer.hpp"
 
-#define PLAYER_SPEED 0.5f
-#define PLAYER_HEIGHT 1.5
+// Portal culling:
+// http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
+
+#define PLAYER_SPEED 0.03f
+// #define PLAYER_HEIGHT 1.5
+#define PLAYER_HEIGHT 0.75
+#define GRAVITY 0.016
+#define JUMP_FORCE 0.3f
 
 using namespace std;
 using namespace glm;
@@ -32,10 +38,40 @@ struct Player {
   // float h_angle = -230.991;
   float h_angle = 0;
   float v_angle = 0;
+  bool can_jump = true;
 };
 
 Player player_;
 Renderer renderer;
+
+void UpdateForces() {
+  Player& p = player_;
+  glm::vec3 prev_pos = p.position;
+
+  p.speed += glm::vec3(0, -GRAVITY, 0);
+
+  // Friction.
+  p.speed.x *= 0.9;
+  p.speed.y *= 0.99;
+  p.speed.z *= 0.9;
+
+  vec3 old_player_pos = player_.position;
+  p.position += p.speed;
+
+  renderer.Collide(&player_.position, old_player_pos, &player_.speed, &player_.can_jump);
+
+  // Test collision with terrain.
+  float height = renderer.terrain()->GetHeight(player_.position.x, player_.position.z) + PLAYER_HEIGHT;
+  if (p.position.y - PLAYER_HEIGHT < height) {
+    glm::vec3 pos = p.position;
+    pos.y = height + PLAYER_HEIGHT;
+    p.position = pos;
+    glm::vec3 speed = p.speed;
+    if (speed.y < 0) speed.y = 0.0f;
+    p.speed = speed;
+    p.can_jump = true;
+  }
+}
 
 void ProcessGameInput(){
   static double last_time = glfwGetTime();
@@ -62,26 +98,30 @@ void ProcessGameInput(){
   glm::vec3 up = glm::cross(right, direction);
   
   GLFWwindow* window = renderer.window();
-
+  
   // Move forward.
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-    player_.position += front * PLAYER_SPEED;
+    player_.speed += front * PLAYER_SPEED;
 
   // Move backward.
   if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-    player_.position -= front * PLAYER_SPEED;
+    player_.speed -= front * PLAYER_SPEED;
 
   // Strafe right.
   if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-    player_.position += right * PLAYER_SPEED;
+    player_.speed += right * PLAYER_SPEED;
 
   // Strafe left.
   if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-    player_.position -= right * PLAYER_SPEED;
+    player_.speed -= right * PLAYER_SPEED;
 
   // Move up.
-  if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
-    player_.position += vec3(0, 1, 0) * PLAYER_SPEED;
+  if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+    if (player_.can_jump) {
+      player_.can_jump = false;
+      player_.speed.y += JUMP_FORCE;
+    }
+  }
 
   // Move down.
   if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
@@ -99,46 +139,27 @@ void ProcessGameInput(){
   if (p.v_angle < -1.57f) p.v_angle = -1.57f;
   if (p.v_angle >  1.57f) p.v_angle = +1.57f;
   last_time = current_time;
+  UpdateForces();
 
-  renderer.SetCamera(Camera(player_.position, direction, up));
+  renderer.SetCamera(Camera(player_.position + vec3(0, 0.75, 0), direction, up));
 }
 
 int main() {
   renderer.Init("shaders");
-  renderer.CreateCube(vec3(1.0, 1.0, 1.0), vec3(2010, 0, 2010));
+  // renderer.CreateCube(vec3(1.0, 1.0, 1.0), vec3(2010, 275, 2010));
   // renderer.CreateCube(vec3(100, 20, 100), vec3(2040, 20, 2040));
-  renderer.LoadFbx("fish10.fbx", vec3(2000, 0, 2000));
+  renderer.LoadFbx("fish10.fbx", vec3(2042, 180, 2010));
 
-  // Subregion: 0
-  // renderer.CreateCube(vec3(50, 20, 202), vec3(1900, 0, 1900));
-  
-  // Subregion: 1
-  // renderer.CreateCube(vec3(101, 20, 50), vec3(1950, 0, 1900));
-  
-  // Subregion: 2
-  // renderer.CreateCube(vec3(101, 20, 51), vec3(1950, 0, 2051));
-  
-  // Subregion: 3
-  // renderer.CreateCube(vec3(51, 20, 202), vec3(2051, 0, 1900));
-  
-  // Subregion: 4
-  // renderer.CreateCube(vec3(101, 20, 101), vec3(1950, 0, 1950));
+  // renderer.LoadStaticFbx("tower_floor.fbx", vec3(2000, 172, 2000));
 
-
-  // CLIPMAP 2
-  // // Subregion: 0
-  // renderer.CreateCube(vec3(100, 20, 404), vec3(1800, 0, 1800));
-
-  // // Subregion: 1
-  // renderer.CreateCube(vec3(202, 20, 100), vec3(1900, 0, 1800));
-
-  // // Subregion: 2
-  // renderer.CreateCube(vec3(202, 20, 102), vec3(1900, 0, 2102));
-  // 
-  // // Subregion: 3
-  // renderer.CreateCube(vec3(102, 20, 404), vec3(2102, 0, 1800));
-  
-
+  // renderer.LoadStaticFbx("four_walls.fbx", vec3(2020, 170, 2000));
+  // renderer.LoadStaticFbx("first_floor_walls.fbx", vec3(2020, 170, 2000));
+  renderer.LoadStaticFbx("tower_first_floor_2.fbx", vec3(2042, 172.8, 2010));
+  // renderer.LoadStaticFbx("tower_floor.fbx", vec3(2042, 172.8, 2010));
+  // renderer.LoadStaticFbx("tower_walls.fbx", vec3(2042, 172.7, 2010));
+  // renderer.LoadStaticFbx("tower_ramp.fbx",  vec3(2042, 172.8, 2010));
+  // renderer.LoadStaticFbx("single_triangle.fbx", vec3(2020, 175, 2000));
+  // renderer.LoadStaticFbx("single_wall.fbx", vec3(2020, 170, 2000));
 
   renderer.Run(ProcessGameInput);
   return 0;

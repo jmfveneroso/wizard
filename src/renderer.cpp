@@ -190,9 +190,9 @@ void Renderer::Init(const string& shader_dir) {
 
   // TODO: load texture with the object.
   texture_ = LoadPng("fish_uv.png");
+  building_texture_ = LoadPng("first_floor_uv.png");
 
-  terrain_ = make_shared<Terrain>(shaders_["terrain"]);
-  // terrain_ = make_shared<Terrain>(shaders_["solid"]);
+  terrain_ = make_shared<Terrain>(shaders_["terrain"], shaders_["water"]);
 }
 
 void Renderer::DrawObjects() {
@@ -253,7 +253,6 @@ void Renderer::DrawObjects() {
       int effective_frame_num = frame_num;
       vector<mat4> joint_transforms;
 
-
       // TODO: max 10 joints. Enforce limit here.
       for (int i = 0; i < joint_transforms_.size(); i++) {
         joint_transforms.push_back(joint_transforms_[i][effective_frame_num]);
@@ -263,10 +262,13 @@ void Renderer::DrawObjects() {
 
       BindTexture("texture_sampler", program_id, texture_);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+    } else if (program_id == shaders_["object"]) {
+      BindTexture("texture_sampler", program_id, building_texture_);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else {
-      glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+      // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
       glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
-      glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      // glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
     glBindVertexArray(0);
   }
@@ -657,5 +659,285 @@ void Renderer::LoadFbx(const std::string& filename, vec3 position) {
       joint_transforms_[i].push_back(joint_transform);
     }
   }
+}
+
+void Renderer::LoadStaticFbx(const std::string& filename, vec3 position) {
+  FbxData data = FbxLoad(filename);
+  auto& vertices = data.vertices;
+  auto& uvs = data.uvs;
+  auto& normals = data.normals;
+  auto& indices = data.indices;
+
+  Mesh m;
+  m.shader = shaders_["object"];
+  glGenBuffers(1, &m.vertex_buffer_);
+  glGenBuffers(1, &m.uv_buffer_);
+  glGenBuffers(1, &m.normal_buffer_);
+  glGenBuffers(1, &m.element_buffer_);
+
+  vector<vec3> _vertices;
+  vector<vec2> _uvs;
+  vector<vec3> _normals;
+  vector<unsigned int> _indices;
+  for (int i = 0; i < indices.size(); i++) {
+    _vertices.push_back(vertices[indices[i]]);
+    _uvs.push_back(uvs[i]);
+    _normals.push_back(normals[i]);
+    _indices.push_back(i);
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, _vertices.size() * sizeof(glm::vec3), 
+    &_vertices[0], GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, _uvs.size() * sizeof(glm::vec2), 
+    &_uvs[0], GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.normal_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), 
+    &_normals[0], GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
+  glBufferData(
+    GL_ELEMENT_ARRAY_BUFFER, 
+    _indices.size() * sizeof(unsigned int), 
+    &_indices[0], 
+    GL_STATIC_DRAW
+  );
+  m.num_indices = _indices.size();
+
+  glGenVertexArrays(1, &m.vao_);
+  glBindVertexArray(m.vao_);
+
+  BindBuffer(m.vertex_buffer_, 0, 3);
+  BindBuffer(m.uv_buffer_, 1, 2);
+  BindBuffer(m.normal_buffer_, 2, 3);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
+
+  glBindVertexArray(0);
+  for (int slot = 0; slot < 5; slot++) {
+    glDisableVertexAttribArray(slot);
+  }
+
+  shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
+  obj->polygons = data.polygons;
+  obj->collide = true;
+  objects_.push_back(obj);
+  position += vec3(0, 0, 5);
+}
+
+// Given point p, return the point q on or in AABB b that is closest to p
+vec3 ClosestPtPointAABB(vec3 p, vec3 aabb_min, vec3 aabb_max) {
+  vec3 q;
+  // For each coordinate axis, if the point coordinate value is
+  // outside box, clamp it to the box, else keep it as is
+  for (int i = 0; i < 3; i++) {
+    float v = p[i];
+    v = std::max(v, aabb_min[i]);
+    v = std::min(v, aabb_max[i]);
+    q[i] = v;
+  }
+  return q;
+}
+
+bool IntersectWall(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, float* magnitude, 
+  const vec3& object_pos) {
+  const vec3& normal = polygon.normals[0];
+
+  vec3 aabb_min = *player_pos + vec3(-1, -1, -1);
+  vec3 aabb_max = *player_pos + vec3(1, 1, 1);
+
+  vec3 wall_aabb_min = vec3(9999999, 9999999, 9999999);
+  vec3 wall_aabb_max = vec3(-999999, -999999, -999999);
+  for (int i = 0; i < polygon.vertices.size(); i++) {
+    const vec3& p = polygon.vertices[i] + object_pos;
+    wall_aabb_min.x = std::min(wall_aabb_min.x, p.x);
+    wall_aabb_min.y = std::min(wall_aabb_min.y, p.y);
+    wall_aabb_min.z = std::min(wall_aabb_min.z, p.z);
+    wall_aabb_max.x = std::max(wall_aabb_max.x, p.x);
+    wall_aabb_max.y = std::max(wall_aabb_max.y, p.y);
+    wall_aabb_max.z = std::max(wall_aabb_max.z, p.z);
+  }
+
+  vec3 closest_point = ClosestPtPointAABB(*player_pos, wall_aabb_min, wall_aabb_max);
+  if (length(*player_pos - closest_point) > 1.5f) return false;
+
+  // if (aabb_min.x > wall_aabb_max.x || aabb_min.y > wall_aabb_max.y || aabb_min.z > wall_aabb_max.z ||
+  //     aabb_max.x < wall_aabb_min.x || aabb_max.y < wall_aabb_min.y || aabb_max.z < wall_aabb_min.z) {
+  //   return false;
+  // }
+
+  // AABB positive extents.
+  vec3 aabb_center = (aabb_min + aabb_max) * 0.5f;
+  vec3 e = aabb_max - aabb_center;
+
+  // Projection of the AABB box in the plane normal.
+  float r = e.x * abs(normal.x) + e.y * abs(normal.y) + e.z * abs(normal.z);
+  r = 1.5f;
+
+  vec3 point_in_plane = polygon.vertices[0] + object_pos;
+  float d = dot(point_in_plane, normal);
+
+  // float s = dot(normal, aabb_center) - d;
+  float s = dot(normal, *player_pos) - d;
+
+  if (s < 0 || s > r) {
+    return false;
+  }
+
+  vec3 p1 = polygon.vertices[0] + object_pos;
+  vec3 p2 = polygon.vertices[2] + object_pos;
+  vec3 player_p = *player_pos;
+  p1.y = 0;
+  p2.y = 0;
+  player_p.y = 0;
+
+  vec3 p1_ = p1 - player_p;
+  vec3 p2_ = p2 - player_p;
+  vec3 tangent1 = normalize(p1 - p2);
+  vec3 tangent2 = normalize(p2 - p1);
+  if (dot(p1_, tangent1) < 0) {
+    if (length(p1_) < 1.5f) {
+      cout << "Collision with point 1: " << p1 << endl;
+      float tan_proj = abs(dot(p1_, tangent1));
+      float normal_proj = abs(dot(p1_, normal));
+      float mag = sqrt(1.5f * 1.5f - tan_proj * tan_proj) - normal_proj;
+      *magnitude = mag;
+      *player_pos = *player_pos + mag * normal;
+      return true;
+    }
+    return false;
+  } else if (dot(p2_, tangent2) < 0) {
+    if (length(p2_) < 1.5f) {
+      cout << "Collision with point 2: " << p2 << endl;
+      float tan_proj = abs(dot(p2_, tangent2));
+      float normal_proj = abs(dot(p2_, normal));
+      float mag = sqrt(1.5f * 1.5f - tan_proj * tan_proj) - normal_proj;
+      *magnitude = mag;
+      *player_pos = *player_pos + mag * normal;
+      return true;
+    }
+    return false;
+  }
+
+  cout << "Collision with center" << endl;
+
+  // Resolve collision.
+  float mag = abs(r - s) + 0.001f;
+  *player_pos = *player_pos + mag * normal;
+
+  float s2 = dot(normal, old_player_pos) - d;
+  *magnitude = abs(r - s2);
+  return true;
+}
+
+bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, 
+  float* magnitude, const vec3& object_pos) {
+  const vec3& normal = polygon.normals[0];
+
+  vec3 a = polygon.vertices[0] + object_pos;
+  vec3 b = polygon.vertices[1] + object_pos;
+  vec3 c = polygon.vertices[2] + object_pos;
+
+  bool inside;
+  vec3 closest_point = ClosestPtPointTriangle(*player_pos, a, b, c, &inside);
+  
+  float r = 1.5f;
+
+  const vec3& v = closest_point - *player_pos;
+  if (length(v) > r || dot(*player_pos - a, normal) < 0) {
+    return false;
+  }
+
+  if (!inside) {
+    cout << "not inside" << endl;
+    vec3 closest_ab = ClosestPtPointSegment(*player_pos, a, b);
+    vec3 closest_bc = ClosestPtPointSegment(*player_pos, b, c);
+    vec3 closest_ca = ClosestPtPointSegment(*player_pos, c, a);
+    vector<vec3> segments { a-b, b-c, c-a } ;
+    vector<vec3> points { closest_ab, closest_bc, closest_ca } ;
+
+    float min_distance = 9999.0f;
+    float min_index = -1;
+    for (int i = 0; i < 3; i++) {
+      float distance = length(points[i] - *player_pos);
+      if (distance < min_distance) {
+        min_index = i;
+        min_distance = distance;
+      }
+    }
+
+    // Collide with segment.
+    if (min_distance < r) {
+      vec3 player_to_p = points[min_index] - *player_pos;
+      vec3 tangent = normalize(cross(segments[min_index], normal));
+      float proj_tan = abs(dot(player_to_p, tangent));
+      float proj_normal = abs(dot(player_to_p, normal));
+      float mag = sqrt(r * r - proj_tan * proj_tan) - proj_normal + 0.001f;
+      *magnitude = mag;
+      *player_pos = *player_pos + mag * normal;
+      return true; 
+    }
+  }
+  cout << "inside" << endl;
+
+  float mag = dot(v, normal);
+  *magnitude = r + mag + 0.001f;
+  *player_pos = *player_pos + *magnitude * normal;
+
+  return true;
+}
+
+void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
+  bool collision = true;
+  for (int i = 0; i < 5 && collision; i++) {
+    vector<vec3> collision_resolutions;
+    vector<float> magnitudes;
+    collision = false;
+
+    for (auto& obj : objects_) {
+      if (!obj->collide) {
+        continue;
+      }
+      for (auto& pol : obj->polygons) {
+        vec3 collision_resolution = *player_pos;
+        float magnitude;
+        if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
+        // if (IntersectWall(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
+          cout << "Intersect" << endl;
+          collision = true;
+          collision_resolutions.push_back(collision_resolution);
+          magnitudes.push_back(magnitude);
+        }
+      }
+    }
+
+    // Select the collision resolution for which the collision displacement along
+    // the collision normal is minimal.
+    int min_index = -1;
+    float min_magnitude = 999999999.0f;
+    for (int i = 0; i < collision_resolutions.size(); i++) {
+      const vec3& collision_resolution = collision_resolutions[i];
+      const float magnitude = magnitudes[i];
+      if (magnitude < min_magnitude) {
+        min_index = i;
+        min_magnitude = magnitude;
+      }
+    }
+
+    if (min_index != -1) {
+      cout << min_index << " - choice: " << collision_resolutions[min_index] << endl;
+      vec3 collision_vector = normalize(collision_resolutions[min_index] - *player_pos);
+      *player_speed += abs(dot(*player_speed, collision_vector)) * collision_vector;
+      *player_pos = collision_resolutions[min_index];
+
+      if (dot(collision_vector, vec3(0, 1, 0)) > 0.5f) {
+        *can_jump = true;
+      }
+    }
+  }
+  cout << "=========" << endl;
 }
 
