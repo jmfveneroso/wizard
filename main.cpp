@@ -154,12 +154,36 @@ int main() {
 
   // renderer.LoadStaticFbx("four_walls.fbx", vec3(2020, 170, 2000));
   // renderer.LoadStaticFbx("first_floor_walls.fbx", vec3(2020, 170, 2000));
-  renderer.LoadStaticFbx("tower_first_floor_2.fbx", vec3(2042, 172.8, 2010));
   // renderer.LoadStaticFbx("tower_floor.fbx", vec3(2042, 172.8, 2010));
   // renderer.LoadStaticFbx("tower_walls.fbx", vec3(2042, 172.7, 2010));
   // renderer.LoadStaticFbx("tower_ramp.fbx",  vec3(2042, 172.8, 2010));
   // renderer.LoadStaticFbx("single_triangle.fbx", vec3(2020, 175, 2000));
   // renderer.LoadStaticFbx("single_wall.fbx", vec3(2020, 170, 2000));
+
+  renderer.LoadSector("tower_first_floor_sector.fbx", 1, 
+    vec3(2042, 172.8, 2010));
+
+  renderer.LoadPortal("tower_first_floor_portal.fbx", 0, 
+    vec3(2042, 172.8, 2010));
+
+  renderer.LoadOccluder("tower_first_floor_occluder.fbx", 0,
+    vec3(2042, 172.8, 2010));
+
+  renderer.LoadStaticFbx("tower_outer_wall.fbx", vec3(2042, 172.8, 2010), 0, 0);
+
+  renderer.LoadStaticFbx("tower_inner_wall.fbx", vec3(2042, 172.8, 2010), 1);
+
+  renderer.LoadStaticFbx("wooden_box.fbx", vec3(2052, 190, 2010), 1);
+
+  renderer.LoadStaticFbx("wooden_box.fbx", vec3(2047, 190, 2010), 1);
+
+  renderer.LoadStaticFbx("wooden_box.fbx", vec3(2040, 190, 2010), 1);
+
+  renderer.LoadStaticFbx("stone_pillar.fbx", vec3(2052, 180, 2010), 1);
+
+  renderer.LoadStaticFbx("stone_pillar.fbx", vec3(2052, 180, 2050), 0);
+
+  renderer.CreateCube(vec3(10, 10, 10), vec3(2000, 200, 2000));
 
   renderer.Run(ProcessGameInput);
   return 0;

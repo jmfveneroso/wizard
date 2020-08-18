@@ -43,6 +43,69 @@
 //       culling
 //   
 
+void Renderer::Init(const string& shader_dir) {
+  if (!glfwInit()) throw "Failed to initialize GLFW";
+
+  glfwWindowHint(GLFW_SAMPLES, 4);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+  // To make MacOS happy; should not be needed.
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); 
+
+  // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, NULL, NULL);
+  window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
+    glfwGetPrimaryMonitor(), NULL);
+  if (window_ == NULL) {
+    glfwTerminate();
+    throw "Failed to open GLFW window";
+  }
+
+  // We would expect width and height to be 1024 and 768
+  // But on MacOS X with a retina screen it'll be 1024*2 and 768*2, 
+  // so we get the actual framebuffer size:
+  glfwGetFramebufferSize(window_, &window_width_, &window_height_);
+  glfwMakeContextCurrent(window_);
+
+  // Needed for core profile.
+  glewExperimental = true; 
+  if (glewInit() != GLEW_OK) {
+    glfwTerminate();
+    throw "Failed to initialize GLEW";
+  }
+
+  // Hide the mouse and enable unlimited movement.
+  glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+  glfwPollEvents();
+  glfwSetCursorPos(window_, 0, 0);
+
+  projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
+    4.0f / 3.0f, NEAR_CLIPPING, FAR_CLIPPING);
+
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS); 
+  glEnable(GL_CULL_FACE);
+
+  LoadShaders("shaders");
+  fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
+
+  // TODO: load texture with the object.
+  texture_ = LoadPng("fish_uv.png");
+  building_texture_ = LoadPng("first_floor_uv.png");
+  granite_texture_ = LoadPng("granite.png");
+  wood_texture_ = LoadPng("wood.png");
+
+  terrain_ = make_shared<Terrain>(shaders_["terrain"], shaders_["water"]);
+
+
+  Sector s;
+  s.id = 0;
+  s.stabbing_tree = make_shared<StabbingTreeNode>(0, 0, true);
+  s.stabbing_tree->children.push_back(make_shared<StabbingTreeNode>(1, 0, false));
+  sectors_[0] = s;
+}
+
 void Renderer::LoadShaders(const std::string& directory) {
   boost::filesystem::path p (directory);
   boost::filesystem::directory_iterator end_itr;
@@ -141,102 +204,138 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   return fbo;
 }
 
-void Renderer::Init(const string& shader_dir) {
-  if (!glfwInit()) throw "Failed to initialize GLFW";
+ConvexHull Renderer::CreateConvexHullFromOccluder(int occluder_id, 
+  const vec3& player_pos) {
+  ConvexHull convex_hull;
 
-  glfwWindowHint(GLFW_SAMPLES, 4);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+  unordered_map<string, Edge> edges;
+  const vector<Polygon>& polygons = occluders_[occluder_id].polygons;
 
-  // To make MacOS happy; should not be needed.
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); 
+  // Find occlusion hull edges.
+  for (const Polygon& p : polygons) {
+    const vec3& plane_point = p.vertices[0];
+    const vec3& normal = p.normals[0];
+    if (IsBehindPlane(player_pos, plane_point, normal)) {
+      continue;
+    }
 
-  // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, NULL, NULL);
-  window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
-    glfwGetPrimaryMonitor(), NULL);
-  if (window_ == NULL) {
-    glfwTerminate();
-    throw "Failed to open GLFW window";
+    convex_hull.push_back(p);
+
+    // If the polygon faces viewer, do the following for all its edges: 
+    // If the edge is already in the edge list, remove the edge from the 
+    // list. Otherwise, add the edge into the list.
+    const vector<vec3>& vertices = p.vertices;
+    const vector<vec3>& normals = p.normals;
+    const vector<unsigned int>& vertex_ids = p.vertex_ids;
+
+    // TODO: contemplate not triangular polygons. Maybe?
+    vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
+    for (auto& [a, b] : comparisons) {
+      int i = (p.vertex_ids[a] < p.vertex_ids[b]) ? a : b;
+      int j = (p.vertex_ids[a] < p.vertex_ids[b]) ? b : a;
+      
+      string key = boost::lexical_cast<string>(vertex_ids[i]) + "-" + 
+        boost::lexical_cast<string>(vertex_ids[j]);
+      if (edges.find(key) == edges.end()) {
+        edges[key] = Edge(vertices[i], vertices[j], vertex_ids[i], vertex_ids[j], normals[i], normals[j]);
+      } else {
+        edges.erase(key);
+      }
+    }
   }
 
-  // We would expect width and height to be 1024 and 768
-  // But on MacOS X with a retina screen it'll be 1024*2 and 768*2, 
-  // so we get the actual framebuffer size:
-  glfwGetFramebufferSize(window_, &window_width_, &window_height_);
-  glfwMakeContextCurrent(window_);
-
-  // Needed for core profile.
-  glewExperimental = true; 
-  if (glewInit() != GLEW_OK) {
-    glfwTerminate();
-    throw "Failed to initialize GLEW";
+  if (edges.empty()) {
+    return convex_hull;
   }
 
-  // Hide the mouse and enable unlimited movement.
-  glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-  glfwPollEvents();
-  glfwSetCursorPos(window_, 0, 0);
-
-  projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
-    4.0f / 3.0f, NEAR_CLIPPING, FAR_CLIPPING);
-
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LESS); 
-  glEnable(GL_CULL_FACE);
-
-  LoadShaders("shaders");
-  fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
-
-  // TODO: load texture with the object.
-  texture_ = LoadPng("fish_uv.png");
-  building_texture_ = LoadPng("first_floor_uv.png");
-
-  terrain_ = make_shared<Terrain>(shaders_["terrain"], shaders_["water"]);
+  for (auto& [key, e] : edges) {
+    Polygon plane = CreatePolygonFrom3Points(player_pos, e.a, e.b, e.a_normal);
+    convex_hull.push_back(plane);
+  }
+  return convex_hull;
 }
 
-void Renderer::DrawObjects() {
-  glEnable(GL_CULL_FACE);
-  terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
-  glDisable(GL_CULL_FACE);
- 
-  static int counter = 0;
-  if (counter++ == 100) { 
-    // mat4 ModelMatrix = glm::translate(glm::mat4(1.0), vec3(0, 0, 0));
-    // mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
-    // mat4 MVP = projection_matrix_ * ModelViewMatrix;
-
-    // vec4 lft, rgt, bot, top, ner, far;
-    // ExtractFrustumPlanes(MVP, lft, rgt, bot, top, ner, far);
-
-    // cout << "lft: " << lft << endl;
-    // cout << "rgt: " << rgt << endl;
-    // cout << "bot: " << bot << endl;
-    // cout << "top: " << top << endl;
-    // cout << "ner: " << ner << endl;
-    // cout << "far: " << far << endl;
-    // CreatePlane(vec3(2010, 40, 2010) , vec3(2010, 41,  2010), vec3(lft.x, lft.y, lft.z));
-    // CreatePlane(vec3(2010, 80, 2010) , vec3(2010, 81,  2010), vec3(rgt.x, rgt.y, rgt.z));
-    // CreatePlane(vec3(2010, 120, 2010), vec3(2011, 120, 2010), vec3(bot.x, bot.y, bot.z));
-    // CreatePlane(vec3(2010, 160, 2010), vec3(2011, 160, 2010), vec3(top.x, top.y, top.z));
-    // CreatePlane(vec3(2010, 200, 2010), vec3(2011, 200, 2010), vec3(ner.x, ner.y, ner.z));
-    // CreatePlane(vec3(2010, 240, 2010), vec3(2011, 240, 2010), vec3(far.x, far.y, far.z));
-    // CreatePlane(vec3(2010, 260, 2010), vec3(0, 0, 1));
-    // CreatePlane(vec3(2010, 280, 2010), vec3(0, 1, 0));
-    // kcout << "is we" << endl;
+AABB GetObjectAABB(shared_ptr<Object3D> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
   }
+  return GetAABBFromVertices(vertices);
+}
 
+void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
   // TODO: START - this code must go away.
   static int frame_num = 0;
-
   if (!joint_transforms_.empty()) {
     frame_num++;
     if (frame_num >= joint_transforms_[0].size()) frame_num = 0;
   }
   // END
 
-  for (auto& obj : objects_) {
+  int sector_id = stabbing_tree_node->id;
+
+  // Outside
+  if (sector_id == 0) {
+    glEnable(GL_CULL_FACE);
+    terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
+    glDisable(GL_CULL_FACE);
+  }
+
+  vector<vector<Polygon>> convex_hulls;
+
+  Sector& s = sectors_[sector_id];
+
+  // TODO: sort objects from closest to farthest.
+  for (auto& obj : s.objects) {
+    obj->distance = length(camera_.position - obj->position);
+  }
+
+  std::sort(s.objects.begin(), s.objects.end(),
+            [] (const auto& lhs, const auto& rhs) {
+      return lhs->distance < rhs->distance;
+  });
+
+  static int bla = 1;
+  for (auto& obj : s.objects) {
     Mesh& mesh = obj->mesh;
+
+    if (!obj->polygons.empty()) {
+      bool occlude = false;
+      AABB aabb = GetObjectAABB(obj);
+      if (bla > 0 && obj->name == "stone_pillar.fbx") {
+        // CreateMeshFromAABB(aabb);
+        bla--;
+      }
+      for (auto& ch : convex_hulls) {
+        if (IsInConvexHull(aabb, ch)) {
+          occlude = true;
+          cout << "occlude: " << obj->name << endl;
+          break;
+        }
+      }
+      if (occlude) {
+        continue;
+      }
+    }
+
+    if (obj->occluder_id != -1) {
+      ConvexHull convex_hull = CreateConvexHullFromOccluder(obj->occluder_id, 
+        camera_.position);
+      if (!convex_hull.empty()) {
+        convex_hulls.push_back(convex_hull);
+        if (bla > 0) {
+          // CreateMeshFromConvexHull(convex_hull);
+          // bla = false;
+        }
+      }
+    }
+
+    if (!obj->draw) {
+      continue;
+    }
+
     GLuint program_id = mesh.shader;
     glUseProgram(program_id);
 
@@ -263,15 +362,44 @@ void Renderer::DrawObjects() {
       BindTexture("texture_sampler", program_id, texture_);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else if (program_id == shaders_["object"]) {
-      BindTexture("texture_sampler", program_id, building_texture_);
+      if (obj->name == "wooden_box.fbx") {
+        BindTexture("texture_sampler", program_id, wood_texture_);
+      } else if (obj->name == "tower_outer_wall.fbx") {
+        BindTexture("texture_sampler", program_id, building_texture_);
+      } else if (obj->name == "tower_inner_wall.fbx") {
+        BindTexture("texture_sampler", program_id, building_texture_);
+      } else if (obj->name == "stone_pillar.fbx") {
+        BindTexture("texture_sampler", program_id, granite_texture_);
+      }
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else {
-      // glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
       glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
-      // glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
     glBindVertexArray(0);
   }
+
+  mat4 ModelMatrix = translate(mat4(1.0), camera_.position);
+  mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
+  mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+  mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
+
+  // TODO: draw recursively.
+  for (auto& node : stabbing_tree_node->children) {
+    const Portal& p = portals_[node->portal_id];
+    
+    AABB aabb = GetAABBFromVertices(GetAllVerticesFromPolygon(p.polygons));
+
+    vec4 planes[6];
+    ExtractFrustumPlanes(MVP, planes);
+    if (CollideAABBFrustum(aabb, planes, camera_.position)) {
+      DrawSector(node);
+    }
+  }
+}
+
+void Renderer::DrawObjects() {
+  int current_sector_id = GetPlayerSector(camera_.position);
+  DrawSector(sectors_[current_sector_id].stabbing_tree);
 }
 
 void Renderer::DrawFBO(const FBO& fbo) {
@@ -355,6 +483,43 @@ void Renderer::Run(const function<void()>& process_frame) {
 
 
 
+shared_ptr<Object3D> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
+  int count = 0; 
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+  vector<unsigned int> indices;
+  for (auto& p : ch) {
+    int polygon_size = p.vertices.size();
+    cout << polygon_size << endl;
+    cout << p << endl;
+    for (int j = 1; j < polygon_size - 1; j++) {
+      vertices.push_back(p.vertices[0]);
+      uvs.push_back(vec2(0, 0));
+      // normals.push_back(p.normals[0]);
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j]);
+      uvs.push_back(vec2(0, 0));
+      // normals.push_back(p.normals[j]);
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j+1]);
+      uvs.push_back(vec2(0, 0));
+      // normals.push_back(p.normals[j+1]);
+      indices.push_back(count++);
+    }
+  }
+
+  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
+  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
+  sectors_[0].objects.push_back(obj);
+  return nullptr; 
+}
+
+shared_ptr<Object3D> Renderer::CreateMeshFromAABB(const AABB& aabb) {
+  return CreateCube(aabb.dimensions, aabb.point);
+}
 
 
 
@@ -442,10 +607,10 @@ shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   vector<unsigned int> indices(36);
   for (int i = 0; i < 36; i++) { indices[i] = i; }
 
-  Mesh mesh = CreateMesh(shaders_["object"], vertices, uvs, indices);
+  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
 
   shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, position);
-  objects_.push_back(obj);
+  sectors_[0].objects.push_back(obj);
   return obj; 
 }
 
@@ -479,11 +644,11 @@ shared_ptr<Object3D> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
   vector<unsigned int> indices(6);
   for (int i = 0; i < 6; i++) { indices[i] = i; }
 
-  Mesh mesh = CreateMesh(shaders_["object"], vertices, uvs, indices);
+  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
 
   // shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(2010, 20, 2000));
   shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
-  objects_.push_back(obj);
+  sectors_[0].objects.push_back(obj);
   return obj; 
 }
 
@@ -531,7 +696,7 @@ shared_ptr<Object3D> Renderer::CreateJoint(vec3 start, vec3 end) {
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
 
   shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, start);
-  objects_.push_back(obj);
+  sectors_[0].objects.push_back(obj);
   return obj; 
 }
 
@@ -635,7 +800,7 @@ void Renderer::LoadFbx(const std::string& filename, vec3 position) {
 
   // vec3 position = vec3(1990, 16, 2000);
   shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
-  objects_.push_back(obj);
+  sectors_[0].objects.push_back(obj);
   position += vec3(0, 0, 5);
 
   CreateSkeletonAux(translate(position), data.skeleton);
@@ -661,7 +826,7 @@ void Renderer::LoadFbx(const std::string& filename, vec3 position) {
   }
 }
 
-void Renderer::LoadStaticFbx(const std::string& filename, vec3 position) {
+Mesh Renderer::LoadFbxMesh(const std::string& filename) {
   FbxData data = FbxLoad(filename);
   auto& vertices = data.vertices;
   auto& uvs = data.uvs;
@@ -720,11 +885,20 @@ void Renderer::LoadStaticFbx(const std::string& filename, vec3 position) {
   for (int slot = 0; slot < 5; slot++) {
     glDisableVertexAttribArray(slot);
   }
+  m.polygons = data.polygons;
+  return m;
+}
+
+void Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id) {
+  Mesh m = LoadFbxMesh(filename);
 
   shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
-  obj->polygons = data.polygons;
+  obj->name = filename;
+  obj->polygons = m.polygons;
+  obj->occluder_id = occluder_id;
   obj->collide = true;
-  objects_.push_back(obj);
+
+  sectors_[sector_id].objects.push_back(obj);
   position += vec3(0, 0, 5);
 }
 
@@ -852,7 +1026,7 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
   }
 
   if (!inside) {
-    cout << "not inside" << endl;
+    // cout << "not inside" << endl;
     vec3 closest_ab = ClosestPtPointSegment(*player_pos, a, b);
     vec3 closest_bc = ClosestPtPointSegment(*player_pos, b, c);
     vec3 closest_ca = ClosestPtPointSegment(*player_pos, c, a);
@@ -881,7 +1055,7 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
       return true; 
     }
   }
-  cout << "inside" << endl;
+  // cout << "inside" << endl;
 
   float mag = dot(v, normal);
   *magnitude = r + mag + 0.001f;
@@ -891,13 +1065,15 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
 }
 
 void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
+  int current_sector_id = GetPlayerSector(camera_.position);
+
   bool collision = true;
   for (int i = 0; i < 5 && collision; i++) {
     vector<vec3> collision_resolutions;
     vector<float> magnitudes;
     collision = false;
 
-    for (auto& obj : objects_) {
+    for (auto& obj : sectors_[current_sector_id].objects) {
       if (!obj->collide) {
         continue;
       }
@@ -906,7 +1082,7 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
         float magnitude;
         if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
         // if (IntersectWall(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
-          cout << "Intersect" << endl;
+          // cout << "Intersect" << endl;
           collision = true;
           collision_resolutions.push_back(collision_resolution);
           magnitudes.push_back(magnitude);
@@ -928,7 +1104,7 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
     }
 
     if (min_index != -1) {
-      cout << min_index << " - choice: " << collision_resolutions[min_index] << endl;
+      // cout << min_index << " - choice: " << collision_resolutions[min_index] << endl;
       vec3 collision_vector = normalize(collision_resolutions[min_index] - *player_pos);
       *player_speed += abs(dot(*player_speed, collision_vector)) * collision_vector;
       *player_pos = collision_resolutions[min_index];
@@ -938,6 +1114,61 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
       }
     }
   }
-  cout << "=========" << endl;
+  // cout << "=========" << endl;
 }
 
+void Renderer::LoadSector(const std::string& filename, int id, vec3 position) {
+  Mesh m = LoadFbxMesh(filename);
+
+  Sector s;
+  s.id = id;
+
+  // TODO: additionally, calculate sphere bounding box and OBB for convex hull. 
+  // TODO: polygons are being loaded as triangles. Correct that.
+  s.convex_hull = m.polygons;
+  for (auto& poly : s.convex_hull) {
+    for (auto& v : poly.vertices) {
+      v += position;
+    }
+  }
+
+  s.stabbing_tree = make_shared<StabbingTreeNode>(1, 0, false);
+  s.stabbing_tree->children.push_back(make_shared<StabbingTreeNode>(0, 0, true));
+  sectors_[id] = s;
+}
+
+void Renderer::LoadPortal(const std::string& filename, int id, vec3 position) {
+  Mesh m = LoadFbxMesh(filename);
+
+  Portal p;
+  p.polygons = m.polygons;
+  for (auto& poly : p.polygons) {
+    for (auto& v : poly.vertices) {
+      v += position;
+    }
+  }
+  portals_[id] = p;
+}
+
+void Renderer::LoadOccluder(const std::string& filename, int id, 
+  vec3 position) {
+  Mesh m = LoadFbxMesh(filename);
+
+  Occluder o;
+  o.polygons = m.polygons;
+  for (auto& poly : o.polygons) {
+    for (auto& v : poly.vertices) {
+      v += position;
+    }
+  }
+  occluders_[id] = o;
+}
+
+int Renderer::GetPlayerSector(const vec3& player_pos) {
+  for (int i = 1; i < sectors_.size(); i++) {
+    if (IsInConvexHull(player_pos, sectors_[i].convex_hull)) {
+      return i;
+    }
+  }
+  return 0;
+}

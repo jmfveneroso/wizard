@@ -36,3 +36,13 @@ bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6],
 vec3 ClosestPtPointTriangle(vec3 p, vec3 a, vec3 b, vec3 c, bool* inside);
 
 vec3 ClosestPtPointSegment(vec3 c, vec3 a, vec3 b);
+
+bool IsBehindPlane(const vec3& p, const vec3& plane_point, const vec3& normal);
+
+bool IsInConvexHull(const vec3& p, vector<Polygon> polygons);
+
+bool IsInConvexHull(const AABB& aabb, vector<Polygon> polygons);
+
+AABB GetAABBFromVertices(const vector<vec3>& vertices);
+
+Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction);

@@ -171,3 +171,75 @@ vec3 ClosestPtPointSegment(vec3 c, vec3 a, vec3 b) {
   // Compute projected position from the clamped t
   return a + t * ab;
 }
+
+bool IsBehindPlane(const vec3& p, const vec3& plane_point, const vec3& normal) {
+  float d = dot(plane_point, normal);
+  return dot(p, normal) - d < 0;
+}
+
+bool IsInConvexHull(const vec3& p, vector<Polygon> polygons) {
+  for (const Polygon& poly : polygons) {
+    const vec3& plane_point = poly.vertices[0];
+    const vec3& normal = poly.normals[0];
+    if (!IsBehindPlane(p, plane_point, normal)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool IsInConvexHull(const AABB& aabb, vector<Polygon> polygons) {
+  vector<vec3> points {
+    { aabb.point.x                    , aabb.point.y                    , aabb.point.z                     },
+    { aabb.point.x + aabb.dimensions.x, aabb.point.y                    , aabb.point.z                     },
+    { aabb.point.x                    , aabb.point.y + aabb.dimensions.y, aabb.point.z                     },
+    { aabb.point.x + aabb.dimensions.x, aabb.point.y + aabb.dimensions.y, aabb.point.z                     },
+    { aabb.point.x                    , aabb.point.y                    , aabb.point.z + aabb.dimensions.z },
+    { aabb.point.x + aabb.dimensions.x, aabb.point.y                    , aabb.point.z + aabb.dimensions.z },
+    { aabb.point.x                    , aabb.point.y + aabb.dimensions.y, aabb.point.z + aabb.dimensions.z },
+    { aabb.point.x + aabb.dimensions.x, aabb.point.y + aabb.dimensions.y, aabb.point.z + aabb.dimensions.z }
+  };
+
+  for (auto& p : points) {
+    if (!IsInConvexHull(p, polygons)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+AABB GetAABBFromVertices(const vector<vec3>& vertices) {
+  AABB aabb;
+
+  vec3 min_v = vec3(999999.0f, 999999.0f, 999999.0f);
+  vec3 max_v = vec3(-999999.0f, -999999.0f, -999999.0f);
+  for (const vec3& v : vertices) {
+    min_v.x = std::min(min_v.x, v.x);
+    max_v.x = std::max(max_v.x, v.x);
+    min_v.y = std::min(min_v.y, v.y);
+    max_v.y = std::max(max_v.y, v.y);
+    min_v.z = std::min(min_v.z, v.z);
+    max_v.z = std::max(max_v.z, v.z);
+  }
+
+  aabb.point = min_v;
+  aabb.dimensions = max_v - min_v;
+  return aabb;
+}
+
+Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
+  vec3 normal = normalize(cross(a - b, a - c));
+  if (dot(normal, direction) < 0) {
+    normal = -normal;  
+  }
+
+  Polygon poly;
+  poly.vertices.push_back(a);
+  poly.vertices.push_back(b);
+  poly.vertices.push_back(c);
+  poly.normals.push_back(normal);
+  poly.normals.push_back(normal);
+  poly.normals.push_back(normal);
+  return poly;
+
+}

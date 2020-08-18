@@ -54,6 +54,7 @@ struct Mesh {
   GLuint element_buffer_;
   GLuint vao_;
   GLuint num_indices;
+  vector<Polygon> polygons;
   Mesh() {}
 };
 
@@ -61,11 +62,16 @@ struct Object3D {
   Mesh mesh;
   vec3 position;
   vec3 rotation;
+  float distance;
   vector<Polygon> polygons;
+  bool collide = false;
+  string name;
+  int occluder_id = -1;
+  bool draw = true;
   Object3D() {}
   Object3D(Mesh mesh, vec3 position) : mesh(mesh), position(position) {}
-  Object3D(Mesh mesh, vec3 position, vec3 rotation) : mesh(mesh), position(position), rotation(rotation) {}
-  bool collide = false;
+  Object3D(Mesh mesh, vec3 position, vec3 rotation) : mesh(mesh), 
+    position(position), rotation(rotation) {}
 };
 
 struct FBO {
@@ -80,6 +86,41 @@ struct FBO {
   FBO(GLuint width, GLuint height) : width(width), height(height) {}
 };
 
+// http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
+struct StabbingTreeNode {
+  int id;
+
+  int portal_id;
+
+  // Is this sector in front or behind the portal.
+  bool behind;
+
+  vector<shared_ptr<StabbingTreeNode>> children;
+  StabbingTreeNode(int id, int portal_id, bool behind) : id(id), 
+    portal_id(portal_id), behind(behind) {}
+};
+
+struct Sector {
+  int id;
+
+  // Starting from this sector, which sectors are visible?
+  shared_ptr<StabbingTreeNode> stabbing_tree;
+  
+  // Vertices inside the convex hull are inside the sector.
+  vector<Polygon> convex_hull;
+
+  // Objects inside the sector.
+  vector<shared_ptr<Object3D>> objects;
+};
+
+struct Portal {
+  vector<Polygon> polygons;
+};
+
+struct Occluder {
+  vector<Polygon> polygons;
+};
+
 class Renderer {
   GLFWwindow* window_;
   int window_width_ = WINDOW_WIDTH;
@@ -91,12 +132,18 @@ class Renderer {
   vector<vector<mat4>> joint_transforms_;
   GLuint texture_;
   GLuint building_texture_;
+  GLuint granite_texture_;
+  GLuint wood_texture_;
   shared_ptr<Terrain> terrain_;
+
+  // Sectors indexed by id.
+  unordered_map<int, Sector> sectors_;
+  unordered_map<int, Portal> portals_;
+  unordered_map<int, Occluder> occluders_;
 
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, FBO> fbos_;
   unordered_map<string, Mesh> meshes_;
-  std::vector<shared_ptr<Object3D>> objects_;
 
   void CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint> node);
   void LoadShaders(const std::string& directory);
@@ -110,6 +157,13 @@ class Renderer {
   
   void DrawFBO(const FBO& fbo);
   void DrawObjects();
+  Mesh LoadFbxMesh(const std::string& filename);
+  int GetPlayerSector(const vec3& player_pos);
+  void DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node);
+  ConvexHull CreateConvexHullFromOccluder(int occluder_id, 
+    const vec3& player_pos);
+  shared_ptr<Object3D> CreateMeshFromConvexHull(const ConvexHull& ch);
+  shared_ptr<Object3D> CreateMeshFromAABB(const AABB& aabb);
 
  public:
   void Init(const string& shader_dir);  
@@ -119,7 +173,11 @@ class Renderer {
   shared_ptr<Object3D> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
   shared_ptr<Object3D> CreateJoint(vec3 start, vec3 end);
   void LoadFbx(const std::string& filename, vec3 position);
-  void LoadStaticFbx(const std::string& filename, vec3 position);
+  void LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id = -1);
+  void LoadSector(const std::string& filename, int id, vec3 position);
+  void LoadPortal(const std::string& filename, int id, vec3 position);
+  void LoadOccluder(const std::string& filename, int id, vec3 position);
+
   void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
   
   GLFWwindow* window() { return window_; }

@@ -1,3 +1,6 @@
+#ifndef __UTIL_HPP__
+#define __UTIL_HPP__
+
 #include <stdio.h>
 #include <iostream>
 #include <exception>
@@ -23,10 +26,33 @@
 #include <utility>
 #include <png.h>
 #include "boost/filesystem.hpp"
+#include <boost/lexical_cast.hpp>  
 #include <boost/algorithm/string/predicate.hpp>
 
 using namespace std;
 using namespace glm;
+
+struct Edge {
+  vec3 a;
+  vec3 b;
+  unsigned int a_id;
+  unsigned int b_id;
+  vec3 a_normal;
+  vec3 b_normal;
+  Edge() {}
+  Edge(vec3 a, vec3 b, unsigned int a_id, unsigned int b_id,
+    vec3 a_normal, vec3 b_normal) : a(a), b(b), a_id(a_id), b_id(b_id), 
+    a_normal(a_normal), b_normal(b_normal) {}
+};
+
+struct Polygon {
+  vector<unsigned int> vertex_ids;
+  vector<vec3> vertices;
+  vector<vec3> normals;
+  vector<vec3> uvs;
+};
+
+using ConvexHull = vector<Polygon>;
 
 GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
@@ -40,6 +66,14 @@ ostream& operator<<(ostream& os, const vec3& v);
 ostream& operator<<(ostream& os, const ivec3& v);
 ostream& operator<<(ostream& os, const vec4& v);
 ostream& operator<<(ostream& os, const mat4& m);
+ostream& operator<<(ostream& os, const Edge& e);
+ostream& operator<<(ostream& os, const Polygon& p);
+ostream& operator<<(ostream& os, const ConvexHull& ch);
 
 template<typename First, typename ...Rest>
 void sample_log(First&& first, Rest&& ...rest);
+vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
+vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
+vector<Edge> GetPolygonEdges(const Polygon& polygon);
+
+#endif // __UTIL_HPP__

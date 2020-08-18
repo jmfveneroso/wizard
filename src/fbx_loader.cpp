@@ -194,11 +194,14 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
     data->normals.push_back(normals[j+1]);
 
     Polygon polygon;
+    polygon.vertex_ids.push_back(vertices[0]);
     polygon.vertices.push_back(data->vertices[vertices[0]]);
     polygon.normals.push_back(normals[0]);
     polygon.vertices.push_back(data->vertices[vertices[j]]);
+    polygon.vertex_ids.push_back(vertices[j]);
     polygon.normals.push_back(normals[j+1]);
     polygon.vertices.push_back(data->vertices[vertices[j+1]]);
+    polygon.vertex_ids.push_back(vertices[j+1]);
     polygon.normals.push_back(normals[j+1]);
     data->polygons.push_back(polygon);
   }

@@ -188,6 +188,32 @@ ostream& operator<<(ostream& os, const mat4& m) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const Polygon& p) {
+  os << "==Polygon==" << endl;
+  for (auto& v : p.vertices) {
+    os << v << endl;
+  }
+  return os;
+}
+
+ostream& operator<<(ostream& os, const ConvexHull& ch) {
+  os << "==Convex Hull==" << endl;
+  for (auto& v : ch) {
+    os << v << endl;
+  }
+  return os;
+}
+
+ostream& operator<<(ostream& os, const Edge& e) {
+  os << "a: " << e.a << endl;
+  os << "b: " << e.b << endl;
+  os << "a_id: " << e.a_id << endl;
+  os << "b_id: " << e.b_id << endl;
+  os << "a_normal: " << e.a_normal << endl;
+  os << "b_normal: " << e.b_normal << endl;
+  return os;
+}
+
 template<typename First, typename ...Rest>
 void sample_log(First&& first, Rest&& ...rest) {
   static int i = 0;
@@ -195,3 +221,16 @@ void sample_log(First&& first, Rest&& ...rest) {
   cout << forward<First>(first) << endl;
   sample_log(forward<Rest>(rest)...);
 }
+
+vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon) {
+  return polygon.vertices;
+}
+
+vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons) {
+  vector<vec3> result;
+  for (const Polygon& p : polygons) {
+    result.insert(result.end(), p.vertices.begin(), p.vertices.end());
+  }
+  return result;
+}
+

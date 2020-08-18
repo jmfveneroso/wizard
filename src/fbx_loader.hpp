@@ -36,12 +36,6 @@ using namespace glm;
 // - Spatial transformation matrices: https://www.brainvoyager.com/bv/doc/UsersGuide/CoordsAndTransforms/SpatialTransformationMatrices.html
 // - OpenGL Matrices: http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#scaling-matrices
 
-struct Polygon {
-  vector<vec3> vertices;
-  vector<vec3> normals;
-  vector<vec3> uvs;
-};
-
 struct Keyframe {
   int time;
   vector<mat4> transforms;
