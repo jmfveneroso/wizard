@@ -151,7 +151,7 @@ int main() {
   renderer.Init("shaders");
   // renderer.CreateCube(vec3(1.0, 1.0, 1.0), vec3(2010, 275, 2010));
   // renderer.CreateCube(vec3(100, 20, 100), vec3(2040, 20, 2040));
-  renderer.LoadFbx("fish10.fbx", vec3(2005, 180, 2010));
+  renderer.LoadFbx("fish10.fbx", vec3(2005, 230, 2010));
 
   // renderer.LoadStaticFbx("tower_floor.fbx", vec3(2000, 172, 2000));
 

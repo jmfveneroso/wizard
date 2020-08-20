@@ -1,17 +1,5 @@
 #include "collision.hpp"
 
-// (1) Find the 6 frustum plane equations.
-
-// (2) For an AABB box
-
-//     (2.1) For a plane 
-
-//           (2.1.1) Find the P and N vertices (diagonal)
-
-//                   (2.1.2) Project the plane normal on to the box axes
-
-//                   (2.2.2) 
-
 ostream& operator<<(ostream& os, const AABB& aabb) {
   os << "Point: " << aabb.point << endl;
   os << "Dimensions: " << aabb.dimensions << endl;
@@ -31,23 +19,16 @@ void NormalizePlane(vec4& plane) {
 // https://stackoverflow.com/questions/12836967/extracting-view-frustum-planes-hartmann-gribbs-method
 // Hartmann & Gribbs method:
 // http://www.cs.otago.ac.nz/postgrads/alexis/planeExtraction.pdf
-void ExtractFrustumPlanes(const mat4 MVP, vec4 planes[6]) {
-  for (int i = 4; i--;) planes[0][i] = MVP[i][3] + MVP[i][0];
-  for (int i = 4; i--;) planes[1][i] = MVP[i][3] - MVP[i][0]; 
-  for (int i = 4; i--;) planes[2][i] = MVP[i][3] + MVP[i][1];
-  for (int i = 4; i--;) planes[3][i] = MVP[i][3] - MVP[i][1];
-  for (int i = 4; i--;) planes[4][i] = MVP[i][3] + MVP[i][2];
-  for (int i = 4; i--;) planes[5][i] = MVP[i][3] - MVP[i][2];
+void ExtractFrustumPlanes(const mat4& MVP, vec4 planes[6]) {
+  for (int i = 4; i--;) planes[0][i] = MVP[i][3] + MVP[i][0]; // Left.
+  for (int i = 4; i--;) planes[1][i] = MVP[i][3] - MVP[i][0]; // Right.
+  for (int i = 4; i--;) planes[2][i] = MVP[i][3] + MVP[i][1]; // Top.
+  for (int i = 4; i--;) planes[3][i] = MVP[i][3] - MVP[i][1]; // Bottom.
+  for (int i = 4; i--;) planes[4][i] = MVP[i][3] + MVP[i][2]; // Near.
+  for (int i = 4; i--;) planes[5][i] = MVP[i][3] - MVP[i][2]; // Far.
   for (int i = 0; i < 6; i++) {
     NormalizePlane(planes[i]);
   }
-}
-
-bool IsPointInAABB(const vec3& p, const AABB& aabb) {
-  vec3 aabb_max = aabb.point + aabb.dimensions;
-  return p.x >= aabb.point.x && p.x <= aabb_max.x &&
-      p.x >= aabb.point.y && p.x <= aabb_max.y &&
-      p.x >= aabb.point.z && p.x <= aabb_max.z;
 }
 
 bool IsAABBIntersectingAABB(const AABB& aabb1, const AABB& aabb2) {
@@ -83,66 +64,74 @@ bool TestSphereAABBIntersection(const BoundingSphere& s, const AABB& aabb) {
   return length(p - s.center) < s.radius;
 }
 
-bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6], 
-  const vec3& player_pos) {
-  vec3 points[8] = {
-    vec3(aabb.point),                                                 // x_min, y_min, z_min
-    vec3(aabb.point + vec3(aabb.dimensions.x, 0, 0)),                 // x_max, y_min, z_min
-    vec3(aabb.point + vec3(0, aabb.dimensions.y, 0)),                 // x_min, y_max, z_min
-    vec3(aabb.point + vec3(aabb.dimensions.x, aabb.dimensions.y, 0)), // x_max, y_max, z_min
-    vec3(aabb.point + vec3(0, 0, aabb.dimensions.z)),                 // x_min, y_min, z_max
-    vec3(aabb.point + vec3(aabb.dimensions.x, 0, aabb.dimensions.z)), // x_max, y_min, z_max
-    vec3(aabb.point + vec3(0, aabb.dimensions.y, aabb.dimensions.z)), // x_min, y_max, z_max
-    vec3(aabb.point + aabb.dimensions)                                // x_max, y_max, z_max
-  };
+bool TestSphereTriangleIntersection(const BoundingSphere& s, const vector<vec3>& v) {
+  bool inside;
+  vec3 p = ClosestPtPointTriangle(s.center, v[0], v[1], v[2], &inside);
+  return length(p - s.center) < s.radius;
+}
 
+bool IsPointInAABB(const vec3& p, const AABB& aabb) {
+  vec3 aabb_max = aabb.point + aabb.dimensions;
+  return p.x >= aabb.point.x && p.x <= aabb_max.x &&
+      p.y >= aabb.point.y && p.y <= aabb_max.y &&
+      p.z >= aabb.point.z && p.z <= aabb_max.z;
+}
+
+// More or less based on:
+// https://old.cescg.org/CESCG-2002/DSykoraJJelinek/index.html#s6
+bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[], 
+  const vec3& player_pos) {
   if (IsPointInAABB(player_pos, aabb)) {
     return true;
   }
 
-  static int pn_vertex[16][2] = {
-    // Diagonals.
-    { 7, 0 },
-    { 3, 4 },
-    { 5, 2 },
-    { 1, 6 },
-    // Top.
-    { 4, 5 },
-    { 5, 7 },
-    { 7, 6 },
-    { 6, 4 },
-    // Heights.
-    { 0, 4 },
-    { 1, 5 },
-    { 2, 6 },
-    { 3, 7 },
-    // Bottom.
-    { 0, 1 },
-    { 1, 3 },
-    { 3, 2 },
-    { 2, 0 },
+  static vec3 offsets[8] = {
+    vec3(0, 0, 0),
+    vec3(1, 0, 0),
+    vec3(0, 1, 0),
+    vec3(1, 1, 0),
+    vec3(0, 0, 1),
+    vec3(1, 0, 1),
+    vec3(0, 1, 1),
+    vec3(1, 1, 1) 
   };
 
-  for (int i = 0; i < 16; i++) {
-    vec3 p_vertex = points[pn_vertex[i][0]] - player_pos;
-    vec3 n_vertex = points[pn_vertex[i][1]] - player_pos;
-  
-    bool inside = true;
-    for (int i = 0; i < 6; i++ ) {
-      // TODO: apparently its working.
-      if (i == 2) continue; // Bot culling is not working properly.
-      if (i == 3) continue; // Top culling is not working properly.
-      const vec4& plane = planes[i];
-      float p_result = dot(p_vertex, vec3(plane.x, plane.y, plane.z)) + plane.w;
-      float n_result = dot(n_vertex, vec3(plane.x, plane.y, plane.z)) + plane.w;
-      if (p_result < 0 && n_result < 0) { // Completely outside.
-        inside = false;
+  // Diagonals near vertex for the diagonals.
+  static int n_vertex_idx[8] = { 7, 3, 5, 1, 6, 2, 4, 0 };
+
+  for (int i = 0; i < 6; i++ ) {
+    const vec4& p = planes[i];
+    int idx = ((p.x < 0) ? 4 : 0) + ((p.y < 0) ? 2 : 0) + ((p.z < 0) ? 1 : 0);
+    vec3 n_vertex = aabb.point + aabb.dimensions * offsets[n_vertex_idx[idx]]
+      - player_pos;
+    
+    // All planes except for the near and far planes pass through the player
+    // position, so w should be 0 for them. In the near and far cases w is
+    // the near and far clipping distance.
+    if (dot(n_vertex, vec3(p.x, p.y, p.z)) + p.w < 0) { // Completely outside.
+      return false;
+    }
+  }
+  return true;
+}
+
+bool CollideTriangleFrustum(const vector<vec3>& v, const vec4 planes[],
+  const vec3& player_pos) {
+  for (int i = 0; i < 6; i++ ) {
+    const vec4& p = planes[i];
+
+    bool all_outside = true;
+    for (int j = 0; j < 3; j++ ) {
+      if (dot(v[j] - player_pos, vec3(p.x, p.y, p.z)) + p.w > 0) {
+        all_outside = false;
         break;
       }
     }
-    if (inside) return true;
+    if (all_outside) {
+      return false;
+    }
   }
-  return false;
+  return true;
 }
 
 vec3 ClosestPtPointTriangle(vec3 p, vec3 a, vec3 b, vec3 c, bool* inside) {

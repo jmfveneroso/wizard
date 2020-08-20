@@ -98,7 +98,6 @@ void Renderer::Init(const string& shader_dir) {
 
   terrain_ = make_shared<Terrain>(shaders_["terrain"], shaders_["water"]);
 
-
   Sector s;
   s.id = 0;
   s.stabbing_tree = make_shared<StabbingTreeNode>(0, 0, true);
@@ -478,23 +477,19 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
 
     // Frustum cull.
     if (!CollideAABBFrustum(aabb, frustum_planes_, camera_.position)) {
+      cout << "Occluded by frustum" << obj->name << endl;
       continue;
     }
 
     Mesh mesh;
     int lod_level = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
-    cout << "name: " << obj->name<< endl;
-    cout << "lod_level: " << lod_level << endl;
     for (int i = lod_level; i >= 0; i--) {
       if (obj->lods[i].vao_ == 0) {
         continue;
       }
-      cout << "winning lod: " << i << endl;
       mesh = obj->lods[i];
       break;
     }
-    cout << "d: " << obj->distance << endl;
-    cout << "===============" << endl;
 
     GLuint program_id = mesh.shader;
     glUseProgram(program_id);
@@ -546,10 +541,24 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
   // TODO: draw recursively.
   for (auto& node : stabbing_tree_node->children) {
     const Portal& p = portals_[node->portal_id];
-    
-    AABB aabb = GetAABBFromVertices(GetAllVerticesFromPolygon(p.polygons));
 
-    if (CollideAABBFrustum(aabb, frustum_planes_, camera_.position)) {
+    BoundingSphere sphere = BoundingSphere(camera_.position, 0.75f);
+    bool in_frustum = false; 
+    for (auto& poly : p.polygons) {
+      if (TestSphereTriangleIntersection(sphere, poly.vertices)) {
+        in_frustum = true;
+        break;
+      }
+
+      if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
+        camera_.position)) {
+        in_frustum = true;
+        break;
+      }
+    }
+    
+
+    if (in_frustum) {
       DrawSector(node);
     }
   }

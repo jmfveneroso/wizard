@@ -526,6 +526,18 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
       clipmap->valid_cols[x] = true;
     }
     clipmap->invalid = false;
+
+    // Update max and min height.
+    clipmap->min_height = MAX_HEIGHT;
+    clipmap->max_height = -MAX_HEIGHT;
+    const int sampling_rate = 1;
+    for (int x = 0; x < CLIPMAP_SIZE + 1; x += sampling_rate) {
+      for (int y = 0; y < CLIPMAP_SIZE + 1; y += sampling_rate) {
+        float h = clipmap->row_heights[y][x];
+        clipmap->min_height = std::min(clipmap->min_height, h);
+        clipmap->max_height = std::max(clipmap->min_height, h);
+      }
+    }
   }
 }
 
@@ -542,10 +554,10 @@ bool Terrain::FrustumCullSubregion(shared_ptr<Clipmap> clipmap,
 
   AABB aabb;
   aabb.point.x = top_lft.x;
-  aabb.point.y = -MAX_HEIGHT;
+  aabb.point.y = clipmap->min_height * MAX_HEIGHT;
   aabb.point.z = top_lft.y;
   aabb.dimensions.x = dimensions.x;
-  aabb.dimensions.y = MAX_HEIGHT;
+  aabb.dimensions.y = (clipmap->max_height - clipmap->min_height) * MAX_HEIGHT;
   aabb.dimensions.z = dimensions.y;
 
   // TODO: instead of extracting the planes and passing them to the Collide
@@ -599,6 +611,10 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
     mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
     mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
     mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
+    if (clipmap->min_height > 5) {
+      continue;
+    }
+
     if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
       continue;
     }

@@ -61,6 +61,9 @@ struct Clipmap {
   GLuint blending_texture;
   GLuint coarser_blending_texture;
 
+  float min_height;
+  float max_height;
+
   bool invalid = true;
 
   Clipmap(int level) : level(level) {}

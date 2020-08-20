@@ -35,9 +35,12 @@ struct BoundingSphere {
 
 ostream& operator<<(ostream& os, const AABB& v);
 
-void ExtractFrustumPlanes(const mat4 MVP, vec4 planes[6]);
+void ExtractFrustumPlanes(const mat4& MVP, vec4 planes[6]);
 
-bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6], 
+bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[], 
+  const vec3& player_pos);
+
+bool CollideTriangleFrustum(const vector<vec3>& v, const vec4 planes[],
   const vec3& player_pos);
 
 vec3 ClosestPtPointTriangle(vec3 p, vec3 a, vec3 b, vec3 c, bool* inside);
@@ -57,6 +60,8 @@ bool IsPointInAABB(const vec3& p, const AABB& aabb);
 bool IsAABBIntersectingAABB(const AABB& aabb1, const AABB& aabb2);
 
 bool TestSphereAABBIntersection(const BoundingSphere& s, const AABB& aabb);
+
+bool TestSphereTriangleIntersection(const BoundingSphere& s, const vector<vec3>& v);
 
 Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction);
 
