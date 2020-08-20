@@ -23,9 +23,11 @@
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 
 #define PLAYER_SPEED 0.03f
+// #define PLAYER_SPEED 0.3f
 // #define PLAYER_HEIGHT 1.5
 #define PLAYER_HEIGHT 0.75
 #define GRAVITY 0.016
+// #define JUMP_FORCE 3.0f
 #define JUMP_FORCE 0.3f
 
 using namespace std;
@@ -142,13 +144,14 @@ void ProcessGameInput(){
   UpdateForces();
 
   renderer.SetCamera(Camera(player_.position + vec3(0, 0.75, 0), direction, up));
+  // cout << player_.position << endl;
 }
 
 int main() {
   renderer.Init("shaders");
   // renderer.CreateCube(vec3(1.0, 1.0, 1.0), vec3(2010, 275, 2010));
   // renderer.CreateCube(vec3(100, 20, 100), vec3(2040, 20, 2040));
-  renderer.LoadFbx("fish10.fbx", vec3(2042, 180, 2010));
+  renderer.LoadFbx("fish10.fbx", vec3(2005, 180, 2010));
 
   // renderer.LoadStaticFbx("tower_floor.fbx", vec3(2000, 172, 2000));
 
@@ -169,7 +172,7 @@ int main() {
   renderer.LoadOccluder("tower_first_floor_occluder.fbx", 0,
     vec3(2042, 172.8, 2010));
 
-  renderer.LoadStaticFbx("tower_outer_wall.fbx", vec3(2042, 172.8, 2010), 0, 0);
+  int id = renderer.LoadStaticFbx("tower_outer_wall.fbx", vec3(2042, 172.8, 2010), 0, 0);
 
   renderer.LoadStaticFbx("tower_inner_wall.fbx", vec3(2042, 172.8, 2010), 1);
 
@@ -183,7 +186,11 @@ int main() {
 
   renderer.LoadStaticFbx("stone_pillar.fbx", vec3(2052, 180, 2050), 0);
 
+  renderer.LoadLOD("tower_outer_wall_lod0.fbx", id, 0, 1);
+
   renderer.CreateCube(vec3(10, 10, 10), vec3(2000, 200, 2000));
+
+  renderer.BuildOctree();
 
   renderer.Run(ProcessGameInput);
   return 0;

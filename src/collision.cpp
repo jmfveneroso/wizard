@@ -43,6 +43,46 @@ void ExtractFrustumPlanes(const mat4 MVP, vec4 planes[6]) {
   }
 }
 
+bool IsPointInAABB(const vec3& p, const AABB& aabb) {
+  vec3 aabb_max = aabb.point + aabb.dimensions;
+  return p.x >= aabb.point.x && p.x <= aabb_max.x &&
+      p.x >= aabb.point.y && p.x <= aabb_max.y &&
+      p.x >= aabb.point.z && p.x <= aabb_max.z;
+}
+
+bool IsAABBIntersectingAABB(const AABB& aabb1, const AABB& aabb2) {
+  vec3 aabb1_min = aabb1.point;
+  vec3 aabb1_max = aabb1.point + aabb1.dimensions;
+  vec3 aabb2_min = aabb2.point;
+  vec3 aabb2_max = aabb2.point + aabb2.dimensions;
+  for (int i = 0; i < 3; i++) {
+    if (aabb1_max[i] < aabb2_min[i]) return false;
+    if (aabb1_min[i] > aabb2_max[i]) return false;
+  }
+  return true;
+}
+
+vec3 ClosestPtPointAABB(const vec3& p, const AABB& aabb) {
+  vec3 aabb_min = aabb.point;
+  vec3 aabb_max = aabb.point + aabb.dimensions;
+  vec3 q;
+
+  // For each coordinate axis, if the point coordinate value is
+  // outside box, clamp it to the box, else keep it as is
+  for (int i = 0; i < 3; i++) {
+    float v = p[i];
+    if (v < aabb_min[i]) v = aabb_min[i]; // v = max(v, b.min[i])
+    if (v > aabb_max[i]) v = aabb_max[i]; // v = min(v, b.max[i])
+    q[i] = v;
+  }
+  return q;
+}
+
+bool TestSphereAABBIntersection(const BoundingSphere& s, const AABB& aabb) {
+  vec3 p = ClosestPtPointAABB(s.center, aabb);
+  return length(p - s.center) < s.radius;
+}
+
 bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6], 
   const vec3& player_pos) {
   vec3 points[8] = {
@@ -55,6 +95,10 @@ bool CollideAABBFrustum(const AABB& aabb, const vec4 planes[6],
     vec3(aabb.point + vec3(0, aabb.dimensions.y, aabb.dimensions.z)), // x_min, y_max, z_max
     vec3(aabb.point + aabb.dimensions)                                // x_max, y_max, z_max
   };
+
+  if (IsPointInAABB(player_pos, aabb)) {
+    return true;
+  }
 
   static int pn_vertex[16][2] = {
     // Diagonals.
@@ -241,5 +285,23 @@ Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
   poly.normals.push_back(normal);
   poly.normals.push_back(normal);
   return poly;
+}
 
+BoundingSphere GetBoundingSphereFromVertices(
+  const vector<vec3>& vertices) {
+  BoundingSphere bounding_sphere;
+  bounding_sphere.center = vec3(0, 0, 0);
+
+  float num_vertices = vertices.size();
+  for (const vec3& v : vertices) {
+    bounding_sphere.center += v;
+  }
+  bounding_sphere.center *= 1.0f / num_vertices;
+  
+  bounding_sphere.radius = 0.0f;
+  for (const vec3& v : vertices) {
+    bounding_sphere.radius = std::max(bounding_sphere.radius, 
+      length(v - bounding_sphere.center));
+  }
+  return bounding_sphere;
 }

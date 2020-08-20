@@ -255,6 +255,15 @@ ConvexHull Renderer::CreateConvexHullFromOccluder(int occluder_id,
   return convex_hull;
 }
 
+int Renderer::GetPlayerSector(const vec3& player_pos) {
+  for (int i = 1; i < sectors_.size(); i++) {
+    if (IsInConvexHull(player_pos, sectors_[i].convex_hull)) {
+      return i;
+    }
+  }
+  return 0;
+}
+
 AABB GetObjectAABB(shared_ptr<Object3D> obj) {
   vector<vec3> vertices;
   for (auto& p : obj->polygons) {
@@ -264,6 +273,132 @@ AABB GetObjectAABB(shared_ptr<Object3D> obj) {
   }
   return GetAABBFromVertices(vertices);
 }
+
+BoundingSphere GetObjectBoundingSphere(shared_ptr<Object3D> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
+const vector<vec3> kOctreeNodeOffsets = {
+  //    Z   Y   X
+  vec3(-1, -1, -1), // 0 0 0
+  vec3(-1, -1, +1), // 0 0 1
+  vec3(-1, +1, -1), // 0 1 0
+  vec3(-1, +1, +1), // 0 1 1
+  vec3(+1, -1, -1), // 1 0 0
+  vec3(+1, -1, +1), // 1 0 1
+  vec3(+1, +1, -1), // 1 1 0
+  vec3(+1, +1, +1), // 1 1 1
+};
+
+void Renderer::InsertObjectInOctree(shared_ptr<OctreeNode> octree_node, 
+  shared_ptr<Object3D> object, int depth) {
+  int index = 0, straddle = 0;
+  cout << "--- Octree depth: " << depth << endl;
+  cout << "--- Octree center: " << octree_node->center << endl;
+  cout << "--- Octree radius: " << octree_node->half_dimensions << endl;
+
+  // Compute the octant number [0..7] the object sphere center is in
+  // If straddling any of the dividing x, y, or z planes, exit directly
+  for (int i = 0; i < 3; i++) {
+    float delta = object->bounding_sphere.center[i] - octree_node->center[i];
+    if (abs(delta) < object->bounding_sphere.radius) {
+      straddle = 1;
+      break;
+    }
+
+    if (delta > 0.0f) index |= (1 << i); // ZYX
+  }
+
+  if (!straddle && depth < 8) {
+    // Fully contained in existing child node; insert in that subtree
+    if (octree_node->children[index] == nullptr) {
+      octree_node->children[index] = make_shared<OctreeNode>(
+        octree_node->center + kOctreeNodeOffsets[index] * 
+          octree_node->half_dimensions * 0.5f, 
+        octree_node->half_dimensions * 0.5f);
+    }
+    InsertObjectInOctree(octree_node->children[index], object, depth + 1);
+  } else {
+    // Straddling, or no child node to descend into, so
+    // link object into linked list at this node
+    octree_node->objects.push_back(object);
+    cout << "Object: " << object->name << " inserted in the Octree" << endl;
+    cout << "Octree depth: " << depth << endl;
+    cout << "Octree center: " << octree_node->center << endl;
+    cout << "Octree radius: " << octree_node->half_dimensions << endl;
+    cout << "object->bounding_sphere.center: " << object->bounding_sphere.center << endl;
+    cout << "object->bounding_sphere.radius: " << object->bounding_sphere.radius << endl;
+  }
+}
+
+void Renderer::BuildOctree() {
+  octree_ = make_shared<OctreeNode>(vec3(2100, 0, 2100), 
+    vec3(4000, 4000, 4000));
+ 
+  vector<shared_ptr<Object3D>>& objects = sectors_[0].objects;
+  for (auto& obj : objects) {
+    InsertObjectInOctree(octree_, obj, 0);
+  }
+}
+
+void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
+  shared_ptr<OctreeNode> octree_node,
+  vector<shared_ptr<Object3D>>& objects) {
+  if (!octree_node) {
+    return;
+  }
+
+  AABB aabb;
+  aabb.point = octree_node->center - octree_node->half_dimensions;
+  aabb.dimensions = octree_node->half_dimensions * 2.0f;
+  // cout << "octree_node->center: " << octree_node->center << endl;
+  // cout << "octree_node->half_dimensions: " << octree_node->half_dimensions << endl;
+  // cout << "player_pos: " << player_pos << endl;
+  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
+    // cout << "not in frustum" << endl;
+    return;
+  }
+  // cout << "in frustum" << endl;
+
+  for (int i = 0; i < 8; i++) {
+    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
+  }
+
+  objects.insert(objects.end(), octree_node->objects.begin(), 
+    octree_node->objects.end());
+}
+
+void Renderer::GetPotentiallyCollidingObjects(const vec3& player_pos, 
+  shared_ptr<OctreeNode> octree_node,
+  vector<shared_ptr<Object3D>>& objects) {
+  if (!octree_node) {
+    return;
+  }
+
+  AABB aabb;
+  aabb.point = octree_node->center - octree_node->half_dimensions;
+  aabb.dimensions = octree_node->half_dimensions * 2.0f;
+
+  BoundingSphere s = BoundingSphere(player_pos, 0.75f);
+  if (!TestSphereAABBIntersection(s, aabb)) {
+    return;
+  }
+
+  for (int i = 0; i < 8; i++) {
+    GetPotentiallyCollidingObjects(player_pos, octree_node->children[i], 
+      objects);
+  }
+
+  objects.insert(objects.end(), octree_node->objects.begin(), 
+    octree_node->objects.end());
+}
+
 
 void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
   // TODO: START - this code must go away.
@@ -281,37 +416,42 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
     glEnable(GL_CULL_FACE);
     terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
     glDisable(GL_CULL_FACE);
+
+    // TODO: frustum cull objects according to their position in the Octree.
   }
 
-  vector<vector<Polygon>> convex_hulls;
-
+  vector<vector<Polygon>> occluder_convex_hulls;
   Sector& s = sectors_[sector_id];
 
-  // TODO: sort objects from closest to farthest.
-  for (auto& obj : s.objects) {
-    obj->distance = length(camera_.position - obj->position);
+  // Cull with Octree.
+  vector<shared_ptr<Object3D>> objs;
+  if (sector_id == 0) {
+    GetPotentiallyVisibleObjects(camera_.position, octree_, objs);
+  } else {
+    objs = s.objects;
   }
 
-  std::sort(s.objects.begin(), s.objects.end(),
-            [] (const auto& lhs, const auto& rhs) {
-      return lhs->distance < rhs->distance;
+  // Sort for closest to farthest.
+  for (auto& obj : objs) {
+    obj->distance = length(camera_.position - obj->position);
+  }
+  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
+    return lhs->distance < rhs->distance;
   });
 
   static int bla = 1;
-  for (auto& obj : s.objects) {
-    Mesh& mesh = obj->mesh;
-
+  for (auto& obj : objs) {
+    AABB aabb = GetObjectAABB(obj);
     if (!obj->polygons.empty()) {
       bool occlude = false;
-      AABB aabb = GetObjectAABB(obj);
       if (bla > 0 && obj->name == "stone_pillar.fbx") {
         // CreateMeshFromAABB(aabb);
         bla--;
       }
-      for (auto& ch : convex_hulls) {
+      for (auto& ch : occluder_convex_hulls) {
         if (IsInConvexHull(aabb, ch)) {
           occlude = true;
-          cout << "occlude: " << obj->name << endl;
+          // cout << "occlude: " << obj->name << endl;
           break;
         }
       }
@@ -324,7 +464,7 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
       ConvexHull convex_hull = CreateConvexHullFromOccluder(obj->occluder_id, 
         camera_.position);
       if (!convex_hull.empty()) {
-        convex_hulls.push_back(convex_hull);
+        occluder_convex_hulls.push_back(convex_hull);
         if (bla > 0) {
           // CreateMeshFromConvexHull(convex_hull);
           // bla = false;
@@ -335,6 +475,26 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
     if (!obj->draw) {
       continue;
     }
+
+    // Frustum cull.
+    if (!CollideAABBFrustum(aabb, frustum_planes_, camera_.position)) {
+      continue;
+    }
+
+    Mesh mesh;
+    int lod_level = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
+    cout << "name: " << obj->name<< endl;
+    cout << "lod_level: " << lod_level << endl;
+    for (int i = lod_level; i >= 0; i--) {
+      if (obj->lods[i].vao_ == 0) {
+        continue;
+      }
+      cout << "winning lod: " << i << endl;
+      mesh = obj->lods[i];
+      break;
+    }
+    cout << "d: " << obj->distance << endl;
+    cout << "===============" << endl;
 
     GLuint program_id = mesh.shader;
     glUseProgram(program_id);
@@ -389,9 +549,7 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
     
     AABB aabb = GetAABBFromVertices(GetAllVerticesFromPolygon(p.polygons));
 
-    vec4 planes[6];
-    ExtractFrustumPlanes(MVP, planes);
-    if (CollideAABBFrustum(aabb, planes, camera_.position)) {
+    if (CollideAABBFrustum(aabb, frustum_planes_, camera_.position)) {
       DrawSector(node);
     }
   }
@@ -444,6 +602,12 @@ void Renderer::Run(const function<void()>& process_frame) {
       camera_.up                            // Head is up (set to 0,-1,0 to look upside-down)
     );
 
+    mat4 ModelMatrix = translate(mat4(1.0), camera_.position);
+    mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
+    mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+    mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
+    ExtractFrustumPlanes(MVP, frustum_planes_);
+
     glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
     glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
     glClearColor(50, 50, 50, 0.0f);
@@ -480,56 +644,11 @@ void Renderer::Run(const function<void()>& process_frame) {
 
 
 
+// ==============================================
+//  OBJECT CREATION METHODS
+// ==============================================
 
-
-
-shared_ptr<Object3D> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
-  int count = 0; 
-  vector<vec3> vertices;
-  vector<vec2> uvs;
-  vector<vec3> normals;
-  vector<unsigned int> indices;
-  for (auto& p : ch) {
-    int polygon_size = p.vertices.size();
-    cout << polygon_size << endl;
-    cout << p << endl;
-    for (int j = 1; j < polygon_size - 1; j++) {
-      vertices.push_back(p.vertices[0]);
-      uvs.push_back(vec2(0, 0));
-      // normals.push_back(p.normals[0]);
-      indices.push_back(count++);
-
-      vertices.push_back(p.vertices[j]);
-      uvs.push_back(vec2(0, 0));
-      // normals.push_back(p.normals[j]);
-      indices.push_back(count++);
-
-      vertices.push_back(p.vertices[j+1]);
-      uvs.push_back(vec2(0, 0));
-      // normals.push_back(p.normals[j+1]);
-      indices.push_back(count++);
-    }
-  }
-
-  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
-  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
-  sectors_[0].objects.push_back(obj);
-  return nullptr; 
-}
-
-shared_ptr<Object3D> Renderer::CreateMeshFromAABB(const AABB& aabb) {
-  return CreateCube(aabb.dimensions, aabb.point);
-}
-
-
-
-
-// ============================================
-// Meshes 
-// ============================================
 // TODO: transfer all mesh related code to another file.
-
-// TODO: create file to create meshes.
 Mesh Renderer::CreateMesh(
   GLuint shader_id,
   vector<vec3>& vertices, 
@@ -608,22 +727,59 @@ shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   for (int i = 0; i < 36; i++) { indices[i] = i; }
 
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
+  vector<Polygon> polygons;
+  for (int i = 0; i < 12; i++) {
+    Polygon p;
+    p.vertices.push_back(vertices[i*3]);
+    p.vertices.push_back(vertices[i*3+1]);
+    p.vertices.push_back(vertices[i*3+2]);
+    polygons.push_back(p);
+  }
 
   shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, position);
+  obj->name = "cube";
+  obj->polygons = polygons;
+  obj->aabb = GetObjectAABB(obj);
+  obj->bounding_sphere = GetObjectBoundingSphere(obj);
   sectors_[0].objects.push_back(obj);
   return obj; 
 }
 
+shared_ptr<Object3D> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
+  int count = 0; 
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+  vector<unsigned int> indices;
+  for (auto& p : ch) {
+    int polygon_size = p.vertices.size();
+    for (int j = 1; j < polygon_size - 1; j++) {
+      vertices.push_back(p.vertices[0]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j+1]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+    }
+  }
+
+  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
+  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
+  obj->name = "convex_hull";
+  sectors_[0].objects.push_back(obj);
+  return nullptr; 
+}
+
+shared_ptr<Object3D> Renderer::CreateMeshFromAABB(const AABB& aabb) {
+  return CreateCube(aabb.dimensions, aabb.point);
+}
+
 shared_ptr<Object3D> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
-  // vec3 p2 = vec3(1, 0, 0);
-  // if (abs(dot(p2, normal)) > 0.99) {
-  //   // Normal cannot be parallel to (1, 0, 0) and (0, 1, 0) at the same time.
-  //   p2 = vec3(0, 1, 0);
-  // }
-
-  // // Project p2 on to the plane.
-  // p2 = p2 - (dot(p2, normal) * normalize(normal));
-
   vec3 t = normalize(p2 - p1);
   vec3 b = cross(t, normal);
 
@@ -645,9 +801,8 @@ shared_ptr<Object3D> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
   for (int i = 0; i < 6; i++) { indices[i] = i; }
 
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
-
-  // shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(2010, 20, 2000));
   shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
+  obj->name = "plane";
   sectors_[0].objects.push_back(obj);
   return obj; 
 }
@@ -696,6 +851,7 @@ shared_ptr<Object3D> Renderer::CreateJoint(vec3 start, vec3 end) {
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
 
   shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, start);
+  obj->name = "joint";
   sectors_[0].objects.push_back(obj);
   return obj; 
 }
@@ -711,7 +867,6 @@ void Renderer::CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint
 
   vec4 v = parent_transform * node->global_bindpose * vec4(0, 0, 0, 1);
   CreateJoint(v, v + vec4(0, 1, 0, 0)); 
-  cout << "joint: " << v << endl;
   for (auto& c : node->children) {
   //  CreateSkeletonAux(parent_transform, c);
   }
@@ -800,10 +955,14 @@ void Renderer::LoadFbx(const std::string& filename, vec3 position) {
 
   // vec3 position = vec3(1990, 16, 2000);
   shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
+  obj->name = filename;
+  m.polygons = data.polygons;
+  obj->polygons = m.polygons;
+  obj->bounding_sphere = GetObjectBoundingSphere(obj);
   sectors_[0].objects.push_back(obj);
   position += vec3(0, 0, 5);
 
-  CreateSkeletonAux(translate(position), data.skeleton);
+  // CreateSkeletonAux(translate(position), data.skeleton);
 
   // TODO: an animated object will have animations, if an animation is selected, 
   // a counter will count where in the animation is the model and update the
@@ -889,7 +1048,7 @@ Mesh Renderer::LoadFbxMesh(const std::string& filename) {
   return m;
 }
 
-void Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id) {
+int Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id) {
   Mesh m = LoadFbxMesh(filename);
 
   shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
@@ -898,8 +1057,23 @@ void Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sec
   obj->occluder_id = occluder_id;
   obj->collide = true;
 
+  obj->aabb = GetObjectAABB(obj);
+  obj->bounding_sphere = GetObjectBoundingSphere(obj);
+  obj->id = id_counter++;
+
   sectors_[sector_id].objects.push_back(obj);
   position += vec3(0, 0, 5);
+  return obj->id;
+}
+
+void Renderer::LoadLOD(const std::string& filename, int id, int sector_id, int lod_level) {
+  Mesh m = LoadFbxMesh(filename);
+ 
+  for (auto& obj : sectors_[sector_id].objects) {
+    if (obj->id == id) {
+      obj->lods[lod_level] = m;
+    }
+  }
 }
 
 // Given point p, return the point q on or in AABB b that is closest to p
@@ -915,6 +1089,81 @@ vec3 ClosestPtPointAABB(vec3 p, vec3 aabb_min, vec3 aabb_max) {
   }
   return q;
 }
+
+
+
+
+
+// =================================================
+// Load visibility structures (occluders, sectors)
+// =================================================
+
+void Renderer::LoadSector(const std::string& filename, int id, vec3 position) {
+  Mesh m = LoadFbxMesh(filename);
+
+  Sector s;
+  s.id = id;
+
+  // TODO: additionally, calculate sphere bounding box and OBB for convex hull. 
+  // TODO: polygons are being loaded as triangles. Correct that.
+  s.convex_hull = m.polygons;
+  for (auto& poly : s.convex_hull) {
+    for (auto& v : poly.vertices) {
+      v += position;
+    }
+  }
+
+  s.stabbing_tree = make_shared<StabbingTreeNode>(1, 0, false);
+  s.stabbing_tree->children.push_back(make_shared<StabbingTreeNode>(0, 0, true));
+  sectors_[id] = s;
+}
+
+void Renderer::LoadPortal(const std::string& filename, int id, vec3 position) {
+  Mesh m = LoadFbxMesh(filename);
+
+  Portal p;
+  p.polygons = m.polygons;
+  for (auto& poly : p.polygons) {
+    for (auto& v : poly.vertices) {
+      v += position;
+    }
+  }
+  portals_[id] = p;
+}
+
+void Renderer::LoadOccluder(const std::string& filename, int id, 
+  vec3 position) {
+  Mesh m = LoadFbxMesh(filename);
+
+  Occluder o;
+  o.polygons = m.polygons;
+  for (auto& poly : o.polygons) {
+    for (auto& v : poly.vertices) {
+      v += position;
+    }
+  }
+  occluders_[id] = o;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ============================================
+// Collision Code
+// ============================================
+// TODO: move to another file
 
 bool IntersectWall(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, float* magnitude, 
   const vec3& object_pos) {
@@ -1067,13 +1316,21 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
 void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
   int current_sector_id = GetPlayerSector(camera_.position);
 
+  // Collide with Octree.
+  vector<shared_ptr<Object3D>> objs;
+  if (current_sector_id == 0) {
+    GetPotentiallyCollidingObjects(*player_pos, octree_, objs);
+  } else {
+    objs = sectors_[current_sector_id].objects;
+  }
+
   bool collision = true;
   for (int i = 0; i < 5 && collision; i++) {
     vector<vec3> collision_resolutions;
     vector<float> magnitudes;
     collision = false;
 
-    for (auto& obj : sectors_[current_sector_id].objects) {
+    for (auto& obj : objs) {
       if (!obj->collide) {
         continue;
       }
@@ -1115,60 +1372,4 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
     }
   }
   // cout << "=========" << endl;
-}
-
-void Renderer::LoadSector(const std::string& filename, int id, vec3 position) {
-  Mesh m = LoadFbxMesh(filename);
-
-  Sector s;
-  s.id = id;
-
-  // TODO: additionally, calculate sphere bounding box and OBB for convex hull. 
-  // TODO: polygons are being loaded as triangles. Correct that.
-  s.convex_hull = m.polygons;
-  for (auto& poly : s.convex_hull) {
-    for (auto& v : poly.vertices) {
-      v += position;
-    }
-  }
-
-  s.stabbing_tree = make_shared<StabbingTreeNode>(1, 0, false);
-  s.stabbing_tree->children.push_back(make_shared<StabbingTreeNode>(0, 0, true));
-  sectors_[id] = s;
-}
-
-void Renderer::LoadPortal(const std::string& filename, int id, vec3 position) {
-  Mesh m = LoadFbxMesh(filename);
-
-  Portal p;
-  p.polygons = m.polygons;
-  for (auto& poly : p.polygons) {
-    for (auto& v : poly.vertices) {
-      v += position;
-    }
-  }
-  portals_[id] = p;
-}
-
-void Renderer::LoadOccluder(const std::string& filename, int id, 
-  vec3 position) {
-  Mesh m = LoadFbxMesh(filename);
-
-  Occluder o;
-  o.polygons = m.polygons;
-  for (auto& poly : o.polygons) {
-    for (auto& v : poly.vertices) {
-      v += position;
-    }
-  }
-  occluders_[id] = o;
-}
-
-int Renderer::GetPlayerSector(const vec3& player_pos) {
-  for (int i = 1; i < sectors_.size(); i++) {
-    if (IsInConvexHull(player_pos, sectors_[i].convex_hull)) {
-      return i;
-    }
-  }
-  return 0;
 }

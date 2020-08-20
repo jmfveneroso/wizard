@@ -26,6 +26,13 @@ struct AABB {
   vec3 dimensions;
 };
 
+struct BoundingSphere {
+  vec3 center;
+  float radius;
+  BoundingSphere() {}
+  BoundingSphere(vec3 center, float radius) : center(center), radius(radius) {}
+};
+
 ostream& operator<<(ostream& os, const AABB& v);
 
 void ExtractFrustumPlanes(const mat4 MVP, vec4 planes[6]);
@@ -37,12 +44,22 @@ vec3 ClosestPtPointTriangle(vec3 p, vec3 a, vec3 b, vec3 c, bool* inside);
 
 vec3 ClosestPtPointSegment(vec3 c, vec3 a, vec3 b);
 
+vec3 ClosestPtPointAABB(const vec3& p, const AABB& aabb);
+
 bool IsBehindPlane(const vec3& p, const vec3& plane_point, const vec3& normal);
 
 bool IsInConvexHull(const vec3& p, vector<Polygon> polygons);
 
 bool IsInConvexHull(const AABB& aabb, vector<Polygon> polygons);
 
-AABB GetAABBFromVertices(const vector<vec3>& vertices);
+bool IsPointInAABB(const vec3& p, const AABB& aabb);
+
+bool IsAABBIntersectingAABB(const AABB& aabb1, const AABB& aabb2);
+
+bool TestSphereAABBIntersection(const BoundingSphere& s, const AABB& aabb);
 
 Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction);
+
+AABB GetAABBFromVertices(const vector<vec3>& vertices);
+
+BoundingSphere GetBoundingSphereFromVertices(const vector<vec3>& vertices);

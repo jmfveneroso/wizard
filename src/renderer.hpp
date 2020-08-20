@@ -32,6 +32,7 @@
 #define NEAR_CLIPPING 1.00f
 #define FAR_CLIPPING 10000.0f
 #define FIELD_OF_VIEW 45.0f
+#define LOD_DISTANCE 100.0f
 
 using namespace std;
 using namespace glm;
@@ -52,14 +53,15 @@ struct Mesh {
   GLuint uv_buffer_;
   GLuint normal_buffer_;
   GLuint element_buffer_;
-  GLuint vao_;
+  GLuint vao_ = 0;
   GLuint num_indices;
   vector<Polygon> polygons;
   Mesh() {}
 };
 
 struct Object3D {
-  Mesh mesh;
+  int id;
+  // Mesh mesh;
   vec3 position;
   vec3 rotation;
   float distance;
@@ -68,10 +70,19 @@ struct Object3D {
   string name;
   int occluder_id = -1;
   bool draw = true;
+  AABB aabb;
+  BoundingSphere bounding_sphere;
+
+  Mesh lods[5]; // 0 - 5.
+
   Object3D() {}
-  Object3D(Mesh mesh, vec3 position) : mesh(mesh), position(position) {}
-  Object3D(Mesh mesh, vec3 position, vec3 rotation) : mesh(mesh), 
-    position(position), rotation(rotation) {}
+  Object3D(Mesh mesh, vec3 position) : position(position) {
+    lods[0] = mesh;
+  }
+  Object3D(Mesh mesh, vec3 position, vec3 rotation) : position(position), 
+    rotation(rotation) {
+    lods[0] = mesh;
+  }
 };
 
 struct FBO {
@@ -84,6 +95,17 @@ struct FBO {
 
   FBO() {}
   FBO(GLuint width, GLuint height) : width(width), height(height) {}
+};
+
+struct OctreeNode {
+  vec3 center;
+  vec3 half_dimensions;
+  shared_ptr<OctreeNode> children[8] { nullptr, nullptr, nullptr, nullptr, 
+    nullptr, nullptr, nullptr, nullptr };
+  vector<shared_ptr<Object3D>> objects;
+  OctreeNode() {}
+  OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
+    half_dimensions(half_dimensions) {}
 };
 
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
@@ -128,6 +150,9 @@ class Renderer {
   mat4 projection_matrix_;
   mat4 view_matrix_;
   Camera camera_;
+  vec4 frustum_planes_[6];
+
+  int id_counter = 0;
 
   vector<vector<mat4>> joint_transforms_;
   GLuint texture_;
@@ -140,6 +165,7 @@ class Renderer {
   unordered_map<int, Sector> sectors_;
   unordered_map<int, Portal> portals_;
   unordered_map<int, Occluder> occluders_;
+  shared_ptr<OctreeNode> octree_;
 
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, FBO> fbos_;
@@ -164,6 +190,14 @@ class Renderer {
     const vec3& player_pos);
   shared_ptr<Object3D> CreateMeshFromConvexHull(const ConvexHull& ch);
   shared_ptr<Object3D> CreateMeshFromAABB(const AABB& aabb);
+  void InsertObjectInOctree(shared_ptr<OctreeNode> octree_node, 
+  shared_ptr<Object3D> object, int depth);
+  void GetPotentiallyVisibleObjects(const vec3& player_pos, 
+    shared_ptr<OctreeNode> octree_node,
+    vector<shared_ptr<Object3D>>& objects);
+  void GetPotentiallyCollidingObjects(const vec3& player_pos, 
+    shared_ptr<OctreeNode> octree_node,
+    vector<shared_ptr<Object3D>>& objects);
 
  public:
   void Init(const string& shader_dir);  
@@ -173,12 +207,14 @@ class Renderer {
   shared_ptr<Object3D> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
   shared_ptr<Object3D> CreateJoint(vec3 start, vec3 end);
   void LoadFbx(const std::string& filename, vec3 position);
-  void LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id = -1);
+  int LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id = -1);
   void LoadSector(const std::string& filename, int id, vec3 position);
   void LoadPortal(const std::string& filename, int id, vec3 position);
   void LoadOccluder(const std::string& filename, int id, vec3 position);
+  void LoadLOD(const std::string& filename, int id, int sector_id, int lod_level);
 
   void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
+  void BuildOctree();
   
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }
