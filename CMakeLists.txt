@@ -49,10 +49,11 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37)
 set(
   SRC
   src/renderer.cpp 
-  src/fbx_loader.cpp 
   src/terrain.cpp 
   src/util.cpp 
   src/collision.cpp 
+  src/fbx_loader.cpp 
+  src/asset.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})
@@ -62,6 +63,9 @@ link_directories(${LINK_DIRS})
 add_library(test ${SRC})
 target_link_libraries(test ${ALL_LIBS})
 
-# Create main executable.
-add_executable(main main.cpp)
+# Create executables.
+add_executable(main src/main.cpp)
 target_link_libraries(main test)
+
+add_executable(convert_assets src/convert_assets.cpp)
+target_link_libraries(convert_assets test)

@@ -67,27 +67,23 @@ FbxNode* GetNodeWithAttribute(FbxNode* node, FbxNodeAttribute::EType attr) {
   return nullptr;
 }
 
-shared_ptr<SkeletonJoint> BuildSkeleton(FbxNode* lNode) {
-  if (!lNode) return nullptr;
+shared_ptr<SkeletonJoint> BuildSkeleton(FbxNode* node) {
+  if (!node) return nullptr;
 
   shared_ptr<SkeletonJoint> joint = make_shared<SkeletonJoint>();
-  if (lNode->GetNodeAttribute() != NULL && 
-      lNode->GetNodeAttribute()->GetAttributeType() == FbxNodeAttribute::eSkeleton) {
-    FbxSkeleton* lSkeleton = (FbxSkeleton*) lNode->GetNodeAttribute();
+  if (node->GetNodeAttribute() != NULL && 
+      node->GetNodeAttribute()->GetAttributeType() == 
+        FbxNodeAttribute::eSkeleton) {
+    FbxSkeleton* lSkeleton = (FbxSkeleton*) node->GetNodeAttribute();
     joint->name = (char*) lSkeleton->GetName();
   }
 
-  for (int i = 0; i < lNode->GetChildCount(); i++) {
-    shared_ptr<SkeletonJoint> child = BuildSkeleton(lNode->GetChild(i));
+  for (int i = 0; i < node->GetChildCount(); i++) {
+    shared_ptr<SkeletonJoint> child = BuildSkeleton(node->GetChild(i));
     if (!child) continue;
     joint->children.push_back(child);
   }
   return joint;
-}
-
-void BuildJointMap(shared_ptr<SkeletonJoint> joint, FbxData* data) {
-  data->joint_map[joint->name] = joint;
-  for (auto& c : joint->children) BuildJointMap(c, data);
 }
 
 void ExtractSkeleton(FbxScene* scene, FbxData* data) {
@@ -96,7 +92,6 @@ void ExtractSkeleton(FbxScene* scene, FbxData* data) {
   if (!skeleton_node) return;
 
   data->skeleton = BuildSkeleton(skeleton_node);
-  BuildJointMap(data->skeleton, data);
 }
 
 void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
@@ -173,7 +168,7 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
     }
   }
 
-  // For collision detection.
+  // Uncomment to produce non triangular polygons.
   // Polygon polygon;
   // for (int k = 0; k < polygon_size; k++) {
   //   polygon.vertices.push_back(data->vertices[vertices[k]]);
@@ -194,15 +189,15 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
     data->normals.push_back(normals[j+1]);
 
     Polygon polygon;
-    polygon.vertex_ids.push_back(vertices[0]);
     polygon.vertices.push_back(data->vertices[vertices[0]]);
     polygon.normals.push_back(normals[0]);
+    polygon.indices.push_back(vertices[0]);
     polygon.vertices.push_back(data->vertices[vertices[j]]);
-    polygon.vertex_ids.push_back(vertices[j]);
     polygon.normals.push_back(normals[j+1]);
+    polygon.indices.push_back(vertices[j]);
     polygon.vertices.push_back(data->vertices[vertices[j+1]]);
-    polygon.vertex_ids.push_back(vertices[j+1]);
     polygon.normals.push_back(normals[j+1]);
+    polygon.indices.push_back(vertices[j+1]);
     data->polygons.push_back(polygon);
   }
 }
@@ -213,8 +208,8 @@ void ExtractMesh(FbxScene* scene, FbxData* data) {
     GetNodeWithAttribute(scene->GetRootNode(), FbxNodeAttribute::eMesh);
   FbxMesh* mesh = (FbxMesh*) node->GetNodeAttribute();
 
-  int num_vertices = mesh->GetControlPointsCount();
   FbxVector4* vertices = mesh->GetControlPoints();
+  int num_vertices = mesh->GetControlPointsCount();
   for (int i = 0; i < num_vertices; i++) {
     data->vertices.push_back(Get3DVector(vertices[i]));
   }
@@ -243,8 +238,18 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     throw runtime_error("Wrong number of deformers.");
   }
 
+  unordered_map<string, shared_ptr<SkeletonJoint>> joint_map;
+  stack<shared_ptr<SkeletonJoint>> joint_stack({ data->skeleton });
+  while (!joint_stack.empty()) {
+    shared_ptr<SkeletonJoint> joint = joint_stack.top();
+    joint_stack.pop();
+    for (auto& c : joint->children) joint_stack.push(c);
+    joint_map[joint->name] = joint;
+  }
+  cout << "joint" << endl;
+
   vector<vector<tuple<int, float>>> bone_weights(data->vertices.size());
-  data->joints.resize(data->joint_map.size());
+  data->joints.resize(joint_map.size());
 
   mat4 geometry_transform = 
     GetMatrix(GetGeometryTransformation(scene->GetRootNode()));
@@ -258,11 +263,11 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     if (!cluster) continue;
 
     string name = (char*) cluster->GetLink()->GetName();
-    if (data->joint_map.find(name) == data->joint_map.end()) {
+    if (joint_map.find(name) == joint_map.end()) {
       throw runtime_error("Joint not found.");
     }
 
-    shared_ptr<SkeletonJoint> joint = data->joint_map[name];
+    shared_ptr<SkeletonJoint> joint = joint_map[name];
     joint->cluster = cluster;
     data->joints[i] = joint;
 
@@ -352,10 +357,83 @@ FbxData FbxLoad(const std::string& filename) {
   FbxScene* scene = ImportScene(filename);
 
   FbxData data;
-  ExtractSkeleton(scene, &data);
+
+  // TODO: for each mesh, extract the data.
   ExtractMesh(scene, &data);
+
+  // Animation.
+  ExtractSkeleton(scene, &data);
   ExtractSkin(scene, &data);
   ExtractAnimations(scene, &data);
+
   // TODO: ExtractTextures.
+  return data;
+}
+
+FbxData LoadFbxData(const std::string& filename, Mesh& m) {
+  FbxData data = FbxLoad(filename);
+  m.polygons = data.polygons;
+
+  GLuint buffers[6];
+  glGenBuffers(6, buffers);
+
+  vector<vec3> vertices;
+  vector<unsigned int> indices;
+  for (int i = 0; i < data.indices.size(); i++) {
+    vertices.push_back(data.vertices[data.indices[i]]);
+    indices.push_back(i);
+  }
+  m.num_indices = indices.size();
+
+  glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
+    &vertices[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
+  glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(glm::vec2), 
+    &data.uvs[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, buffers[2]);
+  glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(glm::vec3), 
+    &data.normals[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]); 
+  glBufferData(
+    GL_ELEMENT_ARRAY_BUFFER, 
+    indices.size() * sizeof(unsigned int), 
+    &indices[0], 
+    GL_STATIC_DRAW
+  );
+
+  glGenVertexArrays(1, &m.vao_);
+  glBindVertexArray(m.vao_);
+
+  int num_slots = 4;
+  BindBuffer(buffers[0], 0, 3);
+  BindBuffer(buffers[1], 1, 2);
+  BindBuffer(buffers[2], 2, 3);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]);
+
+  if (!data.bone_ids.empty()) {
+    vector<ivec3> bone_ids;
+    vector<vec3> bone_weights;
+    for (int i = 0; i < data.indices.size(); i++) {
+      bone_ids.push_back(data.bone_ids[data.indices[i]]);
+      bone_weights.push_back(data.bone_weights[data.indices[i]]);
+    }
+
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
+    glBufferData(GL_ARRAY_BUFFER, bone_ids.size() * sizeof(glm::ivec3), 
+      &bone_ids[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[5]);
+    glBufferData(GL_ARRAY_BUFFER, bone_weights.size() * sizeof(glm::vec3), 
+      &bone_weights[0], GL_STATIC_DRAW);
+
+    num_slots += 2;
+    BindBuffer(buffers[4], 3, 3);
+    BindBuffer(buffers[5], 4, 3);
+  }
+
+  glBindVertexArray(0);
+  for (int slot = 0; slot < num_slots; slot++) {
+    glDisableVertexAttribArray(slot);
+  }
   return data;
 }

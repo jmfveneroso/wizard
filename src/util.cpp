@@ -234,3 +234,41 @@ vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons) {
   return result;
 }
 
+Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices) {
+  Mesh m;
+  m.shader = shader_id;
+  glGenBuffers(1, &m.vertex_buffer_);
+  glGenBuffers(1, &m.uv_buffer_);
+  glGenBuffers(1, &m.element_buffer_);
+
+  glGenVertexArrays(1, &m.vao_);
+  glBindVertexArray(m.vao_);
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
+    &vertices[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
+    GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
+  glBufferData(
+    GL_ELEMENT_ARRAY_BUFFER, 
+    indices.size() * sizeof(unsigned int), 
+    &indices[0], 
+    GL_STATIC_DRAW
+  );
+  m.num_indices = indices.size();
+
+  BindBuffer(m.vertex_buffer_, 0, 3);
+  BindBuffer(m.uv_buffer_, 1, 2);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
+  glBindVertexArray(0);
+  for (int slot = 0; slot < 2; slot++) {
+    glDisableVertexAttribArray(slot);
+  }
+  return m;
+}
+

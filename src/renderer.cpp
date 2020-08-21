@@ -2,46 +2,10 @@
 #include "boost/filesystem.hpp"
 #include <boost/algorithm/string/predicate.hpp>
 
-// TODO: create file type for 3d Models. It should store:
-
-// CollisionData:
-//   TODO: how to define.
-
-// Keyframe:
-//   int time;
-//   vector<vector<mat4>> joint_transforms;
-
-// Animation:
-//   vector<Keyframe> keyframes;
-
-// Mesh:
-//   vector<vec3> vertices;
-//   vector<vec2> uvs;
-//   vector<vec3> normals;
-//   vector<ivec3> bone_ids;
-//   vector<vec3> bone_weights;
-
-// Object:
-//   bool has_animation;
-//   vector<Mesh> lods;
-//   string texture_data; // RGBA.
-//   CollisionData collision_data;
+// TODO: create file type for 3d Models.
 
 // TODO: terrain rendering should be another lib.
 //   The terrain lib should essentially create a mesh.
-
-// TODO: Space partitioning - 
-//   grid partitioning for terrain and terrain objects
-//   inside: Octrees - basically draw all frustum planes
-//           Then, draw objects in the octree that are inside the frustum
-//           Some manual culling should also be implemented.
-//           I shouldn't consider the inside of a building when I'm outside it
-//           The inside should only be considered when the player is 
-//           sufficiently close to the building.
-
-// TODO: the tower should be composed of many objects. More objects allow better
-//       culling
-//   
 
 void Renderer::Init(const string& shader_dir) {
   if (!glfwInit()) throw "Failed to initialize GLFW";
@@ -91,10 +55,10 @@ void Renderer::Init(const string& shader_dir) {
   fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
 
   // TODO: load texture with the object.
-  texture_ = LoadPng("fish_uv.png");
-  building_texture_ = LoadPng("first_floor_uv.png");
-  granite_texture_ = LoadPng("granite.png");
-  wood_texture_ = LoadPng("wood.png");
+  texture_ = LoadPng("assets/textures_png/fish_uv.png");
+  building_texture_ = LoadPng("assets/textures_png/first_floor_uv.png");
+  granite_texture_ = LoadPng("assets/textures_png/granite.png");
+  wood_texture_ = LoadPng("assets/textures_png/wood.png");
 
   terrain_ = make_shared<Terrain>(shaders_["terrain"], shaders_["water"]);
 
@@ -115,7 +79,9 @@ void Renderer::LoadShaders(const std::string& directory) {
       boost::ends_with(current_file, ".frag") ||
       boost::ends_with(current_file, ".geom")) { 
       string prefix = current_file.substr(0, current_file.size() - 5);
-      shaders_[prefix] = LoadShader(prefix);
+      if (shaders_.find(prefix) == shaders_.end()) {
+        shaders_[prefix] = LoadShader(prefix);
+      }
     }
   }
 }
@@ -225,18 +191,18 @@ ConvexHull Renderer::CreateConvexHullFromOccluder(int occluder_id,
     // list. Otherwise, add the edge into the list.
     const vector<vec3>& vertices = p.vertices;
     const vector<vec3>& normals = p.normals;
-    const vector<unsigned int>& vertex_ids = p.vertex_ids;
+    const vector<unsigned int>& indices = p.indices;
 
     // TODO: contemplate not triangular polygons. Maybe?
     vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
     for (auto& [a, b] : comparisons) {
-      int i = (p.vertex_ids[a] < p.vertex_ids[b]) ? a : b;
-      int j = (p.vertex_ids[a] < p.vertex_ids[b]) ? b : a;
+      int i = (p.indices[a] < p.indices[b]) ? a : b;
+      int j = (p.indices[a] < p.indices[b]) ? b : a;
       
-      string key = boost::lexical_cast<string>(vertex_ids[i]) + "-" + 
-        boost::lexical_cast<string>(vertex_ids[j]);
+      string key = boost::lexical_cast<string>(indices[i]) + "-" + 
+        boost::lexical_cast<string>(indices[j]);
       if (edges.find(key) == edges.end()) {
-        edges[key] = Edge(vertices[i], vertices[j], vertex_ids[i], vertex_ids[j], normals[i], normals[j]);
+        edges[key] = Edge(vertices[i], vertices[j], indices[i], indices[j], normals[i], normals[j]);
       } else {
         edges.erase(key);
       }
@@ -263,7 +229,7 @@ int Renderer::GetPlayerSector(const vec3& player_pos) {
   return 0;
 }
 
-AABB GetObjectAABB(shared_ptr<Object3D> obj) {
+AABB GetObjectAABB(shared_ptr<GameObject> obj) {
   vector<vec3> vertices;
   for (auto& p : obj->polygons) {
     for (auto& v : p.vertices) {
@@ -273,7 +239,7 @@ AABB GetObjectAABB(shared_ptr<Object3D> obj) {
   return GetAABBFromVertices(vertices);
 }
 
-BoundingSphere GetObjectBoundingSphere(shared_ptr<Object3D> obj) {
+BoundingSphere GetObjectBoundingSphere(shared_ptr<GameObject> obj) {
   vector<vec3> vertices;
   for (auto& p : obj->polygons) {
     for (auto& v : p.vertices) {
@@ -296,7 +262,7 @@ const vector<vec3> kOctreeNodeOffsets = {
 };
 
 void Renderer::InsertObjectInOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<Object3D> object, int depth) {
+  shared_ptr<GameObject> object, int depth) {
   int index = 0, straddle = 0;
   cout << "--- Octree depth: " << depth << endl;
   cout << "--- Octree center: " << octree_node->center << endl;
@@ -340,7 +306,7 @@ void Renderer::BuildOctree() {
   octree_ = make_shared<OctreeNode>(vec3(2100, 0, 2100), 
     vec3(4000, 4000, 4000));
  
-  vector<shared_ptr<Object3D>>& objects = sectors_[0].objects;
+  vector<shared_ptr<GameObject>>& objects = sectors_[0].objects;
   for (auto& obj : objects) {
     InsertObjectInOctree(octree_, obj, 0);
   }
@@ -348,7 +314,7 @@ void Renderer::BuildOctree() {
 
 void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
   shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<Object3D>>& objects) {
+  vector<shared_ptr<GameObject>>& objects) {
   if (!octree_node) {
     return;
   }
@@ -375,7 +341,7 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
 
 void Renderer::GetPotentiallyCollidingObjects(const vec3& player_pos, 
   shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<Object3D>>& objects) {
+  vector<shared_ptr<GameObject>>& objects) {
   if (!octree_node) {
     return;
   }
@@ -400,14 +366,6 @@ void Renderer::GetPotentiallyCollidingObjects(const vec3& player_pos,
 
 
 void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
-  // TODO: START - this code must go away.
-  static int frame_num = 0;
-  if (!joint_transforms_.empty()) {
-    frame_num++;
-    if (frame_num >= joint_transforms_[0].size()) frame_num = 0;
-  }
-  // END
-
   int sector_id = stabbing_tree_node->id;
 
   // Outside
@@ -419,11 +377,13 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
     // TODO: frustum cull objects according to their position in the Octree.
   }
 
+  // Occlusion culling
+  // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
   vector<vector<Polygon>> occluder_convex_hulls;
   Sector& s = sectors_[sector_id];
 
   // Cull with Octree.
-  vector<shared_ptr<Object3D>> objs;
+  vector<shared_ptr<GameObject>> objs;
   if (sector_id == 0) {
     GetPotentiallyVisibleObjects(camera_.position, octree_, objs);
   } else {
@@ -477,7 +437,7 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
 
     // Frustum cull.
     if (!CollideAABBFrustum(aabb, frustum_planes_, camera_.position)) {
-      cout << "Occluded by frustum" << obj->name << endl;
+      // cout << "Occluded by frustum" << obj->name << endl;
       continue;
     }
 
@@ -504,12 +464,15 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
     glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
 
     if (program_id == shaders_["animated_object"]) {
-      int effective_frame_num = frame_num;
-      vector<mat4> joint_transforms;
+      obj->frame++;
+      if (obj->frame >= obj->joint_transforms[0].size()) {
+        obj->frame = 0;
+      }
 
       // TODO: max 10 joints. Enforce limit here.
-      for (int i = 0; i < joint_transforms_.size(); i++) {
-        joint_transforms.push_back(joint_transforms_[i][effective_frame_num]);
+      vector<mat4> joint_transforms;
+      for (int i = 0; i < obj->joint_transforms.size(); i++) {
+        joint_transforms.push_back(obj->joint_transforms[i][obj->frame]);
       }
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
@@ -517,13 +480,13 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
       BindTexture("texture_sampler", program_id, texture_);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else if (program_id == shaders_["object"]) {
-      if (obj->name == "wooden_box.fbx") {
+      if (obj->name == "assets/models_fbx/wooden_box.fbx") {
         BindTexture("texture_sampler", program_id, wood_texture_);
-      } else if (obj->name == "tower_outer_wall.fbx") {
+      } else if (obj->name == "assets/models_fbx/tower_outer_wall.fbx") {
         BindTexture("texture_sampler", program_id, building_texture_);
-      } else if (obj->name == "tower_inner_wall.fbx") {
+      } else if (obj->name == "assets/models_fbx/tower_inner_wall.fbx") {
         BindTexture("texture_sampler", program_id, building_texture_);
-      } else if (obj->name == "stone_pillar.fbx") {
+      } else if (obj->name == "assets/models_fbx/stone_pillar.fbx") {
         BindTexture("texture_sampler", program_id, granite_texture_);
       }
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
@@ -538,7 +501,8 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
   mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
   mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
 
-  // TODO: draw recursively.
+  // Portal culling 
+  // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
   for (auto& node : stabbing_tree_node->children) {
     const Portal& p = portals_[node->portal_id];
 
@@ -658,47 +622,7 @@ void Renderer::Run(const function<void()>& process_frame) {
 // ==============================================
 
 // TODO: transfer all mesh related code to another file.
-Mesh Renderer::CreateMesh(
-  GLuint shader_id,
-  vector<vec3>& vertices, 
-  vector<vec2>& uvs, 
-  vector<unsigned int>& indices
-) {
-  Mesh m;
-  m.shader = shader_id;
-  glGenBuffers(1, &m.vertex_buffer_);
-  glGenBuffers(1, &m.uv_buffer_);
-  glGenBuffers(1, &m.element_buffer_);
-
-  glGenVertexArrays(1, &m.vao_);
-  glBindVertexArray(m.vao_);
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), &vertices[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
-  glBufferData(
-    GL_ELEMENT_ARRAY_BUFFER, 
-    indices.size() * sizeof(unsigned int), 
-    &indices[0], 
-    GL_STATIC_DRAW
-  );
-  m.num_indices = indices.size();
-
-  BindBuffer(m.vertex_buffer_, 0, 3);
-  BindBuffer(m.uv_buffer_, 1, 2);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
-  glBindVertexArray(0);
-  for (int slot = 0; slot < 2; slot++) {
-    glDisableVertexAttribArray(slot);
-  }
-  return m;
-}
-
-shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions, vec3 position) {
+shared_ptr<GameObject> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   float w = dimensions.x;
   float h = dimensions.y;
   float l = dimensions.z;
@@ -745,7 +669,7 @@ shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions, vec3 position) {
     polygons.push_back(p);
   }
 
-  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, position);
+  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, position);
   obj->name = "cube";
   obj->polygons = polygons;
   obj->aabb = GetObjectAABB(obj);
@@ -754,7 +678,7 @@ shared_ptr<Object3D> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   return obj; 
 }
 
-shared_ptr<Object3D> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
+shared_ptr<GameObject> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
   int count = 0; 
   vector<vec3> vertices;
   vector<vec2> uvs;
@@ -778,17 +702,17 @@ shared_ptr<Object3D> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
   }
 
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
-  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
+  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
   obj->name = "convex_hull";
   sectors_[0].objects.push_back(obj);
   return nullptr; 
 }
 
-shared_ptr<Object3D> Renderer::CreateMeshFromAABB(const AABB& aabb) {
+shared_ptr<GameObject> Renderer::CreateMeshFromAABB(const AABB& aabb) {
   return CreateCube(aabb.dimensions, aabb.point);
 }
 
-shared_ptr<Object3D> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
+shared_ptr<GameObject> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
   vec3 t = normalize(p2 - p1);
   vec3 b = cross(t, normal);
 
@@ -810,13 +734,13 @@ shared_ptr<Object3D> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
   for (int i = 0; i < 6; i++) { indices[i] = i; }
 
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
-  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, vec3(0, 0, 0));
+  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
   obj->name = "plane";
   sectors_[0].objects.push_back(obj);
   return obj; 
 }
 
-shared_ptr<Object3D> Renderer::CreateJoint(vec3 start, vec3 end) {
+shared_ptr<GameObject> Renderer::CreateJoint(vec3 start, vec3 end) {
   float h = length(end - start);
   float h1 = h * 0.05f;
   float w = h * 0.075f;
@@ -859,7 +783,7 @@ shared_ptr<Object3D> Renderer::CreateJoint(vec3 start, vec3 end) {
   // Mesh mesh;
   Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
 
-  shared_ptr<Object3D> obj = make_shared<Object3D>(mesh, start);
+  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, start);
   obj->name = "joint";
   sectors_[0].objects.push_back(obj);
   return obj; 
@@ -869,109 +793,19 @@ shared_ptr<Object3D> Renderer::CreateJoint(vec3 start, vec3 end) {
 // FBX
 // ============================================
 
-// TODO: Create skeleton as it should be.
-void Renderer::CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint> node) {
-  if (!node) return;
-  if (node->name == "tail_bone_end") return;
-
-  vec4 v = parent_transform * node->global_bindpose * vec4(0, 0, 0, 1);
-  CreateJoint(v, v + vec4(0, 1, 0, 0)); 
-  for (auto& c : node->children) {
-  //  CreateSkeletonAux(parent_transform, c);
-  }
-}
-
 // TODO: convert FBX to game model outside this file.
 void Renderer::LoadFbx(const std::string& filename, vec3 position) {
-  FbxData data = FbxLoad(filename);
-  auto& vertices = data.vertices;
-  auto& uvs = data.uvs;
-  auto& normals = data.normals;
-  auto& indices = data.indices;
-  auto& bone_ids = data.bone_ids;
-  auto& bone_weights = data.bone_weights;
-
   Mesh m;
+  FbxData data = LoadFbxData(filename, m);
   m.shader = shaders_["animated_object"];
-  glGenBuffers(1, &m.vertex_buffer_);
-  glGenBuffers(1, &m.uv_buffer_);
-  glGenBuffers(1, &m.normal_buffer_);
-  glGenBuffers(1, &m.element_buffer_);
-
-  vector<vec3> _vertices;
-  vector<vec2> _uvs;
-  vector<vec3> _normals;
-  vector<ivec3> _bone_ids;
-  vector<vec3> _bone_weights;
-  vector<unsigned int> _indices;
-  for (int i = 0; i < indices.size(); i++) {
-    _vertices.push_back(vertices[indices[i]]);
-    _uvs.push_back(uvs[i]);
-    _normals.push_back(normals[i]);
-    _bone_ids.push_back(bone_ids[indices[i]]);
-    _bone_weights.push_back(bone_weights[indices[i]]);
-    _indices.push_back(i);
-  }
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, _vertices.size() * sizeof(glm::vec3), 
-    &_vertices[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, _uvs.size() * sizeof(glm::vec2), 
-    &_uvs[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.normal_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), 
-    &_normals[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
-  glBufferData(
-    GL_ELEMENT_ARRAY_BUFFER, 
-    _indices.size() * sizeof(unsigned int), 
-    &_indices[0], 
-    GL_STATIC_DRAW
-  );
-  m.num_indices = _indices.size();
-
-  GLuint bone_id_buffer;
-  glGenBuffers(1, &bone_id_buffer);
-  glBindBuffer(GL_ARRAY_BUFFER, bone_id_buffer);
-  glBufferData(GL_ARRAY_BUFFER, _bone_ids.size() * sizeof(glm::ivec3), 
-    &_bone_ids[0], GL_STATIC_DRAW);
-
-  GLuint weight_buffer;
-  glGenBuffers(1, &weight_buffer);
-  glBindBuffer(GL_ARRAY_BUFFER, weight_buffer);
-  glBufferData(GL_ARRAY_BUFFER, _bone_weights.size() * sizeof(glm::vec3), 
-    &_bone_weights[0], GL_STATIC_DRAW);
-
-  glGenVertexArrays(1, &m.vao_);
-  glBindVertexArray(m.vao_);
-
-  BindBuffer(m.vertex_buffer_, 0, 3);
-  BindBuffer(m.uv_buffer_, 1, 2);
-  BindBuffer(m.normal_buffer_, 2, 3);
-  BindBuffer(bone_id_buffer, 3, 3);
-  BindBuffer(weight_buffer, 4, 3);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
-
-  glBindVertexArray(0);
-  for (int slot = 0; slot < 5; slot++) {
-    glDisableVertexAttribArray(slot);
-  }
 
   // vec3 position = vec3(1990, 16, 2000);
-  shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
+  shared_ptr<GameObject> obj = make_shared<GameObject>(m, position);
   obj->name = filename;
-  m.polygons = data.polygons;
   obj->polygons = m.polygons;
   obj->bounding_sphere = GetObjectBoundingSphere(obj);
   sectors_[0].objects.push_back(obj);
   position += vec3(0, 0, 5);
-
-  // CreateSkeletonAux(translate(position), data.skeleton);
 
   // TODO: an animated object will have animations, if an animation is selected, 
   // a counter will count where in the animation is the model and update the
@@ -981,7 +815,10 @@ void Renderer::LoadFbx(const std::string& filename, vec3 position) {
     return;
   }
 
-  joint_transforms_.resize(data.joints.size());
+  obj->joint_transforms.resize(data.joints.size());
+
+  // TODO: load all animations.
+  // TODO: load these joints transforms in the Fbx function.
   const Animation& animation = data.animations[1];
   for (auto& kf : animation.keyframes) {
     for (int i = 0; i < kf.transforms.size(); i++) {
@@ -989,78 +826,17 @@ void Renderer::LoadFbx(const std::string& filename, vec3 position) {
       if (!joint) continue;
       
       mat4 joint_transform = kf.transforms[i] * joint->global_bindpose_inverse;
-      joint_transforms_[i].push_back(joint_transform);
+      obj->joint_transforms[i].push_back(joint_transform);
     }
   }
 }
 
-Mesh Renderer::LoadFbxMesh(const std::string& filename) {
-  FbxData data = FbxLoad(filename);
-  auto& vertices = data.vertices;
-  auto& uvs = data.uvs;
-  auto& normals = data.normals;
-  auto& indices = data.indices;
-
-  Mesh m;
-  m.shader = shaders_["object"];
-  glGenBuffers(1, &m.vertex_buffer_);
-  glGenBuffers(1, &m.uv_buffer_);
-  glGenBuffers(1, &m.normal_buffer_);
-  glGenBuffers(1, &m.element_buffer_);
-
-  vector<vec3> _vertices;
-  vector<vec2> _uvs;
-  vector<vec3> _normals;
-  vector<unsigned int> _indices;
-  for (int i = 0; i < indices.size(); i++) {
-    _vertices.push_back(vertices[indices[i]]);
-    _uvs.push_back(uvs[i]);
-    _normals.push_back(normals[i]);
-    _indices.push_back(i);
-  }
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, _vertices.size() * sizeof(glm::vec3), 
-    &_vertices[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, _uvs.size() * sizeof(glm::vec2), 
-    &_uvs[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, m.normal_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), 
-    &_normals[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
-  glBufferData(
-    GL_ELEMENT_ARRAY_BUFFER, 
-    _indices.size() * sizeof(unsigned int), 
-    &_indices[0], 
-    GL_STATIC_DRAW
-  );
-  m.num_indices = _indices.size();
-
-  glGenVertexArrays(1, &m.vao_);
-  glBindVertexArray(m.vao_);
-
-  BindBuffer(m.vertex_buffer_, 0, 3);
-  BindBuffer(m.uv_buffer_, 1, 2);
-  BindBuffer(m.normal_buffer_, 2, 3);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
-
-  glBindVertexArray(0);
-  for (int slot = 0; slot < 5; slot++) {
-    glDisableVertexAttribArray(slot);
-  }
-  m.polygons = data.polygons;
-  return m;
-}
-
 int Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id) {
-  Mesh m = LoadFbxMesh(filename);
+  Mesh m;
+  LoadFbxData(filename, m);
+  m.shader = shaders_["object"];
 
-  shared_ptr<Object3D> obj = make_shared<Object3D>(m, position);
+  shared_ptr<GameObject> obj = make_shared<GameObject>(m, position);
   obj->name = filename;
   obj->polygons = m.polygons;
   obj->occluder_id = occluder_id;
@@ -1076,7 +852,9 @@ int Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sect
 }
 
 void Renderer::LoadLOD(const std::string& filename, int id, int sector_id, int lod_level) {
-  Mesh m = LoadFbxMesh(filename);
+  Mesh m;
+  LoadFbxData(filename, m);
+  m.shader = shaders_["object"];
  
   for (auto& obj : sectors_[sector_id].objects) {
     if (obj->id == id) {
@@ -1108,7 +886,8 @@ vec3 ClosestPtPointAABB(vec3 p, vec3 aabb_min, vec3 aabb_max) {
 // =================================================
 
 void Renderer::LoadSector(const std::string& filename, int id, vec3 position) {
-  Mesh m = LoadFbxMesh(filename);
+  Mesh m;
+  LoadFbxData(filename, m);
 
   Sector s;
   s.id = id;
@@ -1128,7 +907,8 @@ void Renderer::LoadSector(const std::string& filename, int id, vec3 position) {
 }
 
 void Renderer::LoadPortal(const std::string& filename, int id, vec3 position) {
-  Mesh m = LoadFbxMesh(filename);
+  Mesh m;
+  LoadFbxData(filename, m);
 
   Portal p;
   p.polygons = m.polygons;
@@ -1142,7 +922,8 @@ void Renderer::LoadPortal(const std::string& filename, int id, vec3 position) {
 
 void Renderer::LoadOccluder(const std::string& filename, int id, 
   vec3 position) {
-  Mesh m = LoadFbxMesh(filename);
+  Mesh m;
+  LoadFbxData(filename, m);
 
   Occluder o;
   o.polygons = m.polygons;
@@ -1326,7 +1107,7 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
   int current_sector_id = GetPlayerSector(camera_.position);
 
   // Collide with Octree.
-  vector<shared_ptr<Object3D>> objs;
+  vector<shared_ptr<GameObject>> objs;
   if (current_sector_id == 0) {
     GetPotentiallyCollidingObjects(*player_pos, octree_, objs);
   } else {

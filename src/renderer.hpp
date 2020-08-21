@@ -23,6 +23,7 @@
 #include <unordered_set>
 #include <png.h>
 #include "fbx_loader.hpp"
+#include "asset.hpp"
 #include "util.hpp"
 #include "terrain.hpp"
 
@@ -37,6 +38,7 @@
 using namespace std;
 using namespace glm;
 
+
 struct Camera {
   vec3 position; 
   vec3 up; 
@@ -45,44 +47,6 @@ struct Camera {
   Camera() {}
   Camera(vec3 position, vec3 direction, vec3 up) : position(position), 
     up(up), direction(direction) {}
-};
-
-struct Mesh {
-  GLuint shader;
-  GLuint vertex_buffer_;
-  GLuint uv_buffer_;
-  GLuint normal_buffer_;
-  GLuint element_buffer_;
-  GLuint vao_ = 0;
-  GLuint num_indices;
-  vector<Polygon> polygons;
-  Mesh() {}
-};
-
-struct Object3D {
-  int id;
-  // Mesh mesh;
-  vec3 position;
-  vec3 rotation;
-  float distance;
-  vector<Polygon> polygons;
-  bool collide = false;
-  string name;
-  int occluder_id = -1;
-  bool draw = true;
-  AABB aabb;
-  BoundingSphere bounding_sphere;
-
-  Mesh lods[5]; // 0 - 5.
-
-  Object3D() {}
-  Object3D(Mesh mesh, vec3 position) : position(position) {
-    lods[0] = mesh;
-  }
-  Object3D(Mesh mesh, vec3 position, vec3 rotation) : position(position), 
-    rotation(rotation) {
-    lods[0] = mesh;
-  }
 };
 
 struct FBO {
@@ -97,12 +61,16 @@ struct FBO {
   FBO(GLuint width, GLuint height) : width(width), height(height) {}
 };
 
+
+// ==========================================
+// Structs that belong in another file.
+
 struct OctreeNode {
   vec3 center;
   vec3 half_dimensions;
   shared_ptr<OctreeNode> children[8] { nullptr, nullptr, nullptr, nullptr, 
     nullptr, nullptr, nullptr, nullptr };
-  vector<shared_ptr<Object3D>> objects;
+  vector<shared_ptr<GameObject>> objects;
   OctreeNode() {}
   OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
     half_dimensions(half_dimensions) {}
@@ -132,7 +100,7 @@ struct Sector {
   vector<Polygon> convex_hull;
 
   // Objects inside the sector.
-  vector<shared_ptr<Object3D>> objects;
+  vector<shared_ptr<GameObject>> objects;
 };
 
 struct Portal {
@@ -142,6 +110,9 @@ struct Portal {
 struct Occluder {
   vector<Polygon> polygons;
 };
+
+// ==========================================
+
 
 class Renderer {
   GLFWwindow* window_;
@@ -154,7 +125,6 @@ class Renderer {
 
   int id_counter = 0;
 
-  vector<vector<mat4>> joint_transforms_;
   GLuint texture_;
   GLuint building_texture_;
   GLuint granite_texture_;
@@ -174,38 +144,34 @@ class Renderer {
   void CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint> node);
   void LoadShaders(const std::string& directory);
   FBO CreateFramebuffer(int width, int height);
-  Mesh CreateMesh(
-    GLuint shader_id,
-    vector<vec3>& vertices, 
-    vector<vec2>& uvs, 
-    vector<unsigned int>& indices
-  );
   
   void DrawFBO(const FBO& fbo);
   void DrawObjects();
-  Mesh LoadFbxMesh(const std::string& filename);
   int GetPlayerSector(const vec3& player_pos);
   void DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node);
   ConvexHull CreateConvexHullFromOccluder(int occluder_id, 
     const vec3& player_pos);
-  shared_ptr<Object3D> CreateMeshFromConvexHull(const ConvexHull& ch);
-  shared_ptr<Object3D> CreateMeshFromAABB(const AABB& aabb);
+  shared_ptr<GameObject> CreateMeshFromConvexHull(const ConvexHull& ch);
+  shared_ptr<GameObject> CreateMeshFromAABB(const AABB& aabb);
   void InsertObjectInOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<Object3D> object, int depth);
+  shared_ptr<GameObject> object, int depth);
   void GetPotentiallyVisibleObjects(const vec3& player_pos, 
     shared_ptr<OctreeNode> octree_node,
-    vector<shared_ptr<Object3D>>& objects);
+    vector<shared_ptr<GameObject>>& objects);
   void GetPotentiallyCollidingObjects(const vec3& player_pos, 
     shared_ptr<OctreeNode> octree_node,
-    vector<shared_ptr<Object3D>>& objects);
+    vector<shared_ptr<GameObject>>& objects);
 
  public:
   void Init(const string& shader_dir);  
   void Run(const function<void()>& process_frame);
   void SetCamera(const Camera& camera) { camera_ = camera; }
-  shared_ptr<Object3D> CreateCube(vec3 dimensions, vec3 position);
-  shared_ptr<Object3D> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
-  shared_ptr<Object3D> CreateJoint(vec3 start, vec3 end);
+
+  // Create mesh.
+  shared_ptr<GameObject> CreateCube(vec3 dimensions, vec3 position);
+  shared_ptr<GameObject> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
+  shared_ptr<GameObject> CreateJoint(vec3 start, vec3 end);
+
   void LoadFbx(const std::string& filename, vec3 position);
   int LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id = -1);
   void LoadSector(const std::string& filename, int id, vec3 position);

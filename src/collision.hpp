@@ -1,3 +1,6 @@
+#ifndef __COLLISION_HPP__
+#define __COLLISION_HPP__
+
 #include <stdio.h>
 #include <iostream>
 #include <exception>
@@ -68,3 +71,5 @@ Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction);
 AABB GetAABBFromVertices(const vector<vec3>& vertices);
 
 BoundingSphere GetBoundingSphereFromVertices(const vector<vec3>& vertices);
+
+#endif // __COLLISION_HPP__.

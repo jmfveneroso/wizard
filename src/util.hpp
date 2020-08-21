@@ -46,10 +46,22 @@ struct Edge {
 };
 
 struct Polygon {
-  vector<unsigned int> vertex_ids;
   vector<vec3> vertices;
   vector<vec3> normals;
-  vector<vec3> uvs;
+  vector<vec2> uvs;
+  vector<unsigned int> indices;
+};
+
+struct Mesh {
+  GLuint shader;
+  GLuint vertex_buffer_;
+  GLuint uv_buffer_;
+  GLuint normal_buffer_;
+  GLuint element_buffer_;
+  GLuint vao_ = 0;
+  GLuint num_indices;
+  vector<Polygon> polygons;
+  Mesh() {}
 };
 
 using ConvexHull = vector<Polygon>;
@@ -60,6 +72,13 @@ void BindTexture(const std::string& sampler,
   const GLuint& program_id, const GLuint& texture_id);
 GLuint LoadPng(const char* file_name);
 GLuint LoadShader(const std::string& name);
+template<typename First, typename ...Rest>
+void sample_log(First&& first, Rest&& ...rest);
+vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
+vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
+vector<Edge> GetPolygonEdges(const Polygon& polygon);
+Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices);
 
 ostream& operator<<(ostream& os, const vec2& v);
 ostream& operator<<(ostream& os, const vec3& v);
@@ -69,11 +88,5 @@ ostream& operator<<(ostream& os, const mat4& m);
 ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
-
-template<typename First, typename ...Rest>
-void sample_log(First&& first, Rest&& ...rest);
-vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
-vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
-vector<Edge> GetPolygonEdges(const Polygon& polygon);
 
 #endif // __UTIL_HPP__

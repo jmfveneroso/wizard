@@ -248,9 +248,9 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glBindVertexArray(vao_);
 
   // TODO: take the tiles file as input.
-  texture_ = LoadPng("tiles2.png");
-  water_texture_ = LoadPng("water_dudv.png");
-  water_normal_texture_ = LoadPng("water_normal.png");
+  texture_ = LoadPng("assets/textures_png/tiles2.png");
+  water_texture_ = LoadPng("assets/textures_png/water_dudv.png");
+  water_normal_texture_ = LoadPng("assets/textures_png/water_normal.png");
 
   for (int i = 0; i < CLIPMAP_LEVELS; i++) {
     clipmaps_.push_back(make_shared<Clipmap>(i));
@@ -535,7 +535,7 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
       for (int y = 0; y < CLIPMAP_SIZE + 1; y += sampling_rate) {
         float h = clipmap->row_heights[y][x];
         clipmap->min_height = std::min(clipmap->min_height, h);
-        clipmap->max_height = std::max(clipmap->min_height, h);
+        clipmap->max_height = std::max(clipmap->max_height, h);
       }
     }
   }
