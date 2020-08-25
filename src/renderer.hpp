@@ -65,48 +65,6 @@ struct FBO {
 // ==========================================
 // Structs that belong in another file.
 
-struct OctreeNode {
-  vec3 center;
-  vec3 half_dimensions;
-  shared_ptr<OctreeNode> children[8] { nullptr, nullptr, nullptr, nullptr, 
-    nullptr, nullptr, nullptr, nullptr };
-  vector<shared_ptr<GameObject>> objects;
-  OctreeNode() {}
-  OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
-    half_dimensions(half_dimensions) {}
-};
-
-// http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
-struct StabbingTreeNode {
-  int id;
-
-  int portal_id;
-
-  // Is this sector in front or behind the portal.
-  bool behind;
-
-  vector<shared_ptr<StabbingTreeNode>> children;
-  StabbingTreeNode(int id, int portal_id, bool behind) : id(id), 
-    portal_id(portal_id), behind(behind) {}
-};
-
-struct Sector {
-  int id;
-
-  // Starting from this sector, which sectors are visible?
-  shared_ptr<StabbingTreeNode> stabbing_tree;
-  
-  // Vertices inside the convex hull are inside the sector.
-  vector<Polygon> convex_hull;
-
-  // Objects inside the sector.
-  vector<shared_ptr<GameObject>> objects;
-};
-
-struct Portal {
-  vector<Polygon> polygons;
-};
-
 struct Occluder {
   vector<Polygon> polygons;
 };
@@ -115,6 +73,7 @@ struct Occluder {
 
 
 class Renderer {
+  shared_ptr<AssetCatalog> asset_catalog_;
   GLFWwindow* window_;
   int window_width_ = WINDOW_WIDTH;
   int window_height_ = WINDOW_HEIGHT;
@@ -122,39 +81,28 @@ class Renderer {
   mat4 view_matrix_;
   Camera camera_;
   vec4 frustum_planes_[6];
-
-  int id_counter = 0;
-
-  GLuint texture_;
-  GLuint building_texture_;
-  GLuint granite_texture_;
-  GLuint wood_texture_;
+  unordered_map<string, FBO> fbos_;
   shared_ptr<Terrain> terrain_;
 
-  // Sectors indexed by id.
-  unordered_map<int, Sector> sectors_;
-  unordered_map<int, Portal> portals_;
-  unordered_map<int, Occluder> occluders_;
-  shared_ptr<OctreeNode> octree_;
-
-  unordered_map<string, GLuint> shaders_;
-  unordered_map<string, FBO> fbos_;
-  unordered_map<string, Mesh> meshes_;
-
-  void CreateSkeletonAux(mat4 parent_transform, shared_ptr<SkeletonJoint> node);
-  void LoadShaders(const std::string& directory);
   FBO CreateFramebuffer(int width, int height);
-  
   void DrawFBO(const FBO& fbo);
-  void DrawObjects();
-  int GetPlayerSector(const vec3& player_pos);
+
+  shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
+  bool CullObject(shared_ptr<GameObject> obj, 
+    const vector<vector<Polygon>>& occluder_convex_hulls);
+  void DrawObject(shared_ptr<GameObject> obj);
+  vector<shared_ptr<GameObject>> 
+  GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector);
+  void DrawObjects(shared_ptr<Sector> sector);
   void DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node);
-  ConvexHull CreateConvexHullFromOccluder(int occluder_id, 
+  ConvexHull CreateConvexHullFromOccluder(const vector<Polygon>& polygons, 
     const vec3& player_pos);
+
+  // TODO: move.
   shared_ptr<GameObject> CreateMeshFromConvexHull(const ConvexHull& ch);
   shared_ptr<GameObject> CreateMeshFromAABB(const AABB& aabb);
-  void InsertObjectInOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<GameObject> object, int depth);
+
+  // TODO: move.
   void GetPotentiallyVisibleObjects(const vec3& player_pos, 
     shared_ptr<OctreeNode> octree_node,
     vector<shared_ptr<GameObject>>& objects);
@@ -163,25 +111,21 @@ class Renderer {
     vector<shared_ptr<GameObject>>& objects);
 
  public:
-  void Init(const string& shader_dir);  
+  Renderer();  
+  void Init();
   void Run(const function<void()>& process_frame);
   void SetCamera(const Camera& camera) { camera_ = camera; }
 
-  // Create mesh.
+  // TODO: move.
   shared_ptr<GameObject> CreateCube(vec3 dimensions, vec3 position);
   shared_ptr<GameObject> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
   shared_ptr<GameObject> CreateJoint(vec3 start, vec3 end);
 
-  void LoadFbx(const std::string& filename, vec3 position);
-  int LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id = -1);
-  void LoadSector(const std::string& filename, int id, vec3 position);
-  void LoadPortal(const std::string& filename, int id, vec3 position);
-  void LoadOccluder(const std::string& filename, int id, vec3 position);
-  void LoadLOD(const std::string& filename, int id, int sector_id, int lod_level);
-
   void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
-  void BuildOctree();
   
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }
+
+  void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
+    asset_catalog_ = asset_catalog; } 
 };

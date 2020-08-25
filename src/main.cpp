@@ -37,14 +37,13 @@ struct Player {
   glm::vec3 position = glm::vec3(2000, 31, 2000);
   glm::vec3 next_position = glm::vec3(0, 0, 0);
   glm::vec3 speed = glm::vec3(0, 0, 0);
-  // float h_angle = -230.991;
   float h_angle = 0;
   float v_angle = 0;
   bool can_jump = true;
 };
 
 Player player_;
-Renderer renderer;
+shared_ptr<Renderer> renderer = nullptr;
 
 void UpdateForces() {
   Player& p = player_;
@@ -60,10 +59,10 @@ void UpdateForces() {
   vec3 old_player_pos = player_.position;
   p.position += p.speed;
 
-  renderer.Collide(&player_.position, old_player_pos, &player_.speed, &player_.can_jump);
+  renderer->Collide(&player_.position, old_player_pos, &player_.speed, &player_.can_jump);
 
   // Test collision with terrain.
-  float height = renderer.terrain()->GetHeight(player_.position.x, player_.position.z) + PLAYER_HEIGHT;
+  float height = renderer->terrain()->GetHeight(player_.position.x, player_.position.z) + PLAYER_HEIGHT;
   if (p.position.y - PLAYER_HEIGHT < height) {
     glm::vec3 pos = p.position;
     pos.y = height + PLAYER_HEIGHT;
@@ -75,7 +74,7 @@ void UpdateForces() {
   }
 }
 
-void ProcessGameInput(){
+void ProcessGameInput() {
   static double last_time = glfwGetTime();
   double current_time = glfwGetTime();
 
@@ -99,7 +98,7 @@ void ProcessGameInput(){
   
   glm::vec3 up = glm::cross(right, direction);
   
-  GLFWwindow* window = renderer.window();
+  GLFWwindow* window = renderer->window();
   
   // Move forward.
   if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -143,46 +142,15 @@ void ProcessGameInput(){
   last_time = current_time;
   UpdateForces();
 
-  renderer.SetCamera(Camera(player_.position + vec3(0, 0.75, 0), direction, up));
+  renderer->SetCamera(Camera(player_.position + vec3(0, 0.75, 0), direction, up));
   // cout << player_.position << endl;
 }
 
 int main() {
-  renderer.Init("shaders");
-
-  renderer.LoadFbx("assets/models_fbx/fish10.fbx", vec3(2005, 190, 2010));
-
-  renderer.LoadSector("assets/models_fbx/tower_first_floor_sector.fbx", 1, 
-    vec3(2042, 172.8, 2010));
-
-  renderer.LoadPortal("assets/models_fbx/tower_first_floor_portal.fbx", 0, 
-    vec3(2042, 172.8, 2010));
-
-  renderer.LoadOccluder("assets/models_fbx/tower_first_floor_occluder.fbx", 0,
-    vec3(2042, 172.8, 2010));
-
-  int id = renderer.LoadStaticFbx("assets/models_fbx/tower_outer_wall.fbx", 
-    vec3(2042, 172.8, 2010), 0, 0);
-
-  renderer.LoadStaticFbx("assets/models_fbx/tower_inner_wall.fbx", 
-    vec3(2042, 172.8, 2010), 1);
-
-  renderer.LoadStaticFbx("assets/models_fbx/wooden_box.fbx", vec3(2052, 190, 2010), 1);
-
-  renderer.LoadStaticFbx("assets/models_fbx/wooden_box.fbx", vec3(2047, 190, 2010), 1);
-
-  renderer.LoadStaticFbx("assets/models_fbx/wooden_box.fbx", vec3(2040, 190, 2010), 1);
-
-  renderer.LoadStaticFbx("assets/models_fbx/stone_pillar.fbx", vec3(2052, 180, 2010), 1);
-
-  renderer.LoadStaticFbx("assets/models_fbx/stone_pillar.fbx", vec3(2052, 180, 2050), 0);
-
-  renderer.LoadLOD("assets/models_fbx/tower_outer_wall_lod0.fbx", id, 0, 1);
-
-  renderer.CreateCube(vec3(10, 10, 10), vec3(2000, 200, 2000));
-
-  renderer.BuildOctree();
-
-  renderer.Run(ProcessGameInput);
+  renderer = make_shared<Renderer>();
+  shared_ptr<AssetCatalog> asset_catalog = make_shared<AssetCatalog>("assets");
+  renderer->set_asset_catalog(asset_catalog);
+  renderer->Init();
+  renderer->Run(ProcessGameInput);
   return 0;
 }

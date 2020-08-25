@@ -2,12 +2,7 @@
 #include "boost/filesystem.hpp"
 #include <boost/algorithm/string/predicate.hpp>
 
-// TODO: create file type for 3d Models.
-
-// TODO: terrain rendering should be another lib.
-//   The terrain lib should essentially create a mesh.
-
-void Renderer::Init(const string& shader_dir) {
+Renderer::Renderer() {
   if (!glfwInit()) throw "Failed to initialize GLFW";
 
   glfwWindowHint(GLFW_SAMPLES, 4);
@@ -50,40 +45,14 @@ void Renderer::Init(const string& shader_dir) {
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS); 
   glEnable(GL_CULL_FACE);
-
-  LoadShaders("shaders");
-  fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
-
-  // TODO: load texture with the object.
-  texture_ = LoadPng("assets/textures_png/fish_uv.png");
-  building_texture_ = LoadPng("assets/textures_png/first_floor_uv.png");
-  granite_texture_ = LoadPng("assets/textures_png/granite.png");
-  wood_texture_ = LoadPng("assets/textures_png/wood.png");
-
-  terrain_ = make_shared<Terrain>(shaders_["terrain"], shaders_["water"]);
-
-  Sector s;
-  s.id = 0;
-  s.stabbing_tree = make_shared<StabbingTreeNode>(0, 0, true);
-  s.stabbing_tree->children.push_back(make_shared<StabbingTreeNode>(1, 0, false));
-  sectors_[0] = s;
 }
 
-void Renderer::LoadShaders(const std::string& directory) {
-  boost::filesystem::path p (directory);
-  boost::filesystem::directory_iterator end_itr;
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (boost::ends_with(current_file, ".vert") ||
-      boost::ends_with(current_file, ".frag") ||
-      boost::ends_with(current_file, ".geom")) { 
-      string prefix = current_file.substr(0, current_file.size() - 5);
-      if (shaders_.find(prefix) == shaders_.end()) {
-        shaders_[prefix] = LoadShader(prefix);
-      }
-    }
-  }
+void Renderer::Init() {
+  fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
+
+  // TODO: terrain rendering should be another lib.
+  terrain_ = make_shared<Terrain>(asset_catalog_->GetShader("terrain"), 
+    asset_catalog_->GetShader("water"));
 }
 
 FBO Renderer::CreateFramebuffer(int width, int height) {
@@ -157,7 +126,7 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   glDisable(GL_CULL_FACE);
 
   // Change to texture_sampler.
-  BindTexture("texture_sampler", shaders_["screen"], fbo.texture);
+  BindTexture("texture_sampler", asset_catalog_->GetShader("screen"), fbo.texture);
   BindBuffer(vertex_buffer, 0, 3);
   BindBuffer(uv_buffer, 1, 2);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer);
@@ -169,372 +138,8 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   return fbo;
 }
 
-ConvexHull Renderer::CreateConvexHullFromOccluder(int occluder_id, 
-  const vec3& player_pos) {
-  ConvexHull convex_hull;
-
-  unordered_map<string, Edge> edges;
-  const vector<Polygon>& polygons = occluders_[occluder_id].polygons;
-
-  // Find occlusion hull edges.
-  for (const Polygon& p : polygons) {
-    const vec3& plane_point = p.vertices[0];
-    const vec3& normal = p.normals[0];
-    if (IsBehindPlane(player_pos, plane_point, normal)) {
-      continue;
-    }
-
-    convex_hull.push_back(p);
-
-    // If the polygon faces viewer, do the following for all its edges: 
-    // If the edge is already in the edge list, remove the edge from the 
-    // list. Otherwise, add the edge into the list.
-    const vector<vec3>& vertices = p.vertices;
-    const vector<vec3>& normals = p.normals;
-    const vector<unsigned int>& indices = p.indices;
-
-    // TODO: contemplate not triangular polygons. Maybe?
-    vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
-    for (auto& [a, b] : comparisons) {
-      int i = (p.indices[a] < p.indices[b]) ? a : b;
-      int j = (p.indices[a] < p.indices[b]) ? b : a;
-      
-      string key = boost::lexical_cast<string>(indices[i]) + "-" + 
-        boost::lexical_cast<string>(indices[j]);
-      if (edges.find(key) == edges.end()) {
-        edges[key] = Edge(vertices[i], vertices[j], indices[i], indices[j], normals[i], normals[j]);
-      } else {
-        edges.erase(key);
-      }
-    }
-  }
-
-  if (edges.empty()) {
-    return convex_hull;
-  }
-
-  for (auto& [key, e] : edges) {
-    Polygon plane = CreatePolygonFrom3Points(player_pos, e.a, e.b, e.a_normal);
-    convex_hull.push_back(plane);
-  }
-  return convex_hull;
-}
-
-int Renderer::GetPlayerSector(const vec3& player_pos) {
-  for (int i = 1; i < sectors_.size(); i++) {
-    if (IsInConvexHull(player_pos, sectors_[i].convex_hull)) {
-      return i;
-    }
-  }
-  return 0;
-}
-
-AABB GetObjectAABB(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetAABBFromVertices(vertices);
-}
-
-BoundingSphere GetObjectBoundingSphere(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetBoundingSphereFromVertices(vertices);
-}
-
-const vector<vec3> kOctreeNodeOffsets = {
-  //    Z   Y   X
-  vec3(-1, -1, -1), // 0 0 0
-  vec3(-1, -1, +1), // 0 0 1
-  vec3(-1, +1, -1), // 0 1 0
-  vec3(-1, +1, +1), // 0 1 1
-  vec3(+1, -1, -1), // 1 0 0
-  vec3(+1, -1, +1), // 1 0 1
-  vec3(+1, +1, -1), // 1 1 0
-  vec3(+1, +1, +1), // 1 1 1
-};
-
-void Renderer::InsertObjectInOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<GameObject> object, int depth) {
-  int index = 0, straddle = 0;
-  cout << "--- Octree depth: " << depth << endl;
-  cout << "--- Octree center: " << octree_node->center << endl;
-  cout << "--- Octree radius: " << octree_node->half_dimensions << endl;
-
-  // Compute the octant number [0..7] the object sphere center is in
-  // If straddling any of the dividing x, y, or z planes, exit directly
-  for (int i = 0; i < 3; i++) {
-    float delta = object->bounding_sphere.center[i] - octree_node->center[i];
-    if (abs(delta) < object->bounding_sphere.radius) {
-      straddle = 1;
-      break;
-    }
-
-    if (delta > 0.0f) index |= (1 << i); // ZYX
-  }
-
-  if (!straddle && depth < 8) {
-    // Fully contained in existing child node; insert in that subtree
-    if (octree_node->children[index] == nullptr) {
-      octree_node->children[index] = make_shared<OctreeNode>(
-        octree_node->center + kOctreeNodeOffsets[index] * 
-          octree_node->half_dimensions * 0.5f, 
-        octree_node->half_dimensions * 0.5f);
-    }
-    InsertObjectInOctree(octree_node->children[index], object, depth + 1);
-  } else {
-    // Straddling, or no child node to descend into, so
-    // link object into linked list at this node
-    octree_node->objects.push_back(object);
-    cout << "Object: " << object->name << " inserted in the Octree" << endl;
-    cout << "Octree depth: " << depth << endl;
-    cout << "Octree center: " << octree_node->center << endl;
-    cout << "Octree radius: " << octree_node->half_dimensions << endl;
-    cout << "object->bounding_sphere.center: " << object->bounding_sphere.center << endl;
-    cout << "object->bounding_sphere.radius: " << object->bounding_sphere.radius << endl;
-  }
-}
-
-void Renderer::BuildOctree() {
-  octree_ = make_shared<OctreeNode>(vec3(2100, 0, 2100), 
-    vec3(4000, 4000, 4000));
- 
-  vector<shared_ptr<GameObject>>& objects = sectors_[0].objects;
-  for (auto& obj : objects) {
-    InsertObjectInOctree(octree_, obj, 0);
-  }
-}
-
-void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
-  if (!octree_node) {
-    return;
-  }
-
-  AABB aabb;
-  aabb.point = octree_node->center - octree_node->half_dimensions;
-  aabb.dimensions = octree_node->half_dimensions * 2.0f;
-  // cout << "octree_node->center: " << octree_node->center << endl;
-  // cout << "octree_node->half_dimensions: " << octree_node->half_dimensions << endl;
-  // cout << "player_pos: " << player_pos << endl;
-  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
-    // cout << "not in frustum" << endl;
-    return;
-  }
-  // cout << "in frustum" << endl;
-
-  for (int i = 0; i < 8; i++) {
-    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
-  }
-
-  objects.insert(objects.end(), octree_node->objects.begin(), 
-    octree_node->objects.end());
-}
-
-void Renderer::GetPotentiallyCollidingObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
-  if (!octree_node) {
-    return;
-  }
-
-  AABB aabb;
-  aabb.point = octree_node->center - octree_node->half_dimensions;
-  aabb.dimensions = octree_node->half_dimensions * 2.0f;
-
-  BoundingSphere s = BoundingSphere(player_pos, 0.75f);
-  if (!TestSphereAABBIntersection(s, aabb)) {
-    return;
-  }
-
-  for (int i = 0; i < 8; i++) {
-    GetPotentiallyCollidingObjects(player_pos, octree_node->children[i], 
-      objects);
-  }
-
-  objects.insert(objects.end(), octree_node->objects.begin(), 
-    octree_node->objects.end());
-}
-
-
-void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
-  int sector_id = stabbing_tree_node->id;
-
-  // Outside
-  if (sector_id == 0) {
-    glEnable(GL_CULL_FACE);
-    terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
-    glDisable(GL_CULL_FACE);
-
-    // TODO: frustum cull objects according to their position in the Octree.
-  }
-
-  // Occlusion culling
-  // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
-  vector<vector<Polygon>> occluder_convex_hulls;
-  Sector& s = sectors_[sector_id];
-
-  // Cull with Octree.
-  vector<shared_ptr<GameObject>> objs;
-  if (sector_id == 0) {
-    GetPotentiallyVisibleObjects(camera_.position, octree_, objs);
-  } else {
-    objs = s.objects;
-  }
-
-  // Sort for closest to farthest.
-  for (auto& obj : objs) {
-    obj->distance = length(camera_.position - obj->position);
-  }
-  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
-    return lhs->distance < rhs->distance;
-  });
-
-  static int bla = 1;
-  for (auto& obj : objs) {
-    AABB aabb = GetObjectAABB(obj);
-    if (!obj->polygons.empty()) {
-      bool occlude = false;
-      if (bla > 0 && obj->name == "stone_pillar.fbx") {
-        // CreateMeshFromAABB(aabb);
-        bla--;
-      }
-      for (auto& ch : occluder_convex_hulls) {
-        if (IsInConvexHull(aabb, ch)) {
-          occlude = true;
-          // cout << "occlude: " << obj->name << endl;
-          break;
-        }
-      }
-      if (occlude) {
-        continue;
-      }
-    }
-
-    if (obj->occluder_id != -1) {
-      ConvexHull convex_hull = CreateConvexHullFromOccluder(obj->occluder_id, 
-        camera_.position);
-      if (!convex_hull.empty()) {
-        occluder_convex_hulls.push_back(convex_hull);
-        if (bla > 0) {
-          // CreateMeshFromConvexHull(convex_hull);
-          // bla = false;
-        }
-      }
-    }
-
-    if (!obj->draw) {
-      continue;
-    }
-
-    // Frustum cull.
-    if (!CollideAABBFrustum(aabb, frustum_planes_, camera_.position)) {
-      // cout << "Occluded by frustum" << obj->name << endl;
-      continue;
-    }
-
-    Mesh mesh;
-    int lod_level = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
-    for (int i = lod_level; i >= 0; i--) {
-      if (obj->lods[i].vao_ == 0) {
-        continue;
-      }
-      mesh = obj->lods[i];
-      break;
-    }
-
-    GLuint program_id = mesh.shader;
-    glUseProgram(program_id);
-
-    glBindVertexArray(mesh.vao_);
-    glm::mat4 ModelMatrix = glm::translate(glm::mat4(1.0), obj->position);
-    glm::mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
-    glm::mat4 MVP = projection_matrix_ * ModelViewMatrix;
-
-    glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-    glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-    glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
-
-    if (program_id == shaders_["animated_object"]) {
-      obj->frame++;
-      if (obj->frame >= obj->joint_transforms[0].size()) {
-        obj->frame = 0;
-      }
-
-      // TODO: max 10 joints. Enforce limit here.
-      vector<mat4> joint_transforms;
-      for (int i = 0; i < obj->joint_transforms.size(); i++) {
-        joint_transforms.push_back(obj->joint_transforms[i][obj->frame]);
-      }
-      glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
-        joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
-
-      BindTexture("texture_sampler", program_id, texture_);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-    } else if (program_id == shaders_["object"]) {
-      if (obj->name == "assets/models_fbx/wooden_box.fbx") {
-        BindTexture("texture_sampler", program_id, wood_texture_);
-      } else if (obj->name == "assets/models_fbx/tower_outer_wall.fbx") {
-        BindTexture("texture_sampler", program_id, building_texture_);
-      } else if (obj->name == "assets/models_fbx/tower_inner_wall.fbx") {
-        BindTexture("texture_sampler", program_id, building_texture_);
-      } else if (obj->name == "assets/models_fbx/stone_pillar.fbx") {
-        BindTexture("texture_sampler", program_id, granite_texture_);
-      }
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-    } else {
-      glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
-    }
-    glBindVertexArray(0);
-  }
-
-  mat4 ModelMatrix = translate(mat4(1.0), camera_.position);
-  mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
-  mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
-  mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
-
-  // Portal culling 
-  // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
-  for (auto& node : stabbing_tree_node->children) {
-    const Portal& p = portals_[node->portal_id];
-
-    BoundingSphere sphere = BoundingSphere(camera_.position, 0.75f);
-    bool in_frustum = false; 
-    for (auto& poly : p.polygons) {
-      if (TestSphereTriangleIntersection(sphere, poly.vertices)) {
-        in_frustum = true;
-        break;
-      }
-
-      if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
-        camera_.position)) {
-        in_frustum = true;
-        break;
-      }
-    }
-    
-
-    if (in_frustum) {
-      DrawSector(node);
-    }
-  }
-}
-
-void Renderer::DrawObjects() {
-  int current_sector_id = GetPlayerSector(camera_.position);
-  DrawSector(sectors_[current_sector_id].stabbing_tree);
-}
-
 void Renderer::DrawFBO(const FBO& fbo) {
-  GLuint program_id = shaders_["screen"];
+  GLuint program_id = asset_catalog_->GetShader("screen");
   glBindVertexArray(fbo.vao);
   BindTexture("texture_sampler", program_id, fbo.texture);
   glUseProgram(program_id);
@@ -586,19 +191,284 @@ void Renderer::Run(const function<void()>& process_frame) {
     glClearColor(50, 50, 50, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    DrawObjects();
-    DrawFBO(fbos_["screen"]);
+    shared_ptr<Sector> sector = GetPlayerSector(camera_.position);
+    DrawSector(sector->stabbing_tree);
 
+    DrawFBO(fbos_["screen"]);
     glfwSwapBuffers(window_);
     glfwPollEvents();
   } while (glfwWindowShouldClose(window_) == 0);
 
   // Cleanup VBO and shader.
-  for (auto it : shaders_) {
-    glDeleteProgram(it.second);
-  }
+  asset_catalog_->Cleanup();
   glfwTerminate();
 }
+
+
+
+
+// ==========================
+// TODO: improve these functions
+// ==========================
+
+shared_ptr<Sector> Renderer::GetPlayerSector(const vec3& player_pos) {
+  // TODO: look for the sector in the octree.
+  const unordered_map<string, shared_ptr<Sector>>& sectors = 
+    asset_catalog_->GetSectors();
+
+  for (const auto& it : sectors) {
+    shared_ptr<Sector> sector = it.second;
+    if (sector->name == "outside") continue;
+    if (IsInConvexHull(player_pos, sector->convex_hull)) {
+      return sector;
+    }
+  }
+  return asset_catalog_->GetSectorByName("outside");
+}
+
+ConvexHull Renderer::CreateConvexHullFromOccluder(
+  const vector<Polygon>& polygons, const vec3& player_pos) {
+  ConvexHull convex_hull;
+
+  unordered_map<string, Edge> edges;
+
+  // Find occlusion hull edges.
+  for (const Polygon& p : polygons) {
+    const vec3& plane_point = p.vertices[0];
+    const vec3& normal = p.normals[0];
+    if (IsBehindPlane(player_pos, plane_point, normal)) {
+      continue;
+    }
+
+    convex_hull.push_back(p);
+
+    // If the polygon faces viewer, do the following for all its edges: 
+    // If the edge is already in the edge list, remove the edge from the 
+    // list. Otherwise, add the edge into the list.
+    const vector<vec3>& vertices = p.vertices;
+    const vector<vec3>& normals = p.normals;
+    const vector<unsigned int>& indices = p.indices;
+
+    // TODO: contemplate not triangular polygons. Maybe?
+    vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
+    for (auto& [a, b] : comparisons) {
+      int i = (p.indices[a] < p.indices[b]) ? a : b;
+      int j = (p.indices[a] < p.indices[b]) ? b : a;
+      
+      string key = boost::lexical_cast<string>(indices[i]) + "-" + 
+        boost::lexical_cast<string>(indices[j]);
+      if (edges.find(key) == edges.end()) {
+        edges[key] = Edge(vertices[i], vertices[j], indices[i], indices[j], normals[i], normals[j]);
+      } else {
+        edges.erase(key);
+      }
+    }
+  }
+
+  if (edges.empty()) {
+    return convex_hull;
+  }
+
+  for (auto& [key, e] : edges) {
+    Polygon plane = CreatePolygonFrom3Points(player_pos, e.a, e.b, e.a_normal);
+    convex_hull.push_back(plane);
+  }
+  return convex_hull;
+}
+
+bool Renderer::CullObject(shared_ptr<GameObject> obj, 
+  const vector<vector<Polygon>>& occluder_convex_hulls) {
+  if (!obj->draw) {
+    return true;
+  }
+
+  // Frustum cull.
+  if (!CollideAABBFrustum(obj->aabb, frustum_planes_, camera_.position)) {
+    return true;
+  }
+
+  // Occlusion cull.
+  for (auto& ch : occluder_convex_hulls) {
+    if (IsInConvexHull(obj->aabb, ch)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void Renderer::DrawObject(shared_ptr<GameObject> obj) {
+  shared_ptr<GameAsset> asset = obj->asset;
+
+  int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
+  for (; lod >= 0; lod--) {
+    if (asset->lod_meshes[lod].vao_ > 0) {
+      break;
+    }
+  }
+
+  // const Mesh& mesh = obj->lods[lod];
+  const Mesh& mesh = obj->asset->lod_meshes[lod];
+  // GLuint program_id = mesh.shader;
+
+  GLuint program_id = obj->asset->shader;
+  glUseProgram(program_id);
+
+  // cout << "program_id: " << program_id << endl;
+  // cout << "program_id: " << asset_catalog_->GetShader("animated_object") << endl;
+
+  glBindVertexArray(mesh.vao_);
+  mat4 ModelMatrix = translate(mat4(1.0), obj->position);
+  mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
+  mat4 MVP = projection_matrix_ * ModelViewMatrix;
+  glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+  glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+  glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+
+  if (program_id == asset_catalog_->GetShader("animated_object")) {
+    obj->frame++;
+    if (obj->frame >= mesh.joint_transforms[0].size()) {
+      obj->frame = 0;
+    }
+
+    // TODO: max 10 joints. Enforce limit here.
+    vector<mat4> joint_transforms;
+    for (int i = 0; i < mesh.joint_transforms.size(); i++) {
+      joint_transforms.push_back(mesh.joint_transforms[i][obj->frame]);
+    }
+    glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
+      joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+
+    BindTexture("texture_sampler", program_id, obj->asset->texture_id);
+    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+  } else if (program_id == asset_catalog_->GetShader("object")) {
+    BindTexture("texture_sampler", program_id, obj->asset->texture_id);
+    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+  } else {
+    glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
+  }
+  glBindVertexArray(0);
+}
+
+void Renderer::DrawObjects(shared_ptr<Sector> sector) {
+  vector<shared_ptr<GameObject>> objs =
+    GetPotentiallyVisibleObjectsFromSector(sector);
+
+  // Occlusion culling
+  // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
+  vector<vector<Polygon>> occluder_convex_hulls;
+  for (auto& obj : objs) {
+    if (CullObject(obj, occluder_convex_hulls)) {
+      continue;
+    }
+
+    DrawObject(obj);
+
+    if (obj->asset->occluder.empty()) continue;
+
+    // Add occlusion hull.
+    vector<Polygon> polygons = obj->asset->occluder;
+    for (auto& poly : polygons) {
+      for (auto& v : poly.vertices) {
+        v += obj->position;
+      }
+    }
+
+    ConvexHull convex_hull = CreateConvexHullFromOccluder(polygons, 
+      camera_.position);
+    if (!convex_hull.empty()) {
+      occluder_convex_hulls.push_back(convex_hull);
+    }
+  }
+}
+
+void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
+  shared_ptr<Sector> s = stabbing_tree_node->sector;
+
+  // Outdoors.
+  if (s->name == "outside") {
+    terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
+  }
+
+  DrawObjects(s);
+
+  // Portal culling 
+  // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
+  for (auto& node : stabbing_tree_node->children) {
+    if (s->portals.find(node->sector->id) == s->portals.end()) {
+      throw runtime_error("Sector should have portal.");
+    }
+    shared_ptr<Portal> p = s->portals[node->sector->id];
+    // const Portal& p = portals_[node->portal_id];
+
+    BoundingSphere sphere = BoundingSphere(camera_.position, 0.75f);
+    bool in_frustum = false; 
+    for (auto& poly : p->polygons) {
+      if (dot(camera_.position - poly.vertices[0], poly.normals[0]) < 0.0001f) {
+        continue;
+      }
+
+      if (TestSphereTriangleIntersection(sphere, poly.vertices)) {
+        in_frustum = true;
+        break;
+      }
+
+      if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
+        camera_.position)) {
+        in_frustum = true;
+        break;
+      }
+    }
+
+    // TODO: check other types of culling.
+    if (in_frustum) {
+      DrawSector(node);
+    }
+  }
+}
+
+
+
+// TODO: move to resources?
+void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
+  shared_ptr<OctreeNode> octree_node,
+  vector<shared_ptr<GameObject>>& objects) {
+  if (!octree_node) {
+    return;
+  }
+
+  AABB aabb;
+  aabb.point = octree_node->center - octree_node->half_dimensions;
+  aabb.dimensions = octree_node->half_dimensions * 2.0f;
+
+  // TODO: find better name for this function.
+  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
+    return;
+  }
+
+  for (int i = 0; i < 8; i++) {
+    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
+  }
+
+  objects.insert(objects.end(), octree_node->objects.begin(), 
+    octree_node->objects.end());
+}
+
+vector<shared_ptr<GameObject>> 
+Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
+  vector<shared_ptr<GameObject>> objs;
+  GetPotentiallyVisibleObjects(camera_.position, sector->octree, objs);
+
+  // Sort from closest to farthest.
+  for (auto& obj : objs) {
+    obj->distance = length(camera_.position - obj->position);
+  }
+  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
+    return lhs->distance < rhs->distance;
+  });
+  return objs;
+}
+
+
 
 
 
@@ -620,8 +490,28 @@ void Renderer::Run(const function<void()>& process_frame) {
 // ==============================================
 //  OBJECT CREATION METHODS
 // ==============================================
+// TODO: transfer all mesh related code to asset.
 
-// TODO: transfer all mesh related code to another file.
+AABB GetObjectAABBDelete(shared_ptr<GameObject> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->asset->lod_meshes[0].polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetAABBFromVertices(vertices);
+}
+
+BoundingSphere GetObjectBoundingSphereDelete(shared_ptr<GameObject> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->asset->lod_meshes[0].polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
 shared_ptr<GameObject> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   float w = dimensions.x;
   float h = dimensions.y;
@@ -659,7 +549,7 @@ shared_ptr<GameObject> Renderer::CreateCube(vec3 dimensions, vec3 position) {
   vector<unsigned int> indices(36);
   for (int i = 0; i < 36; i++) { indices[i] = i; }
 
-  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
+  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
   vector<Polygon> polygons;
   for (int i = 0; i < 12; i++) {
     Polygon p;
@@ -669,13 +559,12 @@ shared_ptr<GameObject> Renderer::CreateCube(vec3 dimensions, vec3 position) {
     polygons.push_back(p);
   }
 
-  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, position);
-  obj->name = "cube";
-  obj->polygons = polygons;
-  obj->aabb = GetObjectAABB(obj);
-  obj->bounding_sphere = GetObjectBoundingSphere(obj);
-  sectors_[0].objects.push_back(obj);
-  return obj; 
+  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, position);
+  // obj->name = "cube";
+  // obj->aabb = GetObjectAABBDelete(obj);
+  // obj->bounding_sphere = GetObjectBoundingSphereDelete(obj);
+  // return obj; 
+  return nullptr; 
 }
 
 shared_ptr<GameObject> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
@@ -701,10 +590,9 @@ shared_ptr<GameObject> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) 
     }
   }
 
-  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
-  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
-  obj->name = "convex_hull";
-  sectors_[0].objects.push_back(obj);
+  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
+  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
+  // obj->name = "convex_hull";
   return nullptr; 
 }
 
@@ -733,11 +621,11 @@ shared_ptr<GameObject> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
   vector<unsigned int> indices(6);
   for (int i = 0; i < 6; i++) { indices[i] = i; }
 
-  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
-  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
-  obj->name = "plane";
-  sectors_[0].objects.push_back(obj);
-  return obj; 
+  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
+  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
+  // obj->name = "plane";
+  // return obj; 
+  return nullptr; 
 }
 
 shared_ptr<GameObject> Renderer::CreateJoint(vec3 start, vec3 end) {
@@ -781,86 +669,49 @@ shared_ptr<GameObject> Renderer::CreateJoint(vec3 start, vec3 end) {
   for (int i = 0; i < 24; i++) { indices[i] = i; }
 
   // Mesh mesh;
-  Mesh mesh = CreateMesh(shaders_["solid"], vertices, uvs, indices);
+  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
 
-  shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, start);
-  obj->name = "joint";
-  sectors_[0].objects.push_back(obj);
-  return obj; 
+  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, start);
+  // obj->name = "joint";
+  // return obj; 
+  return nullptr; 
 }
 
+
+
+
+
+
+
+
 // ============================================
-// FBX
+// Collision Code
 // ============================================
+// TODO: move to another file
 
-// TODO: convert FBX to game model outside this file.
-void Renderer::LoadFbx(const std::string& filename, vec3 position) {
-  Mesh m;
-  FbxData data = LoadFbxData(filename, m);
-  m.shader = shaders_["animated_object"];
-
-  // vec3 position = vec3(1990, 16, 2000);
-  shared_ptr<GameObject> obj = make_shared<GameObject>(m, position);
-  obj->name = filename;
-  obj->polygons = m.polygons;
-  obj->bounding_sphere = GetObjectBoundingSphere(obj);
-  sectors_[0].objects.push_back(obj);
-  position += vec3(0, 0, 5);
-
-  // TODO: an animated object will have animations, if an animation is selected, 
-  // a counter will count where in the animation is the model and update the
-  // loaded joint transforms accordingly.
-  if (data.animations.size() == 0) {
-    cout << "No animations." << endl;
+void Renderer::GetPotentiallyCollidingObjects(const vec3& player_pos, 
+  shared_ptr<OctreeNode> octree_node,
+  vector<shared_ptr<GameObject>>& objects) {
+  if (!octree_node) {
     return;
   }
 
-  obj->joint_transforms.resize(data.joints.size());
+  AABB aabb;
+  aabb.point = octree_node->center - octree_node->half_dimensions;
+  aabb.dimensions = octree_node->half_dimensions * 2.0f;
 
-  // TODO: load all animations.
-  // TODO: load these joints transforms in the Fbx function.
-  const Animation& animation = data.animations[1];
-  for (auto& kf : animation.keyframes) {
-    for (int i = 0; i < kf.transforms.size(); i++) {
-      auto& joint = data.joints[i];
-      if (!joint) continue;
-      
-      mat4 joint_transform = kf.transforms[i] * joint->global_bindpose_inverse;
-      obj->joint_transforms[i].push_back(joint_transform);
-    }
+  BoundingSphere s = BoundingSphere(player_pos, 0.75f);
+  if (!TestSphereAABBIntersection(s, aabb)) {
+    return;
   }
-}
 
-int Renderer::LoadStaticFbx(const std::string& filename, vec3 position, int sector_id, int occluder_id) {
-  Mesh m;
-  LoadFbxData(filename, m);
-  m.shader = shaders_["object"];
-
-  shared_ptr<GameObject> obj = make_shared<GameObject>(m, position);
-  obj->name = filename;
-  obj->polygons = m.polygons;
-  obj->occluder_id = occluder_id;
-  obj->collide = true;
-
-  obj->aabb = GetObjectAABB(obj);
-  obj->bounding_sphere = GetObjectBoundingSphere(obj);
-  obj->id = id_counter++;
-
-  sectors_[sector_id].objects.push_back(obj);
-  position += vec3(0, 0, 5);
-  return obj->id;
-}
-
-void Renderer::LoadLOD(const std::string& filename, int id, int sector_id, int lod_level) {
-  Mesh m;
-  LoadFbxData(filename, m);
-  m.shader = shaders_["object"];
- 
-  for (auto& obj : sectors_[sector_id].objects) {
-    if (obj->id == id) {
-      obj->lods[lod_level] = m;
-    }
+  for (int i = 0; i < 8; i++) {
+    GetPotentiallyCollidingObjects(player_pos, octree_node->children[i], 
+      objects);
   }
+
+  objects.insert(objects.end(), octree_node->objects.begin(), 
+    octree_node->objects.end());
 }
 
 // Given point p, return the point q on or in AABB b that is closest to p
@@ -876,84 +727,6 @@ vec3 ClosestPtPointAABB(vec3 p, vec3 aabb_min, vec3 aabb_max) {
   }
   return q;
 }
-
-
-
-
-
-// =================================================
-// Load visibility structures (occluders, sectors)
-// =================================================
-
-void Renderer::LoadSector(const std::string& filename, int id, vec3 position) {
-  Mesh m;
-  LoadFbxData(filename, m);
-
-  Sector s;
-  s.id = id;
-
-  // TODO: additionally, calculate sphere bounding box and OBB for convex hull. 
-  // TODO: polygons are being loaded as triangles. Correct that.
-  s.convex_hull = m.polygons;
-  for (auto& poly : s.convex_hull) {
-    for (auto& v : poly.vertices) {
-      v += position;
-    }
-  }
-
-  s.stabbing_tree = make_shared<StabbingTreeNode>(1, 0, false);
-  s.stabbing_tree->children.push_back(make_shared<StabbingTreeNode>(0, 0, true));
-  sectors_[id] = s;
-}
-
-void Renderer::LoadPortal(const std::string& filename, int id, vec3 position) {
-  Mesh m;
-  LoadFbxData(filename, m);
-
-  Portal p;
-  p.polygons = m.polygons;
-  for (auto& poly : p.polygons) {
-    for (auto& v : poly.vertices) {
-      v += position;
-    }
-  }
-  portals_[id] = p;
-}
-
-void Renderer::LoadOccluder(const std::string& filename, int id, 
-  vec3 position) {
-  Mesh m;
-  LoadFbxData(filename, m);
-
-  Occluder o;
-  o.polygons = m.polygons;
-  for (auto& poly : o.polygons) {
-    for (auto& v : poly.vertices) {
-      v += position;
-    }
-  }
-  occluders_[id] = o;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ============================================
-// Collision Code
-// ============================================
-// TODO: move to another file
 
 bool IntersectWall(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, float* magnitude, 
   const vec3& object_pos) {
@@ -1104,15 +877,18 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
 }
 
 void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
-  int current_sector_id = GetPlayerSector(camera_.position);
+  shared_ptr<Sector> sector = GetPlayerSector(*player_pos);
 
   // Collide with Octree.
+  // vector<shared_ptr<GameObject>> objs;
+  // if (sector->name == "outside") {
+  //   GetPotentiallyCollidingObjects(*player_pos, octree_, objs);
+  // } else {
+  //   objs = sector->objects;
+  // }
+
   vector<shared_ptr<GameObject>> objs;
-  if (current_sector_id == 0) {
-    GetPotentiallyCollidingObjects(*player_pos, octree_, objs);
-  } else {
-    objs = sectors_[current_sector_id].objects;
-  }
+  GetPotentiallyCollidingObjects(*player_pos, sector->octree, objs);
 
   bool collision = true;
   for (int i = 0; i < 5 && collision; i++) {
@@ -1121,10 +897,10 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
     collision = false;
 
     for (auto& obj : objs) {
-      if (!obj->collide) {
+      if (obj->asset->collision_type != COL_PERFECT) {
         continue;
       }
-      for (auto& pol : obj->polygons) {
+      for (auto& pol : obj->asset->lod_meshes[0].polygons) {
         vec3 collision_resolution = *player_pos;
         float magnitude;
         if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
@@ -1163,3 +939,4 @@ void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed
   }
   // cout << "=========" << endl;
 }
+

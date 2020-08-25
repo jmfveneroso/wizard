@@ -111,7 +111,7 @@ GLuint LoadPng(const char* file_name) {
   return texture_id;
 }
 
-GLuint LoadShader(const std::string& name) {
+GLuint LoadShader(const std::string& directory, const std::string& name) {
   GLint result = GL_FALSE;
   int info_log_length;
   vector<GLuint> shader_ids;
@@ -121,7 +121,7 @@ GLuint LoadShader(const std::string& name) {
 
   GLuint program_id = glCreateProgram();
   for (int i = 0; i < 3; i++) {
-    string filename = string("shaders/") + name.c_str() + "." + extensions[i];
+    string filename = directory + "/" + name.c_str() + "." + extensions[i];
     ifstream shader_file(filename);
     if (!shader_file.good()) continue;
     string shader_code((std::istreambuf_iterator<char>(shader_file)),
@@ -212,14 +212,6 @@ ostream& operator<<(ostream& os, const Edge& e) {
   os << "a_normal: " << e.a_normal << endl;
   os << "b_normal: " << e.b_normal << endl;
   return os;
-}
-
-template<typename First, typename ...Rest>
-void sample_log(First&& first, Rest&& ...rest) {
-  static int i = 0;
-  if (i++ % 100 == 0) return;
-  cout << forward<First>(first) << endl;
-  sample_log(forward<Rest>(rest)...);
 }
 
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon) {

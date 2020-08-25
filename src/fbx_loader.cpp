@@ -435,5 +435,23 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
   for (int slot = 0; slot < num_slots; slot++) {
     glDisableVertexAttribArray(slot);
   }
+
+  // Animations.
+  if (data.animations.empty()) {
+    return data;
+  }
+
+  // TODO: load multiple animations.
+  m.joint_transforms.resize(data.joints.size());
+  const Animation& animation = data.animations[1];
+  for (auto& kf : animation.keyframes) {
+    for (int i = 0; i < kf.transforms.size(); i++) {
+      auto& joint = data.joints[i];
+      if (!joint) continue;
+      
+      mat4 joint_transform = kf.transforms[i] * joint->global_bindpose_inverse;
+      m.joint_transforms[i].push_back(joint_transform);
+    }
+  }
   return data;
 }

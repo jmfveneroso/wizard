@@ -23,92 +23,176 @@
 #include "util.hpp"
 #include "collision.hpp"
 #include "fbx_loader.hpp"
+#include "pugixml.hpp"
 
-//   enum CollisionType {
-//     COL_UNDEFINED = 0,
-//     COL_PERFECT,
-//     COL_AABB,
-//     COL_OBB,
-//     COL_SPHERE,
-//     COL_OBB_TREE,
-//     COL_NONE 
-//   };
-//   
-//   enum ShaderType {
-//     SHADER_UNDEFINED = 0,
-//     SHADER_SOLID,
-//     SHADER_WIREFRAME,
-//     SHADER_CEL_SHADER,
-//     SHADER_NORMAL
-//   };
-//   
-//   struct Mesh {
-//     GLuint vao;
-//     GLuint vertex_buffer;
-//     GLuint uv_buffer;
-//     GLuint normal_buffer;
-//     GLuint element_buffer;
-//     GLuint num_indices;
-//     vector<Polygon> polygons;
-//   };
-//   
-//   class GameAsset {
-//     int id;
-//   
-//     // Mesh.
-//     vector<shared_ptr<Mesh>> lod_meshes;
-//   
-//     // Texture.
-//     int texture_id;
-//   
-//     // Animation.
-//     shared_ptr<AnimationData> anim;
-//   
-//     // Rendering.
-//     ShaderType shader_type;
-//     ConvexHull occluding_hull;
-//   
-//     // Collision.
-//     CollisionType collision_type;
-//     BoundingSphere bounding_sphere;
-//     AABB aabb;
-//     ConvexHull convex_hull;
-//   
-//     // TODO: implement OBB tree.
-//     // shared_ptr<OBBTree> obb_tree;
-//   
-//     // TODO: collision for joints.
-//   };
+enum CollisionType {
+  COL_UNDEFINED = 0,
+  COL_PERFECT,
+  COL_AABB,
+  COL_OBB,
+  COL_SPHERE,
+  COL_OBB_TREE,
+  COL_NONE 
+};
+
+struct GameAsset {
+  int id;
+  string name;
+
+  // Mesh.
+  unordered_map<int, Mesh> lod_meshes;
+
+  // Texture.
+  GLuint texture_id;
+
+  // Animation.
+  // shared_ptr<AnimationData> anim;
+
+  // Rendering.
+  GLuint shader;
+  ConvexHull occluder;
+
+  // Collision.
+  CollisionType collision_type;
+  BoundingSphere bounding_sphere;
+  AABB aabb;
+  ConvexHull convex_hull;
+
+  // TODO: implement OBB tree.
+  // shared_ptr<OBBTree> obb_tree;
+
+  // TODO: collision for joints.
+
+  // Animation.
+  // vector<vector<mat4>> joint_transforms;
+};
 
 // TODO: repeat game asset instead of replicating aabb, sphere polygons for
 // every object.
 struct GameObject {
   int id;
+  string name;
+  shared_ptr<GameAsset> asset;
   vec3 position;
   vec3 rotation;
-  float distance;
-  vector<Polygon> polygons;
-  bool collide = false;
-  string name;
-  int occluder_id = -1;
-  bool draw = true;
+
+  // TODO: should translate and rotate asset.
   AABB aabb;
   BoundingSphere bounding_sphere;
 
-  Mesh lods[5]; // 0 - 5.
+  float distance;
 
-  vector<vector<mat4>> joint_transforms;
+  // TODO: remove.
+  bool collide = false;
+  bool draw = true;
+
   int active_animation = 0;
   int frame = 0;
 
   GameObject() {}
-  GameObject(Mesh mesh, vec3 position) : position(position) {
-    lods[0] = mesh;
-  }
-  GameObject(Mesh mesh, vec3 position, vec3 rotation) : position(position), 
-    rotation(rotation) {
-    lods[0] = mesh;
-  }
 };
+
+
+struct Sector;
+
+// http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
+struct StabbingTreeNode {
+  shared_ptr<Sector> sector;
+  vector<shared_ptr<StabbingTreeNode>> children;
+  StabbingTreeNode(shared_ptr<Sector> sector) : sector(sector) {}
+
+  // TODO: remove
+  int sector_id;
+  int portal_id;
+  StabbingTreeNode() {}
+  StabbingTreeNode(int sector_id, int portal_id) : sector_id(sector_id), 
+    portal_id(portal_id) {}
+};
+
+struct Portal {
+  vec3 position;
+  vector<Polygon> polygons;
+  shared_ptr<Sector> from_sector;
+  shared_ptr<Sector> to_sector;
+};
+
+struct OctreeNode {
+  vec3 center;
+  vec3 half_dimensions;
+  shared_ptr<OctreeNode> children[8] { 
+    nullptr, nullptr, nullptr, nullptr, 
+    nullptr, nullptr, nullptr, nullptr };
+
+  vector<shared_ptr<GameObject>> objects;
+  OctreeNode() {}
+  OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
+    half_dimensions(half_dimensions) {}
+};
+
+struct Sector {
+  int id;
+  string name;
+
+  // Vertices inside the convex hull are inside the sector.
+  vector<Polygon> convex_hull;
+  vec3 position;
+
+  // Objects inside the sector.
+  vector<shared_ptr<GameObject>> objects;
+
+  // Octree.
+  shared_ptr<OctreeNode> octree;
+ 
+  // Portals inside the sector indexed by the outgoing sector id.
+  unordered_map<int, shared_ptr<Portal>> portals;
+
+  // Starting from this sector, which sectors are visible?
+  shared_ptr<StabbingTreeNode> stabbing_tree;
+};
+
+// TODO: maybe change to ResourceCatalog.
+class AssetCatalog {
+  unordered_map<string, GLuint> shaders_;
+  unordered_map<string, GLuint> textures_;
+  unordered_map<string, shared_ptr<GameAsset>> assets_;
+  unordered_map<string, shared_ptr<Sector>> sectors_;
+  unordered_map<string, shared_ptr<GameObject>> objects_;
+  unordered_map<int, shared_ptr<GameAsset>> assets_by_id_;
+  unordered_map<int, shared_ptr<Sector>> sectors_by_id_;
+  unordered_map<int, shared_ptr<GameObject>> objects_by_id_;
+  string directory_;
+
+  int id_counter_ = 0;
+
+  void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<GameObject> object, int depth);
+
+  void LoadShaders(const std::string& directory);
+  void LoadAssets(const std::string& directory);
+  void LoadAsset(const std::string& xml_filename);
+  void LoadObjects(const std::string& directory);
+  void LoadSectors(const std::string& xml_filename);
+  void LoadPortals(const std::string& xml_filename);
+  void LoadStabbingTree(const pugi::xml_node& parent_node, 
+    shared_ptr<StabbingTreeNode> new_parent_node);
+  shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
+
+ public:
+  // Instantiating this will fail if OpenGL hasn't been initialized.
+  AssetCatalog(const string& directory);
+
+  void Cleanup();
+
+  shared_ptr<GameAsset> GetAssetByName(const string& name);
+  shared_ptr<GameObject> GetObjectByName(const string& name);
+  shared_ptr<Sector> GetSectorByName(const string& name);
+  shared_ptr<GameAsset> GetAssetById(int id);
+  shared_ptr<GameObject> GetObjectById(int id);
+  shared_ptr<Sector> GetSectorById(int id);
+  GLuint GetShader(const string& name);
+
+  unordered_map<string, shared_ptr<Sector>> GetSectors() { return sectors_; }
+};
+
 
 #endif // __ASSET_HPP__

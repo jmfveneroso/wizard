@@ -61,6 +61,7 @@ struct Mesh {
   GLuint vao_ = 0;
   GLuint num_indices;
   vector<Polygon> polygons;
+  vector<vector<mat4>> joint_transforms;
   Mesh() {}
 };
 
@@ -71,15 +72,16 @@ void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
 void BindTexture(const std::string& sampler, 
   const GLuint& program_id, const GLuint& texture_id);
 GLuint LoadPng(const char* file_name);
-GLuint LoadShader(const std::string& name);
-template<typename First, typename ...Rest>
-void sample_log(First&& first, Rest&& ...rest);
+GLuint LoadShader(const std::string& directory, const std::string& name);
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
 vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
 vector<Edge> GetPolygonEdges(const Polygon& polygon);
 Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices);
 
+// ========================
+// Logging functions.
+// ========================
 ostream& operator<<(ostream& os, const vec2& v);
 ostream& operator<<(ostream& os, const vec3& v);
 ostream& operator<<(ostream& os, const ivec3& v);
@@ -88,5 +90,15 @@ ostream& operator<<(ostream& os, const mat4& m);
 ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
+
+vector<Polygon> operator+(const vector<Polygon>& polys, const vec3& v);
+
+template<typename First, typename ...Rest>
+void sample_log(First&& first, Rest&& ...rest) {
+  static int i = 0;
+  if (i++ % 100 == 0) return;
+  cout << forward<First>(first) << endl;
+  sample_log(forward<Rest>(rest)...);
+}
 
 #endif // __UTIL_HPP__

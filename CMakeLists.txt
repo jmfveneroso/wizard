@@ -14,6 +14,7 @@ set(ALL_LIBS
   boost_filesystem
   fbxsdk
   png
+  pugixml
 )
 
 set(INCLUDE_DIRS
@@ -45,6 +46,7 @@ file(COPY "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/libfbxsdk.
 
 # Include external libs
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37)
+add_subdirectory(${CMAKE_SOURCE_DIR}/lib/pugixml-1.10)
 
 set(
   SRC
@@ -67,5 +69,5 @@ target_link_libraries(test ${ALL_LIBS})
 add_executable(main src/main.cpp)
 target_link_libraries(main test)
 
-add_executable(convert_assets src/convert_assets.cpp)
-target_link_libraries(convert_assets test)
+# add_executable(convert_assets src/convert_assets.cpp)
+# target_link_libraries(convert_assets test)
