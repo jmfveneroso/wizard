@@ -52,6 +52,16 @@ struct Polygon {
   vector<unsigned int> indices;
 };
 
+struct Keyframe {
+  int time;
+  vector<mat4> transforms;
+};
+
+struct Animation {
+  string name;
+  vector<Keyframe> keyframes;
+};
+
 struct Mesh {
   GLuint shader;
   GLuint vertex_buffer_;
@@ -61,7 +71,7 @@ struct Mesh {
   GLuint vao_ = 0;
   GLuint num_indices;
   vector<Polygon> polygons;
-  vector<vector<mat4>> joint_transforms;
+  unordered_map<string, Animation> animations;
   Mesh() {}
 };
 

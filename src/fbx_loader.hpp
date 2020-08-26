@@ -36,16 +36,6 @@ using namespace glm;
 // - Spatial transformation matrices: https://www.brainvoyager.com/bv/doc/UsersGuide/CoordsAndTransforms/SpatialTransformationMatrices.html
 // - OpenGL Matrices: http://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/#scaling-matrices
 
-struct Keyframe {
-  int time;
-  vector<mat4> transforms;
-};
-
-struct Animation {
-  string name;
-  vector<Keyframe> keyframes;
-};
-
 struct SkeletonJoint {
   string name;
   shared_ptr<SkeletonJoint> parent;

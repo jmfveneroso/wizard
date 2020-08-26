@@ -18,6 +18,7 @@
 #include <glm/gtx/rotate_vector.hpp> 
 #include "util.hpp"
 #include "collision.hpp"
+#include "asset.hpp"
 
 #define CLIPMAP_SIZE 202
 #define CLIPMAP_OFFSET ((CLIPMAP_SIZE - 2) / 2)
@@ -72,6 +73,8 @@ struct Clipmap {
 // TODO: based on this
 // https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry
 class Terrain {
+  shared_ptr<AssetCatalog> asset_catalog_;
+
   vector<vector<float>> height_map_;
 
   vector<shared_ptr<Clipmap>> clipmaps_;
@@ -101,15 +104,19 @@ class Terrain {
 
   int InvalidateOuterBuffer(shared_ptr<Clipmap> clipmap, 
   ivec2 new_top_left, int level);
-  void UpdateClipmaps(vec3 player_pos);
 
  public:
   Terrain(GLuint program_id, GLuint water_program_id);
 
   void LoadTerrain(const string& filename);
   float GetHeight(float x, float y);
+
+  void UpdateClipmaps(vec3 player_pos);
   void Draw(mat4, mat4, vec3);
   void DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos);
+
+  void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
+    asset_catalog_ = asset_catalog; } 
 };
 
 #endif

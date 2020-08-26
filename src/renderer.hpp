@@ -26,6 +26,7 @@
 #include "asset.hpp"
 #include "util.hpp"
 #include "terrain.hpp"
+#include "2d.hpp"
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 800
@@ -74,6 +75,7 @@ struct Occluder {
 
 class Renderer {
   shared_ptr<AssetCatalog> asset_catalog_;
+  shared_ptr<Draw2D> draw_2d_;
   GLFWwindow* window_;
   int window_width_ = WINDOW_WIDTH;
   int window_height_ = WINDOW_HEIGHT;
@@ -85,7 +87,7 @@ class Renderer {
   shared_ptr<Terrain> terrain_;
 
   FBO CreateFramebuffer(int width, int height);
-  void DrawFBO(const FBO& fbo);
+  void DrawFBO(const FBO& fbo, bool blur = false);
 
   shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
   bool CullObject(shared_ptr<GameObject> obj, 
@@ -113,7 +115,8 @@ class Renderer {
  public:
   Renderer();  
   void Init();
-  void Run(const function<void()>& process_frame);
+  void Run(const function<bool()>& process_frame, 
+    const function<void()>& after_frame);
   void SetCamera(const Camera& camera) { camera_ = camera; }
 
   // TODO: move.
@@ -127,5 +130,10 @@ class Renderer {
   shared_ptr<Terrain> terrain() { return terrain_; }
 
   void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
-    asset_catalog_ = asset_catalog; } 
+    asset_catalog_ = asset_catalog; 
+  } 
+
+  void set_draw_2d(shared_ptr<Draw2D> draw_2d) { 
+    draw_2d_ = draw_2d; 
+  } 
 };

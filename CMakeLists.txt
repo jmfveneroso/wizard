@@ -56,6 +56,8 @@ set(
   src/collision.cpp 
   src/fbx_loader.cpp 
   src/asset.cpp 
+  src/2d.cpp 
+  src/text_editor.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

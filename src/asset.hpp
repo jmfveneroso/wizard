@@ -20,10 +20,10 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
+#include "pugixml.hpp"
 #include "util.hpp"
 #include "collision.hpp"
 #include "fbx_loader.hpp"
-#include "pugixml.hpp"
 
 enum CollisionType {
   COL_UNDEFINED = 0,
@@ -86,7 +86,8 @@ struct GameObject {
   bool collide = false;
   bool draw = true;
 
-  int active_animation = 0;
+  string active_animation = "Armature|swimming";
+  // string active_animation = "Armature|flipping";
   int frame = 0;
 
   GameObject() {}
@@ -150,8 +151,20 @@ struct Sector {
   shared_ptr<StabbingTreeNode> stabbing_tree;
 };
 
+struct TerrainPoint {
+  float height = 0.0;
+  vec3 blending = vec3(0, 0, 0);
+  vec2 tile_set = vec2(0, 0);
+  TerrainPoint() {}
+};
+
+struct Configs {
+  vec3 world_center = vec3(10000, 0, 10000);
+};
+
 // TODO: maybe change to ResourceCatalog.
 class AssetCatalog {
+  shared_ptr<Configs> configs_;
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;
   unordered_map<string, shared_ptr<GameAsset>> assets_;
@@ -167,21 +180,29 @@ class AssetCatalog {
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
     shared_ptr<GameObject> object, int depth);
 
+  shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
+  void LoadStabbingTree(const pugi::xml_node& parent_node, 
+    shared_ptr<StabbingTreeNode> new_parent_node);
+
   void LoadShaders(const std::string& directory);
   void LoadAssets(const std::string& directory);
   void LoadAsset(const std::string& xml_filename);
   void LoadObjects(const std::string& directory);
   void LoadSectors(const std::string& xml_filename);
   void LoadPortals(const std::string& xml_filename);
-  void LoadStabbingTree(const pugi::xml_node& parent_node, 
-    shared_ptr<StabbingTreeNode> new_parent_node);
-  shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
+  void LoadHeightMap(const std::string& dat_filename);
+  void SaveHeightMap(const std::string& dat_filename);
+
+  vector<TerrainPoint> height_map_;
 
  public:
   // Instantiating this will fail if OpenGL hasn't been initialized.
   AssetCatalog(const string& directory);
 
   void Cleanup();
+
+  TerrainPoint GetTerrainPoint(int x, int y);
+  void SetTerrainPoint(int x, int y, const TerrainPoint& terrain_point);
 
   shared_ptr<GameAsset> GetAssetByName(const string& name);
   shared_ptr<GameObject> GetObjectByName(const string& name);
@@ -190,9 +211,9 @@ class AssetCatalog {
   shared_ptr<GameObject> GetObjectById(int id);
   shared_ptr<Sector> GetSectorById(int id);
   GLuint GetShader(const string& name);
+  shared_ptr<Configs> GetConfigs();
 
   unordered_map<string, shared_ptr<Sector>> GetSectors() { return sectors_; }
 };
-
 
 #endif // __ASSET_HPP__

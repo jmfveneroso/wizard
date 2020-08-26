@@ -53,6 +53,7 @@ void Renderer::Init() {
   // TODO: terrain rendering should be another lib.
   terrain_ = make_shared<Terrain>(asset_catalog_->GetShader("terrain"), 
     asset_catalog_->GetShader("water"));
+  terrain_->set_asset_catalog(asset_catalog_);
 }
 
 FBO Renderer::CreateFramebuffer(int width, int height) {
@@ -138,11 +139,12 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   return fbo;
 }
 
-void Renderer::DrawFBO(const FBO& fbo) {
+void Renderer::DrawFBO(const FBO& fbo, bool blur) {
   GLuint program_id = asset_catalog_->GetShader("screen");
   glBindVertexArray(fbo.vao);
   BindTexture("texture_sampler", program_id, fbo.texture);
   glUseProgram(program_id);
+  glUniform1f(GetUniformId(program_id, "blur"), (blur) ? 1.0 : 0.0);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, fbo.width, fbo.height);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -150,7 +152,9 @@ void Renderer::DrawFBO(const FBO& fbo) {
   glBindVertexArray(0);
 }
 
-void Renderer::Run(const function<void()>& process_frame) {
+// TODO: this should be engine run.
+void Renderer::Run(const function<bool()>& process_frame, 
+  const function<void()>& after_frame) {
   GLint major_version, minor_version;
   glGetIntegerv(GL_MAJOR_VERSION, &major_version); 
   glGetIntegerv(GL_MINOR_VERSION, &minor_version);
@@ -170,7 +174,7 @@ void Renderer::Run(const function<void()>& process_frame) {
       last_time += 1.0;
     }
 
-    process_frame();
+    bool blur = process_frame();
 
    // View matrix:
    // https://www.3dgep.com/understanding-the-view-matrix/#:~:text=The%20view%20matrix%20is%20used,things%20are%20the%20same%20thing!&text=The%20View%20Matrix%3A%20This%20matrix,of%20the%20camera's%20transformation%20matrix.
@@ -194,7 +198,14 @@ void Renderer::Run(const function<void()>& process_frame) {
     shared_ptr<Sector> sector = GetPlayerSector(camera_.position);
     DrawSector(sector->stabbing_tree);
 
-    DrawFBO(fbos_["screen"]);
+    draw_2d_->DrawText("This is a test", 400, 400, vec3(1.0, 0.0, 0.0));
+    draw_2d_->DrawLine(vec2(100, 100), vec2(500, 500), 1.0, vec3(1.0, 0.0, 0.0));
+    draw_2d_->DrawRectangle(100, 100, 500, 500, vec3(1.0, 0.0, 0.0));
+
+    DrawFBO(fbos_["screen"], blur);
+
+    after_frame();
+
     glfwSwapBuffers(window_);
     glfwPollEvents();
   } while (glfwWindowShouldClose(window_) == 0);
@@ -307,7 +318,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   }
 
   // const Mesh& mesh = obj->lods[lod];
-  const Mesh& mesh = obj->asset->lod_meshes[lod];
+  Mesh& mesh = obj->asset->lod_meshes[lod];
   // GLuint program_id = mesh.shader;
 
   GLuint program_id = obj->asset->shader;
@@ -325,16 +336,20 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
 
   if (program_id == asset_catalog_->GetShader("animated_object")) {
-    obj->frame++;
-    if (obj->frame >= mesh.joint_transforms[0].size()) {
-      obj->frame = 0;
+    vector<mat4> joint_transforms;
+    if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
+      const Animation& animation = mesh.animations[obj->active_animation];
+      obj->frame++;
+      if (obj->frame >= animation.keyframes.size()) {
+        obj->frame = 0;
+      }
+   
+      // TODO: max 10 joints. Enforce limit here.
+      for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+        joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+      }
     }
 
-    // TODO: max 10 joints. Enforce limit here.
-    vector<mat4> joint_transforms;
-    for (int i = 0; i < mesh.joint_transforms.size(); i++) {
-      joint_transforms.push_back(mesh.joint_transforms[i][obj->frame]);
-    }
     glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
       joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
@@ -386,6 +401,7 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
 
   // Outdoors.
   if (s->name == "outside") {
+    terrain_->UpdateClipmaps(camera_.position);
     terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
   }
 

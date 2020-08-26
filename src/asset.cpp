@@ -1,5 +1,7 @@
 #include "asset.hpp"
 
+const int kHeightMapSize = 8000;
+
 void DoInOrder() {};
 template<typename Lambda0, typename ...Lambdas>
 void DoInOrder(Lambda0&& lambda0, Lambdas&&... lambdas) {
@@ -30,7 +32,9 @@ CollisionType StrToCollisionType(const std::string& s) {
   return str_to_col_type[s];
 }
 
-AssetCatalog::AssetCatalog(const string& directory) : directory_(directory) {
+AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
+  height_map_(kHeightMapSize * kHeightMapSize, TerrainPoint()),
+  configs_(make_shared<Configs>()) {
   // TODO: change directory to resources.
   //    resources/
   //      assets/          -> FBX
@@ -41,6 +45,8 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory) {
   LoadShaders(directory_ + "/shaders");
   LoadAssets(directory_ + "/game_assets");
   LoadObjects(directory_ + "/game_objects");
+  LoadHeightMap(directory_ + "/height_map.dat");
+  // SaveHeightMap(directory_ + "/height_map.dat");
 
   // TODO: load config
   // LoadConfig(directory + "/config.xml");
@@ -314,8 +320,8 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
     shared_ptr<Sector> new_sector = make_shared<Sector>();
     new_sector->name = sector.attribute("name").value();
     if (new_sector->name == "outside") {
-      new_sector->octree = make_shared<OctreeNode>(vec3(2100, 0, 2100), 
-        vec3(4000, 4000, 4000));
+      new_sector->octree = make_shared<OctreeNode>(configs_->world_center,
+        vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
     } else {
       const pugi::xml_node& position = sector.child("position");
       if (!position) {
@@ -456,6 +462,87 @@ void AssetCatalog::LoadPortals(const std::string& xml_filename) {
   }
 }
 
+void AssetCatalog::LoadHeightMap(const std::string& dat_filename) {
+  cout << "Started loading height map" << endl;
+  int i = 0;
+  FILE* f = fopen(dat_filename.c_str(), "rb");
+  TerrainPoint terrain_point;
+  while (fread(&terrain_point.height, sizeof(float), 1, f) == 1) {
+    fread(&terrain_point.blending.x, sizeof(float), 1, f);
+    fread(&terrain_point.blending.y, sizeof(float), 1, f);
+    fread(&terrain_point.blending.z, sizeof(float), 1, f);
+    fread(&terrain_point.tile_set.x, sizeof(float), 1, f);
+    fread(&terrain_point.tile_set.y, sizeof(float), 1, f);
+    height_map_[i++] = terrain_point;
+  }
+  fclose(f);
+  cout << "Ended loading height map" << endl;
+
+  // for (int i = 0; i < height_map_.size(); i++) {
+  //   int x = i % kHeightMapSize;
+  //   int y = i / kHeightMapSize;
+  //   TerrainPoint tp = GetTerrainPoint(x + 6000, y + 6000);
+  //   SetTerrainPoint(x, y, tp);
+  // }
+  // cout << "Ended loading height map" << endl;
+}
+
+void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
+  FILE* f = fopen(dat_filename.c_str(), "wb");
+  for (const TerrainPoint& p : height_map_) {
+    fwrite(&p.height, sizeof(float), 1, f);
+    fwrite(&p.blending.x, sizeof(float), 1, f);
+    fwrite(&p.blending.y, sizeof(float), 1, f);
+    fwrite(&p.blending.z, sizeof(float), 1, f);
+    fwrite(&p.tile_set.x, sizeof(float), 1, f);
+    fwrite(&p.tile_set.y, sizeof(float), 1, f);
+  }
+  fclose(f);
+}
+
+TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
+  x -= configs_->world_center.x;
+  y -= configs_->world_center.z;
+  x += kHeightMapSize / 2;
+  y += kHeightMapSize / 2;
+
+  if (x < 0 || y < 0 || x >= kHeightMapSize || y >= kHeightMapSize) {
+    return TerrainPoint();
+  }
+  return height_map_[x + y * kHeightMapSize];
+
+  // vec3 blending;
+  // if (x > 10000 && y > 10000) blending = vec3(1.0, 0.0, 0.0);
+  // else if (y > 10000) blending = vec3(0.0, 1.0, 0.0);
+  // else if (x > 10000) blending = vec3(0.0, 0.0, 1.0);
+  // else blending = vec3(0.0, 0.0, 0.0);
+
+  // x -= 8000;
+  // y -= 8000;
+  // double long_wave = 0.02 * (cos(x * 0.05) + cos(y * 0.05))
+  //   + 0.25 * (cos(x * 0.25) + cos(y * 0.25)) +
+  //   + 15 * (cos(x * 0.005) + cos(y * 0.005));
+  // x += 8000;
+  // y += 8000;
+
+  // x -= configs_->world_center.x;
+  // y -= configs_->world_center.z;
+
+  // float radius = 4000;
+  // float h = 200 - 420 * (((sqrt(x * x + y * y) / (radius * 2)))) + long_wave;
+
+  // TerrainPoint terrain_point;
+  // terrain_point.height = h;
+  // terrain_point.blending = blending;
+  // return terrain_point;
+}
+
+void AssetCatalog::SetTerrainPoint(int x, int y, 
+  const TerrainPoint& terrain_point) {
+  int i = y * kHeightMapSize + x;
+  height_map_[i] = terrain_point;
+}
+
 void AssetCatalog::Cleanup() {
   // Cleanup VBO and shader.
   for (auto it : shaders_) {
@@ -496,4 +583,8 @@ shared_ptr<Sector> AssetCatalog::GetSectorById(int id) {
 GLuint AssetCatalog::GetShader(const string& name) {
   if (shaders_.find(name) == shaders_.end()) return 0;
   return shaders_[name];
+}  
+
+shared_ptr<Configs> AssetCatalog::GetConfigs() {
+  return configs_;
 }

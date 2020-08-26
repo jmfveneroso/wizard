@@ -1,5 +1,7 @@
 #include "terrain.hpp"
 
+const vec2 kWorldCenter = vec2(10000, 10000);
+
 // TODO: change to kTilePatterns and the others accordingly.
 // TODO: move all this hard coded data to another file.
 const vector<vector<vector<ivec2>>> tile_patterns = {
@@ -113,51 +115,16 @@ const vector<ivec2> subregion_size_offsets = {
   // {-1,  0}
 };
 
-// TODO: make this become a function pointer.
-// Must output value between 0 and MAX_HEIGHT (400).
-float GetGridHeight(float x, float y) {
-  // x -= 2000;
-  // y -= 2000;
-
-  // int buffer_x = x / TILE_SIZE + height_map_.size() / 2;
-  // int buffer_y = y / TILE_SIZE + height_map_.size() / 2;
-
-  // // float h = MAX_HEIGHT / 2;
-  // float h = 0;
-  // // if (x >= 0 && x <= 10 && y >= 0 && y <= 10)
-  // //   return h + 18 + 5;
-
-  // if (buffer_x < 0 || buffer_y < 0)
-  //   return h;
-
-  // if (buffer_x >= height_map_.size() || buffer_y >= height_map_.size())
-  //   return h;
-
-  // return height_map_[buffer_x][buffer_y];
-  // return h + height_map_[buffer_x][buffer_y];
-
-  // Cos wave.
-  double long_wave = 0.02 * (cos(x * 0.05) + cos(y * 0.05))
-    + 0.25 * (cos(x * 0.25) + cos(y * 0.25)) +
-    + 15 * (cos(x * 0.005) + cos(y * 0.005));
-
-  x -= 2000;
-  y -= 2000;
-  // return 200 - 420 * (((sqrt(x * x + y * y) / 40000))) + long_wave;
-  float radius = 4000;
-  return 200 - 420 * (((sqrt(x * x + y * y) / (radius * 2)))) + long_wave;
-}
-
 float Terrain::GetHeight(float x, float y) { 
   glm::ivec2 top_left = (glm::ivec2(x, y) / TILE_SIZE) * TILE_SIZE;
   if (x < 0 && fabs(top_left.x - x) > 0.00001) top_left.x -= TILE_SIZE;
   if (y < 0 && fabs(top_left.y - y) > 0.00001) top_left.y -= TILE_SIZE;
 
   float v[4];
-  v[0] = GetGridHeight(top_left.x                  , top_left.y                  );
-  v[1] = GetGridHeight(top_left.x                  , top_left.y + TILE_SIZE + 0.1);
-  v[2] = GetGridHeight(top_left.x + TILE_SIZE + 0.1, top_left.y + TILE_SIZE + 0.1);
-  v[3] = GetGridHeight(top_left.x + TILE_SIZE + 0.1, top_left.y                  );
+  v[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y).height;
+  v[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + TILE_SIZE + 0.1).height;
+  v[2] = asset_catalog_->GetTerrainPoint(top_left.x + TILE_SIZE + 0.1, top_left.y + TILE_SIZE + 0.1).height;
+  v[3] = asset_catalog_->GetTerrainPoint(top_left.x + TILE_SIZE + 0.1, top_left.y).height;
 
   glm::vec2 tile_v = (glm::vec2(x, y) - glm::vec2(top_left)) / float(TILE_SIZE);
 
@@ -171,15 +138,6 @@ float Terrain::GetHeight(float x, float y) {
     tile_v = glm::vec2(1.0f) - tile_v; 
     return v[2] + tile_v.x * (v[1] - v[2]) + tile_v.y * (v[3] - v[2]);
   }
-}
-
-// TODO: make this a function pointer. We should load this from a file like the
-// height map.
-vec3 GetTerrainBlending(float x, float y) {
-  if (x > 2000 && y > 2000) return vec3(1.0, 0.0, 0.0);
-  if (y > 2000) return vec3(0.0, 1.0, 0.0);
-  if (x > 2000) return vec3(0.0, 0.0, 1.0);
-  return vec3(0.0, 0.0, 0.0);
 }
 
 ivec2 WorldToGridCoordinates(vec3 coords) {
@@ -380,12 +338,16 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   ivec2 hb_top_left = clipmap->top_left;
   ivec2 grid_coords = BufferToGridCoordinates(p, level, hb_top_left, top_left);
   vec3 world_coords = GridToWorldCoordinates(grid_coords);
-  float height = GetGridHeight(world_coords.x, world_coords.z) / MAX_HEIGHT;
+
+  const TerrainPoint& terrain_point = 
+    asset_catalog_->GetTerrainPoint(world_coords.x, world_coords.z);
+
+  float height = terrain_point.height / MAX_HEIGHT;
   float step = GetTileSize(level) * TILE_SIZE;
 
-  vec3 a = glm::vec3(0, GetGridHeight(world_coords.x, world_coords.z), 0);
-  vec3 b = glm::vec3(step, GetGridHeight(world_coords.x + step, world_coords.z), 0);
-  vec3 c = glm::vec3(0, GetGridHeight(world_coords.x, world_coords.z + step ), step);
+  vec3 a = vec3(0, terrain_point.height, 0);
+  vec3 b = vec3(step, asset_catalog_->GetTerrainPoint(world_coords.x + step, world_coords.z).height, 0);
+  vec3 c = vec3(0, asset_catalog_->GetTerrainPoint(world_coords.x, world_coords.z + step).height, step);
   vec3 tangent = b - a;
   vec3 bitangent = c - a;
   vec3 normal = normalize(cross(bitangent, tangent));
@@ -395,7 +357,7 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   normal *= 1 / normal.y;
 
   vec2 tileset = vec2(0, 0);
-  vec3 blending = GetTerrainBlending(world_coords.x, world_coords.z);
+  vec3 blending = terrain_point.blending;
   vec3 coarser_blending = blending;
   vec3 coarser_normal = normal;
   if (coarser_clipmap) {
@@ -417,8 +379,12 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
 
       vec3 world_coords1 = GridToWorldCoordinates(grid_coords - offset);
       vec3 world_coords2 = GridToWorldCoordinates(grid_coords + offset);
-      coarser_blending = (GetTerrainBlending(world_coords1.x, world_coords1.z)+ 
-        GetTerrainBlending(world_coords2.x, world_coords2.z)) * 0.5f;
+      vec3 blending1 = asset_catalog_->
+        GetTerrainPoint(world_coords1.x, world_coords1.z).blending;
+      vec3 blending2 = asset_catalog_->
+        GetTerrainPoint(world_coords2.x, world_coords2.z).blending;
+
+      coarser_blending = (blending1+blending2) * 0.5f;
     }
 
     coarser_normal.x = n.x;
@@ -628,8 +594,6 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
 }
 
 void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos) {
-  UpdateClipmaps(player_pos);
-
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
 

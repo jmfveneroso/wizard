@@ -345,7 +345,7 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
         FbxAMatrix mGlobalTransform = transform_offset.Inverse() * 
           joint->cluster->GetLink()->EvaluateGlobalTransform(time); 
         mat4 m = GetMatrix(mGlobalTransform);
-        keyframe.transforms[j] = m;
+        keyframe.transforms[j] = m * joint->global_bindpose_inverse;
       }
       animation.keyframes.push_back(keyframe);
     }
@@ -441,17 +441,21 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
     return data;
   }
 
-  // TODO: load multiple animations.
-  m.joint_transforms.resize(data.joints.size());
-  const Animation& animation = data.animations[1];
-  for (auto& kf : animation.keyframes) {
-    for (int i = 0; i < kf.transforms.size(); i++) {
-      auto& joint = data.joints[i];
-      if (!joint) continue;
-      
-      mat4 joint_transform = kf.transforms[i] * joint->global_bindpose_inverse;
-      m.joint_transforms[i].push_back(joint_transform);
-    }
+  for (const Animation& animation : data.animations) {
+    cout << "animation name: " << animation.name << endl;
+    m.animations[animation.name] = animation;
   }
+
+  // m.joint_transforms.resize(data.joints.size());
+  // const Animation& animation = data.animations[1];
+
+  // for (auto& kf : animation.keyframes) {
+  //   for (int i = 0; i < kf.transforms.size(); i++) {
+  //     auto& joint = data.joints[i];
+  //     if (!joint) continue;
+  //     
+  //     m.joint_transforms[i].push_back(kf.transforms[i]);
+  //   }
+  // }
   return data;
 }
