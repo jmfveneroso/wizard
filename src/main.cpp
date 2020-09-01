@@ -23,14 +23,15 @@
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 
-#define PLAYER_SPEED 0.03f
+// #define PLAYER_SPEED 0.03f
+#define PLAYER_SPEED 0.6f
 // #define PLAYER_SPEED 0.3f
 // #define PLAYER_HEIGHT 1.5
 #define PLAYER_HEIGHT 0.75
 #define GRAVITY 0.016
-// #define JUMP_FORCE 3.0f
+// #define JUMP_FORCE 30.0f
 #define JUMP_FORCE 0.3f
-#define PLAYER_START_POSITION vec3(10000, 31, 10000)
+#define PLAYER_START_POSITION vec3(10000, 220, 10000)
 
 using namespace std;
 using namespace glm;
@@ -50,6 +51,7 @@ struct Player {
 Player player_;
 shared_ptr<Renderer> renderer = nullptr;
 shared_ptr<TextEditor> text_editor = nullptr;
+shared_ptr<AssetCatalog> asset_catalog = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -73,18 +75,41 @@ void UpdateForces() {
   vec3 old_player_pos = player_.position;
   p.position += p.speed;
 
-  renderer->Collide(&player_.position, old_player_pos, &player_.speed, &player_.can_jump);
+  renderer->Collide(&p.position, old_player_pos, &p.speed, &p.can_jump);
+}
 
-  // Test collision with terrain.
-  float height = renderer->terrain()->GetHeight(player_.position.x, player_.position.z) + PLAYER_HEIGHT;
-  if (p.position.y - PLAYER_HEIGHT < height) {
-    glm::vec3 pos = p.position;
-    pos.y = height + PLAYER_HEIGHT;
-    p.position = pos;
-    glm::vec3 speed = p.speed;
-    if (speed.y < 0) speed.y = 0.0f;
-    p.speed = speed;
-    p.can_jump = true;
+void RunCommand(string command) {
+  vector<string> result; 
+  boost::split(result, command, boost::is_any_of(" ")); 
+  if (result.empty()) {
+    cout << "result empty" << endl;
+    return;
+  }
+
+  cout << result[0] << endl;
+  if (result[0] == "move") {
+    cout << "moving player" << endl;
+    float x = boost::lexical_cast<float>(result[1]);
+    float y = boost::lexical_cast<float>(result[2]);
+    float z = boost::lexical_cast<float>(result[3]);
+    player_.position = vec3(x, y, z);
+  } else if (result[0] == "raise") {
+    ivec2 top_left = ivec2(player_.position.x, player_.position.z) - 40;
+    for (int x = 0; x < 80; x++) {
+      for (int y = 0; y < 80; y++) {
+        float x_ = x / 10.0f - 4.0f;
+        float y_ = y / 10.0f - 4.0f;
+        float h = (50.0f / (2.0f * 3.14f)) * exp(-0.5 * (x_*x_ + y_*y_));
+
+        TerrainPoint p = asset_catalog->GetTerrainPoint(top_left.x + x, top_left.y + y);
+        p.height += h;
+        asset_catalog->SetTerrainPoint(top_left.x + x, top_left.y + y, p);
+      }
+    }
+    renderer->terrain()->Invalidate();
+    cout << "Raised terrain" << endl; 
+  } else if (result[0] == "save") {
+    asset_catalog->SaveHeightMap("assets/height_map2.dat");
   }
 }
 
@@ -95,14 +120,17 @@ bool ProcessGameInput() {
   --throttle_counter;
   GLFWwindow* window = renderer->window();
 
-  if (text_mode) {
-    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-      if (throttle_counter < 0) {
-        text_mode = false;
-        text_editor->Disable();
-      }
-      throttle_counter = 20;
+  if (text_mode) { 
+    if (!text_editor->enabled) {
+      text_mode = false;
     }
+    // if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+    //   if (throttle_counter < 0) {
+    //     text_mode = false;
+    //     text_editor->Disable();
+    //   }
+    //   throttle_counter = 20;
+    // }
     return true;
   } else {
     vec3 direction(
@@ -128,7 +156,13 @@ bool ProcessGameInput() {
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
       if (throttle_counter < 0) {
         text_editor->Enable();
-        text_editor->SetContent("bla\nblabla\n");
+  
+        stringstream ss;
+        ss << "Player pos: " << player_.position << endl;
+
+        shared_ptr<Sector> s = renderer->GetPlayerSector(player_.position + vec3(0, 0.75, 0));
+        ss << "Sector: " << s->name << endl;
+        text_editor->SetContent(ss.str());
         text_mode = true;
       }
       throttle_counter = 20;
@@ -189,7 +223,7 @@ void AfterFrame() {
 
 int main() {
   renderer = make_shared<Renderer>();
-  shared_ptr<AssetCatalog> asset_catalog = make_shared<AssetCatalog>("assets");
+  asset_catalog = make_shared<AssetCatalog>("assets");
   shared_ptr<Draw2D> draw_2d = make_shared<Draw2D>(
     asset_catalog->GetShader("text"), 
     asset_catalog->GetShader("polygon"));
@@ -201,6 +235,7 @@ int main() {
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);
   glfwSetKeyCallback(renderer->window(), PressKeyCallback);
+  text_editor->set_run_command_fn(RunCommand);
 
   renderer->Run(ProcessGameInput, AfterFrame);
   return 0;

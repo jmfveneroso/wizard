@@ -39,6 +39,7 @@
 using namespace std;
 using namespace glm;
 
+const int kMaxParticles = 10000;
 
 struct Camera {
   vec3 position; 
@@ -62,16 +63,18 @@ struct FBO {
   FBO(GLuint width, GLuint height) : width(width), height(height) {}
 };
 
+struct Particle {
+  vec3 pos, speed;
+  float size, angle, weight;
+  float life = -1.0f; // Remaining life of the particle. if < 0 : dead and unused.
+  unsigned char r, g, b, a;
 
-// ==========================================
-// Structs that belong in another file.
-
-struct Occluder {
-  vector<Polygon> polygons;
+  float camera_distance;
+  bool operator<(const Particle& that) const {
+    // Sort in reverse order : far particles drawn first.
+    return this->camera_distance > that.camera_distance;
+  }
 };
-
-// ==========================================
-
 
 class Renderer {
   shared_ptr<AssetCatalog> asset_catalog_;
@@ -85,18 +88,40 @@ class Renderer {
   vec4 frustum_planes_[6];
   unordered_map<string, FBO> fbos_;
   shared_ptr<Terrain> terrain_;
+  float delta_time_ = 0.0f;
+
+  // Particles code.
+  GLuint particle_vao_;
+  GLuint particle_vbo_;
+  GLuint particle_position_buffer_;
+  GLuint particle_color_buffer_;
+  GLuint particle_life_buffer_;
+  vec4 particle_positions_[kMaxParticles];
+  vec4 particle_colors_[kMaxParticles];
+  float particle_lifes_[kMaxParticles];
+  Particle particle_container_[kMaxParticles];
+  int particle_count_ = 0;
+  int last_used_particle_ = 0;
+  void CreateParticleBuffers();
+  int FindUnusedParticle();
+  void UpdateParticles();
+  void CreateNewParticles();
+  void DrawParticles();
 
   FBO CreateFramebuffer(int width, int height);
   void DrawFBO(const FBO& fbo, bool blur = false);
 
-  shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
   bool CullObject(shared_ptr<GameObject> obj, 
     const vector<vector<Polygon>>& occluder_convex_hulls);
   void DrawObject(shared_ptr<GameObject> obj);
   vector<shared_ptr<GameObject>> 
   GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector);
   void DrawObjects(shared_ptr<Sector> sector);
-  void DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node);
+  void DrawSector(
+    shared_ptr<StabbingTreeNode> stabbing_tree_node, 
+    bool clip_to_portal = false,
+    shared_ptr<Portal> parent_portal = nullptr);
+
   ConvexHull CreateConvexHullFromOccluder(const vector<Polygon>& polygons, 
     const vec3& player_pos);
 
@@ -111,6 +136,9 @@ class Renderer {
   void GetPotentiallyCollidingObjects(const vec3& player_pos, 
     shared_ptr<OctreeNode> octree_node,
     vector<shared_ptr<GameObject>>& objects);
+  void DrawCaves(shared_ptr<StabbingTreeNode> stabbing_tree_node);
+  void DrawCavePortalToStencilBuffer(shared_ptr<Portal> portal);
+  void UpdateAnimationFrames();
 
  public:
   Renderer();  
@@ -125,6 +153,9 @@ class Renderer {
   shared_ptr<GameObject> CreateJoint(vec3 start, vec3 end);
 
   void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
+  void CollideSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
+    vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
+  shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
   
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }

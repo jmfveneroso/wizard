@@ -186,8 +186,6 @@ void CreateOffsetIndices(std::vector<unsigned int>& indices,
 
 Terrain::Terrain(GLuint program_id, GLuint water_program_id) 
   : program_id_(program_id), water_program_id_(water_program_id) {
-  // LoadTerrain("./terrain.data");
-
   glm::vec3 vertices[(CLIPMAP_SIZE+1) * (CLIPMAP_SIZE+1)];
   glGenBuffers(1, &vertex_buffer_);
   for (int z = 0; z <= CLIPMAP_SIZE; z++) {
@@ -201,7 +199,6 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
     (CLIPMAP_SIZE + 1) * (CLIPMAP_SIZE + 1) * sizeof(glm::vec3), 
     vertices, GL_STATIC_DRAW);
 
-  // TODO: should we have VBOs for each clipmap?
   glGenVertexArrays(1, &vao_);
   glBindVertexArray(vao_);
 
@@ -406,6 +403,17 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   clipmap->col_coarser_blending[p.x][p.y] = coarser_blending;
 }
 
+void Terrain::Invalidate() {
+  for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
+    shared_ptr<Clipmap> clipmap = clipmaps_[i];
+    for (int x = 0; x < CLIPMAP_SIZE + 1; x++) {
+      clipmap->valid_cols[x] = 0;
+      clipmap->valid_rows[x] = 0;
+    }
+    clipmap->invalid = true;
+  }
+}
+
 void Terrain::UpdateClipmaps(vec3 player_pos) {
   ivec2 grid_coords = WorldToGridCoordinates(player_pos);
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
@@ -577,13 +585,13 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
     mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
     mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
     mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-    if (clipmap->min_height > 5) {
-      continue;
-    }
+    // if (clipmap->min_height > 5) {
+    //   continue;
+    // }
 
-    if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
-      continue;
-    }
+    // if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
+    //   continue;
+    // }
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][0][0]);
     glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][0][0], 
@@ -593,9 +601,14 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
   glBindVertexArray(0);
 }
 
-void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos) {
+void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
+  bool clip_against_plane) {
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
+  glEnable(GL_CULL_FACE);
+  glEnable(GL_STENCIL_TEST);
+  glStencilFunc(GL_ALWAYS, 1, 0xFF); // Pass test if stencil value is 1
+  glStencilMask(0x00);
 
   // Remove this PURE_TILE_SIZE / TILE_SIZE mess.
   // These uniforms can probably be bound with the VAO.
@@ -606,6 +619,14 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos) {
   glUniform3fv(GetUniformId(program_id_, "player_pos"), 1, (float*) &player_pos);
   glUniformMatrix4fv(GetUniformId(program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
   BindBuffer(vertex_buffer_, 0, 3);
+
+  // Set clipping plane.
+  glUniform1i(GetUniformId(program_id_, "clip_against_plane"), 
+    (int) clip_against_plane);
+  glUniform3fv(GetUniformId(program_id_, "clipping_point"), 1, 
+    (float*) &clipping_point_);
+  glUniform3fv(GetUniformId(program_id_, "clipping_normal"), 1, 
+    (float*) &clipping_normal_);
 
   float h = player_pos.y - GetHeight(player_pos.x, player_pos.z);
   int last_visible_index = CLIPMAP_LEVELS-1;
@@ -687,6 +708,8 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos) {
     // cout << "cull_count: " << cull_count << endl;
     cull_count++;
   }
+
+  glDisable(GL_STENCIL_TEST);
   glBindVertexArray(0);
 
   DrawWater(ProjectionMatrix, ViewMatrix, player_pos);

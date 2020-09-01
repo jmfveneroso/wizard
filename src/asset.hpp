@@ -58,6 +58,9 @@ struct GameAsset {
   AABB aabb;
   ConvexHull convex_hull;
 
+  // Skeleton.
+  vector<shared_ptr<GameAsset>> bone_hit_boxes;
+
   // TODO: implement OBB tree.
   // shared_ptr<OBBTree> obb_tree;
 
@@ -90,6 +93,12 @@ struct GameObject {
   // string active_animation = "Armature|flipping";
   int frame = 0;
 
+
+  // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
+  shared_ptr<GameObject> parent;
+  vector<shared_ptr<GameObject>> children;
+  int parent_bone_id;
+
   GameObject() {}
 };
 
@@ -111,10 +120,14 @@ struct StabbingTreeNode {
 };
 
 struct Portal {
+  bool cave = false;
   vec3 position;
   vector<Polygon> polygons;
   shared_ptr<Sector> from_sector;
   shared_ptr<Sector> to_sector;
+
+  // Object representing portal. It is only useful for cave entrances.
+  shared_ptr<GameObject> object;
 };
 
 struct OctreeNode {
@@ -156,6 +169,7 @@ struct TerrainPoint {
   vec3 blending = vec3(0, 0, 0);
   vec2 tile_set = vec2(0, 0);
   TerrainPoint() {}
+  TerrainPoint(float height) : height(height) {}
 };
 
 struct Configs {
@@ -169,7 +183,6 @@ class AssetCatalog {
   unordered_map<string, GLuint> textures_;
   unordered_map<string, shared_ptr<GameAsset>> assets_;
   unordered_map<string, shared_ptr<Sector>> sectors_;
-  unordered_map<string, shared_ptr<GameObject>> objects_;
   unordered_map<int, shared_ptr<GameAsset>> assets_by_id_;
   unordered_map<int, shared_ptr<Sector>> sectors_by_id_;
   unordered_map<int, shared_ptr<GameObject>> objects_by_id_;
@@ -191,11 +204,12 @@ class AssetCatalog {
   void LoadSectors(const std::string& xml_filename);
   void LoadPortals(const std::string& xml_filename);
   void LoadHeightMap(const std::string& dat_filename);
-  void SaveHeightMap(const std::string& dat_filename);
 
   vector<TerrainPoint> height_map_;
 
  public:
+  unordered_map<string, shared_ptr<GameObject>> objects_;
+
   // Instantiating this will fail if OpenGL hasn't been initialized.
   AssetCatalog(const string& directory);
 
@@ -207,13 +221,18 @@ class AssetCatalog {
   shared_ptr<GameAsset> GetAssetByName(const string& name);
   shared_ptr<GameObject> GetObjectByName(const string& name);
   shared_ptr<Sector> GetSectorByName(const string& name);
+  GLuint GetTextureByName(const string& name);
   shared_ptr<GameAsset> GetAssetById(int id);
   shared_ptr<GameObject> GetObjectById(int id);
   shared_ptr<Sector> GetSectorById(int id);
+
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
+  void SaveHeightMap(const std::string& dat_filename);
 
   unordered_map<string, shared_ptr<Sector>> GetSectors() { return sectors_; }
+  shared_ptr<GameObject> CreateGameObjFromPolygons(
+    const vector<Polygon>& polygons);
 };
 
 #endif // __ASSET_HPP__

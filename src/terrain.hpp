@@ -90,6 +90,9 @@ class Terrain {
   GLuint water_texture_;
   GLuint water_normal_texture_;
 
+  vec3 clipping_point_ = vec3(0, 0, 0);
+  vec3 clipping_normal_ = vec3(0, 0, 0);
+
   // TODO: comments explaining all functions.
   void CreateSubregionBuffer(
     int subregion, ivec2 offset, GLuint* buffer_id, 
@@ -112,8 +115,14 @@ class Terrain {
   float GetHeight(float x, float y);
 
   void UpdateClipmaps(vec3 player_pos);
-  void Draw(mat4, mat4, vec3);
+  void Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
+    bool clip_against_plane = false);
   void DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos);
+  void Invalidate();
+  void SetClippingPlane(const vec3& point, const vec3& normal) {
+    clipping_point_ = point;
+    clipping_normal_ = normal;
+  }
 
   void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
     asset_catalog_ = asset_catalog; } 

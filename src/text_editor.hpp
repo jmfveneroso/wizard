@@ -37,9 +37,9 @@ class TextEditor {
   bool ignore;
   bool editable = true;
   int mode;
+  bool already_processed_key;
   vector<string> content_;
   string command;
-  bool enabled;
   string write_buffer;
   int cursor_row_;
   int cursor_col_;
@@ -47,10 +47,14 @@ class TextEditor {
   int start_line;
 
   shared_ptr<Draw2D> draw_2d_;
+  function<void(string)> run_command_fn_;
+
+  bool ProcessDefaultInput(int key, int scancode, int action, int mods);
+  bool ProcessTextInput(int key, int scancode, int action, int mods);
+  bool ProcessCommandInput(int key, int scancode, int action, int mods);
 
  public:
-  bool update_object = false;
-  int create_object = -1;
+  bool enabled;
 
   TextEditor(shared_ptr<Draw2D> draw_2d) 
     : draw_2d_(draw_2d) {
@@ -79,6 +83,10 @@ class TextEditor {
   void Enable() { enabled = true; cursor_row_ = 0; cursor_col_ = 0; }
   void Disable() { enabled = false; cursor_row_ = 0; cursor_col_ = 0; }
   bool Close() { return !enabled; }
+
+  void set_run_command_fn(function<void(string)> run_command_fn) {
+    run_command_fn_ = run_command_fn;
+  }
 };
 
 #endif

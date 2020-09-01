@@ -43,6 +43,7 @@ struct SkeletonJoint {
   mat4 global_bindpose_inverse; 
   mat4 global_bindpose; // Probably don't need this.
   FbxCluster* cluster; // Remove from here.
+  FbxNode* node; // Remove from here.
 };
 
 struct RawTexture {
@@ -54,7 +55,6 @@ struct RawAnimationData {
   vector<vec3> bone_weights;
   shared_ptr<SkeletonJoint> skeleton;
   vector<shared_ptr<SkeletonJoint>> joints;
-
   vector<Animation> animations;
 };
 

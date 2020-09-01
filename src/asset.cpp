@@ -45,7 +45,7 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   LoadShaders(directory_ + "/shaders");
   LoadAssets(directory_ + "/game_assets");
   LoadObjects(directory_ + "/game_objects");
-  LoadHeightMap(directory_ + "/height_map.dat");
+  LoadHeightMap(directory_ + "/height_map2.dat");
   // SaveHeightMap(directory_ + "/height_map.dat");
 
   // TODO: load config
@@ -158,6 +158,45 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
       FbxData data = LoadFbxData(mesh_filename, m);
       m.shader = shaders_[shader_name];
       game_asset->lod_meshes[lod_level] = m;
+
+      // Skeleton.
+      if (data.skeleton) {
+        int num_bones = m.bones_to_ids.size();
+        game_asset->bone_hit_boxes.resize(num_bones);
+
+        const pugi::xml_node& skeleton = asset.child("skeleton");
+        for (pugi::xml_node bone = skeleton.child("bone"); bone; 
+          bone = bone.next_sibling("bone")) {
+          string bone_name = bone.attribute("name").value();
+
+          if (m.bones_to_ids.find(bone_name) == m.bones_to_ids.end()) {
+            ThrowError("Bone with name ", bone_name, " doesn't exist.");
+          }
+          int bone_id = m.bones_to_ids[bone_name];
+
+          Mesh bone_hit_box;
+          const string& mesh_filename = bone.text().get();
+          FbxData data = LoadFbxData(mesh_filename, bone_hit_box);
+
+          // Create asset for bone hit box.
+          shared_ptr<GameAsset> bone_asset = make_shared<GameAsset>();
+          bone_asset->id = id_counter_++;
+          assets_by_id_[bone_asset->id] = bone_asset;
+          bone_asset->name = game_asset->name + "-bone-" + 
+            boost::lexical_cast<string>(bone_id);
+          assets_[bone_asset->name] = bone_asset;
+
+          string shader_name = "solid";
+          bone_hit_box.shader = shaders_[shader_name];
+          bone_asset->lod_meshes[0] = bone_hit_box;
+          bone_asset->shader = shaders_[shader_name];
+          bone_asset->aabb = GetObjectAABB(bone_hit_box.polygons);
+          bone_asset->bounding_sphere = GetObjectBoundingSphere(bone_hit_box.polygons);
+          bone_asset->collision_type = COL_NONE;
+
+          game_asset->bone_hit_boxes[bone_id] = bone_asset;
+        }
+      }
     }
 
     // Occluding hull.
@@ -183,7 +222,6 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
     const pugi::xml_node& texture = asset.child("texture");
     const string& texture_filename = texture.text().get();
     if (textures_.find(texture_filename) == textures_.end()) {
-      cout << texture_filename << endl;
       GLuint texture_id = LoadPng(texture_filename.c_str());
       textures_[texture_filename] = texture_id;
     }
@@ -193,7 +231,19 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
       ThrowError("Asset with name ", game_asset->name, " already exists.");
     }
     assets_[game_asset->name] = game_asset;
-    assets_by_id_[id_counter_++] = game_asset;
+    game_asset->id = id_counter_++;
+    assets_by_id_[game_asset->id] = game_asset;
+  }
+
+  for (pugi::xml_node xml_texture = xml.child("texture"); xml_texture; 
+    xml_texture = xml_texture.next_sibling("texture")) {
+    string name = xml_texture.attribute("name").value();
+    const string& texture_filename = xml_texture.text().get();
+    if (textures_.find(texture_filename) == textures_.end()) {
+      GLuint texture_id = LoadPng(texture_filename.c_str());
+      cout << "Adding texture: " << name << endl;
+      textures_[name] = texture_id;
+    }
   }
 }
 
@@ -212,18 +262,19 @@ const vector<vec3> kOctreeNodeOffsets = {
 void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
   shared_ptr<GameObject> object, int depth) {
   int index = 0, straddle = 0;
-  cout << "--- Octree depth: " << depth << endl;
-  cout << "--- Octree center: " << octree_node->center << endl;
-  cout << "--- Octree radius: " << octree_node->half_dimensions << endl;
+  // cout << "--- Octree depth: " << depth << endl;
+  // cout << "--- Octree center: " << octree_node->center << endl;
+  // cout << "--- Octree radius: " << octree_node->half_dimensions << endl;
 
   // Compute the octant number [0..7] the object sphere center is in
   // If straddling any of the dividing x, y, or z planes, exit directly
   for (int i = 0; i < 3; i++) {
     float delta = object->bounding_sphere.center[i] - octree_node->center[i];
-    if (abs(delta) < object->bounding_sphere.radius) {
+    if (abs(delta) < octree_node->half_dimensions[i] + object->bounding_sphere.radius) {
       straddle = 1;
       break;
     }
+
     if (delta > 0.0f) index |= (1 << i); // ZYX
   }
 
@@ -240,12 +291,12 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     // Straddling, or no child node to descend into, so link object into list 
     // at this node.
     octree_node->objects.push_back(object);
-    cout << "Object: " << object->name << " inserted in the Octree" << endl;
-    cout << "Octree depth: " << depth << endl;
-    cout << "Octree center: " << octree_node->center << endl;
-    cout << "Octree radius: " << octree_node->half_dimensions << endl;
-    cout << "object->bounding_sphere.center: " << object->bounding_sphere.center << endl;
-    cout << "object->bounding_sphere.radius: " << object->bounding_sphere.radius << endl;
+    // cout << "Object: " << object->name << " inserted in the Octree" << endl;
+    // cout << "Octree depth: " << depth << endl;
+    // cout << "Octree center: " << octree_node->center << endl;
+    // cout << "Octree radius: " << octree_node->half_dimensions << endl;
+    // cout << "object->bounding_sphere.center: " << object->bounding_sphere.center << endl;
+    // cout << "object->bounding_sphere.radius: " << object->bounding_sphere.radius << endl;
   }
 }
 
@@ -297,11 +348,32 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
   new_game_obj->asset = assets_[asset_name];
   new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
   new_game_obj->aabb = GetObjectAABB(new_game_obj);
-  cout << new_game_obj->bounding_sphere.radius << endl;
-  cout << new_game_obj->aabb<< endl;
+
+  // If the object has bone hit boxes.
+  const vector<shared_ptr<GameAsset>>& bone_hit_boxes = 
+    new_game_obj->asset->bone_hit_boxes;
+  for (int i = 0; i < bone_hit_boxes.size(); i++) {
+    if (!bone_hit_boxes[i]) continue;
+    shared_ptr<GameObject> child = make_shared<GameObject>();
+    child->name = new_game_obj->name + "-child-" + 
+      boost::lexical_cast<string>(i);
+    child->position = new_game_obj->position;
+    child->asset = bone_hit_boxes[i];
+    child->bounding_sphere = GetObjectBoundingSphere(child);
+    child->aabb = GetObjectAABB(child);
+
+    new_game_obj->children.push_back(child);
+    child->parent = new_game_obj;
+    child->parent_bone_id = i;
+
+    objects_[child->name] = child;
+    child->id = id_counter_++;
+    objects_by_id_[child->id] = child;
+  }
 
   objects_[new_game_obj->name] = new_game_obj;
-  objects_by_id_[id_counter_++] = new_game_obj;
+  new_game_obj->id = id_counter_++;
+  objects_by_id_[new_game_obj->id] = new_game_obj;
   return new_game_obj;
 }
 
@@ -312,7 +384,7 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
     throw runtime_error(string("Could not load xml file: ") + xml_filename);
   }
 
-  cout << "Loading objects from: " << xml_filename << endl;
+  cout << "Loading sectors from: " << xml_filename << endl;
   const pugi::xml_node& xml = doc.child("xml");
   for (pugi::xml_node sector = xml.child("sector"); sector; 
     sector = sector.next_sibling("sector")) {
@@ -359,8 +431,6 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
     for (pugi::xml_node game_obj = game_objs.child("game-obj"); game_obj; 
       game_obj = game_obj.next_sibling("game-obj")) {
       shared_ptr<GameObject> new_game_obj = LoadGameObject(game_obj);
-
-      cout << "Octree" << endl;
       InsertObjectIntoOctree(new_sector->octree, new_game_obj, 0);
     }
 
@@ -369,7 +439,8 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
       ThrowError("Sector with name ", new_sector->name, " already exists.");
     }
     sectors_[new_sector->name] = new_sector;
-    sectors_by_id_[id_counter_++] = new_sector;
+    new_sector->id = id_counter_++;
+    sectors_by_id_[new_sector->id] = new_sector;
   }
 }
 
@@ -423,6 +494,14 @@ void AssetCatalog::LoadPortals(const std::string& xml_filename) {
       portal->from_sector = sector;
       portal->to_sector = to_sector;
 
+      // Is this portal the entrance to a cave?
+      pugi::xml_attribute is_cave = portal_xml.attribute("cave");
+      if (is_cave) {
+         if (string(is_cave.value()) == "true") {
+           portal->cave = true;
+         }
+      }
+
       const pugi::xml_node& position = portal_xml.child("position");
       if (!position) {
         throw runtime_error("Portal must have a location.");
@@ -448,6 +527,7 @@ void AssetCatalog::LoadPortals(const std::string& xml_filename) {
         }
       }
 
+      portal->object = CreateGameObjFromPolygons(portal->polygons);
       sector->portals[to_sector->id] = portal;
     }
 
@@ -507,7 +587,7 @@ TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
   y += kHeightMapSize / 2;
 
   if (x < 0 || y < 0 || x >= kHeightMapSize || y >= kHeightMapSize) {
-    return TerrainPoint();
+    return TerrainPoint(0);
   }
   return height_map_[x + y * kHeightMapSize];
 
@@ -539,6 +619,11 @@ TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
 
 void AssetCatalog::SetTerrainPoint(int x, int y, 
   const TerrainPoint& terrain_point) {
+  x -= configs_->world_center.x;
+  y -= configs_->world_center.z;
+  x += kHeightMapSize / 2;
+  y += kHeightMapSize / 2;
+
   int i = y * kHeightMapSize + x;
   height_map_[i] = terrain_point;
 }
@@ -565,6 +650,11 @@ shared_ptr<Sector> AssetCatalog::GetSectorByName(const string& name) {
   return sectors_[name];
 }
 
+GLuint AssetCatalog::GetTextureByName(const string& name) {
+  if (textures_.find(name) == textures_.end()) return 0;
+  return textures_[name];
+}
+
 shared_ptr<GameAsset> AssetCatalog::GetAssetById(int id) {
   if (assets_by_id_.find(id) == assets_by_id_.end()) return nullptr;
   return assets_by_id_[id];
@@ -587,4 +677,62 @@ GLuint AssetCatalog::GetShader(const string& name) {
 
 shared_ptr<Configs> AssetCatalog::GetConfigs() {
   return configs_;
+}
+
+shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
+  const vector<Polygon>& polygons) {
+  int count = 0; 
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+  vector<unsigned int> indices;
+  for (auto& p : polygons) {
+    int polygon_size = p.vertices.size();
+    for (int j = 1; j < polygon_size - 1; j++) {
+      vertices.push_back(p.vertices[0]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j+1]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+    }
+  }
+
+  Mesh m = CreateMesh(GetShader("solid"), vertices, uvs, indices);
+
+  // Create asset.
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  game_asset->id = id_counter_++;
+  assets_by_id_[game_asset->id] = game_asset;
+  game_asset->name = "polygon-asset-" + boost::lexical_cast<string>(game_asset->id);
+  assets_[game_asset->name] = game_asset;
+
+  string shader_name = "solid";
+  m.shader = shaders_[shader_name];
+  game_asset->lod_meshes[0] = m;
+  game_asset->shader = shaders_[shader_name];
+  game_asset->aabb = GetObjectAABB(m.polygons);
+  game_asset->bounding_sphere = GetObjectBoundingSphere(m.polygons);
+  game_asset->collision_type = COL_NONE;
+
+  // Create object.
+  shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
+  new_game_obj->id = id_counter_++;
+  objects_by_id_[new_game_obj->id] = new_game_obj;
+
+  new_game_obj->name = "polygon-obj-" + boost::lexical_cast<string>(new_game_obj->id);
+  new_game_obj->position = vec3(0, 0, 0);
+
+  new_game_obj->asset = game_asset;
+
+  new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
+  new_game_obj->aabb = GetObjectAABB(new_game_obj);
+
+  objects_[new_game_obj->name] = new_game_obj;
+  return new_game_obj;
 }

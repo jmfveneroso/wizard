@@ -76,6 +76,7 @@ shared_ptr<SkeletonJoint> BuildSkeleton(FbxNode* node) {
         FbxNodeAttribute::eSkeleton) {
     FbxSkeleton* lSkeleton = (FbxSkeleton*) node->GetNodeAttribute();
     joint->name = (char*) lSkeleton->GetName();
+    joint->node = node;
   }
 
   for (int i = 0; i < node->GetChildCount(); i++) {
@@ -245,8 +246,19 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     joint_stack.pop();
     for (auto& c : joint->children) joint_stack.push(c);
     joint_map[joint->name] = joint;
+
+    // Old way.
+    // joint->global_bindpose = transform_link_matrix * inverse(transform_matrix) * 
+    //   geometry_transform;
+
+    FbxTime time; 
+    time.SetFrame(0, FbxTime::eFrames24); 
+    FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
+      GetGeometryTransformation(scene->GetRootNode());
+    FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
+      joint->node->EvaluateGlobalTransform(time); 
+    joint->global_bindpose = GetMatrix(mGlobalTransform);
   }
-  cout << "joint" << endl;
 
   vector<vector<tuple<int, float>>> bone_weights(data->vertices.size());
   data->joints.resize(joint_map.size());
@@ -284,8 +296,6 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     cluster->GetTransformLinkMatrix(m);
     mat4 transform_link_matrix = GetMatrix(m);
 
-    joint->global_bindpose = scale(vec3(0.01f)) * transform_link_matrix * 
-      transform_matrix * geometry_transform;
     joint->global_bindpose_inverse = inverse(transform_link_matrix) * 
       transform_matrix * geometry_transform;
   }
@@ -442,20 +452,13 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
   }
 
   for (const Animation& animation : data.animations) {
-    cout << "animation name: " << animation.name << endl;
     m.animations[animation.name] = animation;
   }
 
-  // m.joint_transforms.resize(data.joints.size());
-  // const Animation& animation = data.animations[1];
-
-  // for (auto& kf : animation.keyframes) {
-  //   for (int i = 0; i < kf.transforms.size(); i++) {
-  //     auto& joint = data.joints[i];
-  //     if (!joint) continue;
-  //     
-  //     m.joint_transforms[i].push_back(kf.transforms[i]);
-  //   }
-  // }
+  for (int i = 0; i < data.joints.size(); i++) {
+    auto& joint = data.joints[i];
+    if (!joint) continue;
+    m.bones_to_ids[data.joints[i]->name] = i;
+  }
   return data;
 }

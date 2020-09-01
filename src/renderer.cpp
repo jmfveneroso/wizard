@@ -70,7 +70,7 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
 
   glGenRenderbuffers(1, &fbo.depth_rbo);
   glBindRenderbuffer(GL_RENDERBUFFER, fbo.depth_rbo);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, fbo.width, 
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_EXT, fbo.width, 
     fbo.height);
   glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
@@ -78,7 +78,7 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 
     fbo.texture, 0);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, 
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
     GL_RENDERBUFFER, fbo.depth_rbo);
 
   if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
@@ -123,9 +123,6 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
 
   glBindVertexArray(fbo.vao);
 
-  // TODO: cull faces.
-  glDisable(GL_CULL_FACE);
-
   // Change to texture_sampler.
   BindTexture("texture_sampler", asset_catalog_->GetShader("screen"), fbo.texture);
   BindBuffer(vertex_buffer, 0, 3);
@@ -140,6 +137,7 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
 }
 
 void Renderer::DrawFBO(const FBO& fbo, bool blur) {
+  glDisable(GL_CULL_FACE);
   GLuint program_id = asset_catalog_->GetShader("screen");
   glBindVertexArray(fbo.vao);
   BindTexture("texture_sampler", program_id, fbo.texture);
@@ -149,7 +147,19 @@ void Renderer::DrawFBO(const FBO& fbo, bool blur) {
   glViewport(0, 0, fbo.width, fbo.height);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*) 0);
+  glEnable(GL_CULL_FACE);
   glBindVertexArray(0);
+}
+
+void Renderer::UpdateAnimationFrames() {
+  for (auto& [name, obj] : asset_catalog_->objects_) {
+    Mesh& mesh = obj->asset->lod_meshes[0];
+    const Animation& animation = mesh.animations[obj->active_animation];
+    obj->frame++;
+    if (obj->frame >= animation.keyframes.size()) {
+      obj->frame = 0;
+    }
+  }
 }
 
 // TODO: this should be engine run.
@@ -161,19 +171,23 @@ void Renderer::Run(const function<bool()>& process_frame,
   cout << "Open GL version is " << major_version << "." << 
     minor_version << endl;
 
+  CreateParticleBuffers();
+
   double last_time = glfwGetTime();
   int frames = 0;
   do {
     double current_time = glfwGetTime();
     frames++;
+    delta_time_ = current_time - last_time;
 
     // If last printf() was more than 1 second ago.
-    if (current_time - last_time >= 1.0) { 
+    if (delta_time_ >= 1.0) { 
       cout << 1000.0 / double(frames) << " ms/frame" << endl;
       frames = 0;
       last_time += 1.0;
     }
 
+    UpdateAnimationFrames();
     bool blur = process_frame();
 
    // View matrix:
@@ -198,9 +212,9 @@ void Renderer::Run(const function<bool()>& process_frame,
     shared_ptr<Sector> sector = GetPlayerSector(camera_.position);
     DrawSector(sector->stabbing_tree);
 
-    draw_2d_->DrawText("This is a test", 400, 400, vec3(1.0, 0.0, 0.0));
-    draw_2d_->DrawLine(vec2(100, 100), vec2(500, 500), 1.0, vec3(1.0, 0.0, 0.0));
-    draw_2d_->DrawRectangle(100, 100, 500, 500, vec3(1.0, 0.0, 0.0));
+    CreateNewParticles();
+    UpdateParticles();
+    DrawParticles();
 
     DrawFBO(fbos_["screen"], blur);
 
@@ -317,15 +331,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     }
   }
 
-  // const Mesh& mesh = obj->lods[lod];
   Mesh& mesh = obj->asset->lod_meshes[lod];
-  // GLuint program_id = mesh.shader;
 
   GLuint program_id = obj->asset->shader;
   glUseProgram(program_id);
-
-  // cout << "program_id: " << program_id << endl;
-  // cout << "program_id: " << asset_catalog_->GetShader("animated_object") << endl;
 
   glBindVertexArray(mesh.vao_);
   mat4 ModelMatrix = translate(mat4(1.0), obj->position);
@@ -339,12 +348,6 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     vector<mat4> joint_transforms;
     if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
       const Animation& animation = mesh.animations[obj->active_animation];
-      obj->frame++;
-      if (obj->frame >= animation.keyframes.size()) {
-        obj->frame = 0;
-      }
-   
-      // TODO: max 10 joints. Enforce limit here.
       for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
         joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
       }
@@ -359,12 +362,31 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     BindTexture("texture_sampler", program_id, obj->asset->texture_id);
     glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
   } else {
+    // Is bone.
+    shared_ptr<GameObject> parent = obj->parent;
+    if (parent) {
+      int bone_id = obj->parent_bone_id;
+      Mesh& parent_mesh = parent->asset->lod_meshes[0];
+      const Animation& animation = parent_mesh.animations[parent->active_animation];
+      mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
+      ModelMatrix = translate(mat4(1.0), obj->position) * joint_transform;
+      ModelViewMatrix = view_matrix_ * ModelMatrix;
+      MVP = projection_matrix_ * ModelViewMatrix;
+      glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+      glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+      glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+    }
+
+    glDisable(GL_CULL_FACE);
     glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
   }
+
   glBindVertexArray(0);
 }
 
 void Renderer::DrawObjects(shared_ptr<Sector> sector) {
+  // TODO: cull faces.
+  glDisable(GL_CULL_FACE);
   vector<shared_ptr<GameObject>> objs =
     GetPotentiallyVisibleObjectsFromSector(sector);
 
@@ -377,6 +399,13 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
     }
 
     DrawObject(obj);
+   
+    // Object has children.
+    if (!obj->children.empty()) {
+      for (auto& c : obj->children) {
+        DrawObject(c);
+      }
+    }
 
     if (obj->asset->occluder.empty()) continue;
 
@@ -394,15 +423,50 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
       occluder_convex_hulls.push_back(convex_hull);
     }
   }
+  glEnable(GL_CULL_FACE);
 }
 
-void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
+void Renderer::DrawCaves(
+  shared_ptr<StabbingTreeNode> stabbing_tree_node) {
+  shared_ptr<Sector> s = stabbing_tree_node->sector;
+
+  for (auto& node : stabbing_tree_node->children) {
+    if (s->portals.find(node->sector->id) == s->portals.end()) {
+      throw runtime_error("Sector should have portal.");
+    }
+
+    shared_ptr<Portal> p = s->portals[node->sector->id];
+    if (!p->cave) continue;
+
+    DrawSector(node);
+
+    // Only write to depth buffer.
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    DrawObject(p->object);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  }
+}
+
+void Renderer::DrawSector(
+  shared_ptr<StabbingTreeNode> stabbing_tree_node, 
+  bool clip_to_portal,
+  shared_ptr<Portal> parent_portal) {
   shared_ptr<Sector> s = stabbing_tree_node->sector;
 
   // Outdoors.
   if (s->name == "outside") {
+    DrawCaves(stabbing_tree_node);
     terrain_->UpdateClipmaps(camera_.position);
-    terrain_->Draw(projection_matrix_, view_matrix_, camera_.position);
+
+    if (clip_to_portal) {
+      Polygon& poly = parent_portal->polygons[0];
+      vec3& clipping_point = poly.vertices[0];
+      vec3& clipping_normal = poly.normals[0];
+      terrain_->SetClippingPlane(clipping_point, clipping_normal);
+    }
+
+    terrain_->Draw(projection_matrix_, view_matrix_, camera_.position, 
+      clip_to_portal);
   }
 
   DrawObjects(s);
@@ -414,12 +478,12 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
       throw runtime_error("Sector should have portal.");
     }
     shared_ptr<Portal> p = s->portals[node->sector->id];
-    // const Portal& p = portals_[node->portal_id];
+    if (p->cave) continue;
 
-    BoundingSphere sphere = BoundingSphere(camera_.position, 0.75f);
+    BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
     bool in_frustum = false; 
     for (auto& poly : p->polygons) {
-      if (dot(camera_.position - poly.vertices[0], poly.normals[0]) < 0.0001f) {
+      if (dot(camera_.position - poly.vertices[0], poly.normals[0]) < 0.000001f) {
         continue;
       }
 
@@ -437,7 +501,11 @@ void Renderer::DrawSector(shared_ptr<StabbingTreeNode> stabbing_tree_node) {
 
     // TODO: check other types of culling.
     if (in_frustum) {
-      DrawSector(node);
+      if (node->sector->name == "outside") {
+        DrawSector(node, true, p);
+      } else {
+        DrawSector(node);
+      }
     }
   }
 }
@@ -744,6 +812,474 @@ vec3 ClosestPtPointAABB(vec3 p, vec3 aabb_min, vec3 aabb_max) {
   return q;
 }
 
+bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, 
+  float* magnitude, const vec3& object_pos) {
+  const vec3& normal = polygon.normals[0];
+
+  vec3 a = polygon.vertices[0] + object_pos;
+  vec3 b = polygon.vertices[1] + object_pos;
+  vec3 c = polygon.vertices[2] + object_pos;
+
+  bool inside;
+  vec3 closest_point = ClosestPtPointTriangle(*player_pos, a, b, c, &inside);
+  
+  float r = 1.5f;
+
+  const vec3& v = closest_point - *player_pos;
+  if (length(v) > r || dot(*player_pos - a, normal) < 0) {
+    return false;
+  }
+
+  if (!inside) {
+    // cout << "not inside" << endl;
+    vec3 closest_ab = ClosestPtPointSegment(*player_pos, a, b);
+    vec3 closest_bc = ClosestPtPointSegment(*player_pos, b, c);
+    vec3 closest_ca = ClosestPtPointSegment(*player_pos, c, a);
+    vector<vec3> segments { a-b, b-c, c-a } ;
+    vector<vec3> points { closest_ab, closest_bc, closest_ca } ;
+
+    float min_distance = 9999.0f;
+    float min_index = -1;
+    for (int i = 0; i < 3; i++) {
+      float distance = length(points[i] - *player_pos);
+      if (distance < min_distance) {
+        min_index = i;
+        min_distance = distance;
+      }
+    }
+
+    // Collide with segment.
+    if (min_distance < r) {
+      vec3 player_to_p = points[min_index] - *player_pos;
+      vec3 tangent = normalize(cross(segments[min_index], normal));
+      float proj_tan = abs(dot(player_to_p, tangent));
+      float proj_normal = abs(dot(player_to_p, normal));
+      float mag = sqrt(r * r - proj_tan * proj_tan) - proj_normal + 0.001f;
+      *magnitude = mag;
+      *player_pos = *player_pos + mag * normal;
+      return true; 
+    }
+  }
+  // cout << "inside" << endl;
+
+  float mag = dot(v, normal);
+  *magnitude = r + mag + 0.001f;
+  *player_pos = *player_pos + *magnitude * normal;
+
+  return true;
+}
+
+void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
+  shared_ptr<Sector> sector = GetPlayerSector(*player_pos);
+  CollideSector(sector->stabbing_tree, player_pos, old_player_pos, 
+    player_speed, can_jump);
+
+  // Test collision with terrain.
+  if (sector->name == "outside") {
+    float x = player_pos->x;
+    float y = player_pos->z;
+    ivec2 top_left = ivec2(x, y);
+
+    float v[4];
+    v[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y).height;
+    v[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + 1.1).height;
+    v[2] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1).height;
+    v[3] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y).height;
+
+    vec2 tile_v = vec2(x, y) - vec2(top_left);
+
+    // Top triangle.
+    float height;
+    if (tile_v.x + tile_v.y < 1.0f) {
+      height = v[0] + tile_v.x * (v[3] - v[0]) + tile_v.y * (v[1] - v[0]);
+
+    // Bottom triangle.
+    } else {
+      tile_v = vec2(1.0f) - tile_v; 
+      height = v[2] + tile_v.x * (v[1] - v[2]) + tile_v.y * (v[3] - v[2]);
+    }
+
+    float PLAYER_HEIGHT = 0.75f;
+    height += PLAYER_HEIGHT;
+    if (player_pos->y - PLAYER_HEIGHT < height) {
+      vec3 pos = *player_pos;
+      pos.y = height + PLAYER_HEIGHT;
+      *player_pos = pos;
+      vec3 speed = *player_speed;
+      if (player_speed->y < 0) speed.y = 0.0f;
+      *player_speed = speed;
+      *can_jump = true;
+    }
+  }
+}
+
+void Renderer::CollideSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
+  vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
+  shared_ptr<Sector> sector = stabbing_tree_node->sector;
+  vector<shared_ptr<GameObject>> objs;
+  GetPotentiallyCollidingObjects(*player_pos, sector->octree, objs);
+
+  bool collision = true;
+  for (int i = 0; i < 5 && collision; i++) {
+    vector<vec3> collision_resolutions;
+    vector<float> magnitudes;
+    collision = false;
+
+    for (auto& obj : objs) {
+      if (obj->asset->collision_type != COL_PERFECT && obj->children.empty()) {
+        continue;
+      }
+
+      for (auto& pol : obj->asset->lod_meshes[0].polygons) {
+        vec3 collision_resolution = *player_pos;
+        float magnitude;
+        if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
+          collision = true;
+          collision_resolutions.push_back(collision_resolution);
+          magnitudes.push_back(magnitude);
+        }
+      }
+
+      // Collide bones.
+      if (obj->children.empty()) continue;
+
+      for (auto& c : obj->children) {
+        shared_ptr<GameObject> parent = c->parent;
+        Mesh& parent_mesh = parent->asset->lod_meshes[0];
+        const Animation& animation = parent_mesh.animations[parent->active_animation];
+        int bone_id = c->parent_bone_id;
+        mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
+
+        // Maybe remove.
+        for (auto pol : c->asset->lod_meshes[0].polygons) {
+          for (int i = 0; i < pol.vertices.size(); i++) {
+            vec3& v = pol.vertices[i];
+            vec3& n = pol.normals[i];
+            v = vec3(joint_transform * vec4(v.x, v.y, v.z, 1.0)) + obj->position;
+            n = vec3(joint_transform * vec4(n.x, n.y, n.z, 0.0));
+          }
+          vec3 collision_resolution = *player_pos;
+          float magnitude;
+          if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, vec3(0, 0, 0))) {
+            collision = true;
+            collision_resolutions.push_back(collision_resolution);
+            magnitudes.push_back(magnitude);
+          }
+        }
+      }
+    }
+
+    // Select the collision resolution for which the collision displacement along
+    // the collision normal is minimal.
+    int min_index = -1;
+    float min_magnitude = 999999999.0f;
+    for (int i = 0; i < collision_resolutions.size(); i++) {
+      const vec3& collision_resolution = collision_resolutions[i];
+      const float magnitude = magnitudes[i];
+      if (magnitude < min_magnitude) {
+        min_index = i;
+        min_magnitude = magnitude;
+      }
+    }
+
+    if (min_index != -1) {
+      vec3 collision_vector = normalize(collision_resolutions[min_index] - *player_pos);
+      *player_speed += abs(dot(*player_speed, collision_vector)) * collision_vector;
+      *player_pos = collision_resolutions[min_index];
+
+      if (dot(collision_vector, vec3(0, 1, 0)) > 0.5f) {
+        *can_jump = true;
+      }
+    }
+  }
+
+  for (auto& node : stabbing_tree_node->children) {
+    CollideSector(node, player_pos, old_player_pos, player_speed, can_jump);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ==========================================
+// Particles
+// ==========================================
+
+void Renderer::CreateParticleBuffers() {
+  glGenVertexArrays(1, &particle_vao_);
+  glBindVertexArray(particle_vao_);
+
+  // The VBO containing the 4 vertices of the particles.
+  // Thanks to instancing, they will be shared by all particles.
+  static const GLfloat vertex_buffer_data[] = {
+   -0.5f, -0.5f, 0.0f,
+   0.5f, -0.5f, 0.0f,
+   -0.5f, 0.5f, 0.0f,
+   0.5f, 0.5f, 0.0f,
+  };
+
+  glGenBuffers(1, &particle_vbo_);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_vbo_);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), vertex_buffer_data, 
+    GL_STATIC_DRAW);  
+
+  // The VBO containing the positions and sizes of the particles
+  glGenBuffers(1, &particle_position_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
+  // Initialize with empty (NULL) buffer : it will be updated later, each frame.
+  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 4 * sizeof(GLfloat), NULL, 
+    GL_STREAM_DRAW);
+
+  // The VBO containing the colors of the particles
+  glGenBuffers(1, &particle_color_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
+  // Initialize with empty (NULL) buffer : it will be updated later, each frame.
+  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 4 * sizeof(GLubyte), NULL, 
+    GL_STREAM_DRAW);
+
+  // The VBO containing the lifes of the particles
+  glGenBuffers(1, &particle_life_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
+  // Initialize with empty (NULL) buffer : it will be updated later, each frame.
+  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(GLfloat), NULL, 
+    GL_STREAM_DRAW);
+
+  glBindVertexArray(0);
+}
+
+// Finds a Particle in ParticlesContainer which isn't used yet.
+// (i.e. life < 0);
+int Renderer::FindUnusedParticle(){
+  for (int i = last_used_particle_; i < kMaxParticles; i++) {
+    if (particle_container_[i].life < 0) {
+      last_used_particle_ = i;
+      return i;
+    }
+  }
+
+  for (int i = 0; i < last_used_particle_; i++) {
+    if (particle_container_[i].life < 0) {
+      last_used_particle_ = i;
+      return i;
+    }
+  }
+
+  return 0; // All particles are taken, override the first one
+}
+
+void Renderer::CreateNewParticles() {
+  int new_particles = 10;
+  for (int i = 0; i < new_particles; i++) {
+    int particle_index = FindUnusedParticle();
+    particle_container_[particle_index].life = 300.0f;
+    particle_container_[particle_index].pos = vec3(9920, 191.0f, 9920);
+    
+    float spread = 1.5f;
+    vec3 main_direction = vec3(0.0f, 10.0f, 0.0f);
+
+    // Very bad way to generate a random direction; 
+    // See for instance http://stackoverflow.com/questions/5408276/python-uniform-spherical-distribution instead,
+    // combined with some user-controlled parameters (main direction, spread, etc)
+    vec3 rand_direction = glm::vec3(
+    	(rand() % 2000 - 1000.0f) / 1000.0f,
+    	(rand() % 2000 - 1000.0f) / 1000.0f,
+    	(rand() % 2000 - 1000.0f) / 1000.0f
+    );
+    
+    particle_container_[particle_index].speed = main_direction 
+      + rand_direction * spread;
+    
+    // Very bad way to generate a random color
+    particle_container_[particle_index].r = (rand() % 1000) / 1000.0f;
+    particle_container_[particle_index].g = (rand() % 1000) / 1000.0f;
+    particle_container_[particle_index].b = (rand() % 1000) / 1000.0f;
+    particle_container_[particle_index].a = 1.0f;
+    particle_container_[particle_index].size = (rand() % 1000) / 500.0f + 0.1f;
+  }
+}
+
+void Renderer::UpdateParticles() {
+  for (int i = 0; i < kMaxParticles; i++) {
+    Particle& p = particle_container_[i];
+    // Decrease life.
+    p.life -= 1.0f;
+    if (p.life > 0.0f) {
+      // Simulate simple physics : gravity only, no collisions
+      p.speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
+      p.pos += p.speed * 0.01f;
+      p.camera_distance = length2(p.pos - camera_.position);
+    } else {
+      // Particles that just died will be put at the end of the buffer in SortParticles();
+      p.camera_distance = -1.0f;
+    }
+  }
+  std::sort(&particle_container_[0], &particle_container_[kMaxParticles]);
+
+  // Simulate all particles
+  particle_count_ = 0;
+  for (int i = 0; i < kMaxParticles; i++) {
+    Particle& p = particle_container_[i]; // shortcut
+    if (p.life < 0.0f) continue;
+    
+    particle_positions_[particle_count_].x = p.pos.x;
+    particle_positions_[particle_count_].y = p.pos.y;
+    particle_positions_[particle_count_].z = p.pos.z;
+    particle_positions_[particle_count_].w = p.size;
+
+    particle_colors_[particle_count_].x = p.r;
+    particle_colors_[particle_count_].y = p.g;
+    particle_colors_[particle_count_].z = p.b;
+    particle_colors_[particle_count_].w = 1.0;
+
+    particle_lifes_[particle_count_] = p.life;
+    particle_count_++;
+  }
+
+  glBindVertexArray(particle_vao_);
+
+  // Buffer orphaning, a common way to improve streaming perf. See above link 
+  // for details.
+  glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec4), NULL, 
+    GL_STREAM_DRAW); 
+  glBufferSubData(GL_ARRAY_BUFFER, 0, particle_count_ * sizeof(vec4), 
+    &particle_positions_[0]);
+  
+  glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec4), NULL, 
+    GL_STREAM_DRAW); 
+  glBufferSubData(GL_ARRAY_BUFFER, 0, particle_count_ * sizeof(vec4), 
+    &particle_colors_[0]);
+
+  // Buffer orphaning.
+  glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(GLfloat), NULL, 
+    GL_STREAM_DRAW); 
+  glBufferSubData(GL_ARRAY_BUFFER, 0, particle_count_ * sizeof(GLfloat), 
+    &particle_lifes_[0]);
+
+  glBindVertexArray(0);
+}
+
+void Renderer::DrawParticles() {
+  glBindVertexArray(particle_vao_);
+
+  glDisable(GL_CULL_FACE);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  GLuint program_id = asset_catalog_->GetShader("particle");
+  glUseProgram(program_id);
+
+  GLuint texture_id = asset_catalog_->GetTextureByName("explosion");
+  BindTexture("texture_sampler", program_id, texture_id);
+  
+  glUniform3f(GetUniformId(program_id, "camera_right_worldspace"), 
+    view_matrix_[0][0], view_matrix_[1][0], view_matrix_[2][0]);
+  glUniform3f(GetUniformId(program_id, "camera_up_worldspace"), 
+    view_matrix_[0][1], view_matrix_[1][1], view_matrix_[2][1]);
+
+  mat4 VP = projection_matrix_ * view_matrix_;  
+  glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
+
+  // 1rst attribute buffer : vertices
+  glEnableVertexAttribArray(0);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_vbo_);
+  glVertexAttribPointer(
+    0, // attribute. No particular reason for 0, but must match the layout in the shader.
+    3, // size
+    GL_FLOAT, // type
+    GL_FALSE, // normalized?
+    0, // stride
+    (void*) 0 // array buffer offset
+  );
+  
+  // 2nd attribute buffer : positions of particles' centers
+  glEnableVertexAttribArray(1);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
+  glVertexAttribPointer(
+    1, // attribute. No particular reason for 1, but must match the layout in the shader.
+    4, // size : x + y + z + size => 4
+    GL_FLOAT, // type
+    GL_FALSE, // normalized?
+    0, // stride
+    (void*) 0 // array buffer offset
+  );
+
+  // 3rd attribute buffer : particles' colors
+  glEnableVertexAttribArray(2);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
+  glVertexAttribPointer(
+    2, // attribute. No particular reason for 2, but must match the layout in the shader.
+    4, // size : r + g + b + a => 4
+    GL_UNSIGNED_BYTE, // type
+    GL_TRUE, // normalized? *** YES, this means that the unsigned char[4] will be accessible with a vec4 (floats) in the shader ***
+    0, // stride
+    (void*) 0 // array buffer offset
+  );
+
+  // 4th attribute buffer : particles' colors
+  glEnableVertexAttribArray(3);
+  glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
+  glVertexAttribPointer(
+    3, // attribute. No particular reason for 3, but must match the layout in the shader.
+    1, 
+    GL_FLOAT, // type
+    GL_TRUE, // normalized? *** YES, this means that the unsigned char[4] will be accessible with a vec4 (floats) in the shader ***
+    0, // stride
+    (void*)0 // array buffer offset
+  );
+
+  // These functions are specific to glDrawArrays*Instanced*.
+  // The first parameter is the attribute buffer we're talking about.
+  // The second parameter is the "rate at which generic vertex attributes advance when rendering multiple instances"
+  // http://www.opengl.org/sdk/docs/man/xhtml/glVertexAttribDivisor.xml
+  glVertexAttribDivisor(0, 0); // particles vertices : always reuse the same 4 vertices -> 0
+  glVertexAttribDivisor(1, 1); // positions : one per quad (its center) -> 1
+  glVertexAttribDivisor(2, 1); // color : one per quad -> 1
+  glVertexAttribDivisor(3, 1); // life: one per quad -> 1
+ 
+  // Draw the particules !
+  // This draws many times a small triangle_strip (which looks like a quad).
+  // This is equivalent to :
+  // for(i in ParticlesCount) : glDrawArrays(GL_TRIANGLE_STRIP, 0, 4),
+  // but faster.
+  glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, particle_count_);
+
+  glBindVertexArray(0);
+
+  glDisable(GL_BLEND);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Probably remove this.
 bool IntersectWall(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, float* magnitude, 
   const vec3& object_pos) {
   const vec3& normal = polygon.normals[0];
@@ -833,126 +1369,5 @@ bool IntersectWall(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos
   float s2 = dot(normal, old_player_pos) - d;
   *magnitude = abs(r - s2);
   return true;
-}
-
-bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, 
-  float* magnitude, const vec3& object_pos) {
-  const vec3& normal = polygon.normals[0];
-
-  vec3 a = polygon.vertices[0] + object_pos;
-  vec3 b = polygon.vertices[1] + object_pos;
-  vec3 c = polygon.vertices[2] + object_pos;
-
-  bool inside;
-  vec3 closest_point = ClosestPtPointTriangle(*player_pos, a, b, c, &inside);
-  
-  float r = 1.5f;
-
-  const vec3& v = closest_point - *player_pos;
-  if (length(v) > r || dot(*player_pos - a, normal) < 0) {
-    return false;
-  }
-
-  if (!inside) {
-    // cout << "not inside" << endl;
-    vec3 closest_ab = ClosestPtPointSegment(*player_pos, a, b);
-    vec3 closest_bc = ClosestPtPointSegment(*player_pos, b, c);
-    vec3 closest_ca = ClosestPtPointSegment(*player_pos, c, a);
-    vector<vec3> segments { a-b, b-c, c-a } ;
-    vector<vec3> points { closest_ab, closest_bc, closest_ca } ;
-
-    float min_distance = 9999.0f;
-    float min_index = -1;
-    for (int i = 0; i < 3; i++) {
-      float distance = length(points[i] - *player_pos);
-      if (distance < min_distance) {
-        min_index = i;
-        min_distance = distance;
-      }
-    }
-
-    // Collide with segment.
-    if (min_distance < r) {
-      vec3 player_to_p = points[min_index] - *player_pos;
-      vec3 tangent = normalize(cross(segments[min_index], normal));
-      float proj_tan = abs(dot(player_to_p, tangent));
-      float proj_normal = abs(dot(player_to_p, normal));
-      float mag = sqrt(r * r - proj_tan * proj_tan) - proj_normal + 0.001f;
-      *magnitude = mag;
-      *player_pos = *player_pos + mag * normal;
-      return true; 
-    }
-  }
-  // cout << "inside" << endl;
-
-  float mag = dot(v, normal);
-  *magnitude = r + mag + 0.001f;
-  *player_pos = *player_pos + *magnitude * normal;
-
-  return true;
-}
-
-void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
-  shared_ptr<Sector> sector = GetPlayerSector(*player_pos);
-
-  // Collide with Octree.
-  // vector<shared_ptr<GameObject>> objs;
-  // if (sector->name == "outside") {
-  //   GetPotentiallyCollidingObjects(*player_pos, octree_, objs);
-  // } else {
-  //   objs = sector->objects;
-  // }
-
-  vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyCollidingObjects(*player_pos, sector->octree, objs);
-
-  bool collision = true;
-  for (int i = 0; i < 5 && collision; i++) {
-    vector<vec3> collision_resolutions;
-    vector<float> magnitudes;
-    collision = false;
-
-    for (auto& obj : objs) {
-      if (obj->asset->collision_type != COL_PERFECT) {
-        continue;
-      }
-      for (auto& pol : obj->asset->lod_meshes[0].polygons) {
-        vec3 collision_resolution = *player_pos;
-        float magnitude;
-        if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
-        // if (IntersectWall(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
-          // cout << "Intersect" << endl;
-          collision = true;
-          collision_resolutions.push_back(collision_resolution);
-          magnitudes.push_back(magnitude);
-        }
-      }
-    }
-
-    // Select the collision resolution for which the collision displacement along
-    // the collision normal is minimal.
-    int min_index = -1;
-    float min_magnitude = 999999999.0f;
-    for (int i = 0; i < collision_resolutions.size(); i++) {
-      const vec3& collision_resolution = collision_resolutions[i];
-      const float magnitude = magnitudes[i];
-      if (magnitude < min_magnitude) {
-        min_index = i;
-        min_magnitude = magnitude;
-      }
-    }
-
-    if (min_index != -1) {
-      // cout << min_index << " - choice: " << collision_resolutions[min_index] << endl;
-      vec3 collision_vector = normalize(collision_resolutions[min_index] - *player_pos);
-      *player_speed += abs(dot(*player_speed, collision_vector)) * collision_vector;
-      *player_pos = collision_resolutions[min_index];
-
-      if (dot(collision_vector, vec3(0, 1, 0)) > 0.5f) {
-        *can_jump = true;
-      }
-    }
-  }
-  // cout << "=========" << endl;
 }
 

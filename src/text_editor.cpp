@@ -7,6 +7,7 @@ const int kLineHeight = 18;
 // Static function to process GLFW char input.
 void TextEditor::PressCharCallback(string buffer) {
   if (!enabled) return;
+  if (already_processed_key) return;
   if (buffer.size() == 0) return;
   if (mode == 0) return;
 
@@ -25,41 +26,205 @@ void TextEditor::PressCharCallback(string buffer) {
   }
 }
 
-void TextEditor::PressKeyCallback(int key, int scancode, int action, int mods) {
-  if (!enabled)
-    return;
-
-  if (action == GLFW_REPEAT && mode == 0) {
+bool TextEditor::ProcessDefaultInput(int key, int scancode, int action, 
+  int mods) {
+  if (action == GLFW_REPEAT) {
     switch (key) {
       case GLFW_KEY_H: 
-        if (mode == 1) break;
         if (cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
         if (cursor_col_ > 0) cursor_col_--;
         if (cursor_col_ < 0) cursor_col_ = 0;
-        break;
+        return true;
       case GLFW_KEY_J: 
-        if (mode == 1) break;
         if (cursor_row_ < content_.size() - 1) cursor_row_++;
         if (cursor_row_ >= start_line + 30) start_line++; 
-        break;
+        return true;
       case GLFW_KEY_K: 
-        if (mode == 1) break;
         if (cursor_row_ > 0) cursor_row_--;
         if (cursor_row_ < start_line) start_line--; 
-        break;
+        return true;
       case GLFW_KEY_L: 
-        if (mode == 1) break;
         if (content_.size() > 0 && cursor_col_ < content_[cursor_row_].size() - 1) cursor_col_++;
-        break;
+        return true;
       case GLFW_KEY_X:
         if (cursor_col_ >= 0 && content_[cursor_row_].size()) {
           content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_) + content_[cursor_row_].substr(cursor_col_+1);
         }
-        break;
+        return true;
       default:
-        break;
+        return false;
     }
-  } else if (action == GLFW_REPEAT && mode == 1) {
+  }
+
+  if (action != GLFW_PRESS) {
+    return false;
+  }
+
+  switch (key) {
+    case GLFW_KEY_G: {
+      if (mods & GLFW_MOD_SHIFT) {
+        start_line = std::max(0, (int) content_.size() - 30);
+        cursor_row_ = content_.size() - 1;
+        cursor_col_ = content_[content_.size()-1].size() - 1;
+        return true;
+      }
+
+      if (on_g) {
+        start_line = 0;
+        cursor_row_ = 0;
+        cursor_col_ = 0;
+        on_g = false;
+      } else {
+        on_g = true;
+      }
+      return true;
+    }
+    case GLFW_KEY_H: 
+      if (mode == 1) return true;
+      if (cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
+      if (cursor_col_ > 0) cursor_col_--;
+      if (cursor_col_ < 0) cursor_col_ = 0;
+      repeat_wait = glfwGetTime() + 0.5;
+      return true;
+    case GLFW_KEY_J: 
+      if (mode == 1) return true;
+      if (cursor_row_ < content_.size() - 1) cursor_row_++;
+      if (cursor_row_ >= start_line + 30) start_line++; 
+      repeat_wait = glfwGetTime() + 0.5;
+      return true;
+    case GLFW_KEY_K: 
+      if (mode == 1) return true;
+      if (cursor_row_ > 0) cursor_row_--;
+      if (cursor_row_ < start_line) start_line--; 
+      repeat_wait = glfwGetTime() + 0.5;
+      return true;
+    case GLFW_KEY_L: 
+      if (mode == 1) return true;
+      if (content_.size() > 0 && cursor_col_ < content_[cursor_row_].size() - 1) cursor_col_++;
+      repeat_wait = glfwGetTime() + 0.5;
+      return true;
+    case GLFW_KEY_I: {
+      if (!editable) return true;
+      if (mods & GLFW_MOD_SHIFT) {
+        cursor_col_ = 0;
+        if (content_.size() > 0) {
+          while (cursor_col_ < content_[cursor_row_].size() && content_[cursor_row_][cursor_col_] == ' ') 
+            cursor_col_++;
+        }
+ 
+        ignore = true;
+        mode = 1;
+      } else {
+        if (content_.size() > 0 && cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
+        if (cursor_col_ < 0) cursor_col_ = 0;
+        ignore = true;
+        mode = 1;
+      }
+      return true;
+    }
+    case GLFW_KEY_X:
+      if (!editable) return true;
+      if (cursor_col_ >= 0 && content_[cursor_row_].size()) {
+        content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_) + content_[cursor_row_].substr(cursor_col_+1);
+      }
+      return true;
+    case GLFW_KEY_S:
+      if (!editable) return true;
+      if (cursor_col_ >= 0 && content_[cursor_row_].size()) {
+        content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_) + content_[cursor_row_].substr(cursor_col_+1);
+      }
+      if (content_.size() > 0 && cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
+      if (cursor_col_ < 0) cursor_col_ = 0;
+      ignore = true;
+      mode = 1;
+      return true;
+    case GLFW_KEY_A:
+      if (!editable) return true;
+      if (mods & GLFW_MOD_SHIFT) {
+        if (content_.size() > 0) cursor_col_ = content_[cursor_row_].size();
+        ignore = true;
+        mode = 1;
+      } else {
+        cursor_col_++;
+        if (content_.size() > 0 && cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
+        if (cursor_col_ < 0) cursor_col_ = 0;
+        ignore = true;
+        mode = 1;
+      }
+      return true;
+    case GLFW_KEY_O:
+      if (!editable) return true;
+      if (mods & GLFW_MOD_SHIFT) {
+        vector<string> after { "" };
+        content_.insert(content_.begin() + cursor_row_, after.begin(), after.end());
+        cursor_col_ = 0;
+        ignore = true;
+        mode = 1;
+      } else {
+        vector<string> after { "" };
+        content_.insert(content_.begin() + cursor_row_ + 1, after.begin(), after.end());
+        cursor_row_++;
+        if (cursor_row_ >= start_line + 30) start_line++;
+        cursor_col_ = 0;
+        ignore = true;
+        mode = 1;
+      }
+      return true;
+    case GLFW_KEY_U: {
+      if (mods & GLFW_MOD_CONTROL) {
+        start_line = std::max(start_line - 10, 0);
+        cursor_row_ = std::max(cursor_row_ - 10, 0);
+      }
+      return true;
+    }
+    case GLFW_KEY_D: {
+      if (mods & GLFW_MOD_CONTROL) {
+        if (start_line >= (int) content_.size() - 30) {
+          cursor_row_ = content_.size() - 1;
+          return true;
+        }
+        start_line = std::min(start_line + 10, (int) content_.size() - 1);
+        cursor_row_ = std::min(cursor_row_ + 10, (int) content_.size() - 1);
+        return true;
+      }
+
+      if (!editable) return true;
+      if (on_delete) {
+        content_.erase(content_.begin() + cursor_row_);
+        if (content_.size() == 0)
+          content_.push_back("");
+        if (cursor_row_ >= content_.size()) 
+          cursor_row_--;
+        on_delete = false;
+        cursor_col_ = 0;
+      } else {
+        on_delete = true;
+      }
+      return true;
+    }
+    case GLFW_KEY_ENTER:
+      enabled = false; 
+      return true;
+    case GLFW_KEY_ESCAPE: 
+      on_delete = false;
+      on_g = false;
+      return true;
+    case GLFW_KEY_SEMICOLON:
+    case GLFW_KEY_SLASH: // For Portuguese keyboards.
+      if (mods & GLFW_MOD_SHIFT) {
+        mode = 2;
+        command = ":";
+      }
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+
+bool TextEditor::ProcessTextInput(int key, int scancode, int action, 
+  int mods) {
+  if (action == GLFW_REPEAT) {
     switch (key) {
       case GLFW_KEY_BACKSPACE: {
         if (cursor_col_ == 0 && cursor_row_ > 0) {
@@ -71,7 +236,7 @@ void TextEditor::PressKeyCallback(int key, int scancode, int action, int mods) {
           content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_-1) + content_[cursor_row_].substr(cursor_col_);
           cursor_col_--;
         }
-        break;
+        return true;
       }
       case GLFW_KEY_ENTER:
         string before = content_[cursor_row_].substr(0, cursor_col_);
@@ -81,234 +246,105 @@ void TextEditor::PressKeyCallback(int key, int scancode, int action, int mods) {
         cursor_row_++;
         if (cursor_row_ >= start_line + 30) start_line++;
         cursor_col_ = 0;
-        break;
+        return true;
     }
-  } else if (action != GLFW_PRESS) {
+  }
+
+  if (action != GLFW_PRESS) {
+    return false;
+  }
+
+  switch (key) {
+    case GLFW_KEY_ESCAPE: 
+      mode = 0;
+      on_delete = false;
+      return true;
+    case GLFW_KEY_BACKSPACE: {
+      if (cursor_col_ == 0 && cursor_row_ > 0) {
+        content_.erase(content_.begin() + cursor_row_);
+        cursor_row_--;
+        if (cursor_row_ < start_line) start_line--;
+        cursor_col_ = content_[cursor_row_].size();
+      } else if (cursor_col_ > 0) {
+        content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_-1) + content_[cursor_row_].substr(cursor_col_);
+        cursor_col_--;
+      }
+      return true;
+    }
+    case GLFW_KEY_ENTER: {
+      string before = content_[cursor_row_].substr(0, cursor_col_);
+      vector<string> after { content_[cursor_row_].substr(cursor_col_) };
+      content_[cursor_row_] = before;
+      content_.insert(content_.begin() + cursor_row_ + 1, after.begin(), after.end());
+      cursor_row_++;
+      if (cursor_row_ >= start_line + 30) start_line++;
+      cursor_col_ = 0;
+      return true;
+    }
+    default:
+      break;
+  }
+  return false;
+}
+
+bool TextEditor::ProcessCommandInput(int key, int scancode, int action, 
+  int mods) {
+  if (action != GLFW_PRESS) {
+    return false;
+  }
+
+  switch (key) {
+    case GLFW_KEY_BACKSPACE: {
+      if (command.size() == 1) {
+        mode = 0;
+      } else {
+        command = command.substr(0, command.size()-1);
+      }
+      return true;
+    }
+    case GLFW_KEY_ENTER: {
+      mode = 0;
+      string cmd = command.substr(1);
+      if (cmd == "w") {
+        WriteFile();
+      } else if (cmd == "q") {
+        enabled = false; 
+      } else if (cmd == "wq") {
+        WriteFile();
+        enabled = false; 
+      } else {
+        run_command_fn_(cmd.c_str());
+      }
+      return true;
+    }
+    case GLFW_KEY_ESCAPE: {
+      mode = 0;
+      return true;
+    }
+    default:
+      break;
+  }
+  return false;
+}
+
+void TextEditor::PressKeyCallback(int key, int scancode, int action, int mods) {
+  if (!enabled) {
     return;
   }
 
-  if (mode == 0) {
-    switch (key) {
-      case GLFW_KEY_G: {
-        if (mods & GLFW_MOD_SHIFT) {
-          start_line = std::max(0, (int) content_.size() - 30);
-          cursor_row_ = content_.size() - 1;
-          cursor_col_ = content_[content_.size()-1].size() - 1;
-          break;
-        }
-
-        if (on_g) {
-          start_line = 0;
-          cursor_row_ = 0;
-          cursor_col_ = 0;
-          on_g = false;
-        } else {
-          on_g = true;
-        }
-        break;
-      }
-      case GLFW_KEY_H: 
-        if (mode == 1) break;
-        if (cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
-        if (cursor_col_ > 0) cursor_col_--;
-        if (cursor_col_ < 0) cursor_col_ = 0;
-        repeat_wait = glfwGetTime() + 0.5;
-        break;
-      case GLFW_KEY_J: 
-        if (mode == 1) break;
-        if (cursor_row_ < content_.size() - 1) cursor_row_++;
-        if (cursor_row_ >= start_line + 30) start_line++; 
-        repeat_wait = glfwGetTime() + 0.5;
-        break;
-      case GLFW_KEY_K: 
-        if (mode == 1) break;
-        if (cursor_row_ > 0) cursor_row_--;
-        if (cursor_row_ < start_line) start_line--; 
-        repeat_wait = glfwGetTime() + 0.5;
-        break;
-      case GLFW_KEY_L: 
-        if (mode == 1) break;
-        if (content_.size() > 0 && cursor_col_ < content_[cursor_row_].size() - 1) cursor_col_++;
-        repeat_wait = glfwGetTime() + 0.5;
-        break;
-      case GLFW_KEY_I: {
-        if (!editable) break;
-        if (mods & GLFW_MOD_SHIFT) {
-          cursor_col_ = 0;
-          if (content_.size() > 0) {
-            while (cursor_col_ < content_[cursor_row_].size() && content_[cursor_row_][cursor_col_] == ' ') 
-              cursor_col_++;
-          }
- 
-          ignore = true;
-          mode = 1;
-        } else {
-          if (content_.size() > 0 && cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
-          if (cursor_col_ < 0) cursor_col_ = 0;
-          ignore = true;
-          mode = 1;
-        }
-        break;
-      }
-      case GLFW_KEY_X:
-        if (!editable) break;
-        if (cursor_col_ >= 0 && content_[cursor_row_].size()) {
-          content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_) + content_[cursor_row_].substr(cursor_col_+1);
-        }
-        break;
-      case GLFW_KEY_S:
-        if (!editable) break;
-        if (cursor_col_ >= 0 && content_[cursor_row_].size()) {
-          content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_) + content_[cursor_row_].substr(cursor_col_+1);
-        }
-        if (content_.size() > 0 && cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
-        if (cursor_col_ < 0) cursor_col_ = 0;
-        ignore = true;
-        mode = 1;
-        break;
-      case GLFW_KEY_A:
-        if (!editable) break;
-        if (mods & GLFW_MOD_SHIFT) {
-          if (content_.size() > 0) cursor_col_ = content_[cursor_row_].size();
-          ignore = true;
-          mode = 1;
-        } else {
-          cursor_col_++;
-          if (content_.size() > 0 && cursor_col_ >= content_[cursor_row_].size()) cursor_col_ = content_[cursor_row_].size() - 1;
-          if (cursor_col_ < 0) cursor_col_ = 0;
-          ignore = true;
-          mode = 1;
-        }
-        break;
-      case GLFW_KEY_O:
-        if (!editable) break;
-        if (mods & GLFW_MOD_SHIFT) {
-          vector<string> after { "" };
-          content_.insert(content_.begin() + cursor_row_, after.begin(), after.end());
-          cursor_col_ = 0;
-          ignore = true;
-          mode = 1;
-        } else {
-          vector<string> after { "" };
-          content_.insert(content_.begin() + cursor_row_ + 1, after.begin(), after.end());
-          cursor_row_++;
-          if (cursor_row_ >= start_line + 30) start_line++;
-          cursor_col_ = 0;
-          ignore = true;
-          mode = 1;
-        }
-        break;
-      case GLFW_KEY_U: {
-        if (mods & GLFW_MOD_CONTROL) {
-          start_line = std::max(start_line - 10, 0);
-          cursor_row_ = std::max(cursor_row_ - 10, 0);
-        }
-        break;
-      }
-      case GLFW_KEY_D: {
-        if (mods & GLFW_MOD_CONTROL) {
-          if (start_line >= (int) content_.size() - 30) {
-            cursor_row_ = content_.size() - 1;
-            break;
-          }
-          start_line = std::min(start_line + 10, (int) content_.size() - 1);
-          cursor_row_ = std::min(cursor_row_ + 10, (int) content_.size() - 1);
-          break;
-        }
-
-        if (!editable) break;
-        if (on_delete) {
-          content_.erase(content_.begin() + cursor_row_);
-          if (content_.size() == 0)
-            content_.push_back("");
-          if (cursor_row_ >= content_.size()) 
-            cursor_row_--;
-          on_delete = false;
-          cursor_col_ = 0;
-        } else {
-          on_delete = true;
-        }
-        break;
-      }  
-      case GLFW_KEY_ENTER:
-        create_object = cursor_row_;
-        enabled = false; 
-        break;
-      case GLFW_KEY_ESCAPE: 
-        on_delete = false;
-        on_g = false;
-        break;
-      case GLFW_KEY_SEMICOLON:
-      case GLFW_KEY_SLASH: // For Portuguese keyboards.
-        if (mods & GLFW_MOD_SHIFT) {
-          mode = 2;
-          command = ":";
-        }
-        break;
-      default:
-        return;
-    }
-  }
-
-  if (mode == 1) {
-    switch (key) {
-      case GLFW_KEY_ESCAPE: 
-        mode = 0;
-        on_delete = false;
-        break;
-      case GLFW_KEY_BACKSPACE:
-        if (cursor_col_ == 0 && cursor_row_ > 0) {
-          content_.erase(content_.begin() + cursor_row_);
-          cursor_row_--;
-          if (cursor_row_ < start_line) start_line--;
-          cursor_col_ = content_[cursor_row_].size();
-        } else if (cursor_col_ > 0) {
-          content_[cursor_row_] = content_[cursor_row_].substr(0, cursor_col_-1) + content_[cursor_row_].substr(cursor_col_);
-          cursor_col_--;
-        }
-        break;
-      case GLFW_KEY_ENTER:
-        string before = content_[cursor_row_].substr(0, cursor_col_);
-        vector<string> after { content_[cursor_row_].substr(cursor_col_) };
-        content_[cursor_row_] = before;
-        content_.insert(content_.begin() + cursor_row_ + 1, after.begin(), after.end());
-        cursor_row_++;
-        if (cursor_row_ >= start_line + 30) start_line++;
-        cursor_col_ = 0;
-        break;
-    }
-  }
-
-  if (mode == 2) {
-    switch (key) {
-      case GLFW_KEY_BACKSPACE: {
-        if (command.size() == 1) {
-          mode = 0;
-        } else {
-          command = command.substr(0, command.size()-1);
-        }
-        break;
-      }
-      case GLFW_KEY_ENTER: {
-        mode = 0;
-        string cmd = command.substr(1);
-        if (cmd == "w") {
-          WriteFile();
-          update_object = true;
-        } else if (cmd == "q") {
-          enabled = false; 
-        } else if (cmd == "wq") {
-          WriteFile();
-          enabled = false; 
-          update_object = true;
-        }
-        break;
-      }
-      case GLFW_KEY_ESCAPE: {
-        mode = 0;
-        break;
-      }
-    }
+  already_processed_key = false;
+  switch (mode) {
+    case 0:
+     already_processed_key = ProcessDefaultInput(key, scancode, action, mods);
+     break;
+    case 1:
+     already_processed_key = ProcessTextInput(key, scancode, action, mods);
+     break;
+    case 2:
+     already_processed_key = ProcessCommandInput(key, scancode, action, mods);
+     break;
+    default:
+     throw runtime_error("Invalid mode");
   }
 }
 

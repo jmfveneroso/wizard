@@ -72,6 +72,7 @@ struct Mesh {
   GLuint num_indices;
   vector<Polygon> polygons;
   unordered_map<string, Animation> animations;
+  unordered_map<string, int> bones_to_ids;
   Mesh() {}
 };
 
