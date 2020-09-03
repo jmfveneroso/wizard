@@ -23,8 +23,8 @@
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 
-// #define PLAYER_SPEED 0.03f
-#define PLAYER_SPEED 0.6f
+#define PLAYER_SPEED 0.03f
+// #define PLAYER_SPEED 0.6f
 // #define PLAYER_SPEED 0.3f
 // #define PLAYER_HEIGHT 1.5
 #define PLAYER_HEIGHT 0.75
@@ -184,6 +184,27 @@ bool ProcessGameInput() {
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
       player_.speed -= right * PLAYER_SPEED;
 
+    static int debounce = 0;
+    --debounce;
+    static int animation_frame = 0;
+    if (--animation_frame == 0) {
+      shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
+      obj->active_animation = "Armature|idle";
+      obj->frame = 0;
+    } else if (animation_frame == 75) {
+      renderer->UpdateMagicMissile();
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+      if (debounce < 0) {
+        shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
+        obj->active_animation = "Armature|shoot";
+        obj->frame = 0;
+        animation_frame = 225;
+      }
+      debounce = 20;
+    }
+
     // Move up.
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
       if (player_.can_jump) {
@@ -210,7 +231,10 @@ bool ProcessGameInput() {
     last_time = current_time;
     UpdateForces();
 
-    renderer->SetCamera(Camera(player_.position + vec3(0, 0.75, 0), direction, up));
+    Camera c = Camera(player_.position + vec3(0, 0.75, 0), direction, up);
+    c.rotation.x = p.v_angle;
+    c.rotation.y = p.h_angle;
+    renderer->SetCamera(c);
     return false;
   }
 }

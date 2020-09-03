@@ -77,7 +77,7 @@ struct GameObject {
   string name;
   shared_ptr<GameAsset> asset;
   vec3 position;
-  vec3 rotation;
+  vec3 rotation = vec3(0, 0, 0);
 
   // TODO: should translate and rotate asset.
   AABB aabb;

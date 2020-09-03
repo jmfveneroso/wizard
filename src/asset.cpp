@@ -220,12 +220,14 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
 
     // Texture.
     const pugi::xml_node& texture = asset.child("texture");
-    const string& texture_filename = texture.text().get();
-    if (textures_.find(texture_filename) == textures_.end()) {
-      GLuint texture_id = LoadPng(texture_filename.c_str());
-      textures_[texture_filename] = texture_id;
+    if (texture) {
+      const string& texture_filename = texture.text().get();
+      if (textures_.find(texture_filename) == textures_.end()) {
+        GLuint texture_id = LoadPng(texture_filename.c_str());
+        textures_[texture_filename] = texture_id;
+      }
+      game_asset->texture_id = textures_[texture_filename];
     }
-    game_asset->texture_id = textures_[texture_filename];
 
     if (assets_.find(game_asset->name) != assets_.end()) {
       ThrowError("Asset with name ", game_asset->name, " already exists.");
@@ -369,6 +371,12 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
     objects_[child->name] = child;
     child->id = id_counter_++;
     objects_by_id_[child->id] = child;
+  }
+
+  const pugi::xml_node& animation_xml = game_obj.child("animation");
+  if (animation_xml) {
+    const string& animation_name = animation_xml.text().get();
+    new_game_obj->active_animation = animation_name;
   }
 
   objects_[new_game_obj->name] = new_game_obj;

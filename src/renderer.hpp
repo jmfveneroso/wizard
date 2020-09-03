@@ -45,6 +45,7 @@ struct Camera {
   vec3 position; 
   vec3 up; 
   vec3 direction;
+  vec3 rotation;
 
   Camera() {}
   Camera(vec3 position, vec3 direction, vec3 up) : position(position), 
@@ -108,6 +109,12 @@ class Renderer {
   void CreateNewParticles();
   void DrawParticles();
 
+  int magic_missile_frame_ = 0;
+  vec3 magic_missile_position_ = vec3(0, 0, 0);
+  vec3 magic_missile_rotation_ = vec3(0, 0, 0);
+  vec3 magic_missile_direction_ = vec3(0, 0, 0);
+  void DrawMagicMissile();
+
   FBO CreateFramebuffer(int width, int height);
   void DrawFBO(const FBO& fbo, bool blur = false);
 
@@ -167,4 +174,6 @@ class Renderer {
   void set_draw_2d(shared_ptr<Draw2D> draw_2d) { 
     draw_2d_ = draw_2d; 
   } 
+
+  void UpdateMagicMissile();
 };

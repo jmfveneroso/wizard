@@ -162,6 +162,81 @@ void Renderer::UpdateAnimationFrames() {
   }
 }
 
+void Renderer::DrawMagicMissile() {
+  shared_ptr<GameObject> mm0 = asset_catalog_->GetObjectByName("magic-missile-obj-000");
+  shared_ptr<GameObject> mm1 = asset_catalog_->GetObjectByName("magic-missile-obj-001");
+  shared_ptr<GameObject> mm2 = asset_catalog_->GetObjectByName("magic-missile-obj-002");
+  shared_ptr<GameObject> mm3 = asset_catalog_->GetObjectByName("magic-missile-obj-003");
+  shared_ptr<GameObject> mm4 = asset_catalog_->GetObjectByName("magic-missile-obj-004");
+  shared_ptr<GameObject> mm5 = asset_catalog_->GetObjectByName("magic-missile-obj-005");
+  mm0->draw = false;  
+  mm1->draw = false;
+  mm2->draw = false; 
+  mm3->draw = false; 
+  mm4->draw = false; 
+  mm5->draw = false; 
+  switch (magic_missile_frame_) {
+    case 0:
+      DrawObject(mm0); break;
+    case 1:
+      DrawObject(mm1); break;
+    case 2:
+      DrawObject(mm2); break;
+    case 3:
+      DrawObject(mm3); break;
+    case 4:
+      DrawObject(mm4); break;
+    case 5:
+      DrawObject(mm5); break;
+    default:
+      magic_missile_frame_ = 0; DrawObject(mm0); break;
+  }
+
+  mm0->position += magic_missile_direction_ * 3.0f;
+  mm1->position += magic_missile_direction_ * 3.0f;
+  mm2->position += magic_missile_direction_ * 3.0f; 
+  mm3->position += magic_missile_direction_ * 3.0f; 
+  mm4->position += magic_missile_direction_ * 3.0f; 
+  mm5->position += magic_missile_direction_ * 3.0f; 
+
+  static int skip = 0;
+  if (++skip == 2) {
+    magic_missile_frame_++;
+    skip = 0;
+  }
+}
+
+void Renderer::UpdateMagicMissile() {
+  vec3 position = camera_.position + camera_.direction * 10.0f;
+
+  vec3 rotation;
+  rotation.x = camera_.rotation.x;
+  // rotation.y = camera_.rotation.y + 1.56;
+  rotation.y = camera_.rotation.y + 4.7;
+  magic_missile_rotation_ = rotation;
+
+  magic_missile_direction_ = camera_.direction;
+
+  shared_ptr<GameObject> mm0 = asset_catalog_->GetObjectByName("magic-missile-obj-000");
+  shared_ptr<GameObject> mm1 = asset_catalog_->GetObjectByName("magic-missile-obj-001");
+  shared_ptr<GameObject> mm2 = asset_catalog_->GetObjectByName("magic-missile-obj-002");
+  shared_ptr<GameObject> mm3 = asset_catalog_->GetObjectByName("magic-missile-obj-003");
+  shared_ptr<GameObject> mm4 = asset_catalog_->GetObjectByName("magic-missile-obj-004");
+  shared_ptr<GameObject> mm5 = asset_catalog_->GetObjectByName("magic-missile-obj-005");
+  mm0->position = position;  
+  mm1->position = position;
+  mm2->position = position; 
+  mm3->position = position; 
+  mm4->position = position; 
+  mm5->position = position; 
+  mm0->rotation = rotation;  
+  mm1->rotation = rotation;
+  mm2->rotation = rotation; 
+  mm3->rotation = rotation; 
+  mm4->rotation = rotation; 
+  mm5->rotation = rotation; 
+}
+
 // TODO: this should be engine run.
 void Renderer::Run(const function<bool()>& process_frame, 
   const function<void()>& after_frame) {
@@ -215,6 +290,17 @@ void Renderer::Run(const function<bool()>& process_frame,
     CreateNewParticles();
     UpdateParticles();
     DrawParticles();
+    DrawMagicMissile();
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
+    obj->position = camera_.position;
+
+    obj->rotation.x = camera_.rotation.x;
+    obj->rotation.y = camera_.rotation.y + 4.70;
+    obj->position += camera_.direction * 10.0f;
+    DrawObject(obj);
 
     DrawFBO(fbos_["screen"], blur);
 
@@ -303,6 +389,14 @@ ConvexHull Renderer::CreateConvexHullFromOccluder(
 
 bool Renderer::CullObject(shared_ptr<GameObject> obj, 
   const vector<vector<Polygon>>& occluder_convex_hulls) {
+  if (obj->name == "hand-001") return true;
+  if (obj->name == "magic-missile-obj-000") return true;
+  if (obj->name == "magic-missile-obj-001") return true;
+  if (obj->name == "magic-missile-obj-002") return true;
+  if (obj->name == "magic-missile-obj-003") return true;
+  if (obj->name == "magic-missile-obj-004") return true;
+  if (obj->name == "magic-missile-obj-005") return true;
+
   if (!obj->draw) {
     return true;
   }
@@ -338,6 +432,22 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
   glBindVertexArray(mesh.vao_);
   mat4 ModelMatrix = translate(mat4(1.0), obj->position);
+  ModelMatrix = rotate(
+    ModelMatrix,
+    obj->rotation.y,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  ModelMatrix = rotate(
+    ModelMatrix,
+    obj->rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  ModelMatrix = rotate(
+    ModelMatrix,
+    obj->rotation.z,
+    vec3(1.0f, 0.0f, 0.0f)
+  );
+
   mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
   mat4 MVP = projection_matrix_ * ModelViewMatrix;
   glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
@@ -358,7 +468,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
     BindTexture("texture_sampler", program_id, obj->asset->texture_id);
     glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-  } else if (program_id == asset_catalog_->GetShader("object")) {
+  } else if (program_id == asset_catalog_->GetShader("object") || program_id == asset_catalog_->GetShader("noshadow_object")) {
     BindTexture("texture_sampler", program_id, obj->asset->texture_id);
     glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
   } else {

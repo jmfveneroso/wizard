@@ -452,6 +452,7 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
   }
 
   for (const Animation& animation : data.animations) {
+    cout << "animation name: " << animation.name << endl;
     m.animations[animation.name] = animation;
   }
 
