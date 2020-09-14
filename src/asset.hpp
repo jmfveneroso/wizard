@@ -70,6 +70,8 @@ struct GameAsset {
   // vector<vector<mat4>> joint_transforms;
 };
 
+struct OctreeNode;
+
 // TODO: repeat game asset instead of replicating aabb, sphere polygons for
 // every object.
 struct GameObject {
@@ -78,6 +80,7 @@ struct GameObject {
   shared_ptr<GameAsset> asset;
   vec3 position;
   vec3 rotation = vec3(0, 0, 0);
+  mat4 rotation_matrix = mat4(1.0);
 
   // TODO: should translate and rotate asset.
   AABB aabb;
@@ -86,13 +89,13 @@ struct GameObject {
   float distance;
 
   // TODO: remove.
-  bool collide = false;
   bool draw = true;
 
   string active_animation = "Armature|swimming";
   // string active_animation = "Armature|flipping";
   int frame = 0;
 
+  shared_ptr<OctreeNode> octree_node;
 
   // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
   shared_ptr<GameObject> parent;
@@ -168,6 +171,7 @@ struct TerrainPoint {
   float height = 0.0;
   vec3 blending = vec3(0, 0, 0);
   vec2 tile_set = vec2(0, 0);
+  vec3 normal = vec3(0, 0, 0);
   TerrainPoint() {}
   TerrainPoint(float height) : height(height) {}
 };
@@ -233,6 +237,12 @@ class AssetCatalog {
   unordered_map<string, shared_ptr<Sector>> GetSectors() { return sectors_; }
   shared_ptr<GameObject> CreateGameObjFromPolygons(
     const vector<Polygon>& polygons);
+
+  shared_ptr<GameObject> CreateGameObjFromAsset(shared_ptr<GameAsset> asset);
+
+  void UpdateObjectPosition(shared_ptr<GameObject> object);
+
+  float GetTerrainHeight(float x, float y);
 };
 
 #endif // __ASSET_HPP__

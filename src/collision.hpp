@@ -72,4 +72,7 @@ AABB GetAABBFromVertices(const vector<vec3>& vertices);
 
 BoundingSphere GetBoundingSphereFromVertices(const vector<vec3>& vertices);
 
+bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, 
+  vec3 old_player_pos, float* magnitude, const vec3& object_pos, float radius = 1.5f);
+
 #endif // __COLLISION_HPP__.

@@ -341,13 +341,7 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
 
   float height = terrain_point.height / MAX_HEIGHT;
   float step = GetTileSize(level) * TILE_SIZE;
-
-  vec3 a = vec3(0, terrain_point.height, 0);
-  vec3 b = vec3(step, asset_catalog_->GetTerrainPoint(world_coords.x + step, world_coords.z).height, 0);
-  vec3 c = vec3(0, asset_catalog_->GetTerrainPoint(world_coords.x, world_coords.z + step).height, step);
-  vec3 tangent = b - a;
-  vec3 bitangent = c - a;
-  vec3 normal = normalize(cross(bitangent, tangent));
+  vec3 normal = terrain_point.normal;
 
   // We assume that the Y component is always 1, to store the normal using only
   // two spaces in the vec4.

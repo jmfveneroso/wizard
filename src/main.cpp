@@ -86,9 +86,7 @@ void RunCommand(string command) {
     return;
   }
 
-  cout << result[0] << endl;
   if (result[0] == "move") {
-    cout << "moving player" << endl;
     float x = boost::lexical_cast<float>(result[1]);
     float y = boost::lexical_cast<float>(result[2]);
     float z = boost::lexical_cast<float>(result[3]);
@@ -187,12 +185,19 @@ bool ProcessGameInput() {
     static int debounce = 0;
     --debounce;
     static int animation_frame = 0;
-    if (--animation_frame == 0) {
+    --animation_frame;
+    if (animation_frame == 0 && glfwGetKey(window, GLFW_KEY_C) != GLFW_PRESS) {
       shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
       obj->active_animation = "Armature|idle";
       obj->frame = 0;
-    } else if (animation_frame == 75) {
-      renderer->UpdateMagicMissile();
+    } else if (animation_frame <= 0 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+      shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
+      obj->active_animation = "Armature|shoot";
+      obj->frame = 0;
+      animation_frame  = 60;
+      renderer->ChargeMagicMissile();
+    } else if (animation_frame == 20) {
+      renderer->CastMagicMissile();
     }
 
     if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
@@ -200,9 +205,10 @@ bool ProcessGameInput() {
         shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
         obj->active_animation = "Armature|shoot";
         obj->frame = 0;
-        animation_frame = 225;
+        animation_frame = 60;
       }
       debounce = 20;
+    } else {
     }
 
     // Move up.

@@ -39,7 +39,7 @@
 using namespace std;
 using namespace glm;
 
-const int kMaxParticles = 10000;
+const int kMaxParticles = 1000;
 
 struct Camera {
   vec3 position; 
@@ -57,7 +57,8 @@ struct FBO {
   GLuint texture;
   GLuint width;
   GLuint height;
-  GLuint depth_rbo;
+  // GLuint depth_rbo;
+  GLuint depth_texture;
   GLuint vao;
 
   FBO() {}
@@ -68,13 +69,23 @@ struct Particle {
   vec3 pos, speed;
   float size, angle, weight;
   float life = -1.0f; // Remaining life of the particle. if < 0 : dead and unused.
-  unsigned char r, g, b, a;
+  float r, g, b, a;
+  bool no_physics = false;
 
   float camera_distance;
   bool operator<(const Particle& that) const {
     // Sort in reverse order : far particles drawn first.
     return this->camera_distance > that.camera_distance;
   }
+};
+
+struct MagicMissile {
+  shared_ptr<GameObject> objects[6];
+  int frame = 0;
+  int life = 0;
+  vec3 position;
+  vec3 direction;
+  mat4 rotation_matrix;
 };
 
 class Renderer {
@@ -109,11 +120,24 @@ class Renderer {
   void CreateNewParticles();
   void DrawParticles();
 
-  int magic_missile_frame_ = 0;
-  vec3 magic_missile_position_ = vec3(0, 0, 0);
-  vec3 magic_missile_rotation_ = vec3(0, 0, 0);
-  vec3 magic_missile_direction_ = vec3(0, 0, 0);
-  void DrawMagicMissile();
+  // Magic missile code.
+  MagicMissile magic_missiles_[10];
+  int charge_frame_ = 0;
+  void InitMagicMissile();
+  void UpdateMagicMissile();
+  
+
+  // Spider code.
+  int next_waypoint_ = 0;
+  vector<vec3> spider_waypoints_ = {
+    { 10000.0f, 200.0, 10100.0f },
+    {  9913.0f, 200.0, 10050.0f },
+    {  9913.0f, 200.0, 9950.0f },
+    { 10000.0f, 200.0, 9900.0f },
+    { 10087.0f, 200.0, 9950.0f },
+    { 10087.0f, 200.0, 10050.0f }
+  };
+  void UpdateSpider();
 
   FBO CreateFramebuffer(int width, int height);
   void DrawFBO(const FBO& fbo, bool blur = false);
@@ -175,5 +199,6 @@ class Renderer {
     draw_2d_ = draw_2d; 
   } 
 
-  void UpdateMagicMissile();
+  void ChargeMagicMissile();
+  void CastMagicMissile();
 };

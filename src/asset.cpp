@@ -272,7 +272,8 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
   // If straddling any of the dividing x, y, or z planes, exit directly
   for (int i = 0; i < 3; i++) {
     float delta = object->bounding_sphere.center[i] - octree_node->center[i];
-    if (abs(delta) < octree_node->half_dimensions[i] + object->bounding_sphere.radius) {
+    if (abs(delta) > object->bounding_sphere.radius) {
+    // if (abs(delta) < octree_node->half_dimensions[i] + object->bounding_sphere.radius) {
       straddle = 1;
       break;
     }
@@ -293,6 +294,9 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     // Straddling, or no child node to descend into, so link object into list 
     // at this node.
     octree_node->objects.push_back(object);
+    object->octree_node = octree_node;
+    // cout << "Inserting object: " << object->name << endl;
+    // cout << "Pos: " << object->position << endl;
     // cout << "Object: " << object->name << " inserted in the Octree" << endl;
     // cout << "Octree depth: " << depth << endl;
     // cout << "Octree center: " << octree_node->center << endl;
@@ -364,6 +368,7 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
     child->bounding_sphere = GetObjectBoundingSphere(child);
     child->aabb = GetObjectAABB(child);
 
+    cout << "Creating child " << child->name << endl;
     new_game_obj->children.push_back(child);
     child->parent = new_game_obj;
     child->parent_bone_id = i;
@@ -564,7 +569,20 @@ void AssetCatalog::LoadHeightMap(const std::string& dat_filename) {
     height_map_[i++] = terrain_point;
   }
   fclose(f);
+
+  for (int i = 0; i < height_map_.size(); i++) {
+    float x = (i % kHeightMapSize) + configs_->world_center.x - kHeightMapSize / 2;
+    float z = (i / kHeightMapSize) + configs_->world_center.z - kHeightMapSize / 2;
+    vec3 a = vec3(x    , GetTerrainPoint(x, z).height    , z    );
+    vec3 b = vec3(x + 1, GetTerrainPoint(x + 1, z).height, z    );
+    vec3 c = vec3(x    , GetTerrainPoint(x, z + 1).height, z + 1);
+    vec3 tangent = b - a;
+    vec3 bitangent = c - a;
+    vec3 normal = normalize(cross(bitangent, tangent));
+    height_map_[i].normal = normalize(cross(bitangent, tangent));
+  }
   cout << "Ended loading height map" << endl;
+
 
   // for (int i = 0; i < height_map_.size(); i++) {
   //   int x = i % kHeightMapSize;
@@ -743,4 +761,70 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
 
   objects_[new_game_obj->name] = new_game_obj;
   return new_game_obj;
+}
+
+shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(shared_ptr<GameAsset> game_asset) {
+  // Create object.
+  shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
+  new_game_obj->id = id_counter_++;
+  objects_by_id_[new_game_obj->id] = new_game_obj;
+
+  new_game_obj->name = "object-" + boost::lexical_cast<string>(new_game_obj->id);
+  new_game_obj->position = vec3(0, 0, 0);
+  new_game_obj->asset = game_asset;
+
+  new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
+  new_game_obj->aabb = GetObjectAABB(new_game_obj);
+
+  InsertObjectIntoOctree(GetSectorByName("outside")->octree, new_game_obj, 0);
+
+  objects_[new_game_obj->name] = new_game_obj;
+  return new_game_obj;
+}
+
+void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
+  // TODO: check in which sector the object is located.
+
+  shared_ptr<OctreeNode> octree_node = obj->octree_node;
+  for (int i = 0; i < octree_node->objects.size(); i++) {
+    if (obj->id == octree_node->objects[i]->id) {
+      octree_node->objects.erase(octree_node->objects.begin() + i);
+      break;
+    }
+  }
+  obj->octree_node = nullptr;
+
+  obj->bounding_sphere = GetObjectBoundingSphere(obj);
+  obj->aabb = GetObjectAABB(obj);
+  InsertObjectIntoOctree(GetSectorByName("outside")->octree, obj, 0);
+}
+
+float AssetCatalog::GetTerrainHeight(float x, float y) {
+  ivec2 top_left = ivec2(x, y);
+
+  TerrainPoint p[4];
+  p[0] = GetTerrainPoint(top_left.x, top_left.y);
+  p[1] = GetTerrainPoint(top_left.x, top_left.y + 1.1);
+  p[2] = GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
+  p[3] = GetTerrainPoint(top_left.x + 1.1, top_left.y);
+
+  float v[4];
+  v[0] = p[0].height;
+  v[1] = p[1].height;
+  v[2] = p[2].height;
+  v[3] = p[3].height;
+
+  vec2 tile_v = vec2(x, y) - vec2(top_left);
+
+  // Top triangle.
+  float height;
+  if (tile_v.x + tile_v.y < 1.0f) {
+    height = v[0] + tile_v.x * (v[3] - v[0]) + tile_v.y * (v[1] - v[0]);
+
+  // Bottom triangle.
+  } else {
+    tile_v = vec2(1.0f) - tile_v; 
+    height = v[2] + tile_v.x * (v[1] - v[2]) + tile_v.y * (v[3] - v[2]);
+  }
+  return height;
 }
