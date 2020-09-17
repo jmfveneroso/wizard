@@ -39,19 +39,6 @@
 using namespace std;
 using namespace glm;
 
-const int kMaxParticles = 1000;
-
-struct Camera {
-  vec3 position; 
-  vec3 up; 
-  vec3 direction;
-  vec3 rotation;
-
-  Camera() {}
-  Camera(vec3 position, vec3 direction, vec3 up) : position(position), 
-    up(up), direction(direction) {}
-};
-
 struct FBO {
   GLuint framebuffer;
   GLuint texture;
@@ -63,29 +50,6 @@ struct FBO {
 
   FBO() {}
   FBO(GLuint width, GLuint height) : width(width), height(height) {}
-};
-
-struct Particle {
-  vec3 pos, speed;
-  float size, angle, weight;
-  float life = -1.0f; // Remaining life of the particle. if < 0 : dead and unused.
-  float r, g, b, a;
-  bool no_physics = false;
-
-  float camera_distance;
-  bool operator<(const Particle& that) const {
-    // Sort in reverse order : far particles drawn first.
-    return this->camera_distance > that.camera_distance;
-  }
-};
-
-struct MagicMissile {
-  shared_ptr<GameObject> objects[6];
-  int frame = 0;
-  int life = 0;
-  vec3 position;
-  vec3 direction;
-  mat4 rotation_matrix;
 };
 
 class Renderer {
@@ -108,36 +72,14 @@ class Renderer {
   GLuint particle_position_buffer_;
   GLuint particle_color_buffer_;
   GLuint particle_life_buffer_;
+  int particle_count_ = 0;
   vec4 particle_positions_[kMaxParticles];
   vec4 particle_colors_[kMaxParticles];
   float particle_lifes_[kMaxParticles];
-  Particle particle_container_[kMaxParticles];
-  int particle_count_ = 0;
-  int last_used_particle_ = 0;
   void CreateParticleBuffers();
-  int FindUnusedParticle();
-  void UpdateParticles();
+  void UpdateParticleBuffers();
   void CreateNewParticles();
   void DrawParticles();
-
-  // Magic missile code.
-  MagicMissile magic_missiles_[10];
-  int charge_frame_ = 0;
-  void InitMagicMissile();
-  void UpdateMagicMissile();
-  
-
-  // Spider code.
-  int next_waypoint_ = 0;
-  vector<vec3> spider_waypoints_ = {
-    { 10000.0f, 200.0, 10100.0f },
-    {  9913.0f, 200.0, 10050.0f },
-    {  9913.0f, 200.0, 9950.0f },
-    { 10000.0f, 200.0, 9900.0f },
-    { 10087.0f, 200.0, 9950.0f },
-    { 10087.0f, 200.0, 10050.0f }
-  };
-  void UpdateSpider();
 
   FBO CreateFramebuffer(int width, int height);
   void DrawFBO(const FBO& fbo, bool blur = false);
@@ -186,7 +128,8 @@ class Renderer {
   void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
   void CollideSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
     vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
-  shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
+
+  // shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
   
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }

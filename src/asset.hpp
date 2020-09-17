@@ -25,6 +25,8 @@
 #include "collision.hpp"
 #include "fbx_loader.hpp"
 
+const int kMaxParticles = 1000;
+
 enum CollisionType {
   COL_UNDEFINED = 0,
   COL_PERFECT,
@@ -33,6 +35,10 @@ enum CollisionType {
   COL_SPHERE,
   COL_OBB_TREE,
   COL_NONE 
+};
+
+struct GameData {
+  int life = 100;
 };
 
 struct GameAsset {
@@ -71,6 +77,14 @@ struct GameAsset {
 };
 
 struct OctreeNode;
+struct Sector;
+
+enum AiAction {
+  IDLE = 0, 
+  MOVE = 1, 
+  ATTACK = 2,
+  DIE = 3
+};
 
 // TODO: repeat game asset instead of replicating aabb, sphere polygons for
 // every object.
@@ -92,19 +106,44 @@ struct GameObject {
   bool draw = true;
 
   string active_animation = "Armature|swimming";
-  // string active_animation = "Armature|flipping";
   int frame = 0;
 
   shared_ptr<OctreeNode> octree_node;
+  shared_ptr<Sector> current_sector;
 
   // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
   shared_ptr<GameObject> parent;
   vector<shared_ptr<GameObject>> children;
   int parent_bone_id;
 
+  // TODO: Stuff that may polymorph.
+  float life = 100.0f;
+  AiAction ai_action = IDLE;
+  vec3 speed = vec3(0, 0, 0);
+
   GameObject() {}
 };
 
+struct Player {
+  vec3 position = vec3(0, 0, 0);
+  vec3 next_position = vec3(0, 0, 0);
+  vec3 speed = vec3(0, 0, 0);
+  float h_angle = 0;
+  float v_angle = 0;
+  bool can_jump = true;
+  int life = 100;
+  shared_ptr<GameObject> object;
+};
+
+struct MagicMissile {
+  shared_ptr<GameObject> owner = nullptr;
+  shared_ptr<GameObject> objects[6];
+  int frame = 0;
+  int life = 0;
+  vec3 position;
+  vec3 direction;
+  mat4 rotation_matrix;
+};
 
 struct Sector;
 
@@ -141,6 +180,8 @@ struct OctreeNode {
     nullptr, nullptr, nullptr, nullptr };
 
   vector<shared_ptr<GameObject>> objects;
+  vector<shared_ptr<Sector>> sectors;
+  vector<shared_ptr<Portal>> portals;
   OctreeNode() {}
   OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
     half_dimensions(half_dimensions) {}
@@ -152,6 +193,7 @@ struct Sector {
 
   // Vertices inside the convex hull are inside the sector.
   vector<Polygon> convex_hull;
+  BoundingSphere bounding_sphere;
   vec3 position;
 
   // Objects inside the sector.
@@ -167,6 +209,24 @@ struct Sector {
   shared_ptr<StabbingTreeNode> stabbing_tree;
 };
 
+enum MovementType {
+  WALK = 0,
+  JUMP
+};
+
+struct Waypoint {
+  int id;
+  string name;
+
+  int group;
+  vec3 position;
+  vector<shared_ptr<Waypoint>> next_waypoints;
+  vector<shared_ptr<MovementType>> movement_types;
+
+  // int max_unit_size; // Should hold the max size of the unit that can go to
+  // this waypoint.
+};
+
 struct TerrainPoint {
   float height = 0.0;
   vec3 blending = vec3(0, 0, 0);
@@ -178,6 +238,23 @@ struct TerrainPoint {
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
+  vec3 initial_player_pos = vec3(10000, 200, 10000);
+  float player_speed = 0.03f; 
+  float spider_speed = 0.41f; 
+};
+
+struct Particle {
+  vec3 pos, speed;
+  float size, angle, weight;
+  float life = -1.0f;
+  vec4 rgba;
+  bool fixed = false;
+
+  float camera_distance;
+  bool operator<(const Particle& that) const {
+    // Sort in reverse order : far particles drawn first.
+    return this->camera_distance > that.camera_distance;
+  }
 };
 
 // TODO: maybe change to ResourceCatalog.
@@ -187,15 +264,24 @@ class AssetCatalog {
   unordered_map<string, GLuint> textures_;
   unordered_map<string, shared_ptr<GameAsset>> assets_;
   unordered_map<string, shared_ptr<Sector>> sectors_;
+  unordered_map<string, shared_ptr<Waypoint>> waypoints_;
   unordered_map<int, shared_ptr<GameAsset>> assets_by_id_;
   unordered_map<int, shared_ptr<Sector>> sectors_by_id_;
   unordered_map<int, shared_ptr<GameObject>> objects_by_id_;
+  unordered_map<int, shared_ptr<Waypoint>> waypoints_by_id_;
+  shared_ptr<GameData> game_data_;
+  shared_ptr<Player> player_;
   string directory_;
 
   int id_counter_ = 0;
 
+  // TODO: join all three functions.
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
     shared_ptr<GameObject> object, int depth);
+  void InsertSectorIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<Sector> sector, int depth);
+  void InsertPortalIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<Portal> portal, int depth);
 
   shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
   void LoadStabbingTree(const pugi::xml_node& parent_node, 
@@ -211,6 +297,12 @@ class AssetCatalog {
 
   vector<TerrainPoint> height_map_;
 
+  Particle particle_container_[kMaxParticles];
+  int last_used_particle_ = 0;
+  int FindUnusedParticle();
+
+  vec3 player_pos_;
+
  public:
   unordered_map<string, shared_ptr<GameObject>> objects_;
 
@@ -225,10 +317,12 @@ class AssetCatalog {
   shared_ptr<GameAsset> GetAssetByName(const string& name);
   shared_ptr<GameObject> GetObjectByName(const string& name);
   shared_ptr<Sector> GetSectorByName(const string& name);
+  shared_ptr<Waypoint> GetWaypointByName(const string& name);
   GLuint GetTextureByName(const string& name);
   shared_ptr<GameAsset> GetAssetById(int id);
   shared_ptr<GameObject> GetObjectById(int id);
   shared_ptr<Sector> GetSectorById(int id);
+  shared_ptr<GameData> GetGameData() { return game_data_; }
 
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
@@ -243,6 +337,18 @@ class AssetCatalog {
   void UpdateObjectPosition(shared_ptr<GameObject> object);
 
   float GetTerrainHeight(float x, float y);
+
+  shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 
+    vec3 position);
+  shared_ptr<Sector> GetSector(vec3 position);
+
+  Particle* GetParticleContainer() { return particle_container_; }
+
+  void UpdateParticles();
+  void CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
+    vec3 color, float size, float life, float spread);
+
+  shared_ptr<Player> GetPlayer() { return player_; }
 };
 
 #endif // __ASSET_HPP__

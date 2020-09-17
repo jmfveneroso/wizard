@@ -214,6 +214,32 @@ ostream& operator<<(ostream& os, const Edge& e) {
   return os;
 }
 
+Polygon::Polygon(const Polygon &p2) {
+  this->vertices = p2.vertices;
+  this->normals = p2.normals;
+  this->uvs = p2.uvs;
+  this->indices = p2.indices;
+}
+
+Polygon operator*(const mat4& m, const Polygon& poly) {
+  Polygon p = poly;
+  for (int i = 0; i < p.vertices.size(); i++) {
+    vec3& v = p.vertices[i];
+    vec3& n = p.normals[i];
+    v = vec3(m * vec4(v.x, v.y, v.z, 1.0));
+    n = vec3(m * vec4(n.x, n.y, n.z, 0.0));
+  }
+  return p;
+}
+
+Polygon operator+(const Polygon& poly, const vec3& v) {
+  Polygon p = poly;
+  for (auto& poly_v : p.vertices) {
+    poly_v += v;
+  }
+  return p;
+}
+
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon) {
   return polygon.vertices;
 }
@@ -264,3 +290,147 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
   return m;
 }
 
+Mesh CreateMeshFromConvexHull(const ConvexHull& ch) {
+  int count = 0; 
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+  vector<unsigned int> indices;
+  for (auto& p : ch) {
+    int polygon_size = p.vertices.size();
+    for (int j = 1; j < polygon_size - 1; j++) {
+      vertices.push_back(p.vertices[0]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+
+      vertices.push_back(p.vertices[j+1]);
+      uvs.push_back(vec2(0, 0));
+      indices.push_back(count++);
+    }
+  }
+
+  return CreateMesh(0, vertices, uvs, indices);
+}
+
+Mesh CreateCube(vec3 dimensions, vec3 position) {
+  float w = dimensions.x;
+  float h = dimensions.y;
+  float l = dimensions.z;
+ 
+  vector<vec3> v {
+    vec3(0, h, 0), vec3(w, h, 0), vec3(0, 0, 0), vec3(w, 0, 0), // Back face.
+    vec3(0, h, l), vec3(w, h, l), vec3(0, 0, l), vec3(w, 0, l), // Front face.
+  };
+
+  vector<vec3> vertices = {
+    v[0], v[4], v[1], v[1], v[4], v[5], // Top.
+    v[1], v[3], v[0], v[0], v[3], v[2], // Back.
+    v[0], v[2], v[4], v[4], v[2], v[6], // Left.
+    v[5], v[7], v[1], v[1], v[7], v[3], // Right.
+    v[4], v[6], v[5], v[5], v[6], v[7], // Front.
+    v[6], v[2], v[7], v[7], v[2], v[3]  // Bottom.
+  };
+
+  vector<vec2> u = {
+    vec2(0, 0), vec2(0, l), vec2(w, 0), vec2(w, l), // Top.
+    vec2(0, 0), vec2(0, h), vec2(w, 0), vec2(w, h), // Back.
+    vec2(0, 0), vec2(0, h), vec2(l, 0), vec2(l, h)  // Left.
+  };
+
+  vector<glm::vec2> uvs {
+    u[0], u[1], u[2],  u[2],  u[1], u[3],  // Top.
+    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Back.
+    u[8], u[9], u[10], u[10], u[9], u[11], // Left.
+    u[8], u[9], u[10], u[10], u[9], u[11], // Right.
+    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Front.
+    u[0], u[1], u[2],  u[2],  u[1], u[3]   // Bottom.
+  };
+
+  vector<unsigned int> indices(36);
+  for (int i = 0; i < 36; i++) { indices[i] = i; }
+
+  Mesh mesh = CreateMesh(0, vertices, uvs, indices);
+  for (int i = 0; i < 12; i++) {
+    Polygon p;
+    p.vertices.push_back(vertices[i*3]);
+    p.vertices.push_back(vertices[i*3+1]);
+    p.vertices.push_back(vertices[i*3+2]);
+    mesh.polygons.push_back(p);
+  }
+  return mesh;
+}
+
+Mesh CreateMeshFromAABB(const AABB& aabb) {
+  return CreateCube(aabb.dimensions, aabb.point);
+}
+
+Mesh CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
+  vec3 t = normalize(p2 - p1);
+  vec3 b = cross(t, normal);
+
+  float D = 10; 
+  vector<vec3> vertices {
+    p1 - t * D - b * D, // (-1, -1)
+    p1 + t * D - b * D, // (+1, -1)
+    p1 + t * D + b * D, // (+1, +1)
+    p1 - t * D - b * D, // (-1, -1)
+    p1 + t * D + b * D, // (+1, +1)
+    p1 - t * D + b * D  // (-1, +1)
+  };
+
+  vector<vec2> uvs = {
+    vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(1, 1), vec2(0, 1)
+  };
+
+  vector<unsigned int> indices(6);
+  for (int i = 0; i < 6; i++) { indices[i] = i; }
+
+  return CreateMesh(0, vertices, uvs, indices);
+}
+
+Mesh CreateJoint(vec3 start, vec3 end) {
+  float h = length(end - start);
+  float h1 = h * 0.05f;
+  float w = h * 0.075f;
+ 
+  vector<vec3> fixed_v {
+    vec3(0, 0, 0), // Bottom.
+    vec3(-w, h1, -w), vec3(w, h1, -w), vec3(w, h1, w), vec3(-w, h1, w), // Mid.
+    vec3(0, h, 0) // Top.
+  };
+
+  vec3 target_axis = normalize(end - start);
+  vec3 rotation_axis = cross(target_axis, vec3(0, 1, 0));
+  float rotation_angle = acos(dot(target_axis, vec3(0, 1, 0)));
+  quat my_quat = angleAxis(rotation_angle, rotation_axis);
+  mat4 rotation_matrix = toMat4(my_quat);
+
+  vector<vec3> v;
+  for (auto& fv : fixed_v) {
+    v.push_back(vec3(rotation_matrix * vec4(fv, 1)));
+  }
+  
+  vector<vec3> vertices = {
+    // Bottom.
+    v[0], v[1], v[2], v[0], v[2], v[3],  v[0], v[3], v[4], v[0], v[4], v[1], 
+    // Top.
+    v[5], v[1], v[2], v[5], v[2], v[3],  v[5], v[3], v[4], v[5], v[4], v[1], 
+  };
+
+  vec2 u = vec2(0, 0);
+  vector<glm::vec2> uvs {
+    u, u, u, u, u, u, 
+    u, u, u, u, u, u, 
+    u, u, u, u, u, u, 
+    u, u, u, u, u, u 
+  };
+
+  vector<unsigned int> indices(24);
+  for (int i = 0; i < 24; i++) { indices[i] = i; }
+
+  return CreateMesh(0, vertices, uvs, indices);
+}

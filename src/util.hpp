@@ -32,6 +32,29 @@
 using namespace std;
 using namespace glm;
 
+struct Camera {
+  vec3 position; 
+  vec3 up; 
+  vec3 direction;
+  vec3 rotation;
+
+  Camera() {}
+  Camera(vec3 position, vec3 direction, vec3 up) : position(position), 
+    up(up), direction(direction) {}
+};
+
+struct AABB {
+  vec3 point;
+  vec3 dimensions;
+};
+
+struct BoundingSphere {
+  vec3 center;
+  float radius;
+  BoundingSphere() {}
+  BoundingSphere(vec3 center, float radius) : center(center), radius(radius) {}
+};
+
 struct Edge {
   vec3 a;
   vec3 b;
@@ -50,6 +73,8 @@ struct Polygon {
   vector<vec3> normals;
   vector<vec2> uvs;
   vector<unsigned int> indices;
+  Polygon() {}
+  Polygon(const Polygon &p2);
 };
 
 struct Keyframe {
@@ -89,6 +114,11 @@ vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
 vector<Edge> GetPolygonEdges(const Polygon& polygon);
 Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices);
+Mesh CreateMeshFromConvexHull(const ConvexHull& ch);
+Mesh CreateCube(vec3 dimensions, vec3 position);
+Mesh CreateMeshFromAABB(const AABB& aabb);
+Mesh CreatePlane(vec3 p1, vec3 p2, vec3 normal);
+Mesh CreateJoint(vec3 start, vec3 end);
 
 // ========================
 // Logging functions.
@@ -102,6 +132,8 @@ ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
 
+Polygon operator*(const mat4& m, const Polygon& poly);
+Polygon operator+(const Polygon& poly, const vec3& v);
 vector<Polygon> operator+(const vector<Polygon>& polys, const vec3& v);
 
 template<typename First, typename ...Rest>

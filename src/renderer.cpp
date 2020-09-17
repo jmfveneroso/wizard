@@ -68,12 +68,13 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo.width, fbo.height, 0, GL_RGBA, 
     GL_UNSIGNED_BYTE, 0);
 
+  // If we didn't need to sample the depth buffer.
   // glGenRenderbuffers(1, &fbo.depth_rbo);
   // glBindRenderbuffer(GL_RENDERBUFFER, fbo.depth_rbo);
   // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_EXT, fbo.width, 
   //   fbo.height);
   // glBindRenderbuffer(GL_RENDERBUFFER, 0);
-  // glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, fbo.width, fbo.height, 0, 
+  // glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
   //   GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 
   GLuint depthTexture;
@@ -83,7 +84,7 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, fbo.width, fbo.height, 0, 
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
     GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 
   glGenFramebuffers(1, &fbo.framebuffer);
@@ -176,336 +177,6 @@ void Renderer::UpdateAnimationFrames() {
   }
 }
 
-void Renderer::InitMagicMissile() {
-  for (int i = 0; i < 10; i++) {
-    shared_ptr<GameAsset> asset0 = asset_catalog_->GetAssetByName("magic-missile-000");
-    shared_ptr<GameAsset> asset1 = asset_catalog_->GetAssetByName("magic-missile-001");
-    shared_ptr<GameAsset> asset2 = asset_catalog_->GetAssetByName("magic-missile-002");
-    shared_ptr<GameAsset> asset3 = asset_catalog_->GetAssetByName("magic-missile-003");
-    shared_ptr<GameAsset> asset4 = asset_catalog_->GetAssetByName("magic-missile-004");
-    shared_ptr<GameAsset> asset5 = asset_catalog_->GetAssetByName("magic-missile-005");
-
-    MagicMissile& mm = magic_missiles_[i];
-    mm.objects[0] = asset_catalog_->CreateGameObjFromAsset(asset0);
-    mm.objects[1] = asset_catalog_->CreateGameObjFromAsset(asset1);
-    mm.objects[2] = asset_catalog_->CreateGameObjFromAsset(asset2);
-    mm.objects[3] = asset_catalog_->CreateGameObjFromAsset(asset3);
-    mm.objects[4] = asset_catalog_->CreateGameObjFromAsset(asset4);
-    mm.objects[5] = asset_catalog_->CreateGameObjFromAsset(asset5);
-  }
-}
-
-void Renderer::ChargeMagicMissile() {
-  charge_frame_ = 0;
-
-  int particle_index = FindUnusedParticle();
-  particle_container_[particle_index].life = 197.0f;
-
-  vec3 right = normalize(cross(camera_.up, camera_.direction));
-  particle_container_[particle_index].pos = camera_.position + camera_.direction * 1.5f + right * -0.31f +  
-    camera_.up * -0.456f;
-  particle_container_[particle_index].no_physics = true;
-
-  particle_container_[particle_index].r = 1.0f;
-  particle_container_[particle_index].g = 1.0f;
-  particle_container_[particle_index].b = 1.0f;
-  particle_container_[particle_index].a = 0.0f;
-  particle_container_[particle_index].size = 0.3;
-}
-
-void Renderer::CastMagicMissile() {
-  int first_unused_index = 0;
-  for (int i = 0; i < 10; i++) {
-    if (magic_missiles_[i].life <= 0) {
-      first_unused_index = i;
-      break;
-    }
-  }
-
-  MagicMissile& mm = magic_missiles_[first_unused_index];
-  mm.frame = 0;
-  mm.life = 30000;
-
-  vec3 right = normalize(cross(camera_.up, camera_.direction));
-  mm.position = camera_.position + camera_.direction * 0.5f + right * -0.81f +  
-    camera_.up * -0.556f;
-
-  vec3 p2 = camera_.position + camera_.direction * 3000.0f;
-  mm.direction = normalize(p2 - mm.position);
-
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    camera_.rotation.y + 4.70f,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    camera_.rotation.x,
-    vec3(0.0f, 0.0f, 1.0f)
-  );
-  mm.rotation_matrix = rotation_matrix;
-  for (int i = 0; i < 1; i++) {
-    mm.objects[i]->rotation_matrix = rotation_matrix;
-  }
-}
-
-void Renderer::UpdateMagicMissile() {
-  static int skip_count = 0;
-  bool skip = false;
-  if (++skip_count == 2) {
-    skip = true;
-  }
-
-  for (int i = 0; i < 10; i++) {
-    MagicMissile& mm = magic_missiles_[i];
-    for (int j = 0; j < 1; j++) {
-      mm.objects[j]->draw = false;
-    }
-    if (--mm.life <= 0) continue;
-
-    if (!skip) {
-      if (++mm.frame >= 1) mm.frame = 0;
-    }
-    
-    shared_ptr<GameObject> obj = mm.objects[mm.frame];
-
-    bool collision = false;
-    shared_ptr<GameObject> colliding_obj = nullptr;
-    vec3 collision_normal = vec3(0, 0, 0);
-
-    float speed = 3.0f;
-    float step = speed / 5.0f;
-    for (int j = 0; j < 5; j++) {
-      mm.position += mm.direction * step;
-
-      // Collide with terrain.
-      float height = asset_catalog_->GetTerrainHeight(mm.position.x, mm.position.z);
-      if (mm.position.y <= height) {
-        mm.position.y = height;
-        collision = true;
-        collision_normal = vec3(0, 1.0, 0);
-        cout << "Collided with terrain" << endl;
-      }
-
-      // float mm_radius = obj->bounding_sphere.radius;
-      float mm_radius = 0.3;
-
-      vector<shared_ptr<GameObject>> objs;
-      GetPotentiallyCollidingObjects(mm.position, asset_catalog_->GetSectorByName("outside")->octree, objs);
-      for (auto& obj2 : objs) {
-        if (obj->id == obj2->id) continue;
-
-        if (obj2->asset->collision_type == COL_PERFECT) {
-          for (auto& pol : obj2->asset->lod_meshes[0].polygons) {
-            vec3 collision_resolution = mm.position;
-            float magnitude;
-            if (IntersectWithTriangle(pol, &collision_resolution, mm.position, 
-                &magnitude, obj2->position, mm_radius)) {
-              collision = true;
-              collision_normal = pol.normals[0];
-              cout << "Collided with obj " << obj2->name << endl;
-              break;
-            }
-          }
-        }
-      
-        // Collide bones.
-        if (obj2->children.empty()) continue;
-      
-        for (auto& c : obj2->children) {
-          shared_ptr<GameObject> parent = c->parent;
-          Mesh& parent_mesh = parent->asset->lod_meshes[0];
-          const Animation& animation = parent_mesh.animations[parent->active_animation];
-          int bone_id = c->parent_bone_id;
-          mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
-          mat4 ModelMatrix = translate(mat4(1.0), vec3(0, 0, 0));
-          ModelMatrix = ModelMatrix * obj2->rotation_matrix;
-      
-          // Maybe remove.
-          for (auto pol : c->asset->lod_meshes[0].polygons) {
-            for (int i = 0; i < pol.vertices.size(); i++) {
-              vec3& v = pol.vertices[i];
-              vec3& n = pol.normals[i];
-              // v = vec3(joint_transform * vec4(v.x, v.y, v.z, 1.0)) + obj2->position;
-              v = vec3(joint_transform * vec4(v.x, v.y, v.z, 1.0));
-              v = vec3(ModelMatrix * vec4(v, 1.0)) + obj2->position;
-              n = vec3(joint_transform * vec4(n.x, n.y, n.z, 0.0));
-              n = vec3(ModelMatrix * vec4(n, 0.0));
-            }
-            vec3 collision_resolution = mm.position;
-            float magnitude;
-            if (IntersectWithTriangle(pol, &collision_resolution, mm.position, 
-                &magnitude, vec3(0, 0, 0), mm_radius)) {
-              cout << "Collided with child " << c->name << endl;
-              colliding_obj = obj2;
-              collision = true;
-              collision_normal = pol.normals[0];
-              break;
-            }
-          }
-        }
-        if (collision) break;
-      }
-
-      if (collision) {
-        int new_particles = 40;
-        for (int k = 0; k < new_particles; k++) {
-          int particle_index = FindUnusedParticle();
-          particle_container_[particle_index].life = 40.0f;
-          particle_container_[particle_index].pos = mm.position;
-          
-          // Very bad way to generate a random direction; 
-          // See for instance http://stackoverflow.com/questions/5408276/python-uniform-spherical-distribution instead,
-          // combined with some user-controlled parameters (main direction, spread, etc)
-          vec3 rand_direction = glm::vec3(
-            (rand() % 2000 - 1000.0f) / 1000.0f,
-            (rand() % 2000 - 1000.0f) / 1000.0f,
-            (rand() % 2000 - 1000.0f) / 1000.0f
-          );
-
-          particle_container_[particle_index].r = 1.0f;
-          particle_container_[particle_index].g = 1.0f;
-          particle_container_[particle_index].b = 1.0f;
-          particle_container_[particle_index].a = 0.0f;
-          particle_container_[particle_index].size = (rand() % 1000) / 500.0f + 0.1f;
-          if (colliding_obj) {
-            if (colliding_obj->name == "spider-001") {
-              particle_container_[particle_index].r = 1.0f;
-              particle_container_[particle_index].g = 0.0f;
-              particle_container_[particle_index].b = 0.0f;
-              colliding_obj->active_animation = "Armature|hit";
-              colliding_obj->frame = 0;
-            }
-          }
-          
-          float spread = 3.0f;
-          vec3 main_direction = collision_normal * 5.0f;
-          particle_container_[particle_index].speed = main_direction + rand_direction 
-            * spread;
-        }
-        mm.life = 0;
-        continue;
-      }
-    }
-
-
-
-
-
-
-
-
-    obj->draw = true;
-    obj->position = mm.position;
-    asset_catalog_->UpdateObjectPosition(obj);
-  }
-}
-
-void Renderer::UpdateSpider() {
-  shared_ptr<GameObject> spider = asset_catalog_->GetObjectByName("spider-001");
-
-  vec3 direction = spider_waypoints_[next_waypoint_] - spider->position;
-  direction.y = 0;
-
-  if (length(direction) < 1.0f) {
-    ++next_waypoint_;
-    if (next_waypoint_ >= spider_waypoints_.size()) {
-      next_waypoint_ = 0;
-    }
-  }
-
-  float turn_rate = 0.04f;
-  float speed = 0.11f;
-
-  direction = normalize(direction);
-  float target_angle = atan2(1, 0) - atan2(direction.z, direction.x);
-  if (target_angle < 0.0f) target_angle = 6.14f + target_angle;
-
-  float angle_diff = abs(target_angle - float(spider->rotation.y));
-  if (spider->active_animation == "Armature|walking") {
-    if (angle_diff > turn_rate) {
-      float clockwise_angle = spider->rotation.y + turn_rate;
-      if (clockwise_angle < 0.0f) clockwise_angle = 6.14f + clockwise_angle;
-
-      float counter_clockwise_angle = spider->rotation.y - turn_rate;
-      if (counter_clockwise_angle < 0.0f) counter_clockwise_angle = 6.14f + counter_clockwise_angle;
-
-      if (abs(target_angle - clockwise_angle) < 
-        abs(target_angle - counter_clockwise_angle)) {
-        spider->rotation.y += turn_rate;
-        if (spider->rotation.y > 6.14f) spider->rotation.y = spider->rotation.y - 6.14f;
-      } else {
-        spider->rotation.y -= turn_rate;
-        if (spider->rotation.y < 0.0f) spider->rotation.y = 6.14f + spider->rotation.y;
-      }
-    } else {
-      spider->position += direction * speed;
-      spider->rotation.y = target_angle;
-    }
-  } else {
-    if (spider->frame == 39) {
-      spider->active_animation = "Armature|walking";
-      spider->frame = 0;
-    }
-  }
-
-  float x = spider->position.x;
-  float y = spider->position.z;
-  ivec2 top_left = ivec2(x, y);
-
-  TerrainPoint p[4];
-  p[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y);
-  p[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + 1.1);
-  p[2] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
-  p[3] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y);
-
-  float v[4];
-  v[0] = p[0].height;
-  v[1] = p[1].height;
-  v[2] = p[2].height;
-  v[3] = p[3].height;
-
-  vec2 tile_v = vec2(x, y) - vec2(top_left);
-
-  // Top triangle.
-  float height;
-  if (tile_v.x + tile_v.y < 1.0f) {
-    height = v[0] + tile_v.x * (v[3] - v[0]) + tile_v.y * (v[1] - v[0]);
-
-  // Bottom triangle.
-  } else {
-    tile_v = vec2(1.0f) - tile_v; 
-    height = v[2] + tile_v.x * (v[1] - v[2]) + tile_v.y * (v[3] - v[2]);
-  }
-
-  spider->position.y = height;
-
-  vec3 normal = p[0].normal;
-
-  vec3 tangent = cross(vec3(0, 1.0, 0), normal);
-  float angle = acos(dot(vec3(0, 1.0, 0), normal));
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    angle,
-    tangent
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    spider->rotation.y,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  spider->rotation_matrix = rotation_matrix;
-
-  DrawObject(spider);
-
-  // Draw hit boxes.
-  // for (auto& c : spider->children) {
-  //   c->position = spider->position;
-  //   c->rotation_matrix = rotation_matrix;
-  //   DrawObject(c);
-  // }
-}
-
 // TODO: this should be engine run.
 void Renderer::Run(const function<bool()>& process_frame, 
   const function<void()>& after_frame) {
@@ -516,7 +187,6 @@ void Renderer::Run(const function<bool()>& process_frame,
     minor_version << endl;
 
   CreateParticleBuffers();
-  InitMagicMissile();
 
   double last_time = glfwGetTime();
   int frames = 0;
@@ -551,17 +221,14 @@ void Renderer::Run(const function<bool()>& process_frame,
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
     glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
-    glClearColor(0.5, 0.9, 0.9, 0.0f);
+    glClearColor(1.0, 0.7, 0.7, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    UpdateSpider();
-
-    shared_ptr<Sector> sector = GetPlayerSector(camera_.position);
+    shared_ptr<Sector> sector = 
+      asset_catalog_->GetSector(camera_.position);
     DrawSector(sector->stabbing_tree);
 
-    // CreateNewParticles();
-    UpdateParticles();
-    UpdateMagicMissile();
+    UpdateParticleBuffers();
     DrawParticles();
 
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -603,20 +270,20 @@ void Renderer::Run(const function<bool()>& process_frame,
 // TODO: improve these functions
 // ==========================
 
-shared_ptr<Sector> Renderer::GetPlayerSector(const vec3& player_pos) {
-  // TODO: look for the sector in the octree.
-  const unordered_map<string, shared_ptr<Sector>>& sectors = 
-    asset_catalog_->GetSectors();
-
-  for (const auto& it : sectors) {
-    shared_ptr<Sector> sector = it.second;
-    if (sector->name == "outside") continue;
-    if (IsInConvexHull(player_pos, sector->convex_hull)) {
-      return sector;
-    }
-  }
-  return asset_catalog_->GetSectorByName("outside");
-}
+// shared_ptr<Sector> Renderer::GetPlayerSector(const vec3& player_pos) {
+//   // TODO: look for the sector in the octree.
+//   const unordered_map<string, shared_ptr<Sector>>& sectors = 
+//     asset_catalog_->GetSectors();
+// 
+//   for (const auto& it : sectors) {
+//     shared_ptr<Sector> sector = it.second;
+//     if (sector->name == "outside") continue;
+//     if (IsInConvexHull(player_pos, sector->convex_hull)) {
+//       return sector;
+//     }
+//   }
+//   return asset_catalog_->GetSectorByName("outside");
+// }
 
 ConvexHull Renderer::CreateConvexHullFromOccluder(
   const vector<Polygon>& polygons, const vec3& player_pos) {
@@ -671,13 +338,7 @@ ConvexHull Renderer::CreateConvexHullFromOccluder(
 bool Renderer::CullObject(shared_ptr<GameObject> obj, 
   const vector<vector<Polygon>>& occluder_convex_hulls) {
   if (obj->name == "hand-001") return true;
-  // if (obj->name == "magic-missile-obj-000") return true;
-  // if (obj->name == "magic-missile-obj-001") return true;
-  // if (obj->name == "magic-missile-obj-002") return true;
-  // if (obj->name == "magic-missile-obj-003") return true;
-  // if (obj->name == "magic-missile-obj-004") return true;
-  // if (obj->name == "magic-missile-obj-005") return true;
-  if (obj->name == "spider-001") return true;
+  // TODO: draw hand without object.
 
   if (!obj->draw) {
     return true;
@@ -762,6 +423,45 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   }
 
   glBindVertexArray(0);
+}
+
+void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
+  shared_ptr<OctreeNode> octree_node,
+  vector<shared_ptr<GameObject>>& objects) {
+  if (!octree_node) {
+    return;
+  }
+
+  AABB aabb;
+  aabb.point = octree_node->center - octree_node->half_dimensions;
+  aabb.dimensions = octree_node->half_dimensions * 2.0f;
+
+  // TODO: find better name for this function.
+  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
+    return;
+  }
+
+  for (int i = 0; i < 8; i++) {
+    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
+  }
+
+  objects.insert(objects.end(), octree_node->objects.begin(), 
+    octree_node->objects.end());
+}
+
+vector<shared_ptr<GameObject>> 
+Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
+  vector<shared_ptr<GameObject>> objs;
+  GetPotentiallyVisibleObjects(camera_.position, sector->octree, objs);
+
+  // Sort from closest to farthest.
+  for (auto& obj : objs) {
+    obj->distance = length(camera_.position - obj->position);
+  }
+  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
+    return lhs->distance < rhs->distance;
+  });
+  return objs;
 }
 
 void Renderer::DrawObjects(shared_ptr<Sector> sector) {
@@ -890,454 +590,6 @@ void Renderer::DrawSector(
   }
 }
 
-
-
-// TODO: move to resources?
-void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
-  if (!octree_node) {
-    return;
-  }
-
-  AABB aabb;
-  aabb.point = octree_node->center - octree_node->half_dimensions;
-  aabb.dimensions = octree_node->half_dimensions * 2.0f;
-
-  // TODO: find better name for this function.
-  // if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
-  //   return;
-  // }
-
-  for (int i = 0; i < 8; i++) {
-    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
-  }
-
-  objects.insert(objects.end(), octree_node->objects.begin(), 
-    octree_node->objects.end());
-}
-
-vector<shared_ptr<GameObject>> 
-Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
-  vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyVisibleObjects(camera_.position, sector->octree, objs);
-
-  // Sort from closest to farthest.
-  for (auto& obj : objs) {
-    obj->distance = length(camera_.position - obj->position);
-  }
-  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
-    return lhs->distance < rhs->distance;
-  });
-  return objs;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ==============================================
-//  OBJECT CREATION METHODS
-// ==============================================
-// TODO: transfer all mesh related code to asset.
-
-AABB GetObjectAABBDelete(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->asset->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetAABBFromVertices(vertices);
-}
-
-BoundingSphere GetObjectBoundingSphereDelete(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->asset->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetBoundingSphereFromVertices(vertices);
-}
-
-shared_ptr<GameObject> Renderer::CreateCube(vec3 dimensions, vec3 position) {
-  float w = dimensions.x;
-  float h = dimensions.y;
-  float l = dimensions.z;
- 
-  vector<vec3> v {
-    vec3(0, h, 0), vec3(w, h, 0), vec3(0, 0, 0), vec3(w, 0, 0), // Back face.
-    vec3(0, h, l), vec3(w, h, l), vec3(0, 0, l), vec3(w, 0, l), // Front face.
-  };
-
-  vector<vec3> vertices = {
-    v[0], v[4], v[1], v[1], v[4], v[5], // Top.
-    v[1], v[3], v[0], v[0], v[3], v[2], // Back.
-    v[0], v[2], v[4], v[4], v[2], v[6], // Left.
-    v[5], v[7], v[1], v[1], v[7], v[3], // Right.
-    v[4], v[6], v[5], v[5], v[6], v[7], // Front.
-    v[6], v[2], v[7], v[7], v[2], v[3]  // Bottom.
-  };
-
-  vector<vec2> u = {
-    vec2(0, 0), vec2(0, l), vec2(w, 0), vec2(w, l), // Top.
-    vec2(0, 0), vec2(0, h), vec2(w, 0), vec2(w, h), // Back.
-    vec2(0, 0), vec2(0, h), vec2(l, 0), vec2(l, h)  // Left.
-  };
-
-  vector<glm::vec2> uvs {
-    u[0], u[1], u[2],  u[2],  u[1], u[3],  // Top.
-    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Back.
-    u[8], u[9], u[10], u[10], u[9], u[11], // Left.
-    u[8], u[9], u[10], u[10], u[9], u[11], // Right.
-    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Front.
-    u[0], u[1], u[2],  u[2],  u[1], u[3]   // Bottom.
-  };
-
-  vector<unsigned int> indices(36);
-  for (int i = 0; i < 36; i++) { indices[i] = i; }
-
-  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
-  vector<Polygon> polygons;
-  for (int i = 0; i < 12; i++) {
-    Polygon p;
-    p.vertices.push_back(vertices[i*3]);
-    p.vertices.push_back(vertices[i*3+1]);
-    p.vertices.push_back(vertices[i*3+2]);
-    polygons.push_back(p);
-  }
-
-  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, position);
-  // obj->name = "cube";
-  // obj->aabb = GetObjectAABBDelete(obj);
-  // obj->bounding_sphere = GetObjectBoundingSphereDelete(obj);
-  // return obj; 
-  return nullptr; 
-}
-
-shared_ptr<GameObject> Renderer::CreateMeshFromConvexHull(const ConvexHull& ch) {
-  int count = 0; 
-  vector<vec3> vertices;
-  vector<vec2> uvs;
-  vector<vec3> normals;
-  vector<unsigned int> indices;
-  for (auto& p : ch) {
-    int polygon_size = p.vertices.size();
-    for (int j = 1; j < polygon_size - 1; j++) {
-      vertices.push_back(p.vertices[0]);
-      uvs.push_back(vec2(0, 0));
-      indices.push_back(count++);
-
-      vertices.push_back(p.vertices[j]);
-      uvs.push_back(vec2(0, 0));
-      indices.push_back(count++);
-
-      vertices.push_back(p.vertices[j+1]);
-      uvs.push_back(vec2(0, 0));
-      indices.push_back(count++);
-    }
-  }
-
-  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
-  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
-  // obj->name = "convex_hull";
-  return nullptr; 
-}
-
-shared_ptr<GameObject> Renderer::CreateMeshFromAABB(const AABB& aabb) {
-  return CreateCube(aabb.dimensions, aabb.point);
-}
-
-shared_ptr<GameObject> Renderer::CreatePlane(vec3 p1, vec3 p2, vec3 normal) {
-  vec3 t = normalize(p2 - p1);
-  vec3 b = cross(t, normal);
-
-  float D = 10; 
-  vector<vec3> vertices {
-    p1 - t * D - b * D, // (-1, -1)
-    p1 + t * D - b * D, // (+1, -1)
-    p1 + t * D + b * D, // (+1, +1)
-    p1 - t * D - b * D, // (-1, -1)
-    p1 + t * D + b * D, // (+1, +1)
-    p1 - t * D + b * D  // (-1, +1)
-  };
-
-  vector<vec2> uvs = {
-    vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 0), vec2(1, 1), vec2(0, 1)
-  };
-
-  vector<unsigned int> indices(6);
-  for (int i = 0; i < 6; i++) { indices[i] = i; }
-
-  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
-  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, vec3(0, 0, 0));
-  // obj->name = "plane";
-  // return obj; 
-  return nullptr; 
-}
-
-shared_ptr<GameObject> Renderer::CreateJoint(vec3 start, vec3 end) {
-  float h = length(end - start);
-  float h1 = h * 0.05f;
-  float w = h * 0.075f;
- 
-  vector<vec3> fixed_v {
-    vec3(0, 0, 0), // Bottom.
-    vec3(-w, h1, -w), vec3(w, h1, -w), vec3(w, h1, w), vec3(-w, h1, w), // Mid.
-    vec3(0, h, 0) // Top.
-  };
-
-  vec3 target_axis = normalize(end - start);
-  vec3 rotation_axis = cross(target_axis, vec3(0, 1, 0));
-  float rotation_angle = acos(dot(target_axis, vec3(0, 1, 0)));
-  quat my_quat = angleAxis(rotation_angle, rotation_axis);
-  mat4 rotation_matrix = toMat4(my_quat);
-
-  vector<vec3> v;
-  for (auto& fv : fixed_v) {
-    v.push_back(vec3(rotation_matrix * vec4(fv, 1)));
-  }
-  
-  vector<vec3> vertices = {
-    // Bottom.
-    v[0], v[1], v[2], v[0], v[2], v[3],  v[0], v[3], v[4], v[0], v[4], v[1], 
-    // Top.
-    v[5], v[1], v[2], v[5], v[2], v[3],  v[5], v[3], v[4], v[5], v[4], v[1], 
-  };
-
-  vec2 u = vec2(0, 0);
-  vector<glm::vec2> uvs {
-    u, u, u, u, u, u, 
-    u, u, u, u, u, u, 
-    u, u, u, u, u, u, 
-    u, u, u, u, u, u 
-  };
-
-  vector<unsigned int> indices(24);
-  for (int i = 0; i < 24; i++) { indices[i] = i; }
-
-  // Mesh mesh;
-  Mesh mesh = CreateMesh(asset_catalog_->GetShader("solid"), vertices, uvs, indices);
-
-  // shared_ptr<GameObject> obj = make_shared<GameObject>(mesh, start);
-  // obj->name = "joint";
-  // return obj; 
-  return nullptr; 
-}
-
-
-
-
-
-
-
-
-// ============================================
-// Collision Code
-// ============================================
-// TODO: move to another file
-
-void Renderer::GetPotentiallyCollidingObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
-  if (!octree_node) {
-    return;
-  }
-
-  AABB aabb;
-  aabb.point = octree_node->center - octree_node->half_dimensions;
-  aabb.dimensions = octree_node->half_dimensions * 2.0f;
-
-  BoundingSphere s = BoundingSphere(player_pos, 0.75f);
-  // if (!TestSphereAABBIntersection(s, aabb)) {
-  //   return;
-  // }
-
-  for (int i = 0; i < 8; i++) {
-    GetPotentiallyCollidingObjects(player_pos, octree_node->children[i], 
-      objects);
-  }
-
-  objects.insert(objects.end(), octree_node->objects.begin(), 
-    octree_node->objects.end());
-}
-
-// Given point p, return the point q on or in AABB b that is closest to p
-vec3 ClosestPtPointAABB(vec3 p, vec3 aabb_min, vec3 aabb_max) {
-  vec3 q;
-  // For each coordinate axis, if the point coordinate value is
-  // outside box, clamp it to the box, else keep it as is
-  for (int i = 0; i < 3; i++) {
-    float v = p[i];
-    v = std::max(v, aabb_min[i]);
-    v = std::min(v, aabb_max[i]);
-    q[i] = v;
-  }
-  return q;
-}
-
-void Renderer::Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
-  shared_ptr<Sector> sector = GetPlayerSector(*player_pos);
-  CollideSector(sector->stabbing_tree, player_pos, old_player_pos, 
-    player_speed, can_jump);
-
-  // Test collision with terrain.
-  if (sector->name == "outside") {
-    float x = player_pos->x;
-    float y = player_pos->z;
-    ivec2 top_left = ivec2(x, y);
-
-    float v[4];
-    v[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y).height;
-    v[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + 1.1).height;
-    v[2] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1).height;
-    v[3] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y).height;
-
-    vec2 tile_v = vec2(x, y) - vec2(top_left);
-
-    // Top triangle.
-    float height;
-    if (tile_v.x + tile_v.y < 1.0f) {
-      height = v[0] + tile_v.x * (v[3] - v[0]) + tile_v.y * (v[1] - v[0]);
-
-    // Bottom triangle.
-    } else {
-      tile_v = vec2(1.0f) - tile_v; 
-      height = v[2] + tile_v.x * (v[1] - v[2]) + tile_v.y * (v[3] - v[2]);
-    }
-
-    float PLAYER_HEIGHT = 0.75f;
-    height += PLAYER_HEIGHT;
-    if (player_pos->y - PLAYER_HEIGHT < height) {
-      vec3 pos = *player_pos;
-      pos.y = height + PLAYER_HEIGHT;
-      *player_pos = pos;
-      vec3 speed = *player_speed;
-      if (player_speed->y < 0) speed.y = 0.0f;
-      *player_speed = speed;
-      *can_jump = true;
-    }
-  }
-}
-
-void Renderer::CollideSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
-  vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
-  shared_ptr<Sector> sector = stabbing_tree_node->sector;
-  vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyCollidingObjects(*player_pos, sector->octree, objs);
-
-  bool collision = true;
-  for (int i = 0; i < 5 && collision; i++) {
-    vector<vec3> collision_resolutions;
-    vector<float> magnitudes;
-    collision = false;
-
-    for (auto& obj : objs) {
-      if (obj->asset->collision_type != COL_PERFECT && obj->children.empty()) {
-        continue;
-      }
-
-      for (auto& pol : obj->asset->lod_meshes[0].polygons) {
-        vec3 collision_resolution = *player_pos;
-        float magnitude;
-        if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, obj->position)) {
-          collision = true;
-          collision_resolutions.push_back(collision_resolution);
-          magnitudes.push_back(magnitude);
-        }
-      }
-
-      // Collide bones.
-      if (obj->children.empty()) continue;
-
-      for (auto& c : obj->children) {
-        shared_ptr<GameObject> parent = c->parent;
-        Mesh& parent_mesh = parent->asset->lod_meshes[0];
-        const Animation& animation = parent_mesh.animations[parent->active_animation];
-        int bone_id = c->parent_bone_id;
-        mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
-
-        // Maybe remove.
-        for (auto pol : c->asset->lod_meshes[0].polygons) {
-          for (int i = 0; i < pol.vertices.size(); i++) {
-            vec3& v = pol.vertices[i];
-            vec3& n = pol.normals[i];
-            v = vec3(joint_transform * vec4(v.x, v.y, v.z, 1.0)) + obj->position;
-            n = vec3(joint_transform * vec4(n.x, n.y, n.z, 0.0));
-          }
-          vec3 collision_resolution = *player_pos;
-          float magnitude;
-          if (IntersectWithTriangle(pol, &collision_resolution, old_player_pos, &magnitude, vec3(0, 0, 0))) {
-            collision = true;
-            collision_resolutions.push_back(collision_resolution);
-            magnitudes.push_back(magnitude);
-          }
-        }
-      }
-    }
-
-    // Select the collision resolution for which the collision displacement along
-    // the collision normal is minimal.
-    int min_index = -1;
-    float min_magnitude = 999999999.0f;
-    for (int i = 0; i < collision_resolutions.size(); i++) {
-      const vec3& collision_resolution = collision_resolutions[i];
-      const float magnitude = magnitudes[i];
-      if (magnitude < min_magnitude) {
-        min_index = i;
-        min_magnitude = magnitude;
-      }
-    }
-
-    if (min_index != -1) {
-      vec3 collision_vector = normalize(collision_resolutions[min_index] - *player_pos);
-      *player_speed += abs(dot(*player_speed, collision_vector)) * collision_vector;
-      *player_pos = collision_resolutions[min_index];
-
-      if (dot(collision_vector, vec3(0, 1, 0)) > 0.5f) {
-        *can_jump = true;
-      }
-    }
-  }
-
-  for (auto& node : stabbing_tree_node->children) {
-    CollideSector(node, player_pos, old_player_pos, player_speed, can_jump);
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // ==========================================
 // Particles
 // ==========================================
@@ -1384,101 +636,34 @@ void Renderer::CreateParticleBuffers() {
   glBindVertexArray(0);
 }
 
-// Finds a Particle in ParticlesContainer which isn't used yet.
-// (i.e. life < 0);
-int Renderer::FindUnusedParticle(){
-  for (int i = last_used_particle_; i < kMaxParticles; i++) {
-    if (particle_container_[i].life < 0) {
-      last_used_particle_ = i;
-      return i;
-    }
-  }
+void Renderer::UpdateParticleBuffers() {
+  Particle* particle_container = asset_catalog_->GetParticleContainer();
 
-  for (int i = 0; i < last_used_particle_; i++) {
-    if (particle_container_[i].life < 0) {
-      last_used_particle_ = i;
-      return i;
-    }
-  }
-
-  return 0; // All particles are taken, override the first one
-}
-
-void Renderer::CreateNewParticles() {
-  int new_particles = 10;
-  for (int i = 0; i < new_particles; i++) {
-    int particle_index = FindUnusedParticle();
-    particle_container_[particle_index].life = 200.0f;
-    particle_container_[particle_index].pos = vec3(9920, 191.0f, 9920);
-    
-    float spread = 2.5f;
-    vec3 main_direction = vec3(0.0f, 10.0f, 0.0f);
-
-    // Very bad way to generate a random direction; 
-    // See for instance http://stackoverflow.com/questions/5408276/python-uniform-spherical-distribution instead,
-    // combined with some user-controlled parameters (main direction, spread, etc)
-    vec3 rand_direction = glm::vec3(
-    	(rand() % 2000 - 1000.0f) / 1000.0f,
-    	(rand() % 2000 - 1000.0f) / 1000.0f,
-    	(rand() % 2000 - 1000.0f) / 1000.0f
-    );
-    
-    particle_container_[particle_index].speed = main_direction 
-      + rand_direction * spread;
-    
-    // Very bad way to generate a random color
-    particle_container_[particle_index].r = 1.0f;
-    particle_container_[particle_index].g = 1.0f;
-    particle_container_[particle_index].b = 1.0f;
-    particle_container_[particle_index].a = 0.0f;
-    particle_container_[particle_index].size = (rand() % 1000) / 500.0f + 0.1f;
-  }
-}
-
-void Renderer::UpdateParticles() {
   for (int i = 0; i < kMaxParticles; i++) {
-    Particle& p = particle_container_[i];
-    // Decrease life.
-    p.life -= 1.0f;
-    if (p.life > 0.0f) {
-      if (!p.no_physics) {
-        // Simulate simple physics : gravity only, no collisions
-        p.speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
-        p.pos += p.speed * 0.01f;
-        p.camera_distance = length2(p.pos - camera_.position);
-      } else {
-        vec3 right = normalize(cross(camera_.up, camera_.direction));
-        p.pos = camera_.position + camera_.direction * 1.5f + right * -0.31f +  
-         camera_.up * -0.25f;
-        p.life -= 2.125f;
-        p.camera_distance = 0;
-        if (p.life <= 75.0f) {
-          p.life = 0;
-        }
-      }
-    } else {
-      // Particles that just died will be put at the end of the buffer in SortParticles();
+    Particle& p = particle_container[i];
+    if (p.life < 0.0f) {
       p.camera_distance = -1.0f;
+      continue;
+    }
+
+    if (p.fixed) {
+      vec3 right = normalize(cross(camera_.up, camera_.direction));
+      p.pos = camera_.position + camera_.direction * 1.5f + right * -0.31f +  
+       camera_.up * -0.25f;
+      p.life = 0.0f;
+    } else {
+      p.camera_distance = length2(p.pos - camera_.position);
     }
   }
-  std::sort(&particle_container_[0], &particle_container_[kMaxParticles]);
+  std::sort(&particle_container[0], &particle_container[kMaxParticles]);
 
-  // Simulate all particles
   particle_count_ = 0;
   for (int i = 0; i < kMaxParticles; i++) {
-    Particle& p = particle_container_[i]; // shortcut
+    Particle& p = particle_container[i];
     if (p.life < 0.0f) continue;
     
-    particle_positions_[particle_count_].x = p.pos.x;
-    particle_positions_[particle_count_].y = p.pos.y;
-    particle_positions_[particle_count_].z = p.pos.z;
-    particle_positions_[particle_count_].w = p.size;
-
-    particle_colors_[particle_count_].x = p.r;
-    particle_colors_[particle_count_].y = p.g;
-    particle_colors_[particle_count_].z = p.b;
-    particle_colors_[particle_count_].w = 0.0;
-
+    particle_positions_[particle_count_] = vec4(p.pos, p.size);
+    particle_colors_[particle_count_] = p.rgba;
     particle_lifes_[particle_count_] = p.life;
     particle_count_++;
   }
@@ -1542,176 +727,31 @@ void Renderer::DrawParticles() {
   // 1rst attribute buffer : vertices
   glEnableVertexAttribArray(0);
   glBindBuffer(GL_ARRAY_BUFFER, particle_vbo_);
-  glVertexAttribPointer(
-    0, // attribute. No particular reason for 0, but must match the layout in the shader.
-    3, // size
-    GL_FLOAT, // type
-    GL_FALSE, // normalized?
-    0, // stride
-    (void*) 0 // array buffer offset
-  );
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*) 0);
   
   // 2nd attribute buffer : positions of particles' centers
   glEnableVertexAttribArray(1);
   glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
-  glVertexAttribPointer(
-    1, // attribute. No particular reason for 1, but must match the layout in the shader.
-    4, // size : x + y + z + size => 4
-    GL_FLOAT, // type
-    GL_FALSE, // normalized?
-    0, // stride
-    (void*) 0 // array buffer offset
-  );
+  glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*) 0);
 
   // 3rd attribute buffer : particles' colors
   glEnableVertexAttribArray(2);
   glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
-  glVertexAttribPointer(
-    2, // attribute. No particular reason for 2, but must match the layout in the shader.
-    4, // size : r + g + b + a => 4
-    GL_FLOAT, // type
-    GL_TRUE, // normalized? *** YES, this means that the unsigned char[4] will be accessible with a vec4 (floats) in the shader ***
-    0, // stride
-    (void*) 0 // array buffer offset
-  );
+  glVertexAttribPointer(2, 4, GL_FLOAT, GL_TRUE, 0, (void*) 0);
 
   // 4th attribute buffer : particles' colors
   glEnableVertexAttribArray(3);
   glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
-  glVertexAttribPointer(
-    3, // attribute. No particular reason for 3, but must match the layout in the shader.
-    1, 
-    GL_FLOAT, // type
-    GL_TRUE, // normalized? *** YES, this means that the unsigned char[4] will be accessible with a vec4 (floats) in the shader ***
-    0, // stride
-    (void*)0 // array buffer offset
-  );
+  glVertexAttribPointer(3, 1, GL_FLOAT, GL_TRUE, 0, (void*) 0);
 
-  // These functions are specific to glDrawArrays*Instanced*.
-  // The first parameter is the attribute buffer we're talking about.
-  // The second parameter is the "rate at which generic vertex attributes advance when rendering multiple instances"
-  // http://www.opengl.org/sdk/docs/man/xhtml/glVertexAttribDivisor.xml
   glVertexAttribDivisor(0, 0); // particles vertices : always reuse the same 4 vertices -> 0
   glVertexAttribDivisor(1, 1); // positions : one per quad (its center) -> 1
   glVertexAttribDivisor(2, 1); // color : one per quad -> 1
   glVertexAttribDivisor(3, 1); // life: one per quad -> 1
  
-  // Draw the particules !
-  // This draws many times a small triangle_strip (which looks like a quad).
-  // This is equivalent to :
-  // for(i in ParticlesCount) : glDrawArrays(GL_TRIANGLE_STRIP, 0, 4),
-  // but faster.
   glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, particle_count_);
-
   glBindVertexArray(0);
 
   glDisable(GL_BLEND);
   glDepthMask(GL_TRUE);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Probably remove this.
-bool IntersectWall(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, float* magnitude, 
-  const vec3& object_pos) {
-  const vec3& normal = polygon.normals[0];
-
-  vec3 aabb_min = *player_pos + vec3(-1, -1, -1);
-  vec3 aabb_max = *player_pos + vec3(1, 1, 1);
-
-  vec3 wall_aabb_min = vec3(9999999, 9999999, 9999999);
-  vec3 wall_aabb_max = vec3(-999999, -999999, -999999);
-  for (int i = 0; i < polygon.vertices.size(); i++) {
-    const vec3& p = polygon.vertices[i] + object_pos;
-    wall_aabb_min.x = std::min(wall_aabb_min.x, p.x);
-    wall_aabb_min.y = std::min(wall_aabb_min.y, p.y);
-    wall_aabb_min.z = std::min(wall_aabb_min.z, p.z);
-    wall_aabb_max.x = std::max(wall_aabb_max.x, p.x);
-    wall_aabb_max.y = std::max(wall_aabb_max.y, p.y);
-    wall_aabb_max.z = std::max(wall_aabb_max.z, p.z);
-  }
-
-  vec3 closest_point = ClosestPtPointAABB(*player_pos, wall_aabb_min, wall_aabb_max);
-  if (length(*player_pos - closest_point) > 1.5f) return false;
-
-  // if (aabb_min.x > wall_aabb_max.x || aabb_min.y > wall_aabb_max.y || aabb_min.z > wall_aabb_max.z ||
-  //     aabb_max.x < wall_aabb_min.x || aabb_max.y < wall_aabb_min.y || aabb_max.z < wall_aabb_min.z) {
-  //   return false;
-  // }
-
-  // AABB positive extents.
-  vec3 aabb_center = (aabb_min + aabb_max) * 0.5f;
-  vec3 e = aabb_max - aabb_center;
-
-  // Projection of the AABB box in the plane normal.
-  float r = e.x * abs(normal.x) + e.y * abs(normal.y) + e.z * abs(normal.z);
-  r = 1.5f;
-
-  vec3 point_in_plane = polygon.vertices[0] + object_pos;
-  float d = dot(point_in_plane, normal);
-
-  // float s = dot(normal, aabb_center) - d;
-  float s = dot(normal, *player_pos) - d;
-
-  if (s < 0 || s > r) {
-    return false;
-  }
-
-  vec3 p1 = polygon.vertices[0] + object_pos;
-  vec3 p2 = polygon.vertices[2] + object_pos;
-  vec3 player_p = *player_pos;
-  p1.y = 0;
-  p2.y = 0;
-  player_p.y = 0;
-
-  vec3 p1_ = p1 - player_p;
-  vec3 p2_ = p2 - player_p;
-  vec3 tangent1 = normalize(p1 - p2);
-  vec3 tangent2 = normalize(p2 - p1);
-  if (dot(p1_, tangent1) < 0) {
-    if (length(p1_) < 1.5f) {
-      cout << "Collision with point 1: " << p1 << endl;
-      float tan_proj = abs(dot(p1_, tangent1));
-      float normal_proj = abs(dot(p1_, normal));
-      float mag = sqrt(1.5f * 1.5f - tan_proj * tan_proj) - normal_proj;
-      *magnitude = mag;
-      *player_pos = *player_pos + mag * normal;
-      return true;
-    }
-    return false;
-  } else if (dot(p2_, tangent2) < 0) {
-    if (length(p2_) < 1.5f) {
-      cout << "Collision with point 2: " << p2 << endl;
-      float tan_proj = abs(dot(p2_, tangent2));
-      float normal_proj = abs(dot(p2_, normal));
-      float mag = sqrt(1.5f * 1.5f - tan_proj * tan_proj) - normal_proj;
-      *magnitude = mag;
-      *player_pos = *player_pos + mag * normal;
-      return true;
-    }
-    return false;
-  }
-
-  cout << "Collision with center" << endl;
-
-  // Resolve collision.
-  float mag = abs(r - s) + 0.001f;
-  *player_pos = *player_pos + mag * normal;
-
-  float s2 = dot(normal, old_player_pos) - d;
-  *magnitude = abs(r - s2);
-  return true;
-}
-

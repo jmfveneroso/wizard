@@ -34,7 +34,9 @@ CollisionType StrToCollisionType(const std::string& s) {
 
 AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   height_map_(kHeightMapSize * kHeightMapSize, TerrainPoint()),
-  configs_(make_shared<Configs>()) {
+  configs_(make_shared<Configs>()), game_data_(make_shared<GameData>()), 
+  player_(make_shared<Player>()) {
+
   // TODO: change directory to resources.
   //    resources/
   //      assets/          -> FBX
@@ -50,6 +52,8 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
 
   // TODO: load config
   // LoadConfig(directory + "/config.xml");
+
+  player_->position = configs_->initial_player_pos;
 }
 
 // TODO: merge these directory iteration functions into the same function.
@@ -102,6 +106,18 @@ void AssetCatalog::LoadObjects(const std::string& directory) {
       continue;
     }
     LoadPortals(directory + "/" + current_file);
+  }
+
+  shared_ptr<OctreeNode> outside_octree = GetSectorByName("outside")->octree;
+  for (const auto& [name, s] : sectors_) {
+    if (s->name == "outside") continue;
+    InsertSectorIntoOctree(outside_octree, s, 0);
+  }
+
+  for (const auto& [name, s] : sectors_) {
+    for (const auto& [next_sector_id, portal] : s->portals) {
+      InsertPortalIntoOctree(s->octree, portal, 0);
+    }
   }
 }
 
@@ -250,30 +266,26 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
 }
 
 const vector<vec3> kOctreeNodeOffsets = {
-  //    Z   Y   X
+  //    X   Y   Z      Z Y X
   vec3(-1, -1, -1), // 0 0 0
-  vec3(-1, -1, +1), // 0 0 1
+  vec3(+1, -1, -1), // 0 0 1
   vec3(-1, +1, -1), // 0 1 0
-  vec3(-1, +1, +1), // 0 1 1
-  vec3(+1, -1, -1), // 1 0 0
+  vec3(+1, +1, -1), // 0 1 1
+  vec3(-1, -1, +1), // 1 0 0
   vec3(+1, -1, +1), // 1 0 1
-  vec3(+1, +1, -1), // 1 1 0
+  vec3(-1, +1, +1), // 1 1 0
   vec3(+1, +1, +1), // 1 1 1
 };
 
 void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
   shared_ptr<GameObject> object, int depth) {
   int index = 0, straddle = 0;
-  // cout << "--- Octree depth: " << depth << endl;
-  // cout << "--- Octree center: " << octree_node->center << endl;
-  // cout << "--- Octree radius: " << octree_node->half_dimensions << endl;
 
   // Compute the octant number [0..7] the object sphere center is in
   // If straddling any of the dividing x, y, or z planes, exit directly
   for (int i = 0; i < 3; i++) {
     float delta = object->bounding_sphere.center[i] - octree_node->center[i];
-    if (abs(delta) > object->bounding_sphere.radius) {
-    // if (abs(delta) < octree_node->half_dimensions[i] + object->bounding_sphere.radius) {
+    if (abs(delta) < object->bounding_sphere.radius) {
       straddle = 1;
       break;
     }
@@ -295,14 +307,74 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     // at this node.
     octree_node->objects.push_back(object);
     object->octree_node = octree_node;
-    // cout << "Inserting object: " << object->name << endl;
-    // cout << "Pos: " << object->position << endl;
-    // cout << "Object: " << object->name << " inserted in the Octree" << endl;
-    // cout << "Octree depth: " << depth << endl;
-    // cout << "Octree center: " << octree_node->center << endl;
-    // cout << "Octree radius: " << octree_node->half_dimensions << endl;
-    // cout << "object->bounding_sphere.center: " << object->bounding_sphere.center << endl;
-    // cout << "object->bounding_sphere.radius: " << object->bounding_sphere.radius << endl;
+  }
+}
+
+// TODO: join this function and the previous one.
+void AssetCatalog::InsertSectorIntoOctree(shared_ptr<OctreeNode> octree_node, 
+  shared_ptr<Sector> sector, int depth) {
+  int index = 0, straddle = 0;
+
+  // Compute the octant number [0..7] the sector sphere center is in
+  // If straddling any of the dividing x, y, or z planes, exit directly
+  for (int i = 0; i < 3; i++) {
+    float delta = sector->bounding_sphere.center[i] - octree_node->center[i];
+    if (abs(delta) < sector->bounding_sphere.radius) {
+      straddle = 1;
+      break;
+    }
+
+    if (delta > 0.0f) index |= (1 << i); // ZYX
+  }
+
+  if (!straddle && depth < 8) {
+    // Fully contained in existing child node; insert in that subtree
+    if (octree_node->children[index] == nullptr) {
+      octree_node->children[index] = make_shared<OctreeNode>(
+        octree_node->center + kOctreeNodeOffsets[index] * 
+          octree_node->half_dimensions * 0.5f, 
+        octree_node->half_dimensions * 0.5f);
+    }
+    InsertSectorIntoOctree(octree_node->children[index], sector, depth + 1);
+  } else {
+    // Straddling, or no child node to descend into, so link sector into list 
+    // at this node.
+    octree_node->sectors.push_back(sector);
+  }
+}
+
+// TODO: join this function and the previous one.
+void AssetCatalog::InsertPortalIntoOctree(shared_ptr<OctreeNode> octree_node, 
+  shared_ptr<Portal> portal, int depth) {
+  int index = 0, straddle = 0;
+
+  const BoundingSphere& sphere = portal->object->bounding_sphere;
+
+  // Compute the octant number [0..7] the portal sphere center is in
+  // If straddling any of the dividing x, y, or z planes, exit directly
+  for (int i = 0; i < 3; i++) {
+    float delta = sphere.center[i] - octree_node->center[i];
+    if (abs(delta) < sphere.radius) {
+      straddle = 1;
+      break;
+    }
+
+    if (delta > 0.0f) index |= (1 << i); // ZYX
+  }
+
+  if (!straddle && depth < 8) {
+    // Fully contained in existing child node; insert in that subtree
+    if (octree_node->children[index] == nullptr) {
+      octree_node->children[index] = make_shared<OctreeNode>(
+        octree_node->center + kOctreeNodeOffsets[index] * 
+          octree_node->half_dimensions * 0.5f, 
+        octree_node->half_dimensions * 0.5f);
+    }
+    InsertPortalIntoOctree(octree_node->children[index], portal, depth + 1);
+  } else {
+    // Straddling, or no child node to descend into, so link portal into list 
+    // at this node.
+    octree_node->portals.push_back(portal);
   }
 }
 
@@ -435,9 +507,10 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
         }
       }
 
-      // TODO: calculate sector bounds.
-      new_sector->octree = make_shared<OctreeNode>(new_sector->position, 
-        vec3(400, 400, 400));
+      new_sector->bounding_sphere = GetObjectBoundingSphere(new_sector->convex_hull);
+      float dim = new_sector->bounding_sphere.radius + 1.0;
+      new_sector->octree = make_shared<OctreeNode>(
+        new_sector->bounding_sphere.center, vec3(dim, dim, dim));
     }
 
     const pugi::xml_node& game_objs = sector.child("game-objs");
@@ -445,15 +518,57 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
       game_obj = game_obj.next_sibling("game-obj")) {
       shared_ptr<GameObject> new_game_obj = LoadGameObject(game_obj);
       InsertObjectIntoOctree(new_sector->octree, new_game_obj, 0);
+      new_game_obj->current_sector = new_sector;
     }
 
     // TODO: check if sector with that name exists.
     if (sectors_.find(new_sector->name) != sectors_.end()) {
       ThrowError("Sector with name ", new_sector->name, " already exists.");
     }
+    
     sectors_[new_sector->name] = new_sector;
     new_sector->id = id_counter_++;
     sectors_by_id_[new_sector->id] = new_sector;
+  }
+
+  cout << "Loading waypoints from: " << xml_filename << endl;
+  const pugi::xml_node& waypoints_xml = xml.child("waypoints");
+  for (pugi::xml_node waypoint_xml = waypoints_xml.child("waypoint"); waypoint_xml; 
+    waypoint_xml = waypoint_xml.next_sibling("waypoint")) {
+    shared_ptr<Waypoint> new_waypoint = make_shared<Waypoint>();
+    new_waypoint->name = waypoint_xml.attribute("name").value();
+
+    const pugi::xml_node& position = waypoint_xml.child("position");
+    if (!position) {
+      throw runtime_error("Game object must have a location.");
+    }
+
+    float x = boost::lexical_cast<float>(position.attribute("x").value());
+    float y = boost::lexical_cast<float>(position.attribute("y").value());
+    float z = boost::lexical_cast<float>(position.attribute("z").value());
+    new_waypoint->position = vec3(x, y, z);
+
+    waypoints_[new_waypoint->name] = new_waypoint;
+    cout << "Adding waypoint: " << new_waypoint->name << endl;
+    new_waypoint->id = id_counter_++;
+    waypoints_by_id_[new_waypoint->id] = new_waypoint;
+  }
+
+  cout << "Loading waypoint relations from: " << xml_filename << endl;
+  for (pugi::xml_node waypoint_xml = waypoints_xml.child("waypoint"); waypoint_xml; 
+    waypoint_xml = waypoint_xml.next_sibling("waypoint")) {
+    string name = waypoint_xml.attribute("name").value();
+    shared_ptr<Waypoint> waypoint = waypoints_[name];
+
+    const pugi::xml_node& game_objs = waypoint_xml.child("next-waypoint");
+    for (pugi::xml_node next_waypoint_xml = waypoint_xml.child("next-waypoint"); 
+      next_waypoint_xml; 
+      next_waypoint_xml = next_waypoint_xml.next_sibling("next-waypoint")) {
+
+      const string& next_waypoint_name = next_waypoint_xml.text().get();
+      shared_ptr<Waypoint> next_waypoint = waypoints_[next_waypoint_name];
+      waypoint->next_waypoints.push_back(next_waypoint);
+    }
   }
 }
 
@@ -676,6 +791,11 @@ shared_ptr<Sector> AssetCatalog::GetSectorByName(const string& name) {
   return sectors_[name];
 }
 
+shared_ptr<Waypoint> AssetCatalog::GetWaypointByName(const string& name) {
+  if (waypoints_.find(name) == waypoints_.end()) return nullptr;
+  return waypoints_[name];
+}
+
 GLuint AssetCatalog::GetTextureByName(const string& name) {
   if (textures_.find(name) == textures_.end()) return 0;
   return textures_[name];
@@ -764,7 +884,6 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
 }
 
 shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(shared_ptr<GameAsset> game_asset) {
-  // Create object.
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
   new_game_obj->id = id_counter_++;
   objects_by_id_[new_game_obj->id] = new_game_obj;
@@ -776,16 +895,16 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(shared_ptr<GameAsset
   new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
   new_game_obj->aabb = GetObjectAABB(new_game_obj);
 
-  InsertObjectIntoOctree(GetSectorByName("outside")->octree, new_game_obj, 0);
-
+  shared_ptr<Sector> outside = GetSectorByName("outside");
+  InsertObjectIntoOctree(outside->octree, new_game_obj, 0);
+  new_game_obj->current_sector = outside;
   objects_[new_game_obj->name] = new_game_obj;
   return new_game_obj;
 }
 
 void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
-  // TODO: check in which sector the object is located.
-
   shared_ptr<OctreeNode> octree_node = obj->octree_node;
+  // Clear position data.
   for (int i = 0; i < octree_node->objects.size(); i++) {
     if (obj->id == octree_node->objects[i]->id) {
       octree_node->objects.erase(octree_node->objects.begin() + i);
@@ -793,10 +912,23 @@ void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
     }
   }
   obj->octree_node = nullptr;
-
   obj->bounding_sphere = GetObjectBoundingSphere(obj);
   obj->aabb = GetObjectAABB(obj);
-  InsertObjectIntoOctree(GetSectorByName("outside")->octree, obj, 0);
+
+  // Update sector.
+  shared_ptr<Sector> outside = GetSectorByName("outside");
+  shared_ptr<Sector> sector = obj->current_sector;
+  if (sector != nullptr && sector->id != outside->id) {
+    if (!IsInConvexHull(obj->position, sector->convex_hull)) {
+      sector = GetSector(obj->position);
+    }
+  } else {
+    sector = GetSector(obj->position);
+  }
+  obj->current_sector = sector; 
+
+  // Update position in octree.
+  InsertObjectIntoOctree(sector->octree, obj, 0);
 }
 
 float AssetCatalog::GetTerrainHeight(float x, float y) {
@@ -828,3 +960,125 @@ float AssetCatalog::GetTerrainHeight(float x, float y) {
   }
   return height;
 }
+
+shared_ptr<Sector> AssetCatalog::GetSectorAux(
+  shared_ptr<OctreeNode> octree_node, vec3 position) {
+  if (!octree_node) return nullptr;
+
+  for (shared_ptr<Sector> s : octree_node->sectors) {
+    if (IsInConvexHull(position, s->convex_hull)) {
+      return s;
+    }
+  }
+
+  int index = 0, straddle = 0;
+  for (int i = 0; i < 3; i++) {
+    float delta = position[i] - octree_node->center[i];
+    if (delta > 0.0f) index |= (1 << i); // ZYX
+  }
+  return GetSectorAux(octree_node->children[index], position);
+}
+
+shared_ptr<Sector> AssetCatalog::GetSector(vec3 position) {
+  shared_ptr<Sector> outside = GetSectorByName("outside");
+  shared_ptr<Sector> s = GetSectorAux(outside->octree, position);
+  if (s) return s;
+  return outside;
+}
+
+int AssetCatalog::FindUnusedParticle(){
+  for (int i = last_used_particle_; i < kMaxParticles; i++) {
+    if (particle_container_[i].life < 0) {
+      last_used_particle_ = i;
+      return i;
+    }
+  }
+
+  for (int i = 0; i < last_used_particle_; i++) {
+    if (particle_container_[i].life < 0) {
+      last_used_particle_ = i;
+      return i;
+    }
+  }
+
+  return 0; // All particles are taken, override the first one
+}
+
+void AssetCatalog::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
+  vec3 color, float size, float life, float spread) {
+  for (int i = 0; i < num_particles; i++) {
+    int particle_index = FindUnusedParticle();
+    particle_container_[particle_index].life = life;
+    particle_container_[particle_index].pos = pos;
+    particle_container_[particle_index].rgba = vec4(color, 0.0f);
+
+    if (size < 0) {
+      particle_container_[particle_index].size = (rand() % 1000) / 500.0f + 0.1f;
+    } else {
+      particle_container_[particle_index].size = size;
+    }
+    
+    vec3 main_direction = normal * 5.0f;
+    vec3 rand_direction = glm::vec3(
+      (rand() % 2000 - 1000.0f) / 1000.0f,
+      (rand() % 2000 - 1000.0f) / 1000.0f,
+      (rand() % 2000 - 1000.0f) / 1000.0f
+    );
+    particle_container_[particle_index].speed = main_direction + rand_direction 
+      * spread;
+  }
+} 
+
+// TODO: move to particle file. Maybe physics.
+void AssetCatalog::UpdateParticles() {
+  for (int i = 0; i < kMaxParticles; i++) {
+    Particle& p = particle_container_[i];
+
+    // Decrease life.
+    p.life -= 1.0f;
+    if (p.life < 0.0f) {
+      continue;
+    }
+
+    if (!p.fixed) {
+      // Simulate simple physics : gravity only, no collisions
+      p.speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
+      p.pos += p.speed * 0.01f;
+    } else {
+      p.life -= 2.125f;
+      if (p.life <= 75.0f) {
+        p.life = 0;
+      }
+    }
+  }
+  std::sort(&particle_container_[0], &particle_container_[kMaxParticles]);
+}
+
+
+// ==============================================
+//  OBJECT CREATION METHODS
+// ==============================================
+// TODO: transfer all mesh related code to asset.
+
+AABB GetObjectAABBDelete(shared_ptr<GameObject> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->asset->lod_meshes[0].polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetAABBFromVertices(vertices);
+}
+
+BoundingSphere GetObjectBoundingSphereDelete(shared_ptr<GameObject> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->asset->lod_meshes[0].polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
+
+

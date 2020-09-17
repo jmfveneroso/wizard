@@ -58,6 +58,8 @@ set(
   src/asset.cpp 
   src/2d.cpp 
   src/text_editor.cpp 
+  src/collision_resolver.cpp 
+  src/ai.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

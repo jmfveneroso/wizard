@@ -24,18 +24,6 @@
 using namespace std;
 using namespace glm;
 
-struct AABB {
-  vec3 point;
-  vec3 dimensions;
-};
-
-struct BoundingSphere {
-  vec3 center;
-  float radius;
-  BoundingSphere() {}
-  BoundingSphere(vec3 center, float radius) : center(center), radius(radius) {}
-};
-
 ostream& operator<<(ostream& os, const AABB& v);
 
 void ExtractFrustumPlanes(const mat4& MVP, vec4 planes[6]);
@@ -74,5 +62,8 @@ BoundingSphere GetBoundingSphereFromVertices(const vector<vec3>& vertices);
 
 bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, 
   vec3 old_player_pos, float* magnitude, const vec3& object_pos, float radius = 1.5f);
+
+bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere, 
+  const Polygon& polygon, vec3* displacement_vector);
 
 #endif // __COLLISION_HPP__.

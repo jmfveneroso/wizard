@@ -295,8 +295,64 @@ BoundingSphere GetBoundingSphereFromVertices(
   return bounding_sphere;
 }
 
-bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_player_pos, 
-  float* magnitude, const vec3& object_pos, float radius) {
+bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere, 
+  const Polygon& polygon, vec3* displacement_vector) {
+  const vec3& pos = bounding_sphere.center;
+  float r = bounding_sphere.radius;
+
+  const vec3& normal = polygon.normals[0];
+  const vec3& a = polygon.vertices[0];
+  const vec3& b = polygon.vertices[1];
+  const vec3& c = polygon.vertices[2];
+
+  // TODO: test against polygon bounding sphere and exit early.
+
+  bool inside;
+  vec3 closest_point = ClosestPtPointTriangle(pos, a, b, c, &inside);
+
+  const vec3& v = closest_point - bounding_sphere.center;
+  if (length(v) > r || dot(pos - a, normal) < 0) {
+    *displacement_vector = vec3(0, 0, 0);
+    return false;
+  }
+
+  // // Collide with edge.
+  // if (!inside) {
+  //   vec3 closest_ab = ClosestPtPointSegment(pos, a, b);
+  //   vec3 closest_bc = ClosestPtPointSegment(pos, b, c);
+  //   vec3 closest_ca = ClosestPtPointSegment(pos, c, a);
+  //   vector<vec3> segments { a-b, b-c, c-a } ;
+  //   vector<vec3> points { closest_ab, closest_bc, closest_ca } ;
+
+  //   float min_distance = 9999.0f;
+  //   float min_index = -1;
+  //   for (int i = 0; i < 3; i++) {
+  //     float distance = length(points[i] - pos);
+  //     if (distance < min_distance) {
+  //       min_index = i;
+  //       min_distance = distance;
+  //     }
+  //   }
+
+  //   if (min_distance < r) {
+  //     vec3 pos_to_p = points[min_index] - pos;
+  //     vec3 tangent = normalize(cross(segments[min_index], normal));
+  //     float proj_tan = abs(dot(pos_to_p, tangent));
+  //     float proj_normal = abs(dot(pos_to_p, normal));
+  //     float magnitude = sqrt(r * r - proj_tan * proj_tan) - proj_normal + 0.001f;
+  //     *displacement_vector = magnitude * normal;
+  //     return true; 
+  //   }
+  // }
+
+  float magnitude = r + dot(v, normal) + 0.001f;
+  *displacement_vector = magnitude * normal;
+  return true;
+}
+
+bool IntersectWithTriangle(const Polygon& polygon, 
+  vec3* player_pos, vec3 old_player_pos, float* magnitude, 
+  const vec3& object_pos, float radius) {
   const vec3& normal = polygon.normals[0];
 
   vec3 a = polygon.vertices[0] + object_pos;
@@ -313,8 +369,8 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
     return false;
   }
 
+  // Collide with edge.
   if (!inside) {
-    // cout << "not inside" << endl;
     vec3 closest_ab = ClosestPtPointSegment(*player_pos, a, b);
     vec3 closest_bc = ClosestPtPointSegment(*player_pos, b, c);
     vec3 closest_ca = ClosestPtPointSegment(*player_pos, c, a);
@@ -331,7 +387,6 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
       }
     }
 
-    // Collide with segment.
     if (min_distance < r) {
       vec3 player_to_p = points[min_index] - *player_pos;
       vec3 tangent = normalize(cross(segments[min_index], normal));
@@ -343,7 +398,6 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, vec3 old_pl
       return true; 
     }
   }
-  // cout << "inside" << endl;
 
   float mag = dot(v, normal);
   *magnitude = r + mag + 0.001f;
