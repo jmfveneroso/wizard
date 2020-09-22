@@ -49,6 +49,7 @@ Renderer::Renderer() {
 
 void Renderer::Init() {
   fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
+  fbos_["post-particles"] = CreateFramebuffer(window_width_, window_height_);
 
   // TODO: terrain rendering should be another lib.
   terrain_ = make_shared<Terrain>(asset_catalog_->GetShader("terrain"), 
@@ -77,7 +78,6 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   // glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
   //   GL_DEPTH_COMPONENT, GL_FLOAT, 0);
 
-  GLuint depthTexture;
   glGenTextures(1, &fbo.depth_texture);
   glBindTexture(GL_TEXTURE_2D, fbo.depth_texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -91,8 +91,8 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 
     fbo.texture, 0);
-  glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, fbo.depth_texture, 
-    0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 
+    fbo.depth_texture, 0);
   // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
   //   GL_RENDERBUFFER, fbo.depth_rbo);
 
@@ -138,8 +138,6 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
 
   glBindVertexArray(fbo.vao);
 
-  // Change to texture_sampler.
-  BindTexture("texture_sampler", asset_catalog_->GetShader("screen"), fbo.texture);
   BindBuffer(vertex_buffer, 0, 3);
   BindBuffer(uv_buffer, 1, 2);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer);
@@ -151,23 +149,47 @@ FBO Renderer::CreateFramebuffer(int width, int height) {
   return fbo;
 }
 
-void Renderer::DrawFBO(const FBO& fbo, bool blur) {
+void Renderer::DrawFBO(const FBO& fbo, bool blur, FBO* target_fbo) {
+  glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   GLuint program_id = asset_catalog_->GetShader("screen");
   glBindVertexArray(fbo.vao);
-  BindTexture("texture_sampler", program_id, fbo.texture);
+
   glUseProgram(program_id);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, fbo.depth_texture);
+  glUniform1i(GetUniformId(program_id, "depth_sampler"), 0);
+
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, fbo.texture);
+  glUniform1i(GetUniformId(program_id, "texture_sampler"), 1);
+
   glUniform1f(GetUniformId(program_id, "blur"), (blur) ? 1.0 : 0.0);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  glViewport(0, 0, fbo.width, fbo.height);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  if (target_fbo) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindFramebuffer(GL_FRAMEBUFFER, target_fbo->framebuffer);
+    glViewport(0, 0, fbo.width, fbo.height);
+  } else {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, fbo.width, fbo.height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  }
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*) 0);
   glEnable(GL_CULL_FACE);
+  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
   glBindVertexArray(0);
 }
 
 void Renderer::UpdateAnimationFrames() {
-  for (auto& [name, obj] : asset_catalog_->objects_) {
+  unordered_map<string, shared_ptr<GameObject>>& objs = 
+    asset_catalog_->GetObjects();
+  for (auto& [name, obj] : objs) {
+    if (obj->type != GAME_OBJ_DEFAULT) {
+      continue;
+    }
+
     Mesh& mesh = obj->asset->lod_meshes[0];
     const Animation& animation = mesh.animations[obj->active_animation];
     obj->frame++;
@@ -221,18 +243,16 @@ void Renderer::Run(const function<bool()>& process_frame,
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
     glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
-    glClearColor(1.0, 0.7, 0.7, 0.0f);
+    glClearColor(1.0, 0.7, 0.7, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     shared_ptr<Sector> sector = 
       asset_catalog_->GetSector(camera_.position);
     DrawSector(sector->stabbing_tree);
 
-    UpdateParticleBuffers();
-    DrawParticles();
-
     glClear(GL_DEPTH_BUFFER_BIT);
 
+    glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
     shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
     mat4 rotation_matrix = rotate(
       mat4(1.0),
@@ -249,7 +269,6 @@ void Renderer::Run(const function<bool()>& process_frame,
     obj->position += vec3(0, -0.5, 0);
 
     DrawObject(obj);
-
     DrawFBO(fbos_["screen"], blur);
 
     after_frame();
@@ -382,6 +401,8 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
   glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
   glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+  mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+  glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
   if (program_id == asset_catalog_->GetShader("animated_object")) {
     vector<mat4> joint_transforms;
@@ -397,7 +418,17 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
     BindTexture("texture_sampler", program_id, obj->asset->texture_id);
     glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-  } else if (program_id == asset_catalog_->GetShader("object") || program_id == asset_catalog_->GetShader("noshadow_object")) {
+  } else if (program_id == asset_catalog_->GetShader("object")) {
+    BindTexture("texture_sampler", program_id, obj->asset->texture_id);
+    if (obj->asset->bump_map_id == 0) {
+      BindTexture("bump_map_sampler", program_id, obj->asset->texture_id, 1);
+      glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
+    } else {
+      BindTexture("bump_map_sampler", program_id, obj->asset->bump_map_id, 1);
+      glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
+    }
+    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+  } else if (program_id == asset_catalog_->GetShader("noshadow_object")) {
     BindTexture("texture_sampler", program_id, obj->asset->texture_id);
     glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
   } else {
@@ -445,8 +476,15 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
     GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
   }
 
-  objects.insert(objects.end(), octree_node->objects.begin(), 
-    octree_node->objects.end());
+  for (shared_ptr<GameObject> obj : octree_node->objects) {
+    if (obj->type != GAME_OBJ_DEFAULT) {
+      continue;
+    }
+    objects.push_back(obj);
+  }
+
+  // objects.insert(objects.end(), octree_node->objects.begin(), 
+  //   octree_node->objects.end());
 }
 
 vector<shared_ptr<GameObject>> 
@@ -483,6 +521,7 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
     // Object has children.
     if (!obj->children.empty()) {
       for (auto& c : obj->children) {
+        c->rotation_matrix = obj->rotation_matrix;
         DrawObject(c);
       }
     }
@@ -588,170 +627,171 @@ void Renderer::DrawSector(
       }
     }
   }
+
+  DrawParticles();
 }
 
-// ==========================================
-// Particles
-// ==========================================
-
 void Renderer::CreateParticleBuffers() {
-  glGenVertexArrays(1, &particle_vao_);
-  glBindVertexArray(particle_vao_);
-
-  // The VBO containing the 4 vertices of the particles.
-  // Thanks to instancing, they will be shared by all particles.
   static const GLfloat vertex_buffer_data[] = {
-   -0.5f, -0.5f, 0.0f,
-   0.5f, -0.5f, 0.0f,
-   -0.5f, 0.5f, 0.0f,
-   0.5f, 0.5f, 0.0f,
+    -0.5f, -0.5f, 0.0f,
+    0.5f, -0.5f, 0.0f,
+    -0.5f, 0.5f, 0.0f,
+    0.5f, 0.5f, 0.0f,
   };
 
   glGenBuffers(1, &particle_vbo_);
   glBindBuffer(GL_ARRAY_BUFFER, particle_vbo_);
-  glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), vertex_buffer_data, 
+  glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(GLfloat), &vertex_buffer_data, 
     GL_STATIC_DRAW);  
 
-  // The VBO containing the positions and sizes of the particles
-  glGenBuffers(1, &particle_position_buffer_);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
-  // Initialize with empty (NULL) buffer : it will be updated later, each frame.
-  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 4 * sizeof(GLfloat), NULL, 
-    GL_STREAM_DRAW);
+  unordered_map<string, shared_ptr<ParticleType>>& particle_types = 
+    asset_catalog_->GetParticleTypes();
+  for (const auto& [name, particle_type] : particle_types) {
+    particle_render_data_[name] = ParticleRenderData();
+    ParticleRenderData& prd = particle_render_data_[name];
+    prd.type = particle_type;
 
-  // The VBO containing the colors of the particles
-  glGenBuffers(1, &particle_color_buffer_);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
-  // Initialize with empty (NULL) buffer : it will be updated later, each frame.
-  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 4 * sizeof(GLfloat), NULL, 
-    GL_STREAM_DRAW);
+    glGenVertexArrays(1, &prd.vao);
+    glBindVertexArray(prd.vao);
 
-  // The VBO containing the lifes of the particles
-  glGenBuffers(1, &particle_life_buffer_);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
-  // Initialize with empty (NULL) buffer : it will be updated later, each frame.
-  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(GLfloat), NULL, 
-    GL_STREAM_DRAW);
+    glGenBuffers(1, &prd.position_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, prd.position_buffer);
+    glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 4 * sizeof(GLfloat), NULL, 
+      GL_STREAM_DRAW);
 
-  glBindVertexArray(0);
+    glGenBuffers(1, &prd.color_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, prd.color_buffer);
+    glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 4 * sizeof(GLfloat), NULL, 
+      GL_STREAM_DRAW);
+
+    glGenBuffers(1, &prd.uv_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, prd.uv_buffer);
+    glBufferData(GL_ARRAY_BUFFER, kMaxParticles * 2 * sizeof(GLfloat), NULL, 
+      GL_STREAM_DRAW);
+
+    glBindVertexArray(0);
+  }
 }
 
 void Renderer::UpdateParticleBuffers() {
   Particle* particle_container = asset_catalog_->GetParticleContainer();
-
   for (int i = 0; i < kMaxParticles; i++) {
     Particle& p = particle_container[i];
-    if (p.life < 0.0f) {
-      p.camera_distance = -1.0f;
+    if (!p.type || p.life < 0) {
+      p.camera_distance = -1;
       continue;
     }
-
-    if (p.fixed) {
-      vec3 right = normalize(cross(camera_.up, camera_.direction));
-      p.pos = camera_.position + camera_.direction * 1.5f + right * -0.31f +  
-       camera_.up * -0.25f;
-      p.life = 0.0f;
-    } else {
-      p.camera_distance = length2(p.pos - camera_.position);
+    if (p.type->behavior == PARTICLE_FIXED) {
+      p.camera_distance = 0;
+      continue;
     }
+    p.camera_distance = length2(p.pos - camera_.position);
   }
   std::sort(&particle_container[0], &particle_container[kMaxParticles]);
 
-  particle_count_ = 0;
-  for (int i = 0; i < kMaxParticles; i++) {
-    Particle& p = particle_container[i];
-    if (p.life < 0.0f) continue;
-    
-    particle_positions_[particle_count_] = vec4(p.pos, p.size);
-    particle_colors_[particle_count_] = p.rgba;
-    particle_lifes_[particle_count_] = p.life;
-    particle_count_++;
+  for (auto& [name, prd] : particle_render_data_) {
+    prd.count = 0;
   }
 
-  glBindVertexArray(particle_vao_);
+  for (int i = 0; i < kMaxParticles; i++) {
+    Particle& p = particle_container[i];
+    if (p.life < 0 || !p.type) continue;
 
-  // Buffer orphaning, a common way to improve streaming perf. See above link 
-  // for details.
-  glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec4), NULL, 
-    GL_STREAM_DRAW); 
-  glBufferSubData(GL_ARRAY_BUFFER, 0, particle_count_ * sizeof(vec4), 
-    &particle_positions_[0]);
-  
-  glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec4), NULL, 
-    GL_STREAM_DRAW); 
-  glBufferSubData(GL_ARRAY_BUFFER, 0, particle_count_ * sizeof(vec4), 
-    &particle_colors_[0]);
+    vec2 uv;
+    int index = p.frame + p.type->first_frame;
+    float tile_size = 1.0f / float(p.type->grid_size);
+    uv.x = int(index % p.type->grid_size) * tile_size + tile_size / 2;
+    uv.y = (p.type->grid_size - int(index / p.type->grid_size) - 1) * tile_size 
+      + tile_size / 2;
 
-  // Buffer orphaning.
-  glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
-  glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(GLfloat), NULL, 
-    GL_STREAM_DRAW); 
-  glBufferSubData(GL_ARRAY_BUFFER, 0, particle_count_ * sizeof(GLfloat), 
-    &particle_lifes_[0]);
+    ParticleRenderData& prd = particle_render_data_[p.type->name];
+    prd.particle_positions[prd.count] = vec4(p.pos, p.size);
+    prd.particle_colors[prd.count] = p.color;
+    prd.particle_uvs[prd.count] = uv;
+    prd.count++;
+  }
 
-  glBindVertexArray(0);
+  for (auto& [name, prd] : particle_render_data_) {
+    // Buffer orphaning.
+    glBindBuffer(GL_ARRAY_BUFFER, prd.position_buffer);
+    glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec4), NULL, 
+      GL_STREAM_DRAW); 
+    glBufferSubData(GL_ARRAY_BUFFER, 0, prd.count * sizeof(vec4), 
+      &prd.particle_positions[0]);
+    
+    glBindBuffer(GL_ARRAY_BUFFER, prd.color_buffer);
+    glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec4), NULL, 
+      GL_STREAM_DRAW); 
+    glBufferSubData(GL_ARRAY_BUFFER, 0, prd.count * sizeof(vec4), 
+      &prd.particle_colors[0]);
+
+    glBindBuffer(GL_ARRAY_BUFFER, prd.uv_buffer);
+    glBufferData(GL_ARRAY_BUFFER, kMaxParticles * sizeof(vec2), NULL, 
+      GL_STREAM_DRAW); 
+    glBufferSubData(GL_ARRAY_BUFFER, 0, prd.count * sizeof(vec2), 
+      &prd.particle_uvs[0]);
+  }
 }
 
 void Renderer::DrawParticles() {
-  glBindVertexArray(particle_vao_);
+  UpdateParticleBuffers();
 
-  glDisable(GL_CULL_FACE);
-  glDepthMask(GL_FALSE);
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  const FBO& fbo = fbos_["post-particles"];
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
+  glViewport(0, 0, fbo.width, fbo.height);
+  glClearColor(0.0, 0.0, 0.0, 0.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  GLuint program_id = asset_catalog_->GetShader("particle");
-  glUseProgram(program_id);
+  for (const auto& [name, prd] : particle_render_data_) {
+    glBindVertexArray(prd.vao);
 
-  GLuint texture_id = asset_catalog_->GetTextureByName("explosion");
-  // BindTexture("texture_sampler", program_id, texture_id);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
 
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-  glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+    GLuint program_id = asset_catalog_->GetShader("particle");
+    glUseProgram(program_id);
 
-  glActiveTexture(GL_TEXTURE1);
-  glBindTexture(GL_TEXTURE_2D, fbos_["screen"].depth_texture);
-  glUniform1i(GetUniformId(program_id, "depth_sampler"), 1);
-  
-  glUniform3f(GetUniformId(program_id, "camera_right_worldspace"), 
-    view_matrix_[0][0], view_matrix_[1][0], view_matrix_[2][0]);
-  glUniform3f(GetUniformId(program_id, "camera_up_worldspace"), 
-    view_matrix_[0][1], view_matrix_[1][1], view_matrix_[2][1]);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, prd.type->texture_id);
+    glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
 
-  mat4 VP = projection_matrix_ * view_matrix_;  
-  glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, fbos_["screen"].depth_texture);
+    glUniform1i(GetUniformId(program_id, "depth_sampler"), 1);
+    
+    glUniform3f(GetUniformId(program_id, "camera_right_worldspace"), 
+      view_matrix_[0][0], view_matrix_[1][0], view_matrix_[2][0]);
+    glUniform3f(GetUniformId(program_id, "camera_up_worldspace"), 
+      view_matrix_[0][1], view_matrix_[1][1], view_matrix_[2][1]);
 
-  // 1rst attribute buffer : vertices
-  glEnableVertexAttribArray(0);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_vbo_);
-  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*) 0);
-  
-  // 2nd attribute buffer : positions of particles' centers
-  glEnableVertexAttribArray(1);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_position_buffer_);
-  glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, (void*) 0);
-
-  // 3rd attribute buffer : particles' colors
-  glEnableVertexAttribArray(2);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_color_buffer_);
-  glVertexAttribPointer(2, 4, GL_FLOAT, GL_TRUE, 0, (void*) 0);
-
-  // 4th attribute buffer : particles' colors
-  glEnableVertexAttribArray(3);
-  glBindBuffer(GL_ARRAY_BUFFER, particle_life_buffer_);
-  glVertexAttribPointer(3, 1, GL_FLOAT, GL_TRUE, 0, (void*) 0);
-
-  glVertexAttribDivisor(0, 0); // particles vertices : always reuse the same 4 vertices -> 0
-  glVertexAttribDivisor(1, 1); // positions : one per quad (its center) -> 1
-  glVertexAttribDivisor(2, 1); // color : one per quad -> 1
-  glVertexAttribDivisor(3, 1); // life: one per quad -> 1
+    mat4 VP = projection_matrix_ * view_matrix_;  
+    glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
  
-  glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, particle_count_);
-  glBindVertexArray(0);
+    BindBuffer(particle_vbo_, 0, 3);
+    BindBuffer(prd.position_buffer, 1, 4);
+    BindBuffer(prd.color_buffer, 2, 4);
+    BindBuffer(prd.uv_buffer, 3, 2);
+
+    glVertexAttribDivisor(0, 0); // Always reuse the same 4 vertices.
+    glVertexAttribDivisor(1, 1); // One per quad.
+    glVertexAttribDivisor(2, 1); // One per quad.
+    glVertexAttribDivisor(3, 1); // One per quad.
+
+    float tile_size = 1.0 / float(prd.type->grid_size);
+    glUniform1f(GetUniformId(program_id, "tile_size"), tile_size);
+    glUniform1i(GetUniformId(program_id, "is_fixed"), 
+      (prd.type->behavior == PARTICLE_FIXED) ? 1 : 0);
+
+    glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, prd.count);
+  }
 
   glDisable(GL_BLEND);
   glDepthMask(GL_TRUE);
+  glEnable(GL_DEPTH_TEST);
+  glBindVertexArray(0);
+
+  DrawFBO(fbos_["post-particles"], false, &fbos_["screen"]);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
 }

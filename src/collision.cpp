@@ -222,15 +222,17 @@ bool IsInConvexHull(const vec3& p, vector<Polygon> polygons) {
 }
 
 bool IsInConvexHull(const AABB& aabb, vector<Polygon> polygons) {
+  const vec3& p = aabb.point;
+  const vec3& d = aabb.dimensions;
   vector<vec3> points {
-    { aabb.point.x                    , aabb.point.y                    , aabb.point.z                     },
-    { aabb.point.x + aabb.dimensions.x, aabb.point.y                    , aabb.point.z                     },
-    { aabb.point.x                    , aabb.point.y + aabb.dimensions.y, aabb.point.z                     },
-    { aabb.point.x + aabb.dimensions.x, aabb.point.y + aabb.dimensions.y, aabb.point.z                     },
-    { aabb.point.x                    , aabb.point.y                    , aabb.point.z + aabb.dimensions.z },
-    { aabb.point.x + aabb.dimensions.x, aabb.point.y                    , aabb.point.z + aabb.dimensions.z },
-    { aabb.point.x                    , aabb.point.y + aabb.dimensions.y, aabb.point.z + aabb.dimensions.z },
-    { aabb.point.x + aabb.dimensions.x, aabb.point.y + aabb.dimensions.y, aabb.point.z + aabb.dimensions.z }
+    { p.x      , p.y      , p.z       },
+    { p.x + d.x, p.y      , p.z       },
+    { p.x      , p.y + d.y, p.z       },
+    { p.x + d.x, p.y + d.y, p.z       },
+    { p.x      , p.y      , p.z + d.z },
+    { p.x + d.x, p.y      , p.z + d.z },
+    { p.x      , p.y + d.y, p.z + d.z },
+    { p.x + d.x, p.y + d.y, p.z + d.z }
   };
 
   for (auto& p : points) {
@@ -260,20 +262,129 @@ AABB GetAABBFromVertices(const vector<vec3>& vertices) {
   return aabb;
 }
 
-Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
-  vec3 normal = normalize(cross(a - b, a - c));
-  if (dot(normal, direction) < 0) {
-    normal = -normal;  
+OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
+  OBB obb;
+  vector<vec3> vertices;
+  for (auto& poly : polygons) {
+    for (auto& v : poly.vertices) {
+      vertices.push_back(v + position);
+    }
   }
 
-  Polygon poly;
-  poly.vertices.push_back(a);
-  poly.vertices.push_back(b);
-  poly.vertices.push_back(c);
-  poly.normals.push_back(normal);
-  poly.normals.push_back(normal);
-  poly.normals.push_back(normal);
-  return poly;
+  obb.center = vec3(0);
+  float num_vertices = vertices.size();
+  for (const vec3& v : vertices) {
+    obb.center += v;
+  }
+  obb.center *= 1.0f / num_vertices;
+
+  vec3 pivot_point = polygons[0].vertices[0];
+  vector<vec3> edges;
+  for (auto& poly : polygons) {
+    bool found_pivot_point  = false;
+    for (int i = 0; i < poly.vertices.size() /* 3 */; i++) {
+      if (length(pivot_point - poly.vertices[i]) < 0.01f) {
+        found_pivot_point = true;
+        break;
+      }
+    }
+    if (!found_pivot_point) continue;
+
+    for (int i = 0; i < poly.vertices.size(); i++) {
+      // Is pivot point.
+      if (length(pivot_point - poly.vertices[i]) < 0.01f) continue;
+
+      vec3 new_edge = poly.vertices[i] - pivot_point;
+      edges.push_back(new_edge);
+    }
+  }
+
+  cout << "Edges: " << edges.size() << endl;
+  if (edges.size() != 8) {
+    throw runtime_error("Number of edges is not 7");
+  }
+
+  vector<vec3> selected_edges;
+  for (int i = 0; i < edges.size(); i++) {
+    const vec3& edge1 = edges[i];
+
+    bool add = true;
+    for (int j = 0; j < selected_edges.size(); j++) {
+      const vec3& edge2 = edges[j];
+      if (dot(edge1, edge2) > 0.99f) {
+        edges.erase(edges.begin() + j);
+        add = false;
+        break;
+      }
+    }
+ 
+    if (add) {
+      selected_edges.push_back(edge1);
+    }
+  }
+ 
+  if (selected_edges.size() != 2) {
+    throw runtime_error("Number of partial selected edges is not 2");
+  }
+
+  vec3 normal = cross(selected_edges[0], selected_edges[1]);
+  for (int i = 0; i < edges.size(); i++) {
+    if (dot(edges[i], normal) < 0.01f) {
+      selected_edges.push_back(edges[i]);
+      break;
+    }
+  }
+
+  if (selected_edges.size() != 3) {
+    throw runtime_error("Number of selected edges is not 3");
+  }
+
+  for (int i = 0; i < 3; i++) {
+    obb.half_widths[i] = length(selected_edges[i]);
+    obb.axis[i] = normalize(selected_edges[i]);
+  }
+
+  return obb;
+}
+
+vector<Polygon> GetPolygonsFromOBB(const OBB& obb) {
+  static const vector<vec3> offsets = {
+    vec3(-1, -1, -1),
+    vec3(+1, -1, -1),
+    vec3(-1, +1, -1),
+    vec3(+1, +1, -1),
+    vec3(-1, -1, +1),
+    vec3(+1, -1, +1),
+    vec3(-1, +1, +1),
+    vec3(+1, +1, +1),
+  };
+
+  vector<vec3> vertices;
+  for (const auto& offset : offsets) { 
+    vec3 v = obb.center;
+    for (int i = 0; i < 3; i++) {
+      v += obb.half_widths[i] * obb.axis[i] * offset[i];
+    }
+    vertices.push_back(v);
+  }
+
+  static const vector<vec3> polygon_indices = {
+    vec3(0, 1, 2), vec3(1, 2, 3), vec3(0, 1, 4), vec3(1, 4, 5),
+    vec3(1, 3, 5), vec3(3, 5, 7), vec3(2, 3, 6), vec3(3, 6, 7),
+    vec3(0, 2, 4), vec3(2, 4, 6), vec3(4, 5, 6), vec3(4, 6, 7)
+  };
+
+  int count = 0;
+  vector<Polygon> polygons;
+  for (auto& indices : polygon_indices) {
+    Polygon poly;
+    for (int i = 0; i < 3; i++) {
+      poly.vertices.push_back(vertices[i]);
+      poly.indices.push_back(count++);
+    }
+    polygons.push_back(poly);
+  }
+  return polygons;
 }
 
 BoundingSphere GetBoundingSphereFromVertices(
@@ -293,6 +404,22 @@ BoundingSphere GetBoundingSphereFromVertices(
       length(v - bounding_sphere.center));
   }
   return bounding_sphere;
+}
+
+Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
+  vec3 normal = normalize(cross(a - b, a - c));
+  if (dot(normal, direction) < 0) {
+    normal = -normal;  
+  }
+
+  Polygon poly;
+  poly.vertices.push_back(a);
+  poly.vertices.push_back(b);
+  poly.vertices.push_back(c);
+  poly.normals.push_back(normal);
+  poly.normals.push_back(normal);
+  poly.normals.push_back(normal);
+  return poly;
 }
 
 bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere, 

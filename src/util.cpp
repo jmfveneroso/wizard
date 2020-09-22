@@ -11,10 +11,10 @@ void BindBuffer(const GLuint& buffer_id, int slot, int dimension) {
 }
 
 void BindTexture(const std::string& sampler, 
-  const GLuint& program_id, const GLuint& texture_id) {
-  glActiveTexture(GL_TEXTURE0);
+  const GLuint& program_id, const GLuint& texture_id, int num) {
+  glActiveTexture(GL_TEXTURE0 + num);
   glBindTexture(GL_TEXTURE_2D, texture_id);
-  glUniform1i(glGetUniformLocation(program_id, sampler.c_str()), 0);
+  glUniform1i(glGetUniformLocation(program_id, sampler.c_str()), num);
 }
 
 GLuint LoadPng(const char* file_name) {
@@ -91,7 +91,6 @@ GLuint LoadPng(const char* file_name) {
   glGenTextures(1, &texture_id);
   glBindTexture(GL_TEXTURE_2D, texture_id);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-  // glTexImage2D(GL_TEXTURE_2D, 0,GL_RGB, width, height, 0, GL_BGR, GL_UNSIGNED_BYTE, data);
   
   // OpenGL has now copied the data. Free our own version
   delete[] data;
@@ -204,6 +203,12 @@ ostream& operator<<(ostream& os, const ConvexHull& ch) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const BoundingSphere& bs) {
+  os << "Bounding Sphere (center: " << bs.center << ", radius: " << bs.radius 
+    << ")" << endl;
+  return os;
+}
+
 ostream& operator<<(ostream& os, const Edge& e) {
   os << "a: " << e.a << endl;
   os << "b: " << e.b << endl;
@@ -219,6 +224,10 @@ Polygon::Polygon(const Polygon &p2) {
   this->normals = p2.normals;
   this->uvs = p2.uvs;
   this->indices = p2.indices;
+}
+
+vec3 operator*(const mat4& m, const vec3& v) {
+  return vec3(m * vec4(v.x, v.y, v.z, 1.0));
 }
 
 Polygon operator*(const mat4& m, const Polygon& poly) {
@@ -259,6 +268,8 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
   glGenBuffers(1, &m.vertex_buffer_);
   glGenBuffers(1, &m.uv_buffer_);
   glGenBuffers(1, &m.element_buffer_);
+  glGenBuffers(1, &m.tangent_buffer_);
+  glGenBuffers(1, &m.bitangent_buffer_);
 
   glGenVertexArrays(1, &m.vao_);
   glBindVertexArray(m.vao_);
@@ -269,6 +280,33 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
   glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
   glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
     GL_STATIC_DRAW);
+
+  // Compute tangents and bitangents.
+  vector<vec3> tangents(vertices.size());
+  vector<vec3> bitangents(vertices.size());
+  for (int i = 0; i < vertices.size(); i += 3) {
+    vec3 delta_pos1 = vertices[i+1] - vertices[i+0];
+    vec3 delta_pos2 = vertices[i+2] - vertices[i+0];
+    vec2 delta_uv1 = uvs[i+1] - uvs[i+0];
+    vec2 delta_uv2 = uvs[i+2] - uvs[i+0];
+
+    float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+    vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+    vec3 bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+    tangents.push_back(tangent);
+    tangents.push_back(tangent);
+    tangents.push_back(tangent);
+    tangents.push_back(bitangent);
+    tangents.push_back(bitangent);
+    tangents.push_back(bitangent);
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
+    &tangents[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, m.bitangent_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
+    &bitangents[0], GL_STATIC_DRAW);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
   glBufferData(
@@ -281,6 +319,8 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
 
   BindBuffer(m.vertex_buffer_, 0, 3);
   BindBuffer(m.uv_buffer_, 1, 2);
+  BindBuffer(m.tangent_buffer_, 2, 3);
+  BindBuffer(m.bitangent_buffer_, 3, 3);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
   glBindVertexArray(0);

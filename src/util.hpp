@@ -55,6 +55,12 @@ struct BoundingSphere {
   BoundingSphere(vec3 center, float radius) : center(center), radius(radius) {}
 };
 
+struct OBB {
+  vec3 center;
+  vec3 axis[3];
+  vec3 half_widths;
+};
+
 struct Edge {
   vec3 a;
   vec3 b;
@@ -92,6 +98,8 @@ struct Mesh {
   GLuint vertex_buffer_;
   GLuint uv_buffer_;
   GLuint normal_buffer_;
+  GLuint tangent_buffer_;
+  GLuint bitangent_buffer_;
   GLuint element_buffer_;
   GLuint vao_ = 0;
   GLuint num_indices;
@@ -106,7 +114,7 @@ using ConvexHull = vector<Polygon>;
 GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
 void BindTexture(const std::string& sampler, 
-  const GLuint& program_id, const GLuint& texture_id);
+  const GLuint& program_id, const GLuint& texture_id, int num = 0);
 GLuint LoadPng(const char* file_name);
 GLuint LoadShader(const std::string& directory, const std::string& name);
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
@@ -131,7 +139,9 @@ ostream& operator<<(ostream& os, const mat4& m);
 ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
+ostream& operator<<(ostream& os, const BoundingSphere& bs);
 
+vec3 operator*(const mat4& m, const vec3& v);
 Polygon operator*(const mat4& m, const Polygon& poly);
 Polygon operator+(const Polygon& poly, const vec3& v);
 vector<Polygon> operator+(const vector<Polygon>& polys, const vec3& v);

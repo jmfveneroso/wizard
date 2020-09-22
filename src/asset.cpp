@@ -1,6 +1,7 @@
 #include "asset.hpp"
 
-const int kHeightMapSize = 8000;
+// const int kHeightMapSize = 8000;
+const int kHeightMapSize = 1000;
 
 void DoInOrder() {};
 template<typename Lambda0, typename ...Lambdas>
@@ -32,6 +33,14 @@ CollisionType StrToCollisionType(const std::string& s) {
   return str_to_col_type[s];
 }
 
+ParticleBehavior StrToParticleBehavior(const std::string& s) {
+  static unordered_map<string, ParticleBehavior> str_to_p_type ({
+    { "fixed", PARTICLE_FIXED },
+    { "fall", PARTICLE_FALL }
+  });
+  return str_to_p_type[s];
+}
+
 AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   height_map_(kHeightMapSize * kHeightMapSize, TerrainPoint()),
   configs_(make_shared<Configs>()), game_data_(make_shared<GameData>()), 
@@ -47,8 +56,9 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   LoadShaders(directory_ + "/shaders");
   LoadAssets(directory_ + "/game_assets");
   LoadObjects(directory_ + "/game_objects");
-  LoadHeightMap(directory_ + "/height_map2.dat");
-  // SaveHeightMap(directory_ + "/height_map.dat");
+  // LoadHeightMap(directory_ + "/height_map2.dat");
+  LoadHeightMap(directory_ + "/small_height_map.dat");
+  // SaveHeightMap(directory_ + "/small_height_map.dat");
 
   // TODO: load config
   // LoadConfig(directory + "/config.xml");
@@ -245,12 +255,56 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
       game_asset->texture_id = textures_[texture_filename];
     }
 
+    const pugi::xml_node& xml_bump_map = asset.child("bump-map");
+    if (xml_bump_map) {
+      const string& texture_filename = xml_bump_map.text().get();
+      if (textures_.find(texture_filename) == textures_.end()) {
+        cout << "added bump: " << texture_filename << endl;
+        GLuint texture_id = LoadPng(texture_filename.c_str());
+        textures_[texture_filename] = texture_id;
+      }
+      game_asset->bump_map_id = textures_[texture_filename];
+    }
+
     if (assets_.find(game_asset->name) != assets_.end()) {
       ThrowError("Asset with name ", game_asset->name, " already exists.");
     }
     assets_[game_asset->name] = game_asset;
     game_asset->id = id_counter_++;
     assets_by_id_[game_asset->id] = game_asset;
+  }
+
+  for (pugi::xml_node xml_particle = xml.child("particle-type"); xml_particle; 
+    xml_particle = xml_particle.next_sibling("particle-type")) {
+    shared_ptr<ParticleType> particle_type = make_shared<ParticleType>();
+    string name = xml_particle.attribute("name").value();
+    particle_type->name = name; 
+
+    const pugi::xml_node& xml_behavior = xml_particle.child("behavior");
+    if (xml_behavior) {
+      particle_type->behavior = StrToParticleBehavior(xml_behavior.text().get());
+    }
+
+    const pugi::xml_node& xml_texture = xml_particle.child("texture");
+    const string& texture_filename = xml_texture.text().get();
+    if (textures_.find(texture_filename) == textures_.end()) {
+      string name = xml_texture.attribute("name").value();
+      GLuint texture_id = LoadPng(texture_filename.c_str());
+      textures_[name] = texture_id;
+      particle_type->texture_id = texture_id;
+    }
+
+    particle_type->grid_size = boost::lexical_cast<int>(xml_particle.attribute("grid-size").value());
+    particle_type->first_frame = boost::lexical_cast<int>(xml_particle.attribute("first-frame").value()); 
+    particle_type->num_frames = boost::lexical_cast<int>(xml_particle.attribute("num-frames").value()); 
+    particle_type->keep_frame = boost::lexical_cast<int>(xml_particle.attribute("keep-frame").value()); 
+
+    if (particle_types_.find(particle_type->name) != particle_types_.end()) {
+      ThrowError("Particle with name ", particle_type->name, " already exists.");
+    }
+    particle_types_[particle_type->name] = particle_type;
+    particle_type->id = id_counter_++;
+    particle_types_by_id_[particle_type->id] = particle_type;
   }
 
   for (pugi::xml_node xml_texture = xml.child("texture"); xml_texture; 
@@ -263,6 +317,7 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
       textures_[name] = texture_id;
     }
   }
+
 }
 
 const vector<vec3> kOctreeNodeOffsets = {
@@ -398,6 +453,10 @@ AABB GetObjectAABB(shared_ptr<GameObject> obj) {
   return GetAABBFromVertices(vertices);
 }
 
+OBB GetObjectOBB(shared_ptr<GameObject> obj) {
+  return GetOBBFromPolygons(obj->asset->lod_meshes[0].polygons, obj->position);
+}
+
 shared_ptr<GameObject> AssetCatalog::LoadGameObject(
   const pugi::xml_node& game_obj) {
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
@@ -439,6 +498,14 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
     child->asset = bone_hit_boxes[i];
     child->bounding_sphere = GetObjectBoundingSphere(child);
     child->aabb = GetObjectAABB(child);
+    child->obb = GetObjectOBB(child);
+
+    cout << "child center: " << child->position << endl;
+    cout << "obb center: " << child->obb.center << endl;
+    cout << "obb half widths: " << child->obb.half_widths << endl;
+    cout << "obb axis[0]: " << child->obb.axis[0] << endl;
+    cout << "obb axis[1]: " << child->obb.axis[1] << endl;
+    cout << "obb axis[2]: " << child->obb.axis[2] << endl;
 
     cout << "Creating child " << child->name << endl;
     new_game_obj->children.push_back(child);
@@ -710,7 +777,14 @@ void AssetCatalog::LoadHeightMap(const std::string& dat_filename) {
 
 void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
   FILE* f = fopen(dat_filename.c_str(), "wb");
-  for (const TerrainPoint& p : height_map_) {
+  for (int i = 0; i < height_map_.size(); i++) {
+    int x = i % kHeightMapSize;
+    int y = i / kHeightMapSize;
+    if (x < 3500 || x >= 4500 || y < 3500 || y >= 4500) {
+      continue;
+    }
+
+    const TerrainPoint& p = height_map_[i];
     fwrite(&p.height, sizeof(float), 1, f);
     fwrite(&p.blending.x, sizeof(float), 1, f);
     fwrite(&p.blending.y, sizeof(float), 1, f);
@@ -718,6 +792,16 @@ void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
     fwrite(&p.tile_set.x, sizeof(float), 1, f);
     fwrite(&p.tile_set.y, sizeof(float), 1, f);
   }
+
+  // for (const TerrainPoint& p : height_map_) {
+  //   fwrite(&p.height, sizeof(float), 1, f);
+  //   fwrite(&p.blending.x, sizeof(float), 1, f);
+  //   fwrite(&p.blending.y, sizeof(float), 1, f);
+  //   fwrite(&p.blending.z, sizeof(float), 1, f);
+  //   fwrite(&p.tile_set.x, sizeof(float), 1, f);
+  //   fwrite(&p.tile_set.y, sizeof(float), 1, f);
+  // }
+
   fclose(f);
 }
 
@@ -796,6 +880,11 @@ shared_ptr<Waypoint> AssetCatalog::GetWaypointByName(const string& name) {
   return waypoints_[name];
 }
 
+shared_ptr<ParticleType> AssetCatalog::GetParticleTypeByName(const string& name) {
+  if (particle_types_.find(name) == particle_types_.end()) return nullptr;
+  return particle_types_[name];
+}
+
 GLuint AssetCatalog::GetTextureByName(const string& name) {
   if (textures_.find(name) == textures_.end()) return 0;
   return textures_[name];
@@ -814,6 +903,11 @@ shared_ptr<GameObject> AssetCatalog::GetObjectById(int id) {
 shared_ptr<Sector> AssetCatalog::GetSectorById(int id) {
   if (sectors_by_id_.find(id) == sectors_by_id_.end()) return nullptr;
   return sectors_by_id_[id];
+}
+
+shared_ptr<ParticleType> AssetCatalog::GetParticleTypeById(int id) {
+  if (particle_types_by_id_.find(id) == particle_types_by_id_.end()) return nullptr;
+  return particle_types_by_id_[id];
 }
 
 GLuint AssetCatalog::GetShader(const string& name) {
@@ -914,6 +1008,11 @@ void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
   obj->octree_node = nullptr;
   obj->bounding_sphere = GetObjectBoundingSphere(obj);
   obj->aabb = GetObjectAABB(obj);
+  for (shared_ptr<GameObject> c : obj->children) {
+    c->position = obj->position;
+    c->bounding_sphere = GetObjectBoundingSphere(c);
+    c->aabb = GetObjectAABB(c);
+  }
 
   // Update sector.
   shared_ptr<Sector> outside = GetSectorByName("outside");
@@ -994,7 +1093,7 @@ int AssetCatalog::FindUnusedParticle(){
     }
   }
 
-  for (int i = 0; i < last_used_particle_; i++) {
+  for (int i = 0; i < kMaxParticles; i++) {
     if (particle_container_[i].life < 0) {
       last_used_particle_ = i;
       return i;
@@ -1004,18 +1103,23 @@ int AssetCatalog::FindUnusedParticle(){
   return 0; // All particles are taken, override the first one
 }
 
+// TODO: move to particle file.
 void AssetCatalog::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
   vec3 color, float size, float life, float spread) {
   for (int i = 0; i < num_particles; i++) {
     int particle_index = FindUnusedParticle();
-    particle_container_[particle_index].life = life;
-    particle_container_[particle_index].pos = pos;
-    particle_container_[particle_index].rgba = vec4(color, 0.0f);
+    Particle& p = particle_container_[particle_index];
+
+    p.frame = 0;
+    p.life = life;
+    p.pos = pos;
+    p.color = vec4(color, 0.0f);
+    p.type = GetParticleTypeByName("explosion");
 
     if (size < 0) {
-      particle_container_[particle_index].size = (rand() % 1000) / 500.0f + 0.1f;
+      p.size = (rand() % 1000) / 500.0f + 0.1f;
     } else {
-      particle_container_[particle_index].size = size;
+      p.size = size;
     }
     
     vec3 main_direction = normal * 5.0f;
@@ -1024,61 +1128,52 @@ void AssetCatalog::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal
       (rand() % 2000 - 1000.0f) / 1000.0f,
       (rand() % 2000 - 1000.0f) / 1000.0f
     );
-    particle_container_[particle_index].speed = main_direction + rand_direction 
-      * spread;
+    p.speed = main_direction + rand_direction * spread;
   }
 } 
+
+// TODO: this should definitely go elsewhere. 
+void AssetCatalog::CreateChargeMagicMissileEffect() {
+  int particle_index = FindUnusedParticle();
+  Particle& p = particle_container_[particle_index];
+  p.frame = 0;
+  p.life = 40;
+  p.pos = vec3(0.35, -0.436, 0.2);
+  p.color = vec4(1.0f, 1.0f, 1.0f, 0.0f);
+  p.type = GetParticleTypeByName("charge-magic-missile");
+  p.size = 0.5;
+
+  // Create object.
+  shared_ptr<ParticleGroup> new_particle_group = make_shared<ParticleGroup>();
+  new_particle_group->id = id_counter_++;
+  objects_by_id_[new_particle_group->id] = new_particle_group;
+
+  new_particle_group->name = "particle-group-obj-" + 
+    boost::lexical_cast<string>(new_particle_group->id);
+  new_particle_group->particles.push_back(p);
+
+  objects_[new_particle_group->name] = new_particle_group;
+}
 
 // TODO: move to particle file. Maybe physics.
 void AssetCatalog::UpdateParticles() {
   for (int i = 0; i < kMaxParticles; i++) {
     Particle& p = particle_container_[i];
-
-    // Decrease life.
-    p.life -= 1.0f;
-    if (p.life < 0.0f) {
+    if (--p.life < 0) {
+      p.life = -1;
+      p.type = nullptr;
+      p.frame = 0;
       continue;
     }
 
-    if (!p.fixed) {
+    if (p.life % p.type->keep_frame == 0) {
+      p.frame++;
+    }
+
+    if (p.type->behavior == PARTICLE_FALL) {
       // Simulate simple physics : gravity only, no collisions
       p.speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
       p.pos += p.speed * 0.01f;
-    } else {
-      p.life -= 2.125f;
-      if (p.life <= 75.0f) {
-        p.life = 0;
-      }
     }
   }
-  std::sort(&particle_container_[0], &particle_container_[kMaxParticles]);
 }
-
-
-// ==============================================
-//  OBJECT CREATION METHODS
-// ==============================================
-// TODO: transfer all mesh related code to asset.
-
-AABB GetObjectAABBDelete(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->asset->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetAABBFromVertices(vertices);
-}
-
-BoundingSphere GetObjectBoundingSphereDelete(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->asset->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetBoundingSphereFromVertices(vertices);
-}
-
-
-

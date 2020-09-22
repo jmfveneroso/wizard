@@ -27,6 +27,12 @@
 
 const int kMaxParticles = 1000;
 
+enum CollisionResolutionType {
+  COLRES_SLIDE = 0,
+  COLRES_BOUNCE,
+  COLRES_STOP
+};
+
 enum CollisionType {
   COL_UNDEFINED = 0,
   COL_PERFECT,
@@ -37,8 +43,23 @@ enum CollisionType {
   COL_NONE 
 };
 
+enum GameObjectType {
+  GAME_OBJ_DEFAULT = 0,
+  GAME_OBJ_SECTOR,
+  GAME_OBJ_PORTAL,
+  GAME_OBJ_MISSILE,
+  GAME_OBJ_PARTICLE_GROUP
+};
+
 struct GameData {
   int life = 100;
+};
+
+struct Configs {
+  vec3 world_center = vec3(10000, 0, 10000);
+  vec3 initial_player_pos = vec3(10000, 200, 10000);
+  float player_speed = 0.03f; 
+  float spider_speed = 0.41f; 
 };
 
 struct GameAsset {
@@ -49,7 +70,8 @@ struct GameAsset {
   unordered_map<int, Mesh> lod_meshes;
 
   // Texture.
-  GLuint texture_id;
+  GLuint texture_id = 0;
+  GLuint bump_map_id = 0;
 
   // Animation.
   // shared_ptr<AnimationData> anim;
@@ -62,6 +84,7 @@ struct GameAsset {
   CollisionType collision_type;
   BoundingSphere bounding_sphere;
   AABB aabb;
+  OBB obb;
   ConvexHull convex_hull;
 
   // Skeleton.
@@ -89,6 +112,8 @@ enum AiAction {
 // TODO: repeat game asset instead of replicating aabb, sphere polygons for
 // every object.
 struct GameObject {
+  GameObjectType type = GAME_OBJ_DEFAULT;
+
   int id;
   string name;
   shared_ptr<GameAsset> asset;
@@ -97,8 +122,9 @@ struct GameObject {
   mat4 rotation_matrix = mat4(1.0);
 
   // TODO: should translate and rotate asset.
-  AABB aabb;
   BoundingSphere bounding_sphere;
+  AABB aabb;
+  OBB obb;
 
   float distance;
 
@@ -122,6 +148,7 @@ struct GameObject {
   vec3 speed = vec3(0, 0, 0);
 
   GameObject() {}
+  GameObject(GameObjectType type) : type(type) {}
 };
 
 struct Player {
@@ -146,6 +173,7 @@ struct MagicMissile {
 };
 
 struct Sector;
+struct ParticleGroup;
 
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 struct StabbingTreeNode {
@@ -236,56 +264,88 @@ struct TerrainPoint {
   TerrainPoint(float height) : height(height) {}
 };
 
-struct Configs {
-  vec3 world_center = vec3(10000, 0, 10000);
-  vec3 initial_player_pos = vec3(10000, 200, 10000);
-  float player_speed = 0.03f; 
-  float spider_speed = 0.41f; 
+enum ParticleBehavior {
+  PARTICLE_FIXED = 0,
+  PARTICLE_FALL = 1
+};
+
+struct ParticleType {
+  int id;
+  string name;
+  ParticleBehavior behavior = PARTICLE_FALL;
+  int grid_size;
+  int first_frame;
+  int num_frames;
+  int keep_frame = 1;
+  GLuint texture_id = 0;
+};
+
+struct Particle;
+
+struct ParticleGroup : GameObject {
+  vector<Particle> particles;
+  ParticleGroup() : GameObject(GAME_OBJ_PARTICLE_GROUP) {
+  }
 };
 
 struct Particle {
-  vec3 pos, speed;
-  float size, angle, weight;
-  float life = -1.0f;
-  vec4 rgba;
-  bool fixed = false;
+  shared_ptr<ParticleType> type = nullptr;
+
+  float size;
+  vec4 color;
+
+  vec3 pos;
+  vec3 speed;
+  int life = -1;
+  int frame = 0;
 
   float camera_distance;
   bool operator<(const Particle& that) const {
+    if (!this->type) return false;
+    if (!that.type) return true;
+
     // Sort in reverse order : far particles drawn first.
-    return this->camera_distance > that.camera_distance;
+    if (this->type->id == that.type->id) {
+      return this->camera_distance > that.camera_distance;
+    }
+
+    // Particles with the smaller particle type id first.
+    return this->type->id < that.type->id;
   }
+};
+
+struct MissileType {
+  
+};
+
+struct Missile {
 };
 
 // TODO: maybe change to ResourceCatalog.
 class AssetCatalog {
+  int id_counter_ = 0;
+
   shared_ptr<Configs> configs_;
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;
+
   unordered_map<string, shared_ptr<GameAsset>> assets_;
   unordered_map<string, shared_ptr<Sector>> sectors_;
+  unordered_map<string, shared_ptr<GameObject>> objects_;
   unordered_map<string, shared_ptr<Waypoint>> waypoints_;
+  unordered_map<string, shared_ptr<ParticleType>> particle_types_;
+  unordered_map<string, shared_ptr<Missile>> missiles_;
+
   unordered_map<int, shared_ptr<GameAsset>> assets_by_id_;
   unordered_map<int, shared_ptr<Sector>> sectors_by_id_;
   unordered_map<int, shared_ptr<GameObject>> objects_by_id_;
   unordered_map<int, shared_ptr<Waypoint>> waypoints_by_id_;
+  unordered_map<int, shared_ptr<ParticleType>> particle_types_by_id_;
+  unordered_map<int, shared_ptr<Missile>> missiles_by_id_;
+
   shared_ptr<GameData> game_data_;
   shared_ptr<Player> player_;
   string directory_;
-
-  int id_counter_ = 0;
-
-  // TODO: join all three functions.
-  void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
-    shared_ptr<GameObject> object, int depth);
-  void InsertSectorIntoOctree(shared_ptr<OctreeNode> octree_node, 
-    shared_ptr<Sector> sector, int depth);
-  void InsertPortalIntoOctree(shared_ptr<OctreeNode> octree_node, 
-    shared_ptr<Portal> portal, int depth);
-
-  shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
-  void LoadStabbingTree(const pugi::xml_node& parent_node, 
-    shared_ptr<StabbingTreeNode> new_parent_node);
 
   void LoadShaders(const std::string& directory);
   void LoadAssets(const std::string& directory);
@@ -295,20 +355,31 @@ class AssetCatalog {
   void LoadPortals(const std::string& xml_filename);
   void LoadHeightMap(const std::string& dat_filename);
 
-  vector<TerrainPoint> height_map_;
+  shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
+  void LoadStabbingTree(const pugi::xml_node& parent_node, 
+    shared_ptr<StabbingTreeNode> new_parent_node);
 
   Particle particle_container_[kMaxParticles];
   int last_used_particle_ = 0;
   int FindUnusedParticle();
 
+  // TODO: join all three functions.
+  void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<GameObject> object, int depth);
+  void InsertSectorIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<Sector> sector, int depth);
+  void InsertPortalIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<Portal> portal, int depth);
+
+  vector<TerrainPoint> height_map_;
   vec3 player_pos_;
 
  public:
-  unordered_map<string, shared_ptr<GameObject>> objects_;
 
   // Instantiating this will fail if OpenGL hasn't been initialized.
   AssetCatalog(const string& directory);
 
+  // TODO: maybe remove?
   void Cleanup();
 
   TerrainPoint GetTerrainPoint(int x, int y);
@@ -318,12 +389,15 @@ class AssetCatalog {
   shared_ptr<GameObject> GetObjectByName(const string& name);
   shared_ptr<Sector> GetSectorByName(const string& name);
   shared_ptr<Waypoint> GetWaypointByName(const string& name);
-  GLuint GetTextureByName(const string& name);
+  shared_ptr<ParticleType> GetParticleTypeByName(const string& name);
+
   shared_ptr<GameAsset> GetAssetById(int id);
   shared_ptr<GameObject> GetObjectById(int id);
   shared_ptr<Sector> GetSectorById(int id);
+  shared_ptr<ParticleType> GetParticleTypeById(int id);
   shared_ptr<GameData> GetGameData() { return game_data_; }
 
+  GLuint GetTextureByName(const string& name);
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
   void SaveHeightMap(const std::string& dat_filename);
@@ -345,10 +419,18 @@ class AssetCatalog {
   Particle* GetParticleContainer() { return particle_container_; }
 
   void UpdateParticles();
-  void CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
-    vec3 color, float size, float life, float spread);
+  void CreateParticleEffect(int num_particles, vec3 pos, 
+    vec3 normal, vec3 color, float size, float life, float spread);
+  void CreateChargeMagicMissileEffect();
 
   shared_ptr<Player> GetPlayer() { return player_; }
+  unordered_map<string, shared_ptr<GameObject>>& GetObjects() { 
+    return objects_; 
+  }
+
+  unordered_map<string, shared_ptr<ParticleType>>& GetParticleTypes() { 
+    return particle_types_; 
+  }
 };
 
 #endif // __ASSET_HPP__

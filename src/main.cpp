@@ -68,8 +68,6 @@ void UpdateForces() {
 
   vec3 old_player_pos = p->position;
   p->position += p->speed;
-
-  collision_resolver->Collide(&p->position, old_player_pos, &p->speed, &p->can_jump);
 }
 
 void UpdateParticleForces() {
@@ -220,7 +218,7 @@ bool ProcessGameInput() {
       obj->active_animation = "Armature|shoot";
       obj->frame = 0;
       animation_frame  = 60;
-      collision_resolver->ChargeMagicMissile(c);
+      asset_catalog->CreateChargeMagicMissileEffect();
     } else if (animation_frame == 20) {
       collision_resolver->CastMagicMissile(c);
     }
@@ -231,9 +229,12 @@ bool ProcessGameInput() {
         obj->active_animation = "Armature|shoot";
         obj->frame = 0;
         animation_frame = 60;
+        asset_catalog->CreateChargeMagicMissileEffect();
       }
       debounce = 20;
     }
+
+    vec3 old_player_pos = player->position;
 
     UpdateForces();
     UpdateParticleForces();
@@ -241,9 +242,10 @@ bool ProcessGameInput() {
 
     ai->RunSpiderAI(c);
     ai->UpdateSpiderForces();
-    collision_resolver->CollideSpider();
-
     collision_resolver->UpdateMagicMissile(c);
+
+    collision_resolver->Collide(&player->position, old_player_pos, 
+      &player->speed, &player->can_jump);
 
     return false;
   }

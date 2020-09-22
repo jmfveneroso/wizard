@@ -32,7 +32,8 @@
 #define WINDOW_HEIGHT 800
 #define APP_NAME "test"
 #define NEAR_CLIPPING 1.00f
-#define FAR_CLIPPING 10000.0f
+#define FAR_CLIPPING 1000.0f
+// #define FAR_CLIPPING 10000.0f
 #define FIELD_OF_VIEW 45.0f
 #define LOD_DISTANCE 100.0f
 
@@ -52,6 +53,20 @@ struct FBO {
   FBO(GLuint width, GLuint height) : width(width), height(height) {}
 };
 
+struct ParticleRenderData {
+  shared_ptr<ParticleType> type;
+ 
+  GLuint vao;
+  GLuint position_buffer;
+  GLuint color_buffer;
+  GLuint uv_buffer;
+
+  int count = 0;
+  vec4 particle_positions[kMaxParticles];
+  vec4 particle_colors[kMaxParticles];
+  vec2 particle_uvs[kMaxParticles];
+};
+
 class Renderer {
   shared_ptr<AssetCatalog> asset_catalog_;
   shared_ptr<Draw2D> draw_2d_;
@@ -67,22 +82,15 @@ class Renderer {
   float delta_time_ = 0.0f;
 
   // Particles code.
-  GLuint particle_vao_;
   GLuint particle_vbo_;
-  GLuint particle_position_buffer_;
-  GLuint particle_color_buffer_;
-  GLuint particle_life_buffer_;
-  int particle_count_ = 0;
-  vec4 particle_positions_[kMaxParticles];
-  vec4 particle_colors_[kMaxParticles];
-  float particle_lifes_[kMaxParticles];
+  unordered_map<string, ParticleRenderData> particle_render_data_;
+
   void CreateParticleBuffers();
   void UpdateParticleBuffers();
-  void CreateNewParticles();
   void DrawParticles();
 
   FBO CreateFramebuffer(int width, int height);
-  void DrawFBO(const FBO& fbo, bool blur = false);
+  void DrawFBO(const FBO& fbo, bool blur, FBO* target_fbo = nullptr);
 
   bool CullObject(shared_ptr<GameObject> obj, 
     const vector<vector<Polygon>>& occluder_convex_hulls);

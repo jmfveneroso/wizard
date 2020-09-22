@@ -66,4 +66,8 @@ bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos,
 bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere, 
   const Polygon& polygon, vec3* displacement_vector);
 
+OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position);
+
+vector<Polygon> GetPolygonsFromOBB(const OBB& obb);
+
 #endif // __COLLISION_HPP__.

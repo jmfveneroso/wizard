@@ -54,19 +54,28 @@ class CollisionResolver {
   void CollideWithTerrain(shared_ptr<GameObject> obj);
   bool CollideWithObject(const BoundingSphere& bounding_sphere,
     shared_ptr<GameObject> obj, vec3* displacement_vector);
+
   void CollidePlayerWithObjects(vec3* player_pos, vec3* player_speed, 
     bool* can_jump, const vector<shared_ptr<GameObject>>& objs);
+  void CollidePlayer(vec3* player_pos, vec3 old_player_pos, 
+    vec3* player_speed, bool* can_jump);
+
   void CollideSpiderWithObjects(
     shared_ptr<GameObject> spider,
     const vector<shared_ptr<GameObject>>& objs);
+  void CollideSpider();
+
+  shared_ptr<GameObject> CollideMagicMissileWithObjects(const MagicMissile& mm,
+    const vector<shared_ptr<GameObject>>& objs, vec3* displacement_vector);
+  void CollideMagicMissileWithObjects(const MagicMissile& mm,
+    const vector<shared_ptr<GameObject>>& objs);
+  void CollideMagicMissile();
 
  public:
   CollisionResolver(shared_ptr<AssetCatalog> asset_catalog);
 
   void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, 
     bool* can_jump);
-
-  void CollideSpider();
 
   void InitMagicMissile();
   void ChargeMagicMissile(const Camera& camera);
