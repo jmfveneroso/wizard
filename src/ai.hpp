@@ -33,13 +33,6 @@
 using namespace std;
 using namespace glm;
 
-struct Spider {
-  shared_ptr<GameObject> obj = nullptr;
-  AiAction ai_action = IDLE;
-  int life = 100;
-  shared_ptr<Waypoint> target_waypoint_ = nullptr;
-};
-
 class AI{
   shared_ptr<AssetCatalog> asset_catalog_;
 
@@ -52,7 +45,6 @@ class AI{
 
   void InitSpider();
   void RunSpiderAI(const Camera& camera);
-  void UpdateSpiderForces();
 };
 
 #endif // __AI_HPP__

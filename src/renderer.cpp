@@ -190,7 +190,7 @@ void Renderer::UpdateAnimationFrames() {
       continue;
     }
 
-    Mesh& mesh = obj->asset->lod_meshes[0];
+    Mesh& mesh = obj->GetAsset()->lod_meshes[0];
     const Animation& animation = mesh.animations[obj->active_animation];
     obj->frame++;
     if (obj->frame >= animation.keyframes.size()) {
@@ -243,12 +243,13 @@ void Renderer::Run(const function<bool()>& process_frame,
 
     glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
     glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
-    glClearColor(1.0, 0.7, 0.7, 1.0f);
+    glClearColor(0.73, 0.81, 0.92, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     shared_ptr<Sector> sector = 
       asset_catalog_->GetSector(camera_.position);
     DrawSector(sector->stabbing_tree);
+    DrawParticles();
 
     glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -364,96 +365,109 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   }
 
   // Frustum cull.
-  if (!CollideAABBFrustum(obj->aabb, frustum_planes_, camera_.position)) {
+  BoundingSphere bounding_sphere = obj->GetBoundingSphere();
+  // bounding_sphere.center += obj->position;
+  if (!CollideSphereFrustum(bounding_sphere, frustum_planes_, camera_.position)) {
     return true;
   }
 
+  // if (!CollideAABBFrustum(obj->aabb, frustum_planes_, camera_.position)) {
+  //   return true;
+  // }
+
+  // TODO: fix IsInConvexHull
   // Occlusion cull.
-  for (auto& ch : occluder_convex_hulls) {
-    if (IsInConvexHull(obj->aabb, ch)) {
-      return true;
-    }
-  }
+  // for (auto& ch : occluder_convex_hulls) {
+  //   if (IsInConvexHull(bounding_sphere, ch)) {
+  //   // if (IsInConvexHull(obj->aabb, ch)) {
+  //     return true;
+  //   }
+  // }
   return false;
 }
 
 void Renderer::DrawObject(shared_ptr<GameObject> obj) {
-  shared_ptr<GameAsset> asset = obj->asset;
-
-  int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
-  for (; lod >= 0; lod--) {
-    if (asset->lod_meshes[lod].vao_ > 0) {
-      break;
-    }
-  }
-
-  Mesh& mesh = obj->asset->lod_meshes[lod];
-
-  GLuint program_id = obj->asset->shader;
-  glUseProgram(program_id);
-
-  glBindVertexArray(mesh.vao_);
-  mat4 ModelMatrix = translate(mat4(1.0), obj->position);
-  ModelMatrix = ModelMatrix * obj->rotation_matrix;
-
-  mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
-  mat4 MVP = projection_matrix_ * ModelViewMatrix;
-  glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-  glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-  glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
-  mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
-  glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
-
-  if (program_id == asset_catalog_->GetShader("animated_object")) {
-    vector<mat4> joint_transforms;
-    if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
-      const Animation& animation = mesh.animations[obj->active_animation];
-      for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
-        joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+  for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
+    int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
+    for (; lod >= 0; lod--) {
+      if (asset->lod_meshes[lod].vao_ > 0) {
+        break;
       }
     }
 
-    glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
-      joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+    Mesh& mesh = asset->lod_meshes[lod];
 
-    BindTexture("texture_sampler", program_id, obj->asset->texture_id);
-    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-  } else if (program_id == asset_catalog_->GetShader("object")) {
-    BindTexture("texture_sampler", program_id, obj->asset->texture_id);
-    if (obj->asset->bump_map_id == 0) {
-      BindTexture("bump_map_sampler", program_id, obj->asset->texture_id, 1);
-      glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
+    GLuint program_id = asset->shader;
+    glUseProgram(program_id);
+
+    glBindVertexArray(mesh.vao_);
+    mat4 ModelMatrix = translate(mat4(1.0), obj->position);
+    ModelMatrix = ModelMatrix * obj->rotation_matrix;
+
+    mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
+    mat4 MVP = projection_matrix_ * ModelViewMatrix;
+    glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+    glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+    glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+    mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+    glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
+
+    if (program_id == asset_catalog_->GetShader("animated_object")) {
+      vector<mat4> joint_transforms;
+      if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
+        const Animation& animation = mesh.animations[obj->active_animation];
+        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        }
+      }
+
+      glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
+        joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+
+      BindTexture("texture_sampler", program_id, asset->texture_id);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+    } else if (program_id == asset_catalog_->GetShader("object")) {
+      BindTexture("texture_sampler", program_id, asset->texture_id);
+      if (asset->bump_map_id == 0) {
+        BindTexture("bump_map_sampler", program_id, asset->texture_id, 1);
+        glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
+      } else {
+        BindTexture("bump_map_sampler", program_id, asset->bump_map_id, 1);
+        glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
+      }
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+    } else if (program_id == asset_catalog_->GetShader("transparent_object")) {
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      BindTexture("texture_sampler", program_id, asset->texture_id);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDisable(GL_BLEND);
+    } else if (program_id == asset_catalog_->GetShader("noshadow_object")) {
+      BindTexture("texture_sampler", program_id, asset->texture_id);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else {
-      BindTexture("bump_map_sampler", program_id, obj->asset->bump_map_id, 1);
-      glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
-    }
-    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-  } else if (program_id == asset_catalog_->GetShader("noshadow_object")) {
-    BindTexture("texture_sampler", program_id, obj->asset->texture_id);
-    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-  } else {
-    // Is bone.
-    shared_ptr<GameObject> parent = obj->parent;
-    if (parent) {
-      int bone_id = obj->parent_bone_id;
-      Mesh& parent_mesh = parent->asset->lod_meshes[0];
-      const Animation& animation = parent_mesh.animations[parent->active_animation];
-      mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
-      // ModelMatrix = translate(mat4(1.0), obj->position) * joint_transform;
-      ModelMatrix = translate(mat4(1.0), obj->position);
-      ModelMatrix = ModelMatrix * obj->rotation_matrix * joint_transform;
-      ModelViewMatrix = view_matrix_ * ModelMatrix;
-      MVP = projection_matrix_ * ModelViewMatrix;
-      glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-      glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-      glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+      // Is bone.
+      shared_ptr<GameObject> parent = obj->parent;
+      if (parent) {
+        int bone_id = obj->parent_bone_id;
+        Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
+        const Animation& animation = parent_mesh.animations[parent->active_animation];
+        mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
+        ModelMatrix = translate(mat4(1.0), obj->position);
+        ModelMatrix = ModelMatrix * obj->rotation_matrix * joint_transform;
+        ModelViewMatrix = view_matrix_ * ModelMatrix;
+        MVP = projection_matrix_ * ModelViewMatrix;
+        glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+        glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+        glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+      }
+
+      glDisable(GL_CULL_FACE);
+      glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
     }
 
-    glDisable(GL_CULL_FACE);
-    glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
+    glBindVertexArray(0);
   }
-
-  glBindVertexArray(0);
 }
 
 void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
@@ -476,21 +490,25 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
     GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
   }
 
-  for (shared_ptr<GameObject> obj : octree_node->objects) {
-    if (obj->type != GAME_OBJ_DEFAULT) {
-      continue;
+  for (auto& [id, obj] : octree_node->objects) {
+    switch (obj->type) {
+      case GAME_OBJ_DEFAULT:
+      case GAME_OBJ_MISSILE:
+        break;
+      default:
+        continue;
     }
-    objects.push_back(obj);
-  }
 
-  // objects.insert(objects.end(), octree_node->objects.begin(), 
-  //   octree_node->objects.end());
+    if (obj->life > 0) {
+      objects.push_back(obj);
+    }
+  }
 }
 
 vector<shared_ptr<GameObject>> 
 Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
   vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyVisibleObjects(camera_.position, sector->octree, objs);
+  GetPotentiallyVisibleObjects(camera_.position, sector->octree_node, objs);
 
   // Sort from closest to farthest.
   for (auto& obj : objs) {
@@ -508,12 +526,18 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
   vector<shared_ptr<GameObject>> objs =
     GetPotentiallyVisibleObjectsFromSector(sector);
 
+  vector<shared_ptr<GameObject>> transparent_objs;
+
   // Occlusion culling
   // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
   vector<vector<Polygon>> occluder_convex_hulls;
   for (auto& obj : objs) {
     if (CullObject(obj, occluder_convex_hulls)) {
       continue;
+    }
+
+    if (obj->GetAsset()->shader == asset_catalog_->GetShader("transparent_object")) {
+      transparent_objs.push_back(obj);
     }
 
     DrawObject(obj);
@@ -526,10 +550,10 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
       }
     }
 
-    if (obj->asset->occluder.empty()) continue;
+    if (obj->GetAsset()->occluder.empty()) continue;
 
     // Add occlusion hull.
-    vector<Polygon> polygons = obj->asset->occluder;
+    vector<Polygon> polygons = obj->GetAsset()->occluder;
     for (auto& poly : polygons) {
       for (auto& v : poly.vertices) {
         v += obj->position;
@@ -541,6 +565,10 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
     if (!convex_hull.empty()) {
       occluder_convex_hulls.push_back(convex_hull);
     }
+  }
+
+  for (int i = transparent_objs.size() - 1; i >= 0; i--) {
+    DrawObject(transparent_objs[i]);
   }
   glEnable(GL_CULL_FACE);
 }
@@ -554,14 +582,22 @@ void Renderer::DrawCaves(
       throw runtime_error("Sector should have portal.");
     }
 
+    // TODO: cull portal.
     shared_ptr<Portal> p = s->portals[node->sector->id];
     if (!p->cave) continue;
 
     DrawSector(node);
 
+    // TODO: when we have multiple cave entrances. Optimize by first drawing all
+    // cave interiors and only then running DrawParticles. And then drawing the
+    // portals. This is OK, the drawing algorithm works in two passes. First,
+    // the caves then the outside world.
+    DrawParticles();
+
     // Only write to depth buffer.
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    DrawObject(p->object);
+    // DrawObject(p->object);
+    DrawObject(p);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   }
 }
@@ -578,9 +614,10 @@ void Renderer::DrawSector(
     terrain_->UpdateClipmaps(camera_.position);
 
     if (clip_to_portal) {
-      Polygon& poly = parent_portal->polygons[0];
-      vec3& clipping_point = poly.vertices[0];
-      vec3& clipping_normal = poly.normals[0];
+      // Polygon& poly = parent_portal->polygons[0];
+      Polygon& poly = parent_portal->GetAsset()->lod_meshes[0].polygons[0];
+      vec3 clipping_point = poly.vertices[0] + parent_portal->position;
+      vec3 clipping_normal = poly.normals[0];
       terrain_->SetClippingPlane(clipping_point, clipping_normal);
     }
 
@@ -601,18 +638,23 @@ void Renderer::DrawSector(
 
     BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
     bool in_frustum = false; 
-    for (auto& poly : p->polygons) {
-      if (dot(camera_.position - poly.vertices[0], poly.normals[0]) < 0.000001f) {
-        continue;
-      }
+    // for (auto& poly : p->polygons) {
+    for (auto& poly : p->GetAsset()->lod_meshes[0].polygons) {
+      vec3 portal_point = p->position + poly.vertices[0];
+      vec3 normal = poly.normals[0];
 
-      if (TestSphereTriangleIntersection(sphere, poly.vertices)) {
+      if (TestSphereTriangleIntersection(sphere - p->position, poly.vertices)) {
         in_frustum = true;
         break;
       }
 
+      if (dot(normalize(camera_.position - portal_point), normal) < 0.000001f) {
+      // if (dot(camera_.position - poly.vertices[0], poly.normals[0]) < 0.000001f) {
+        continue;
+      }
+
       if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
-        camera_.position)) {
+        camera_.position - p->position)) {
         in_frustum = true;
         break;
       }
@@ -627,8 +669,6 @@ void Renderer::DrawSector(
       }
     }
   }
-
-  DrawParticles();
 }
 
 void Renderer::CreateParticleBuffers() {
@@ -748,7 +788,7 @@ void Renderer::DrawParticles() {
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     GLuint program_id = asset_catalog_->GetShader("particle");
     glUseProgram(program_id);

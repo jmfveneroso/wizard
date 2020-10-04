@@ -4,43 +4,523 @@
 CollisionResolver::CollisionResolver(
   shared_ptr<AssetCatalog> asset_catalog) : asset_catalog_(asset_catalog) {}
 
-void CollisionResolver::Collide(vec3* player_pos, vec3 old_player_pos, 
-  vec3* player_speed, bool* can_jump) {
-  CollidePlayer(player_pos, old_player_pos, player_speed, can_jump);
-  CollideSpider();
-  CollideMagicMissile();
-}
+// void CollisionResolver::CollideOctreeNode(shared_ptr<OctreeNode> octree_node) {
+//   // For each object.
+//   for (
+//   //   2. Traverse octree queuing collisions.
+//   //      3. Traverse octree queuing collisions.
+//   // For each collision in the queue
+//   //   Displace objects according to the collision resolution rules
+//   //   Set new target position for displaced objects.  
+//   // Start the cycle again.
+// }
 
-void CollisionResolver::GetPotentiallyCollidingObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
-  if (!octree_node) {
-    return;
+bool IsCollidable(shared_ptr<GameObject> obj) {
+  switch (obj->type) {
+    case GAME_OBJ_DEFAULT:
+    case GAME_OBJ_PLAYER:
+      break;
+    case GAME_OBJ_MISSILE:
+      return (obj->life > 0);
+    default:
+      return false;
+  }
+  switch (obj->GetAsset()->collision_type) {
+    case COL_NONE:
+    case COL_UNDEFINED:
+      return false;
+    default:
+      break;
   }
 
-  AABB aabb;
-  aabb.point = octree_node->center - octree_node->half_dimensions;
-  aabb.dimensions = octree_node->half_dimensions * 2.0f;
+  if (obj->parent_bone_id != -1) return false;
+  return true;
+}
 
-  BoundingSphere s = BoundingSphere(player_pos, 0.75f);
-  if (!TestSphereAABBIntersection(s, aabb)) {
-    return;
+void CollisionResolver::Collide() {
+  unordered_map<string, shared_ptr<GameObject>>& objs = 
+    asset_catalog_->GetObjects();
+
+  num_collisions_ = 1;
+  bool has_updated = true;
+  for (int i = 0; i < 2 && has_updated && num_collisions_ > 0; i++) {
+    start_time_ = glfwGetTime();
+
+    has_updated = false;
+    for (auto& [name, obj] : objs) {
+      switch (obj->type) {
+        case GAME_OBJ_DEFAULT:
+        case GAME_OBJ_PLAYER:
+        case GAME_OBJ_MISSILE:
+          break;
+        default:
+          continue;
+      }
+
+      if (length(obj->target_position) < 0.001f) {
+        continue;
+      }
+
+      vec3 movement_vector = obj->target_position - obj->position;
+      if (length(movement_vector)< 0.001f) {
+        obj->position = obj->target_position;
+        continue;
+      }
+
+      obj->prev_position = obj->position;
+      obj->position = obj->target_position;
+      asset_catalog_->UpdateObjectPosition(obj);
+
+      has_updated = true;
+    }
+
+    if (!has_updated) { 
+      continue;
+    }
+
+    num_collisions_ = 0;
+    num_objects_tested_ = 0;
+    shared_ptr<Sector> outside = asset_catalog_->GetSectorByName("outside");
+    FindCollisions(outside->octree_node, {});
+
+    CollideWithTerrain(outside->octree_node);
+
+    ResolveCollisions();
+  }
+}
+
+// TODO: when object collides multiple times, sort collisions using some logic
+// like min displacement. And resolve in succession. Recalculating collisions
+// after the object is updated.
+// TODO: use physics to resolve collision. Apply force when bounce, remove
+// speed when slide. When normal is steep, collide vertically. If both objects
+// are movable apply Newton's third law of motion (both objects are displaced,
+// according to their masses).
+void CollisionResolver::ResolveCollisions() {
+  for (int i = 0; i < num_collisions_; i++) {
+    const Collision& c = collisions_[i];
+
+    shared_ptr<GameObject> obj = c.obj1;
+    shared_ptr<GameObject> colliding_obj = c.obj2;
+    const vec3& displacement_vector = c.displacement_vector;
+    const vec3& normal = c.normal;
+
+    if (obj->type == GAME_OBJ_MISSILE) {
+      obj->position += displacement_vector;
+      if (colliding_obj && colliding_obj->name == "spider-001") {
+        colliding_obj->life -= 10;
+        asset_catalog_->CreateParticleEffect(16, obj->position, normal, 
+          vec3(1.0, 0.5, 0.5), -1.0, 40.0f, 3.0f);
+      } else {
+        asset_catalog_->CreateParticleEffect(16, obj->position, normal, 
+          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+      }
+      obj->life = 0;
+      // obj->freeze = true;
+      continue;
+    }
+
+    if (length(displacement_vector) < 0.0001f) {
+      continue;
+    }
+
+    vec3 v = normalize(displacement_vector);
+    obj->position += displacement_vector;
+    obj->speed += abs(dot(obj->speed, v)) * v;
+    obj->target_position = obj->position;
+
+    if (dot(normal, vec3(0, 1, 0)) > 0.85) obj->can_jump = true;
+
+    // Rotation after collision.
+    // TODO: debug quaternion interpolation for spider.
+    {
+      obj->up = normal;
+      // float angle = acos(dot(vec3(0, 1.0, 0), normal));
+      // vec3 tangent = normalize(cross(vec3(0, 1.0, 0), normal));
+
+      // mat4 rotation_matrix = rotate(mat4(1.0), angle, tangent);
+      // rotation_matrix = rotate(rotation_matrix, obj->rotation.y,
+      //   vec3(0.0f, 1.0f, 0.0f));
+
+      // obj->target_rotation_matrix = quat_cast(rotation_matrix);
+      // obj->rotation_factor = 1;
+    }
+
+    asset_catalog_->UpdateObjectPosition(obj);
+
+    if (c.obj2) {
+      cout << "Collision " << i << endl;
+      cout << "Obj1: " << c.obj1->name << " -> " << c.obj1->position << endl;
+      cout << "Obj2: " << c.obj2->name << " -> " << c.obj2->position << endl;
+      cout << "displacement_vector: " << c.displacement_vector  << endl;
+    }
+  }
+}
+
+// TODO: this should be calculated only once per frame.
+vector<BoundingSphere> GetBoneBoundingSpheres(shared_ptr<GameObject> obj) {
+  vector<BoundingSphere> result;
+  Mesh& parent_mesh = obj->GetAsset()->lod_meshes[0];
+  const Animation& animation = parent_mesh.animations[obj->active_animation];
+  for (shared_ptr<GameObject> c : obj->children) {
+    mat4 joint_transform = 
+      animation.keyframes[obj->frame].transforms[c->parent_bone_id];
+
+    vec3 offset = c->GetAsset()->bounding_sphere.center;
+    offset = vec3(obj->rotation_matrix * vec4(offset, 1.0));
+
+    BoundingSphere bone_bounding_sphere;
+    bone_bounding_sphere.center = obj->position + joint_transform * offset;
+    bone_bounding_sphere.radius = c->GetAsset()->bounding_sphere.radius;
+    result.push_back(bone_bounding_sphere);
+  }
+  return result;
+}
+
+bool CollisionResolver::CollideSphereSphere(const BoundingSphere& sphere1,
+  const BoundingSphere& sphere2, vec3* displacement_vector) {
+  *displacement_vector = sphere1.center - sphere2.center;
+
+  float total_radius = sphere1.radius + sphere2.radius;
+  float magnitude = length(*displacement_vector);
+  if (magnitude < total_radius) {
+    *displacement_vector = normalize(*displacement_vector) * 
+      (total_radius - magnitude);
+    return true;
+  }
+  return false;
+}
+
+bool CollisionResolver::CollideSphereSphere(shared_ptr<GameObject> obj1, 
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  BoundingSphere sphere1 = obj1->GetAsset()->bounding_sphere + obj1->position;
+  BoundingSphere sphere2 = obj2->GetAsset()->bounding_sphere + obj2->position;
+  return CollideSphereSphere(sphere1, sphere2, displacement_vector);
+}
+
+bool CollisionResolver::CollideSpherePerfect(const BoundingSphere& sphere, 
+  const vector<Polygon>& polygons, vec3 position, vec3* displacement_vector) {
+  for (auto& pol : polygons) {
+    if (IntersectBoundingSphereWithTriangle(sphere, pol + position, 
+      displacement_vector)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CollisionResolver::CollideSpherePerfect(shared_ptr<GameObject> obj1, 
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  BoundingSphere sphere = obj1->GetAsset()->bounding_sphere;
+  sphere.center += obj1->position;
+
+  bool collision = false;
+  for (auto& pol : obj2->GetAsset()->collision_hull) {
+    // TODO: also collide with triangle edges.
+    if (IntersectBoundingSphereWithTriangle(sphere, pol + obj2->position, 
+      displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj1, obj2, 
+        *displacement_vector, normalize(*displacement_vector));
+      collision = true;
+    }
+  }
+  return collision;
+}
+
+bool CollisionResolver::CollideSphereBones(const BoundingSphere& sphere, 
+  const vector<BoundingSphere>& bone_bounding_spheres, 
+  vec3* displacement_vector) {
+  for (const BoundingSphere& bone_bounding_sphere : bone_bounding_spheres) {
+    if (CollideSphereSphere(sphere, bone_bounding_sphere, 
+      displacement_vector)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CollisionResolver::CollideSphereBones(shared_ptr<GameObject> obj1, 
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  BoundingSphere sphere = obj1->GetAsset()->bounding_sphere;
+  sphere.center += obj1->position;
+
+  vector<BoundingSphere> bone_bounding_spheres = GetBoneBoundingSpheres(obj2);
+  return CollideSphereBones(sphere, bone_bounding_spheres, 
+    displacement_vector);
+}
+
+bool CollisionResolver::CollideBonesPerfect(shared_ptr<GameObject> obj1, 
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  // TODO: update bounding spheres outside this cycle.
+  vector<BoundingSphere> bounding_spheres = GetBoneBoundingSpheres(obj1);
+
+  for (const auto& sphere : bounding_spheres) {
+    for (auto& pol : obj2->GetAsset()->collision_hull) {
+      if (IntersectBoundingSphereWithTriangle(sphere, pol + obj2->position, 
+        displacement_vector)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool CollisionResolver::CollideQuickSpherePerfect(shared_ptr<GameObject> obj1, 
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  if (length(obj1->position - obj1->prev_position) < 0.01f) return false;
+
+  BoundingSphere big_sphere;
+  big_sphere.center = (obj1->prev_position + obj1->position) * 0.5f;
+  big_sphere.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
+    obj1->GetAsset()->bounding_sphere.radius;
+
+  BoundingSphere sphere2 = obj2->GetAsset()->bounding_sphere;
+  sphere2.center += obj2->position; 
+  if (!CollideSphereSphere(big_sphere, sphere2, displacement_vector)) {
+    return false;
+  }
+
+  BoundingSphere s = obj1->GetAsset()->bounding_sphere;
+  s.center += obj1->prev_position; 
+  const vector<Polygon>& polygons = obj2->GetAsset()->collision_hull;
+  for (auto& pol : polygons) {
+    float t; vec3 q;
+    if (IntersectMovingSphereTriangle(s,
+      obj1->position - obj1->prev_position, pol + obj2->position, t, q)) {
+      obj1->prev_position = q;
+      obj1->position = q;
+      *displacement_vector = pol.normals[0];
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CollisionResolver::CollideQuickSphereBones(shared_ptr<GameObject> obj1, 
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  BoundingSphere big_sphere;
+  big_sphere.center = (obj1->prev_position + obj1->position) * 0.5f;
+  big_sphere.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
+    obj1->GetAsset()->bounding_sphere.radius;
+
+  vector<BoundingSphere> bone_bounding_spheres = GetBoneBoundingSpheres(obj2);
+  if (!CollideSphereBones(big_sphere, bone_bounding_spheres, 
+    displacement_vector)) {
+    return false;
+  }
+
+  BoundingSphere s0;
+  s0.center = obj1->position;
+  s0.radius = obj1->GetAsset()->bounding_sphere.radius;
+  vec3 v0 = obj1->position - obj1->prev_position;
+  float t;
+
+  for (auto& s1 : bone_bounding_spheres) {
+    if (TestMovingSphereSphere(s0, s1, v0, vec3(0, 0, 0), t)) {
+      *displacement_vector = normalize(s0.center - s1.center);
+      obj1->position = obj1->prev_position + t * v0;
+      obj1->prev_position = obj1->position;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CollisionResolver::CollideObjects(shared_ptr<GameObject> obj1,
+  shared_ptr<GameObject> obj2, vec3* displacement_vector) {
+  if (obj1->updated_at < start_time_ && obj2->updated_at < start_time_) {
+    return false;
+  }
+
+  if (obj1->GetAsset()->physics_behavior == PHYSICS_FIXED &&
+      obj2->GetAsset()->physics_behavior == PHYSICS_FIXED) {
+    return false;
+  }
+
+  shared_ptr<Missile> missile = nullptr;
+  shared_ptr<GameObject> other = nullptr;
+  if (obj1->type == GAME_OBJ_MISSILE) {
+    missile = static_pointer_cast<Missile>(obj1);
+    other = obj2;
+  } else if (obj2->type == GAME_OBJ_MISSILE) {
+    missile = static_pointer_cast<Missile>(obj2);
+    other = obj1;
+  }
+
+  if (missile) {
+    if (missile->owner->id == other->id) {
+      return false;
+    }
+  }
+
+  num_objects_tested_++;
+
+  CollisionType col1 = obj1->GetAsset()->collision_type;
+  CollisionType col2 = obj2->GetAsset()->collision_type;
+
+  if (col1 == COL_SPHERE && col2 == COL_SPHERE) {
+    if (CollideSphereSphere(obj1, obj2, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj1, obj2, 
+        *displacement_vector, normalize(*displacement_vector));
+    } 
+    return false;
+  }
+
+  if (col1 == COL_SPHERE && col2 == COL_PERFECT) {
+    return CollideSpherePerfect(obj1, obj2, displacement_vector);
+  }
+
+  if (col1 == COL_PERFECT && col2 == COL_SPHERE) {
+    return CollideSpherePerfect(obj2, obj1, displacement_vector);
+  }
+
+  if (col1 == COL_SPHERE && col2 == COL_BONES) {
+    if (CollideSphereBones(obj1, obj2, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj1, obj2, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_BONES && col2 == COL_SPHERE) {
+    if (CollideSphereBones(obj2, obj1, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj2, obj1, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_BONES && col2 == COL_PERFECT) {
+    if (CollideBonesPerfect(obj1, obj2, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj1, obj2, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_PERFECT && col2 == COL_BONES) {
+    if (CollideBonesPerfect(obj2, obj1, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj2, obj1, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_QUICK_SPHERE && col2 == COL_PERFECT) {
+    if (CollideQuickSpherePerfect(obj1, obj2, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj1, obj2, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_PERFECT && col2 == COL_QUICK_SPHERE) {
+    if (CollideQuickSpherePerfect(obj2, obj1, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj2, obj1, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_QUICK_SPHERE && col2 == COL_BONES) {
+    if (CollideQuickSphereBones(obj1, obj2, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj1, obj2, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  if (col1 == COL_BONES && col2 == COL_QUICK_SPHERE) {
+    if (CollideQuickSphereBones(obj2, obj1, displacement_vector)) {
+      collisions_[num_collisions_++] = Collision(obj2, obj1, 
+        *displacement_vector, normalize(*displacement_vector));
+    }
+    return false;
+  }
+
+  return false;
+}
+
+void CollisionResolver::CollideWithTerrain(shared_ptr<GameObject> obj1) {
+  shared_ptr<Sector> outside = asset_catalog_->GetSectorByName("outside");
+  if (obj1->current_sector->id != outside->id) return;
+
+  vector<BoundingSphere> bounding_spheres;
+  CollisionType col_type = obj1->GetAsset()->collision_type;
+  if (col_type == COL_BONES) {
+    Mesh& parent_mesh = obj1->GetAsset()->lod_meshes[0];
+    const Animation& animation = 
+      parent_mesh.animations[obj1->active_animation];
+    for (shared_ptr<GameObject> c : obj1->children) {
+      int bone_id = c->parent_bone_id;
+      mat4 joint_transform = 
+        animation.keyframes[obj1->frame].transforms[bone_id];
+
+      BoundingSphere new_bounding_sphere;
+      vec3 offset = c->GetAsset()->bounding_sphere.center;
+      offset = vec3(obj1->rotation_matrix * vec4(offset, 1.0));
+      new_bounding_sphere.center = joint_transform * offset + obj1->position;
+      new_bounding_sphere.radius = c->GetAsset()->bounding_sphere.radius;
+      bounding_spheres.push_back(new_bounding_sphere);
+    }
+  } else if (col_type == COL_SPHERE || col_type == COL_QUICK_SPHERE) {
+    BoundingSphere sphere = obj1->GetAsset()->bounding_sphere;
+    sphere.center += obj1->position;
+    bounding_spheres.push_back(sphere);
+  }
+
+  vec3 normal;
+  float max_magnitude = 0;
+  for (auto& sphere : bounding_spheres) {
+    float height = GetTerrainHeight(vec2(sphere.center.x, sphere.center.z), 
+      &normal);
+    if (sphere.center.y - sphere.radius > height) continue;
+    float magnitude = height - (sphere.center.y - sphere.radius);
+    max_magnitude = std::max(max_magnitude, magnitude);
+  }
+
+  if (max_magnitude > 0.01f) {
+    collisions_[num_collisions_++] = 
+      Collision(obj1, nullptr, vec3(0.0f, max_magnitude, 0.0f), normal);
+  }
+}
+
+void CollisionResolver::CollideWithTerrain(shared_ptr<OctreeNode> octree_node) {
+  if (!octree_node) return;
+
+  for (auto& [id, obj] : octree_node->objects) {
+    if (!IsCollidable(obj)) continue;
+    if (obj->GetAsset()->collision_type == COL_PERFECT) continue;
+    if (obj->GetAsset()->physics_behavior == PHYSICS_FIXED) continue;
+    CollideWithTerrain(obj);
   }
 
   for (int i = 0; i < 8; i++) {
-    GetPotentiallyCollidingObjects(player_pos, octree_node->children[i], 
-      objects);
+    CollideWithTerrain(octree_node->children[i]);
   }
+}
 
-  for (shared_ptr<GameObject> obj : octree_node->objects) {
-    if (obj->type != GAME_OBJ_DEFAULT) {
-      continue;
+void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node, 
+  vector<shared_ptr<GameObject>> objs) {
+  if (!octree_node || octree_node->updated_at < start_time_) return;
+
+  for (auto [id, obj] : octree_node->objects) {
+    if (!IsCollidable(obj)) continue;
+
+    for (int i = 0; i < objs.size(); i++) {
+      shared_ptr<GameObject> obj2 = objs[i];
+      if (obj->id == obj2->id) continue;
+      if (!IsCollidable(obj2)) continue;
+       
+      vec3 displacement_vector;
+      CollideObjects(obj, obj2, &displacement_vector);
     }
-    objects.push_back(obj);
+    objs.push_back(obj);
   }
-
-  // objects.insert(objects.end(), octree_node->objects.begin(), 
-  //   octree_node->objects.end());
+  
+  for (int i = 0; i < 8; i++) {
+    FindCollisions(octree_node->children[i], objs);
+  }
 }
 
 float CollisionResolver::GetTerrainHeight(vec2 pos, vec3* normal) {
@@ -69,375 +549,5 @@ float CollisionResolver::GetTerrainHeight(vec2 pos, vec3* normal) {
   } else {
     tile_v = vec2(1.0f) - tile_v; 
     return h[2] + tile_v.x * (h[1] - h[2]) + tile_v.y * (h[3] - h[2]);
-  }
-}
-
-void CollisionResolver::CollideWithTerrain(shared_ptr<GameObject> obj) {
-  vec3 normal;
-  float height = GetTerrainHeight(vec2(obj->position.x, obj->position.z), 
-    &normal);
-
-  if (obj->position.y < height) {
-    vec3 pos = obj->position;
-    pos.y = height;
-    obj->position = pos;
-    vec3 speed = obj->speed;
-    if (obj->speed.y < 0) speed.y = 0.0f;
-    obj->speed = speed;
-
-    float angle = acos(dot(vec3(0, 1.0, 0), normal));
-    vec3 tangent = normalize(cross(vec3(0, 1.0, 0), normal));
-    mat4 rotation_matrix = rotate(mat4(1.0), angle, tangent);
-    obj->rotation_matrix = rotate(rotation_matrix, obj->rotation.y,
-      vec3(0.0f, 1.0f, 0.0f));
-  }
-
-  asset_catalog_->UpdateObjectPosition(obj);
-}
-
-// TODO: debug magic missile and spider.
-bool CollisionResolver::CollideWithObject(const BoundingSphere& bounding_sphere,
-  shared_ptr<GameObject> obj, vec3* displacement_vector) {
-  bool collision = false;
-
-  // Collide bones.
-  if (!obj->children.empty()) {
-    for (auto& c : obj->children) {
-      Mesh& parent_mesh = obj->asset->lod_meshes[0];
-      const Animation& animation = parent_mesh.animations[obj->active_animation];
-      for (shared_ptr<GameObject> c : obj->children) {
-        int bone_id = c->parent_bone_id;
-        mat4 joint_transform = animation.keyframes[obj->frame].transforms[bone_id];
-
-        BoundingSphere bone_bounding_sphere;
-        vec3 offset = c->bounding_sphere.center - obj->position;
-        offset = vec3(obj->rotation_matrix * vec4(offset, 1.0));
-        bone_bounding_sphere.center = joint_transform * offset + obj->position;
-        bone_bounding_sphere.radius = c->bounding_sphere.radius;
-
-        // TODO: create sphere collide function.
-        float len_col = length(bone_bounding_sphere.center - 
-          bounding_sphere.center);
-        float radii = bone_bounding_sphere.radius + bounding_sphere.radius;
-        if (len_col < radii) {
-          collision = true;
-          float magnitude = radii - len_col;
-          *displacement_vector = magnitude * normalize(bounding_sphere.center - 
-            bone_bounding_sphere.center);
-        }
-      }
-    }
-    return collision;
-  }
-
-  if (obj->asset->collision_type != COL_PERFECT) {
-    return false;
-  }
-
-  for (auto& pol : obj->asset->lod_meshes[0].polygons) {
-    vec3 new_displacement_vector;
-    if (IntersectBoundingSphereWithTriangle(bounding_sphere, 
-      pol + obj->position, &new_displacement_vector)) {
-      if (length(new_displacement_vector) < length(*displacement_vector)) {
-        *displacement_vector = new_displacement_vector;
-        collision = true;
-      }
-    }
-  }
-  return collision;
-}
-
-// ===================
-// PLAYER
-// ===================
-
-void CollisionResolver::CollidePlayerWithObjects(vec3* player_pos, 
-  vec3* player_speed, bool* can_jump, const vector<shared_ptr<GameObject>>& objs
-) {
-  bool collision = true;
-  for (int i = 0; i < 5 && collision; i++) {
-    BoundingSphere player_bounding_sphere(*player_pos, 1.5f);
-
-    collision = false;
-    vec3 displacement_vector = vec3(99999.9f, 99999.9f, 99999.9f);
-    for (auto& obj : objs) {
-      if (CollideWithObject(player_bounding_sphere, obj, &displacement_vector)) {
-        collision = true;
-      }
-    }
-   
-    if (collision) {
-      vec3 collision_vector = normalize(displacement_vector);
-      *player_pos += displacement_vector;
-      *player_speed += abs(dot(*player_speed, collision_vector)) * collision_vector;
-      if (dot(collision_vector, vec3(0, 1, 0)) > 0.5f) {
-        *can_jump = true;
-      }
-    }
-  }
-}
-
-void CollisionResolver::CollidePlayerWithSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
-  vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump) {
-  shared_ptr<Sector> sector = stabbing_tree_node->sector;
-  vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyCollidingObjects(*player_pos, sector->octree, objs);
-
-  // Get objects from adjacent sectors.
-  // TODO: ignore sectors where the object is not close to the portal.
-  for (auto& node : stabbing_tree_node->children) {
-    GetPotentiallyCollidingObjects(*player_pos, node->sector->octree, objs);
-  }
-
-  CollidePlayerWithObjects(player_pos, player_speed, can_jump, objs);
-}
-
-void CollisionResolver::CollidePlayer(vec3* player_pos, vec3 old_player_pos, 
-  vec3* player_speed, bool* can_jump) {
-  shared_ptr<Sector> sector = asset_catalog_->GetSector(*player_pos);
-  CollidePlayerWithSector(sector->stabbing_tree, player_pos, old_player_pos, 
-    player_speed, can_jump);
-
-  // Test collision with terrain.
-  if (sector->name == "outside") {
-    vec3 normal;
-    float height = GetTerrainHeight(vec2(player_pos->x, player_pos->z), 
-      &normal);
-    float PLAYER_HEIGHT = 0.75f;
-    height += PLAYER_HEIGHT;
-    if (player_pos->y - PLAYER_HEIGHT < height) {
-      vec3 pos = *player_pos;
-      pos.y = height + PLAYER_HEIGHT;
-      *player_pos = pos;
-      vec3 speed = *player_speed;
-      if (player_speed->y < 0) speed.y = 0.0f;
-      *player_speed = speed;
-      *can_jump = true;
-    }
-  }
-}
-
-// ===================
-// SPIDER
-// ===================
-
-void CollisionResolver::CollideSpiderWithObjects(
-  shared_ptr<GameObject> spider,
-  const vector<shared_ptr<GameObject>>& objs) {
-  bool collision = true;
-  for (int i = 0; i < 5 && collision; i++) {
-    vector<BoundingSphere> bounding_spheres;
-
-    Mesh& parent_mesh = spider->asset->lod_meshes[0];
-    const Animation& animation = parent_mesh.animations[spider->active_animation];
-    for (shared_ptr<GameObject> c : spider->children) {
-      int bone_id = c->parent_bone_id;
-      mat4 joint_transform = animation.keyframes[spider->frame].transforms[bone_id];
-
-      BoundingSphere new_bounding_sphere;
-      vec3 offset = c->bounding_sphere.center - spider->position;
-      offset = vec3(spider->rotation_matrix * vec4(offset, 1.0));
-      new_bounding_sphere.center = joint_transform * offset + spider->position;
-      new_bounding_sphere.radius = c->bounding_sphere.radius;
-      bounding_spheres.push_back(new_bounding_sphere);
-    }
-
-    collision = false;
-    vec3 displacement_vector = vec3(99999.9f, 99999.9f, 99999.9f);
-    for (auto& obj : objs) {
-      if (obj->id == spider->id) continue;
-      for (const BoundingSphere& bounding_sphere : bounding_spheres) {
-        if (CollideWithObject(bounding_sphere, obj, &displacement_vector)) {
-          collision = true;
-        }
-      }
-    }
-   
-    if (collision) {
-      vec3 collision_vector = normalize(displacement_vector);
-      spider->position += displacement_vector;
-      spider->speed += abs(dot(spider->speed, collision_vector)) * collision_vector;
-      cout << "spider_pos after collision: " << spider->position << endl;
-
-      float angle = acos(dot(vec3(0, 1.0, 0), collision_vector));
-      if (angle > 0.25f) {
-        vec3 tangent = normalize(cross(vec3(0, 1.0, 0), collision_vector));
-        mat4 rotation_matrix = rotate(mat4(1.0), angle, tangent);
-        spider->rotation_matrix = rotate(rotation_matrix, spider->rotation.y,
-          vec3(0.0f, 1.0f, 0.0f));
-      } else {
-        spider->rotation_matrix = rotate(mat4(1.0), spider->rotation.y,
-          vec3(0.0f, 1.0f, 0.0f));
-      }
-
-      asset_catalog_->UpdateObjectPosition(spider);
-    }
-  }
-}
-
-void CollisionResolver::CollideSpider() {
-  shared_ptr<GameObject> spider = asset_catalog_->GetObjectByName("spider-001");
-  CollideWithTerrain(spider);
-
-  vector<shared_ptr<GameObject>> objs;
-  // TODO: collide with all sectors.
-  GetPotentiallyCollidingObjects(spider->position, 
-    asset_catalog_->GetSectorByName("outside")->octree, objs);
-
-  CollideSpiderWithObjects(spider, objs);
-}
-
-// ===================
-// MAGIC MISSILE
-// ===================
-
-shared_ptr<GameObject> CollisionResolver::CollideMagicMissileWithObjects(const MagicMissile& mm,
-  const vector<shared_ptr<GameObject>>& objs, vec3* displacement_vector) {
-  BoundingSphere bounding_sphere(mm.position, 0.3f);
-  shared_ptr<GameObject> mm_obj = mm.objects[0];
-
-  *displacement_vector = vec3(99999.9f, 99999.9f, 99999.9f);
-  for (auto& obj : objs) {
-    if (obj->id == mm_obj->id) continue;
-    if (CollideWithObject(bounding_sphere, obj, displacement_vector)) {
-      return obj;
-    }
-  }
-  return nullptr;
-}
-
-void CollisionResolver::CollideMagicMissile() {
-  for (int i = 0; i < 10; i++) {
-    MagicMissile& mm = magic_missiles_[i];
-    if (--mm.life <= 0) continue;
-    shared_ptr<GameObject> obj = mm.objects[mm.frame];
-
-    bool collision = false;
-    vec3 collision_normal = vec3(0, 0, 0);
-    shared_ptr<GameObject> colliding_obj = nullptr;
-
-    float speed = 3.0f;
-    float step = speed / 10.0f;
-    for (int j = 0; j < 10; j++) {
-      // TODO: every object that moves should do that.
-      mm.position += mm.direction * step;
-      obj->position = mm.position;
-
-      // if (mm.owner) { 
-      //   if (length(mm.position - camera.position) < mm_radius) {
-      //     asset_catalog_->GetGameData()->life -= 10;
-      //     mm.life = 0;
-      //   }
-      //   continue;
-      // }
-
-      vector<shared_ptr<GameObject>> objs;
-      shared_ptr<Sector> sector = asset_catalog_->GetSector(mm.position);
-      GetPotentiallyCollidingObjects(mm.position, sector->octree, objs);
-      // Get objects from adjacent sectors.
-      // TODO: ignore sectors where the object is not close to the portal.
-      for (auto& node : sector->stabbing_tree->children) {
-        GetPotentiallyCollidingObjects(mm.position, node->sector->octree, objs);
-      }
-
-      if (sector->name == "outside") {
-         float height = GetTerrainHeight(vec2(mm.position.x, mm.position.z), 
-           &collision_normal);
-         if (mm.position.y <= height) {
-           collision = true;
-           cout << "Collided with terrain" << endl;
-         }
-      }
-
-      if (!collision) {
-        if ((colliding_obj = CollideMagicMissileWithObjects(mm, objs, &collision_normal))) {
-          collision = true;
-        }
-      }
-
-      // Resolve collision.
-      if (!collision) continue;
-
-      if (colliding_obj && colliding_obj->name == "spider-001") {
-        cout << mm.objects[0] << " collided with spider " << endl;
-        colliding_obj->life -= 10;
-        asset_catalog_->CreateParticleEffect(8, mm.position, collision_normal, 
-          vec3(1.0, 0.0, 0.0), -1.0, 40.0f, 3.0f);
-      } else {
-        cout << "Creating particle effect: " << collision_normal << endl;
-        asset_catalog_->CreateParticleEffect(8, mm.position, collision_normal, 
-          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
-      }
-
-      mm.life = -1;
-      break;
-    }
-  }
-}
-
-// ========================
-// Move this to assets
-// ========================
-
-void CollisionResolver::InitMagicMissile() {
-  for (int i = 0; i < 10; i++) {
-    MagicMissile& mm = magic_missiles_[i];
-    shared_ptr<GameAsset> asset0 = asset_catalog_->GetAssetByName("magic-missile-000");
-    mm.objects[0] = asset_catalog_->CreateGameObjFromAsset(asset0);
-  }
-}
-
-void CollisionResolver::CastMagicMissile(const Camera& camera) {
-  // TODO: this should probably go to main.
-  int first_unused_index = 0;
-  for (int i = 0; i < 10; i++) {
-    if (magic_missiles_[i].life <= 0) {
-      first_unused_index = i;
-      break;
-    }
-  }
-
-  MagicMissile& mm = magic_missiles_[first_unused_index];
-  mm.frame = 0;
-  mm.life = 30000;
-  mm.owner = nullptr;
-
-  vec3 right = normalize(cross(camera.up, camera.direction));
-  mm.position = camera.position + camera.direction * 0.5f + right * -0.81f +  
-    camera.up * -0.556f;
-
-  vec3 p2 = camera.position + camera.direction * 3000.0f;
-  mm.direction = normalize(p2 - mm.position);
-
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    camera.rotation.y + 4.70f,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    camera.rotation.x,
-    vec3(0.0f, 0.0f, 1.0f)
-  );
-  mm.rotation_matrix = rotation_matrix;
-  for (int i = 0; i < 1; i++) {
-    mm.objects[i]->rotation_matrix = rotation_matrix;
-  }
-}
-
-void CollisionResolver::UpdateMagicMissile(const Camera& camera) {
-  for (int i = 0; i < 10; i++) {
-    // TODO: magic missile should be a missile, which should be a game object.
-    // TODO: missile movement should happen in physics.
-    MagicMissile& mm = magic_missiles_[i];
-    for (int j = 0; j < 1; j++) {
-      mm.objects[j]->draw = false;
-    }
-    if (--mm.life <= 0) continue;
-
-    shared_ptr<GameObject> obj = mm.objects[mm.frame];
-    obj->draw = true;
-    obj->position = mm.position;
-    asset_catalog_->UpdateObjectPosition(obj);
   }
 }

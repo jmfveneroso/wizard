@@ -21,6 +21,7 @@
 #include "text_editor.hpp"
 #include "collision_resolver.hpp"
 #include "ai.hpp"
+#include "physics.hpp"
 
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
@@ -30,7 +31,6 @@
 // #define PLAYER_SPEED 0.3f
 // #define PLAYER_HEIGHT 1.5
 #define PLAYER_HEIGHT 0.75
-#define GRAVITY 0.016
 // #define JUMP_FORCE 30.0f
 #define JUMP_FORCE 0.3f
 #define PLAYER_START_POSITION vec3(10000, 220, 10000)
@@ -46,6 +46,7 @@ shared_ptr<TextEditor> text_editor = nullptr;
 shared_ptr<AssetCatalog> asset_catalog = nullptr;
 shared_ptr<CollisionResolver> collision_resolver = nullptr;
 shared_ptr<AI> ai = nullptr;
+shared_ptr<Physics> physics = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -53,24 +54,6 @@ void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
 
 void PressKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   text_editor->PressKeyCallback(key, scancode, action, mods);
-}
-
-void UpdateForces() {
-  shared_ptr<Player> p = asset_catalog->GetPlayer();
-  glm::vec3 prev_pos = p->position;
-
-  p->speed += glm::vec3(0, -GRAVITY, 0);
-
-  // Friction.
-  p->speed.x *= 0.9;
-  p->speed.y *= 0.99;
-  p->speed.z *= 0.9;
-
-  vec3 old_player_pos = p->position;
-  p->position += p->speed;
-}
-
-void UpdateParticleForces() {
 }
 
 void RunCommand(string command) {
@@ -111,6 +94,8 @@ void RunCommand(string command) {
 bool ProcessGameInput() {
   static double last_time = glfwGetTime();
   double current_time = glfwGetTime();
+  asset_catalog->UpdateFrameStart();
+  asset_catalog->UpdateMissiles();
 
   --throttle_counter;
   GLFWwindow* window = renderer->window();
@@ -123,21 +108,21 @@ bool ProcessGameInput() {
     return true;
   } else {
     vec3 direction(
-      cos(player->v_angle) * sin(player->h_angle), 
-      sin(player->v_angle),
-      cos(player->v_angle) * cos(player->h_angle)
+      cos(player->rotation.x) * sin(player->rotation.y), 
+      sin(player->rotation.x),
+      cos(player->rotation.x) * cos(player->rotation.y)
     );
     
     vec3 right = glm::vec3(
-      sin(player->h_angle - 3.14f/2.0f), 
+      sin(player->rotation.y - 3.14f/2.0f), 
       0,
-      cos(player->h_angle - 3.14f/2.0f)
+      cos(player->rotation.y - 3.14f/2.0f)
     );
 
     vec3 front = glm::vec3(
-      cos(player->v_angle) * sin(player->h_angle), 
+      cos(player->rotation.x) * sin(player->rotation.y), 
       0,
-      cos(player->v_angle) * cos(player->h_angle)
+      cos(player->rotation.x) * cos(player->rotation.y)
     );
     
     glm::vec3 up = glm::cross(right, direction);
@@ -193,15 +178,15 @@ bool ProcessGameInput() {
 
     // Change orientation.
     float mouse_sensitivity = 0.003f;
-    player->h_angle += mouse_sensitivity * float(-x_pos);
-    player->v_angle += mouse_sensitivity * float(-y_pos);
-    if (player->v_angle < -1.57f) player->v_angle = -1.57f;
-    if (player->v_angle >  1.57f) player->v_angle = +1.57f;
+    player->rotation.y += mouse_sensitivity * float(-x_pos);
+    player->rotation.x += mouse_sensitivity * float(-y_pos);
+    if (player->rotation.x < -1.57f) player->rotation.x = -1.57f;
+    if (player->rotation.x >  1.57f) player->rotation.x = +1.57f;
     last_time = current_time;
 
     Camera c = Camera(player->position + vec3(0, 0.75, 0), direction, up);
-    c.rotation.x = player->v_angle;
-    c.rotation.y = player->h_angle;
+    c.rotation.x = player->rotation.x;
+    c.rotation.y = player->rotation.y;
 
     renderer->SetCamera(c);
 
@@ -220,7 +205,7 @@ bool ProcessGameInput() {
       animation_frame  = 60;
       asset_catalog->CreateChargeMagicMissileEffect();
     } else if (animation_frame == 20) {
-      collision_resolver->CastMagicMissile(c);
+      asset_catalog->CastMagicMissile(c);
     }
 
     if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
@@ -234,19 +219,11 @@ bool ProcessGameInput() {
       debounce = 20;
     }
 
-    vec3 old_player_pos = player->position;
-
-    UpdateForces();
-    UpdateParticleForces();
+    ai->RunSpiderAI(c);
+    physics->Run();
     asset_catalog->UpdateParticles();
 
-    ai->RunSpiderAI(c);
-    ai->UpdateSpiderForces();
-    collision_resolver->UpdateMagicMissile(c);
-
-    collision_resolver->Collide(&player->position, old_player_pos, 
-      &player->speed, &player->can_jump);
-
+    collision_resolver->Collide();
     return false;
   }
 }
@@ -263,12 +240,14 @@ int main() {
   shared_ptr<Draw2D> draw_2d = make_shared<Draw2D>(
     asset_catalog->GetShader("text"), 
     asset_catalog->GetShader("polygon"));
+
   renderer->set_asset_catalog(asset_catalog);
   renderer->set_draw_2d(draw_2d);
   renderer->Init();
 
+  physics = make_shared<Physics>(asset_catalog);
+
   collision_resolver = make_shared<CollisionResolver>(asset_catalog);
-  collision_resolver->InitMagicMissile();
 
   ai = make_shared<AI>(asset_catalog);
   ai->InitSpider();

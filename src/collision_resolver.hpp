@@ -33,54 +33,69 @@
 using namespace std;
 using namespace glm;
 
-struct CollisionResolution {
+struct Collision {
+  shared_ptr<GameObject> obj1;
+  shared_ptr<GameObject> obj2;
   vec3 displacement_vector;
+  vec3 normal;
+  Collision() {}
+  Collision(shared_ptr<GameObject> obj1, shared_ptr<GameObject> obj2,
+    vec3 displacement_vector, vec3 normal) : obj1(obj1), obj2(obj2), 
+    displacement_vector(displacement_vector), normal(normal) {}
 };
 
 class CollisionResolver {
+  double start_time_ = 0;
+  int num_collisions_ = 0;
+  int num_objects_tested_ = 0;
+  vector<Collision> collisions_ = vector<Collision>(1000);
   shared_ptr<AssetCatalog> asset_catalog_;
 
-  void GetPotentiallyCollidingObjects(const vec3& player_pos, 
-    shared_ptr<OctreeNode> octree_node,
-    vector<shared_ptr<GameObject>>& objects);
-
-  void CollidePlayerWithSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
-    vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
-
-  // Magic Missile, Spider code.
-  MagicMissile magic_missiles_[10];
+  void GetPotentiallyCollidingObjects(const vec3& pos, 
+    shared_ptr<GameObject> colliding_obj,
+    vector<shared_ptr<GameObject>>& objs);
 
   float GetTerrainHeight(vec2 pos, vec3* normal);
+
+  // Sphere collision.
+  bool CollideSphereSphere(const BoundingSphere& sphere1,
+    const BoundingSphere& sphere2, vec3* displacement_vector);
+  bool CollideSphereSphere(shared_ptr<GameObject> obj1, 
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+  bool CollideSpherePerfect(const BoundingSphere& sphere, 
+    const vector<Polygon>& polygons, vec3 position, vec3* displacement_vector);
+  bool CollideSpherePerfect(shared_ptr<GameObject> obj1, 
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+  bool CollideSphereBones(const BoundingSphere& sphere, 
+    const vector<BoundingSphere>& bone_bounding_spheres, 
+    vec3* displacement_vector);
+  bool CollideSphereBones(shared_ptr<GameObject> obj1, 
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+
+  // Quick sphere collision.
+  bool CollideQuickSpherePerfect(shared_ptr<GameObject> obj1, 
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+  bool CollideQuickSphereBones(shared_ptr<GameObject> obj1, 
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+
+  // Bones collision.
+  bool CollideBonesPerfect(shared_ptr<GameObject> obj1, 
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+
+  // TODO: this should be improved for terrain with high steepness.
   void CollideWithTerrain(shared_ptr<GameObject> obj);
-  bool CollideWithObject(const BoundingSphere& bounding_sphere,
-    shared_ptr<GameObject> obj, vec3* displacement_vector);
+  void CollideWithTerrain(shared_ptr<OctreeNode> octree_node);
 
-  void CollidePlayerWithObjects(vec3* player_pos, vec3* player_speed, 
-    bool* can_jump, const vector<shared_ptr<GameObject>>& objs);
-  void CollidePlayer(vec3* player_pos, vec3 old_player_pos, 
-    vec3* player_speed, bool* can_jump);
-
-  void CollideSpiderWithObjects(
-    shared_ptr<GameObject> spider,
-    const vector<shared_ptr<GameObject>>& objs);
-  void CollideSpider();
-
-  shared_ptr<GameObject> CollideMagicMissileWithObjects(const MagicMissile& mm,
-    const vector<shared_ptr<GameObject>>& objs, vec3* displacement_vector);
-  void CollideMagicMissileWithObjects(const MagicMissile& mm,
-    const vector<shared_ptr<GameObject>>& objs);
-  void CollideMagicMissile();
+  void ResolveCollisions();
+  bool CollideObjects(shared_ptr<GameObject> obj1,
+    shared_ptr<GameObject> obj2, vec3* displacement_vector);
+  void FindCollisions(shared_ptr<OctreeNode> octree_node, 
+    vector<shared_ptr<GameObject>> objs);
 
  public:
   CollisionResolver(shared_ptr<AssetCatalog> asset_catalog);
 
-  void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, 
-    bool* can_jump);
-
-  void InitMagicMissile();
-  void ChargeMagicMissile(const Camera& camera);
-  void CastMagicMissile(const Camera& camera);
-  void UpdateMagicMissile(const Camera& camera);
+  void Collide();
 };
 
 #endif // __UTIL_HPP__

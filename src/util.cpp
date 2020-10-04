@@ -219,6 +219,11 @@ ostream& operator<<(ostream& os, const Edge& e) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const quat& q) {
+  os << q[0] << " " << q[1] << " " << q[2] << " " << q[3];
+  return os;
+}
+
 Polygon::Polygon(const Polygon &p2) {
   this->vertices = p2.vertices;
   this->normals = p2.normals;
@@ -249,6 +254,22 @@ Polygon operator+(const Polygon& poly, const vec3& v) {
   return p;
 }
 
+vector<Polygon> operator+(const vector<Polygon>& polys, const vec3& v) {
+  vector<Polygon> result;
+  for (auto& poly : polys) {
+    result.push_back(poly + v);
+  }
+  return result;
+}
+
+BoundingSphere operator+(const BoundingSphere& sphere, const vec3& v) {
+  return BoundingSphere(sphere.center + v, sphere.radius);
+}
+
+BoundingSphere operator-(const BoundingSphere& sphere, const vec3& v) {
+  return BoundingSphere(sphere.center - v, sphere.radius);
+}
+
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon) {
   return polygon.vertices;
 }
@@ -273,6 +294,8 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
 
   glGenVertexArrays(1, &m.vao_);
   glBindVertexArray(m.vao_);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
@@ -473,4 +496,71 @@ Mesh CreateJoint(vec3 start, vec3 end) {
   for (int i = 0; i < 24; i++) { indices[i] = i; }
 
   return CreateMesh(0, vertices, uvs, indices);
+}
+
+quat RotationBetweenVectors(vec3 start, vec3 dest) {
+  start = normalize(start);
+  dest = normalize(dest);
+  
+  vec3 rotation_axis;
+  float cos_theta = dot(start, dest);
+  if (cos_theta < -1 + 0.001f){
+    // Special case when vectors in opposite directions:
+    //   - There is no "ideal" rotation axis
+    //   - So guess one; any will do as long as it's perpendicular to start
+    rotation_axis = cross(vec3(0.0f, 0.0f, 1.0f), start);
+    if (length2(rotation_axis) < 0.01) { 
+      // Bad luck, they were parallel, try again!
+      rotation_axis = cross(vec3(1.0f, 0.0f, 0.0f), start);
+    }
+    
+    rotation_axis = normalize(rotation_axis);
+    return angleAxis(glm::radians(180.0f), rotation_axis);
+  }
+  
+  rotation_axis = cross(start, dest);
+  float s = sqrt( (1 + cos_theta)*2 );
+  float invs = 1 / s;
+  return quat(
+    s * 0.5f, 
+    rotation_axis.x * invs,
+    rotation_axis.y * invs,
+    rotation_axis.z * invs
+  );
+}
+
+quat RotateTowards(quat q1, quat q2, float max_angle) {
+  if (max_angle < 0.001f) {
+    // No rotation allowed. Prevent dividing by 0 later.
+    return q1;
+  }
+  
+  float cos_theta = dot(q1, q2);
+  
+  // q1 and q2 are already equal.
+  // Force q2 just to be sure
+  if (cos_theta > 0.9999f) {
+    return q2;
+  }
+  
+  // Avoid taking the long path around the sphere
+  if (cos_theta < 0){
+    q1 = q1 * -1.0f;
+    cos_theta *= -1.0f;
+  }
+  
+  float angle = acos(cos_theta);
+  
+  // If there is only a 2&deg; difference, and we are allowed 5&deg;,
+  // then we arrived.
+  if (angle < max_angle){
+    return q2;
+  }
+  
+  float ft = max_angle / angle;
+  angle = max_angle;
+  
+  quat res = (sin((1.0f - ft) * angle) * q1 + sin(ft * angle) * q2) / sin(angle);
+  res = normalize(res);
+  return res;
 }

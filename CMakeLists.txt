@@ -60,6 +60,7 @@ set(
   src/text_editor.cpp 
   src/collision_resolver.cpp 
   src/ai.cpp 
+  src/physics.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

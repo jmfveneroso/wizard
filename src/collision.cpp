@@ -299,7 +299,6 @@ OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
     }
   }
 
-  cout << "Edges: " << edges.size() << endl;
   if (edges.size() != 8) {
     throw runtime_error("Number of edges is not 7");
   }
@@ -438,10 +437,19 @@ bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere,
   vec3 closest_point = ClosestPtPointTriangle(pos, a, b, c, &inside);
 
   const vec3& v = closest_point - bounding_sphere.center;
-  if (length(v) > r || dot(pos - a, normal) < 0) {
+  if (length(v) > r) {
+  // if (length(v) > r || dot(pos - a, normal) < 0) {
     *displacement_vector = vec3(0, 0, 0);
     return false;
   }
+
+  float magnitude = r - length(v);
+  *displacement_vector = magnitude * -normalize(v);
+
+  // float magnitude = r + dot(v, normal) + 0.001f;
+  // *displacement_vector = magnitude * normal;
+  return true;
+  
 
   // // Collide with edge.
   // if (!inside) {
@@ -472,9 +480,9 @@ bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere,
   //   }
   // }
 
-  float magnitude = r + dot(v, normal) + 0.001f;
-  *displacement_vector = magnitude * normal;
-  return true;
+  // float magnitude = r + dot(v, normal) + 0.001f;
+  // *displacement_vector = magnitude * normal;
+  // return true;
 }
 
 bool IntersectWithTriangle(const Polygon& polygon, 
@@ -533,3 +541,123 @@ bool IntersectWithTriangle(const Polygon& polygon,
   return true;
 }
 
+bool CollideSphereFrustum(const BoundingSphere& bounding_sphere, 
+  const vec4 planes[], const vec3& player_pos) {
+  for (int i = 0; i < 6; i++ ) {
+    const vec4& plane = planes[i];
+    float dist = dot(bounding_sphere.center - player_pos, vec3(plane));
+    if (dist + plane.w + bounding_sphere.radius < 0) { // Completely outside.
+      return false;
+    }
+  }
+  return true;
+}
+
+bool IsInConvexHull(const BoundingSphere& bounding_sphere, vector<Polygon> polygons) {
+  for (const Polygon& poly : polygons) {
+    const vec3& plane_point = poly.vertices[0];
+    const vec3& normal = poly.normals[0];
+    float d = dot(plane_point, normal);
+
+    // Is behind plane.
+    if (!dot(bounding_sphere.center, normal) - d - bounding_sphere.radius < 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Intersects ray r = p + td, |d| = 1, with sphere s and, if intersecting,
+// returns t value of intersection and intersection point q
+bool IntersectRaySphere(vec3 p, vec3 d, BoundingSphere s, float &t, vec3 &q) {
+  vec3 m = p - s.center;
+  float b = dot(m, d);
+  float c = dot(m, m) - s.radius * s.radius;
+
+  // Exit if r's origin outside s (c > 0) and r pointing away from s (b > 0).
+  if (c > 0.0f && b > 0.0f) return false;
+
+  // A negative discriminant corresponds to ray missing sphere.
+  float discr = b * b - c;
+  if (discr < 0.0f) return false;
+
+  // Ray now found to intersect sphere, compute smallest t value of 
+  // intersection.
+  t = -b - sqrt(discr);
+
+  // If t is negative, ray started inside sphere so clamp t to zero.
+  if (t < 0.0f) t = 0.0f;
+  q = p + t * d;
+  return true;
+}
+
+bool TestMovingSphereSphere(BoundingSphere s0, BoundingSphere s1, vec3 v0, 
+  vec3 v1, float &t) {
+  // Expand sphere s1 by the radius of s0
+  s1.radius += s0.radius;
+
+  // Subtract movement of s1 from both s0 and s1, making s1 stationary
+  vec3 v = v0 - v1;
+
+  // Can now test directed segment s = s0.c + tv, v = (v0-v1)/||v0-v1|| against
+  // the expanded sphere for intersection
+  vec3 q;
+  float vlen = length(v);
+  if (IntersectRaySphere(s0.center, v / vlen, s1, t, q)) {
+    return t <= vlen;
+  }
+  return false;
+}
+
+// Intersect sphere s with movement vector v with plane p. If intersecting
+// return time t of collision and point q at which sphere hits plane.
+bool IntersectMovingSpherePlane(BoundingSphere s, vec3 v, Plane p, float &t, 
+  vec3 &q) {
+  // Compute distance of sphere center to plane
+  float dist = dot(p.normal, s.center) - p.d;
+  if (abs(dist) <= s.radius) {
+    // The sphere is already overlapping the plane. Set time of
+    // intersection to zero and q to sphere center
+    t = 0.0f;
+    q = s.center;
+    return true;
+  } else {
+    float denom = dot(p.normal, v);
+    if (denom * dist >= 0.0f) {
+      // No intersection as sphere moving parallel to or away from plane
+      return false;
+    } else {
+      // Sphere is moving towards the plane
+      // Use +r in computations if sphere in front of plane, else -r
+      float r = dist > 0.0f ? s.radius : -s.radius;
+      t = (r - dist) / denom;
+      q = s.center + t * v - r * p.normal;
+      if (t >= 0 && t <= 1) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool IntersectMovingSphereTriangle(BoundingSphere s, vec3 v, 
+  const Polygon& polygon, float &t, vec3 &q) {
+  const vec3& normal = polygon.normals[0];
+  float d = dot(polygon.vertices[0], normal);
+
+  if (!IntersectMovingSpherePlane(s, v, Plane(normal, d), t, q)) {
+    return false;
+  }
+
+  const vec3& a = polygon.vertices[0];
+  const vec3& b = polygon.vertices[1];
+  const vec3& c = polygon.vertices[2];
+  bool inside;
+  vec3 closest_point = ClosestPtPointTriangle(q, a, b, c, &inside);
+  if (inside) {
+    q = closest_point -s.radius * normalize(v);
+    return true;
+  }
+
+  return IntersectRaySphere(closest_point, -normalize(v), s, t, q);
+}

@@ -24,10 +24,11 @@ CollisionType StrToCollisionType(const std::string& s) {
   static unordered_map<string, CollisionType> str_to_col_type ({
     { "undefined", COL_UNDEFINED },
     { "perfect", COL_PERFECT },
-    { "aabb", COL_AABB },
-    { "obb", COL_OBB },
     { "sphere", COL_SPHERE },
+    { "convex-hull", COL_CONVEX_HULL},
+    { "quick-sphere", COL_QUICK_SPHERE },
     { "obb-tree", COL_OBB_TREE },
+    { "bones", COL_BONES },
     { "none", COL_NONE }
   });
   return str_to_col_type[s];
@@ -41,6 +42,18 @@ ParticleBehavior StrToParticleBehavior(const std::string& s) {
   return str_to_p_type[s];
 }
 
+PhysicsBehavior StrToPhysicsBehavior(const std::string& s) {
+  static unordered_map<string, PhysicsBehavior> str_to_p_behavior ({
+    { "undefined", PHYSICS_UNDEFINED },
+    { "none", PHYSICS_NONE },
+    { "normal", PHYSICS_NORMAL },
+    { "low-gravity", PHYSICS_LOW_GRAVITY },
+    { "no-friction", PHYSICS_NO_FRICTION },
+    { "fixed", PHYSICS_FIXED }
+  });
+  return str_to_p_behavior[s];
+}
+
 AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   height_map_(kHeightMapSize * kHeightMapSize, TerrainPoint()),
   configs_(make_shared<Configs>()), game_data_(make_shared<GameData>()), 
@@ -52,6 +65,8 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   //      objects/         -> Sectors, portals and game objects
   //      height_map.data  -> Terrain height
   //      config.xml       -> General config (gravity, speed, etc.)
+  outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
+    vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
 
   LoadShaders(directory_ + "/shaders");
   LoadAssets(directory_ + "/game_assets");
@@ -63,7 +78,44 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   // TODO: load config
   // LoadConfig(directory + "/config.xml");
 
+  // Create player asset.
+  shared_ptr<GameAsset> player_asset = make_shared<GameAsset>();
+  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 1.5f);
+  player_asset->id = id_counter_++;
+  assets_by_id_[player_asset->id] = player_asset;
+  player_asset->name = "player-" + 
+    boost::lexical_cast<string>(player_asset->id);
+  player_asset->collision_type = COL_SPHERE;
+  assets_[player_asset->name] = player_asset;
+
+  player_->life = 100.0f;
+  player_->name = "player";
+  player_->asset_group = CreateAssetGroupForSingleAsset(player_asset);
+
+  player_->physics_behavior = PHYSICS_NORMAL;
   player_->position = configs_->initial_player_pos;
+  objects_[player_->name] = player_;
+  player_->id = id_counter_++;
+  objects_by_id_[player_->id] = player_;
+
+  InitMissiles();
+}
+
+shared_ptr<GameAssetGroup> 
+  AssetCatalog::CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset) {
+  shared_ptr<GameAssetGroup> asset_group = GetAssetGroupByName(asset->name);
+  if (asset_group) {
+    return asset_group;
+  }
+
+  asset_group = make_shared<GameAssetGroup>();
+  asset_group->assets.push_back(asset);
+
+  asset_group->name = asset->name;
+  asset_groups_[asset_group->name] = asset_group;
+  asset_group->id = id_counter_++;
+  asset_groups_by_id_[asset_group->id] = asset_group;
+  return asset_group;
 }
 
 // TODO: merge these directory iteration functions into the same function.
@@ -94,7 +146,7 @@ void AssetCatalog::LoadAssets(const std::string& directory) {
     if (!boost::ends_with(current_file, ".xml")) {
       continue;
     }
-    LoadAsset(directory + "/" + current_file);
+    LoadAssetFile(directory + "/" + current_file);
   }
 }
 
@@ -118,15 +170,15 @@ void AssetCatalog::LoadObjects(const std::string& directory) {
     LoadPortals(directory + "/" + current_file);
   }
 
-  shared_ptr<OctreeNode> outside_octree = GetSectorByName("outside")->octree;
-  for (const auto& [name, s] : sectors_) {
-    if (s->name == "outside") continue;
-    InsertSectorIntoOctree(outside_octree, s, 0);
-  }
+  shared_ptr<OctreeNode> outside_octree = GetSectorByName("outside")->octree_node;
+  // for (const auto& [name, s] : sectors_) {
+  //   if (s->name == "outside") continue;
+  //   InsertObjectIntoOctree(outside_octree, s, 0);
+  // }
 
   for (const auto& [name, s] : sectors_) {
     for (const auto& [next_sector_id, portal] : s->portals) {
-      InsertPortalIntoOctree(s->octree, portal, 0);
+      InsertObjectIntoOctree(s->octree_node, portal, 0);
     }
   }
 }
@@ -141,7 +193,17 @@ AABB GetObjectAABB(const vector<Polygon>& polygons) {
   return GetAABBFromVertices(vertices);
 }
 
-BoundingSphere GetObjectBoundingSphere(const vector<Polygon>& polygons) {
+BoundingSphere GetObjectBoundingSphere(shared_ptr<GameObject> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->GetAsset()->lod_meshes[0].polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
+BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons) {
   vector<vec3> vertices;
   for (auto& p : polygons) {
     for (auto& v : p.vertices) {
@@ -151,7 +213,138 @@ BoundingSphere GetObjectBoundingSphere(const vector<Polygon>& polygons) {
   return GetBoundingSphereFromVertices(vertices);
 }
 
-void AssetCatalog::LoadAsset(const std::string& xml_filename) {
+shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  game_asset->name = asset.attribute("name").value();
+
+  const string& shader_name = asset.child("shader").text().get();
+  if (shader_name.size() > 0) {
+    game_asset->shader = shaders_[shader_name];
+  }
+
+  // LOD meshes.
+  const pugi::xml_node& mesh = asset.child("mesh");
+  for (int lod_level = 0; lod_level < 5; lod_level++) {
+    string s = string("lod-") + boost::lexical_cast<string>(lod_level);
+    pugi::xml_node lod = mesh.child(s.c_str());
+    if (!lod) {
+      break;
+    }
+
+    Mesh m;
+    const string& mesh_filename = lod.text().get();
+    FbxData data = LoadFbxData(mesh_filename, m);
+    m.shader = shaders_[shader_name];
+    game_asset->lod_meshes[lod_level] = m;
+
+    // Skeleton.
+    if (data.skeleton) {
+      int num_bones = m.bones_to_ids.size();
+      game_asset->bone_hit_boxes.resize(num_bones);
+
+      const pugi::xml_node& skeleton = asset.child("skeleton");
+      for (pugi::xml_node bone = skeleton.child("bone"); bone; 
+        bone = bone.next_sibling("bone")) {
+        string bone_name = bone.attribute("name").value();
+
+        if (m.bones_to_ids.find(bone_name) == m.bones_to_ids.end()) {
+          ThrowError("Bone with name ", bone_name, " doesn't exist.");
+        }
+        int bone_id = m.bones_to_ids[bone_name];
+
+        Mesh bone_hit_box;
+        const string& mesh_filename = bone.text().get();
+        FbxData data = LoadFbxData(mesh_filename, bone_hit_box);
+
+        // Create asset for bone hit box.
+        shared_ptr<GameAsset> bone_asset = make_shared<GameAsset>();
+        bone_asset->id = id_counter_++;
+        assets_by_id_[bone_asset->id] = bone_asset;
+        bone_asset->name = game_asset->name + "-bone-" + 
+          boost::lexical_cast<string>(bone_id);
+        assets_[bone_asset->name] = bone_asset;
+
+        string shader_name = "solid";
+        bone_hit_box.shader = shaders_[shader_name];
+        bone_asset->lod_meshes[0] = bone_hit_box;
+        bone_asset->shader = shaders_[shader_name];
+        bone_asset->aabb = GetObjectAABB(bone_hit_box.polygons);
+        bone_asset->bounding_sphere = GetAssetBoundingSphere(bone_hit_box.polygons);
+        bone_asset->collision_type = COL_NONE;
+
+        game_asset->bone_hit_boxes[bone_id] = bone_asset;
+      }
+    }
+  }
+
+  // Occluding hull.
+  const pugi::xml_node& occluder = asset.child("occluder");
+  if (occluder) {
+    const string& mesh_filename = occluder.text().get();
+    Mesh m;
+    FbxData data = LoadFbxData(mesh_filename, m);
+    game_asset->occluder = m.polygons;
+  }
+
+  // Collision hull.
+  const pugi::xml_node& collision_hull_xml = asset.child("collision-hull");
+  if (collision_hull_xml) {
+    const string& mesh_filename = collision_hull_xml.text().get();
+    Mesh m;
+    FbxData data = LoadFbxData(mesh_filename, m);
+    game_asset->collision_hull = m.polygons;
+  } else {
+    game_asset->collision_hull = game_asset->lod_meshes[0].polygons;
+  }
+
+  // Collision type.
+  const pugi::xml_node& col_type = asset.child("collision-type");
+  if (col_type) {
+    game_asset->collision_type = StrToCollisionType(col_type.text().get());
+
+    Mesh m = game_asset->lod_meshes[0];
+    game_asset->aabb = GetObjectAABB(m.polygons);
+    game_asset->bounding_sphere = GetAssetBoundingSphere(m.polygons);
+  }
+
+  // Physics.
+  const pugi::xml_node& xml_physics = asset.child("physics");
+  if (xml_physics) {
+    game_asset->physics_behavior = StrToPhysicsBehavior(xml_physics.text().get());
+  }
+
+  // Texture.
+  const pugi::xml_node& texture = asset.child("texture");
+  if (texture) {
+    const string& texture_filename = texture.text().get();
+    if (textures_.find(texture_filename) == textures_.end()) {
+      GLuint texture_id = LoadPng(texture_filename.c_str());
+      textures_[texture_filename] = texture_id;
+    }
+    game_asset->texture_id = textures_[texture_filename];
+  }
+
+  const pugi::xml_node& xml_bump_map = asset.child("bump-map");
+  if (xml_bump_map) {
+    const string& texture_filename = xml_bump_map.text().get();
+    if (textures_.find(texture_filename) == textures_.end()) {
+      cout << "added bump: " << texture_filename << endl;
+      GLuint texture_id = LoadPng(texture_filename.c_str());
+      textures_[texture_filename] = texture_id;
+    }
+    game_asset->bump_map_id = textures_[texture_filename];
+  }
+
+  if (assets_.find(game_asset->name) != assets_.end()) {
+    ThrowError("Asset with name ", game_asset->name, " already exists.");
+  }
+  assets_[game_asset->name] = game_asset;
+  game_asset->id = id_counter_++;
+  assets_by_id_[game_asset->id] = game_asset;
+  return game_asset;
+}
+
+void AssetCatalog::LoadAssetFile(const std::string& xml_filename) {
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
   if (!result) {
@@ -160,118 +353,27 @@ void AssetCatalog::LoadAsset(const std::string& xml_filename) {
 
   cout << "Loading asset: " << xml_filename << endl;
   const pugi::xml_node& xml = doc.child("xml");
-  for (pugi::xml_node asset = xml.child("asset"); asset; 
-    asset = asset.next_sibling("asset")) {
-    shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
-    game_asset->name = asset.attribute("name").value();
+  for (pugi::xml_node asset_xml = xml.child("asset"); asset_xml; 
+    asset_xml = asset_xml.next_sibling("asset")) {
+    shared_ptr<GameAsset> asset = LoadAsset(asset_xml);
+    CreateAssetGroupForSingleAsset(asset);
+  }
 
-    const string& shader_name = asset.child("shader").text().get();
-    if (shader_name.size() > 0) {
-      game_asset->shader = shaders_[shader_name];
+  for (pugi::xml_node asset_group_xml = xml.child("asset-group"); asset_group_xml; 
+    asset_group_xml = asset_group_xml.next_sibling("asset-group")) {
+    shared_ptr<GameAssetGroup> asset_group = make_shared<GameAssetGroup>();
+
+    for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
+      asset_xml = asset_xml.next_sibling("asset")) {
+      shared_ptr<GameAsset> asset = LoadAsset(asset_xml);
+      asset_group->assets.push_back(asset);
     }
 
-    // LOD meshes.
-    const pugi::xml_node& mesh = asset.child("mesh");
-    for (int lod_level = 0; lod_level < 5; lod_level++) {
-      string s = string("lod-") + boost::lexical_cast<string>(lod_level);
-      pugi::xml_node lod = mesh.child(s.c_str());
-      if (!lod) {
-        break;
-      }
-
-      Mesh m;
-      const string& mesh_filename = lod.text().get();
-      FbxData data = LoadFbxData(mesh_filename, m);
-      m.shader = shaders_[shader_name];
-      game_asset->lod_meshes[lod_level] = m;
-
-      // Skeleton.
-      if (data.skeleton) {
-        int num_bones = m.bones_to_ids.size();
-        game_asset->bone_hit_boxes.resize(num_bones);
-
-        const pugi::xml_node& skeleton = asset.child("skeleton");
-        for (pugi::xml_node bone = skeleton.child("bone"); bone; 
-          bone = bone.next_sibling("bone")) {
-          string bone_name = bone.attribute("name").value();
-
-          if (m.bones_to_ids.find(bone_name) == m.bones_to_ids.end()) {
-            ThrowError("Bone with name ", bone_name, " doesn't exist.");
-          }
-          int bone_id = m.bones_to_ids[bone_name];
-
-          Mesh bone_hit_box;
-          const string& mesh_filename = bone.text().get();
-          FbxData data = LoadFbxData(mesh_filename, bone_hit_box);
-
-          // Create asset for bone hit box.
-          shared_ptr<GameAsset> bone_asset = make_shared<GameAsset>();
-          bone_asset->id = id_counter_++;
-          assets_by_id_[bone_asset->id] = bone_asset;
-          bone_asset->name = game_asset->name + "-bone-" + 
-            boost::lexical_cast<string>(bone_id);
-          assets_[bone_asset->name] = bone_asset;
-
-          string shader_name = "solid";
-          bone_hit_box.shader = shaders_[shader_name];
-          bone_asset->lod_meshes[0] = bone_hit_box;
-          bone_asset->shader = shaders_[shader_name];
-          bone_asset->aabb = GetObjectAABB(bone_hit_box.polygons);
-          bone_asset->bounding_sphere = GetObjectBoundingSphere(bone_hit_box.polygons);
-          bone_asset->collision_type = COL_NONE;
-
-          game_asset->bone_hit_boxes[bone_id] = bone_asset;
-        }
-      }
-    }
-
-    // Occluding hull.
-    const pugi::xml_node& occluder = asset.child("occluder");
-    if (occluder) {
-      const string& mesh_filename = occluder.text().get();
-      Mesh m;
-      FbxData data = LoadFbxData(mesh_filename, m);
-      game_asset->occluder = m.polygons;
-    }
-
-    // Collision.
-    const pugi::xml_node& col_type = asset.child("collision-type");
-    if (col_type) {
-      game_asset->collision_type = StrToCollisionType(col_type.text().get());
-
-      Mesh m = game_asset->lod_meshes[0];
-      game_asset->aabb = GetObjectAABB(m.polygons);
-      game_asset->bounding_sphere = GetObjectBoundingSphere(m.polygons);
-    }
-
-    // Texture.
-    const pugi::xml_node& texture = asset.child("texture");
-    if (texture) {
-      const string& texture_filename = texture.text().get();
-      if (textures_.find(texture_filename) == textures_.end()) {
-        GLuint texture_id = LoadPng(texture_filename.c_str());
-        textures_[texture_filename] = texture_id;
-      }
-      game_asset->texture_id = textures_[texture_filename];
-    }
-
-    const pugi::xml_node& xml_bump_map = asset.child("bump-map");
-    if (xml_bump_map) {
-      const string& texture_filename = xml_bump_map.text().get();
-      if (textures_.find(texture_filename) == textures_.end()) {
-        cout << "added bump: " << texture_filename << endl;
-        GLuint texture_id = LoadPng(texture_filename.c_str());
-        textures_[texture_filename] = texture_id;
-      }
-      game_asset->bump_map_id = textures_[texture_filename];
-    }
-
-    if (assets_.find(game_asset->name) != assets_.end()) {
-      ThrowError("Asset with name ", game_asset->name, " already exists.");
-    }
-    assets_[game_asset->name] = game_asset;
-    game_asset->id = id_counter_++;
-    assets_by_id_[game_asset->id] = game_asset;
+    string name = asset_group_xml.attribute("name").value();
+    asset_group->name = name;
+    asset_groups_[name] = asset_group;
+    asset_group->id = id_counter_++;
+    asset_groups_by_id_[asset_group->id] = asset_group;
   }
 
   for (pugi::xml_node xml_particle = xml.child("particle-type"); xml_particle; 
@@ -336,11 +438,14 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
   shared_ptr<GameObject> object, int depth) {
   int index = 0, straddle = 0;
 
+  BoundingSphere bounding_sphere = object->GetAsset()->bounding_sphere;
+  bounding_sphere.center += object->position;
+
   // Compute the octant number [0..7] the object sphere center is in
   // If straddling any of the dividing x, y, or z planes, exit directly
   for (int i = 0; i < 3; i++) {
-    float delta = object->bounding_sphere.center[i] - octree_node->center[i];
-    if (abs(delta) < object->bounding_sphere.radius) {
+    float delta = bounding_sphere.center[i] - octree_node->center[i];
+    if (abs(delta) < bounding_sphere.radius) {
       straddle = 1;
       break;
     }
@@ -355,97 +460,20 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
         octree_node->center + kOctreeNodeOffsets[index] * 
           octree_node->half_dimensions * 0.5f, 
         octree_node->half_dimensions * 0.5f);
+      octree_node->children[index]->parent = octree_node;
     }
     InsertObjectIntoOctree(octree_node->children[index], object, depth + 1);
   } else {
     // Straddling, or no child node to descend into, so link object into list 
     // at this node.
-    octree_node->objects.push_back(object);
+    octree_node->objects[object->id] = object;
     object->octree_node = octree_node;
   }
 }
 
-// TODO: join this function and the previous one.
-void AssetCatalog::InsertSectorIntoOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<Sector> sector, int depth) {
-  int index = 0, straddle = 0;
-
-  // Compute the octant number [0..7] the sector sphere center is in
-  // If straddling any of the dividing x, y, or z planes, exit directly
-  for (int i = 0; i < 3; i++) {
-    float delta = sector->bounding_sphere.center[i] - octree_node->center[i];
-    if (abs(delta) < sector->bounding_sphere.radius) {
-      straddle = 1;
-      break;
-    }
-
-    if (delta > 0.0f) index |= (1 << i); // ZYX
-  }
-
-  if (!straddle && depth < 8) {
-    // Fully contained in existing child node; insert in that subtree
-    if (octree_node->children[index] == nullptr) {
-      octree_node->children[index] = make_shared<OctreeNode>(
-        octree_node->center + kOctreeNodeOffsets[index] * 
-          octree_node->half_dimensions * 0.5f, 
-        octree_node->half_dimensions * 0.5f);
-    }
-    InsertSectorIntoOctree(octree_node->children[index], sector, depth + 1);
-  } else {
-    // Straddling, or no child node to descend into, so link sector into list 
-    // at this node.
-    octree_node->sectors.push_back(sector);
-  }
-}
-
-// TODO: join this function and the previous one.
-void AssetCatalog::InsertPortalIntoOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<Portal> portal, int depth) {
-  int index = 0, straddle = 0;
-
-  const BoundingSphere& sphere = portal->object->bounding_sphere;
-
-  // Compute the octant number [0..7] the portal sphere center is in
-  // If straddling any of the dividing x, y, or z planes, exit directly
-  for (int i = 0; i < 3; i++) {
-    float delta = sphere.center[i] - octree_node->center[i];
-    if (abs(delta) < sphere.radius) {
-      straddle = 1;
-      break;
-    }
-
-    if (delta > 0.0f) index |= (1 << i); // ZYX
-  }
-
-  if (!straddle && depth < 8) {
-    // Fully contained in existing child node; insert in that subtree
-    if (octree_node->children[index] == nullptr) {
-      octree_node->children[index] = make_shared<OctreeNode>(
-        octree_node->center + kOctreeNodeOffsets[index] * 
-          octree_node->half_dimensions * 0.5f, 
-        octree_node->half_dimensions * 0.5f);
-    }
-    InsertPortalIntoOctree(octree_node->children[index], portal, depth + 1);
-  } else {
-    // Straddling, or no child node to descend into, so link portal into list 
-    // at this node.
-    octree_node->portals.push_back(portal);
-  }
-}
-
-BoundingSphere GetObjectBoundingSphere(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->asset->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetBoundingSphereFromVertices(vertices);
-}
-
 AABB GetObjectAABB(shared_ptr<GameObject> obj) {
   vector<vec3> vertices;
-  for (auto& p : obj->asset->lod_meshes[0].polygons) {
+  for (auto& p : obj->GetAsset()->lod_meshes[0].polygons) {
     for (auto& v : p.vertices) {
       vertices.push_back(v + obj->position);
     }
@@ -454,7 +482,7 @@ AABB GetObjectAABB(shared_ptr<GameObject> obj) {
 }
 
 OBB GetObjectOBB(shared_ptr<GameObject> obj) {
-  return GetOBBFromPolygons(obj->asset->lod_meshes[0].polygons, obj->position);
+  return GetOBBFromPolygons(obj->GetAsset()->lod_meshes[0].polygons, obj->position);
 }
 
 shared_ptr<GameObject> AssetCatalog::LoadGameObject(
@@ -478,34 +506,23 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
   }
 
   const string& asset_name = asset.text().get();
-  if (assets_.find(asset_name) == assets_.end()) {
-    throw runtime_error("Asset does not exist.");
+  if (asset_groups_.find(asset_name) == asset_groups_.end()) {
+    throw runtime_error(string("Asset ") + asset_name + 
+      string(" does not exist."));
   }
 
-  new_game_obj->asset = assets_[asset_name];
-  new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
-  new_game_obj->aabb = GetObjectAABB(new_game_obj);
+  new_game_obj->asset_group = asset_groups_[asset_name];
 
   // If the object has bone hit boxes.
   const vector<shared_ptr<GameAsset>>& bone_hit_boxes = 
-    new_game_obj->asset->bone_hit_boxes;
+    new_game_obj->GetAsset()->bone_hit_boxes;
   for (int i = 0; i < bone_hit_boxes.size(); i++) {
     if (!bone_hit_boxes[i]) continue;
     shared_ptr<GameObject> child = make_shared<GameObject>();
     child->name = new_game_obj->name + "-child-" + 
       boost::lexical_cast<string>(i);
     child->position = new_game_obj->position;
-    child->asset = bone_hit_boxes[i];
-    child->bounding_sphere = GetObjectBoundingSphere(child);
-    child->aabb = GetObjectAABB(child);
-    child->obb = GetObjectOBB(child);
-
-    cout << "child center: " << child->position << endl;
-    cout << "obb center: " << child->obb.center << endl;
-    cout << "obb half widths: " << child->obb.half_widths << endl;
-    cout << "obb axis[0]: " << child->obb.axis[0] << endl;
-    cout << "obb axis[1]: " << child->obb.axis[1] << endl;
-    cout << "obb axis[2]: " << child->obb.axis[2] << endl;
+    child->asset_group = CreateAssetGroupForSingleAsset(bone_hit_boxes[i]);
 
     cout << "Creating child " << child->name << endl;
     new_game_obj->children.push_back(child);
@@ -544,8 +561,10 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
     shared_ptr<Sector> new_sector = make_shared<Sector>();
     new_sector->name = sector.attribute("name").value();
     if (new_sector->name == "outside") {
-      new_sector->octree = make_shared<OctreeNode>(configs_->world_center,
-        vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
+      // new_sector->octree = make_shared<OctreeNode>(configs_->world_center,
+      //   vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
+
+      new_sector->octree_node = outside_octree_;
     } else {
       const pugi::xml_node& position = sector.child("position");
       if (!position) {
@@ -562,29 +581,27 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
         throw runtime_error("Indoors sector must have a mesh.");
       }
 
-      // TODO: check if mesh is a convex hull.
-
       Mesh m;
       const string& mesh_filename = directory_ + "/models_fbx/" + mesh.text().get();
       FbxData data = LoadFbxData(mesh_filename, m);
-      new_sector->convex_hull = m.polygons;
-      for (auto& poly : new_sector->convex_hull) {
-        for (auto& v : poly.vertices) {
-          v += new_sector->position;
-        }
-      }
 
-      new_sector->bounding_sphere = GetObjectBoundingSphere(new_sector->convex_hull);
-      float dim = new_sector->bounding_sphere.radius + 1.0;
-      new_sector->octree = make_shared<OctreeNode>(
-        new_sector->bounding_sphere.center, vec3(dim, dim, dim));
+      shared_ptr<GameAsset> sector_asset = make_shared<GameAsset>();
+      sector_asset->bounding_sphere = GetAssetBoundingSphere(m.polygons);
+      sector_asset->id = id_counter_++;
+      sector_asset->lod_meshes[0] = m;
+      assets_by_id_[sector_asset->id] = sector_asset;
+      sector_asset->name = "sector-" + 
+        boost::lexical_cast<string>(sector_asset->id);
+
+      new_sector->asset_group = CreateAssetGroupForSingleAsset(sector_asset);
+      InsertObjectIntoOctree(outside_octree_, new_sector, 0);
     }
 
     const pugi::xml_node& game_objs = sector.child("game-objs");
     for (pugi::xml_node game_obj = game_objs.child("game-obj"); game_obj; 
       game_obj = game_obj.next_sibling("game-obj")) {
       shared_ptr<GameObject> new_game_obj = LoadGameObject(game_obj);
-      InsertObjectIntoOctree(new_sector->octree, new_game_obj, 0);
+      InsertObjectIntoOctree(new_sector->octree_node, new_game_obj, 0);
       new_game_obj->current_sector = new_sector;
     }
 
@@ -715,15 +732,21 @@ void AssetCatalog::LoadPortals(const std::string& xml_filename) {
       Mesh m;
       const string& mesh_filename = directory_ + "/models_fbx/" + mesh.text().get();
       FbxData data = LoadFbxData(mesh_filename, m);
-      portal->polygons = m.polygons;
-      for (auto& poly : portal->polygons) {
-        for (auto& v : poly.vertices) {
-          v += portal->position;
-        }
-      }
 
-      portal->object = CreateGameObjFromPolygons(portal->polygons);
+      shared_ptr<GameAsset> portal_asset = make_shared<GameAsset>();
+      portal_asset->lod_meshes[0] = m;
+      portal_asset->shader = shaders_["solid"];
+      portal_asset->collision_type = COL_NONE;
+      portal_asset->bounding_sphere = GetAssetBoundingSphere(m.polygons);
+      portal_asset->id = id_counter_++;
+      assets_by_id_[portal_asset->id] = portal_asset;
+      portal_asset->name = "portal-" + 
+        boost::lexical_cast<string>(portal_asset->id);
+      assets_[portal_asset->name] = portal_asset;
+      portal->asset_group = CreateAssetGroupForSingleAsset(portal_asset);
+
       sector->portals[to_sector->id] = portal;
+      portal->name = "portal-" + boost::lexical_cast<string>(portal->id);
     }
 
     sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
@@ -805,6 +828,21 @@ void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
   fclose(f);
 }
 
+void AssetCatalog::InitMissiles() {
+  // Set a higher number of missiles. Maybe 256.
+  for (int i = 0; i < 10; i++) {
+    shared_ptr<GameAsset> asset0 = GetAssetByName("magic-missile-000");
+    shared_ptr<Missile> new_missile = CreateMissileFromAsset(asset0);
+    new_missile->life = 0;
+
+    new_missile->id = id_counter_++;
+    missiles_by_id_[new_missile->id] = new_missile;
+    new_missile->name = "missile-" + 
+      boost::lexical_cast<string>(new_missile->id);
+    missiles_[new_missile->name] = new_missile;
+  }
+}
+
 TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
   x -= configs_->world_center.x;
   y -= configs_->world_center.z;
@@ -865,6 +903,11 @@ shared_ptr<GameAsset> AssetCatalog::GetAssetByName(const string& name) {
   return assets_[name];
 }
 
+shared_ptr<GameAssetGroup> AssetCatalog::GetAssetGroupByName(const string& name) {
+  if (asset_groups_.find(name) == asset_groups_.end()) return nullptr;
+  return asset_groups_[name];
+}
+
 shared_ptr<GameObject> AssetCatalog::GetObjectByName(const string& name) {
   if (objects_.find(name) == objects_.end()) return nullptr;
   return objects_[name];
@@ -893,6 +936,11 @@ GLuint AssetCatalog::GetTextureByName(const string& name) {
 shared_ptr<GameAsset> AssetCatalog::GetAssetById(int id) {
   if (assets_by_id_.find(id) == assets_by_id_.end()) return nullptr;
   return assets_by_id_[id];
+}
+
+shared_ptr<GameAssetGroup> AssetCatalog::GetAssetGroupById(int id) {
+  if (asset_groups_by_id_.find(id) == asset_groups_by_id_.end()) return nullptr;
+  return asset_groups_by_id_[id];
 }
 
 shared_ptr<GameObject> AssetCatalog::GetObjectById(int id) {
@@ -957,7 +1005,7 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
   game_asset->lod_meshes[0] = m;
   game_asset->shader = shaders_[shader_name];
   game_asset->aabb = GetObjectAABB(m.polygons);
-  game_asset->bounding_sphere = GetObjectBoundingSphere(m.polygons);
+  game_asset->bounding_sphere = GetAssetBoundingSphere(m.polygons);
   game_asset->collision_type = COL_NONE;
 
   // Create object.
@@ -968,57 +1016,62 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
   new_game_obj->name = "polygon-obj-" + boost::lexical_cast<string>(new_game_obj->id);
   new_game_obj->position = vec3(0, 0, 0);
 
-  new_game_obj->asset = game_asset;
-
-  new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
-  new_game_obj->aabb = GetObjectAABB(new_game_obj);
+  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
 
   objects_[new_game_obj->name] = new_game_obj;
   return new_game_obj;
 }
 
-shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(shared_ptr<GameAsset> game_asset) {
+shared_ptr<Missile> AssetCatalog::CreateMissileFromAsset(
+  shared_ptr<GameAsset> game_asset) {
+  shared_ptr<Missile> new_game_obj = make_shared<Missile>();
+  new_game_obj->id = id_counter_++;
+  objects_by_id_[new_game_obj->id] = new_game_obj;
+
+  new_game_obj->name = "missile-" + boost::lexical_cast<string>(new_game_obj->id);
+  new_game_obj->position = vec3(0, 0, 0);
+  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
+
+  shared_ptr<Sector> outside = GetSectorByName("outside");
+  new_game_obj->current_sector = outside;
+  objects_[new_game_obj->name] = new_game_obj;
+  return new_game_obj;
+}
+
+shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(
+  shared_ptr<GameAsset> game_asset) {
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
   new_game_obj->id = id_counter_++;
   objects_by_id_[new_game_obj->id] = new_game_obj;
 
   new_game_obj->name = "object-" + boost::lexical_cast<string>(new_game_obj->id);
   new_game_obj->position = vec3(0, 0, 0);
-  new_game_obj->asset = game_asset;
-
-  new_game_obj->bounding_sphere = GetObjectBoundingSphere(new_game_obj);
-  new_game_obj->aabb = GetObjectAABB(new_game_obj);
+  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
 
   shared_ptr<Sector> outside = GetSectorByName("outside");
-  InsertObjectIntoOctree(outside->octree, new_game_obj, 0);
+  InsertObjectIntoOctree(outside->octree_node, new_game_obj, 0);
   new_game_obj->current_sector = outside;
   objects_[new_game_obj->name] = new_game_obj;
   return new_game_obj;
 }
 
 void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
-  shared_ptr<OctreeNode> octree_node = obj->octree_node;
   // Clear position data.
-  for (int i = 0; i < octree_node->objects.size(); i++) {
-    if (obj->id == octree_node->objects[i]->id) {
-      octree_node->objects.erase(octree_node->objects.begin() + i);
-      break;
-    }
+  if (obj->octree_node) {
+    obj->octree_node->objects.erase(obj->id);
+    obj->octree_node = nullptr;
   }
-  obj->octree_node = nullptr;
-  obj->bounding_sphere = GetObjectBoundingSphere(obj);
-  obj->aabb = GetObjectAABB(obj);
+
   for (shared_ptr<GameObject> c : obj->children) {
     c->position = obj->position;
-    c->bounding_sphere = GetObjectBoundingSphere(c);
-    c->aabb = GetObjectAABB(c);
   }
 
   // Update sector.
   shared_ptr<Sector> outside = GetSectorByName("outside");
   shared_ptr<Sector> sector = obj->current_sector;
   if (sector != nullptr && sector->id != outside->id) {
-    if (!IsInConvexHull(obj->position, sector->convex_hull)) {
+    if (!IsInConvexHull(obj->position - sector->position, 
+      sector->GetAsset()->lod_meshes[0].polygons)) {
       sector = GetSector(obj->position);
     }
   } else {
@@ -1026,8 +1079,17 @@ void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
   }
   obj->current_sector = sector; 
 
-  // Update position in octree.
-  InsertObjectIntoOctree(sector->octree, obj, 0);
+  // Update position into octree.
+  InsertObjectIntoOctree(sector->octree_node, obj, 0);
+
+  shared_ptr<OctreeNode> octree_node = obj->octree_node;
+  double time = glfwGetTime();
+  while (octree_node) {
+    octree_node->updated_at = time;
+    octree_node = octree_node->parent;
+  }
+
+  obj->updated_at = glfwGetTime();
 }
 
 float AssetCatalog::GetTerrainHeight(float x, float y) {
@@ -1064,9 +1126,13 @@ shared_ptr<Sector> AssetCatalog::GetSectorAux(
   shared_ptr<OctreeNode> octree_node, vec3 position) {
   if (!octree_node) return nullptr;
 
-  for (shared_ptr<Sector> s : octree_node->sectors) {
-    if (IsInConvexHull(position, s->convex_hull)) {
-      return s;
+  for (auto& [id, s] : octree_node->objects) {
+    if (s->type != GAME_OBJ_SECTOR) continue;
+
+    // (?) What about sectors must be boxes.
+    if (IsInConvexHull(position - s->position, 
+      s->GetAsset()->lod_meshes[0].polygons)) {
+      return static_pointer_cast<Sector>(s);
     }
   }
 
@@ -1080,7 +1146,7 @@ shared_ptr<Sector> AssetCatalog::GetSectorAux(
 
 shared_ptr<Sector> AssetCatalog::GetSector(vec3 position) {
   shared_ptr<Sector> outside = GetSectorByName("outside");
-  shared_ptr<Sector> s = GetSectorAux(outside->octree, position);
+  shared_ptr<Sector> s = GetSectorAux(outside->octree_node, position);
   if (s) return s;
   return outside;
 }
@@ -1176,4 +1242,71 @@ void AssetCatalog::UpdateParticles() {
       p.pos += p.speed * 0.01f;
     }
   }
+}
+
+void AssetCatalog::CastMagicMissile(const Camera& camera) {
+  cout << "CastMagicMissile" << endl;
+  // TODO: this should probably go to main.
+  shared_ptr<Missile> obj = missiles_.begin()->second;
+  for (const auto& [string, missile]: missiles_) {
+    if (missile->life <= 0) {
+      obj = missile;
+      break;
+    }
+  }
+
+  obj->life = 10000;
+  obj->owner = player_;
+
+  vec3 left = normalize(cross(camera.up, camera.direction));
+  obj->position = camera.position + camera.direction * 0.5f + left * -0.81f +  
+    camera.up * -0.556f;
+
+  vec3 p2 = camera.position + camera.direction * 3000.0f;
+  obj->speed = normalize(p2 - obj->position) * 4.0f;
+
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera.rotation.y + 4.70f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+}
+
+void AssetCatalog::UpdateMissiles() {
+  // TODO: maybe could be part of physics.
+  for (const auto& [string, missile]: missiles_) {
+    missile->life -= 1;
+  }
+}
+
+void AssetCatalog::UpdateFrameStart() {
+  frame_start_ = glfwGetTime();
+}
+
+BoundingSphere GameObject::GetBoundingSphere() {
+  if (!asset_group) {
+    throw runtime_error("No asset group in game object.");
+  }
+
+  if (asset_group->assets.empty()) {
+    throw runtime_error("Asset group in game object is empty.");
+  }
+
+  BoundingSphere bounding_sphere = GetAsset()->bounding_sphere;
+  bounding_sphere.center += position;
+  return bounding_sphere;
+}
+
+shared_ptr<GameAsset> GameObject::GetAsset() {
+  if (asset_group->assets.empty()) {
+    throw runtime_error(string("Asset group with no assets for object ") + name);
+  }
+  return asset_group->assets[0];
 }

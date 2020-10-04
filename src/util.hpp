@@ -43,6 +43,12 @@ struct Camera {
     up(up), direction(direction) {}
 };
 
+struct Plane {
+  vec3 normal;
+  float d;
+  Plane(vec3 normal, float d) : normal(normal), d(d) {}
+};
+
 struct AABB {
   vec3 point;
   vec3 dimensions;
@@ -136,6 +142,7 @@ ostream& operator<<(ostream& os, const vec3& v);
 ostream& operator<<(ostream& os, const ivec3& v);
 ostream& operator<<(ostream& os, const vec4& v);
 ostream& operator<<(ostream& os, const mat4& m);
+ostream& operator<<(ostream& os, const quat& q);
 ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
@@ -145,6 +152,8 @@ vec3 operator*(const mat4& m, const vec3& v);
 Polygon operator*(const mat4& m, const Polygon& poly);
 Polygon operator+(const Polygon& poly, const vec3& v);
 vector<Polygon> operator+(const vector<Polygon>& polys, const vec3& v);
+BoundingSphere operator+(const BoundingSphere& sphere, const vec3& v);
+BoundingSphere operator-(const BoundingSphere& sphere, const vec3& v);
 
 template<typename First, typename ...Rest>
 void sample_log(First&& first, Rest&& ...rest) {
@@ -153,5 +162,8 @@ void sample_log(First&& first, Rest&& ...rest) {
   cout << forward<First>(first) << endl;
   sample_log(forward<Rest>(rest)...);
 }
+
+quat RotationBetweenVectors(vec3 start, vec3 dest);
+quat RotateTowards(quat q1, quat q2, float max_angle);
 
 #endif // __UTIL_HPP__

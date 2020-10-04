@@ -32,8 +32,7 @@
 #define WINDOW_HEIGHT 800
 #define APP_NAME "test"
 #define NEAR_CLIPPING 1.00f
-#define FAR_CLIPPING 1000.0f
-// #define FAR_CLIPPING 10000.0f
+#define FAR_CLIPPING 10000.0f
 #define FIELD_OF_VIEW 45.0f
 #define LOD_DISTANCE 100.0f
 
@@ -133,12 +132,6 @@ class Renderer {
   shared_ptr<GameObject> CreatePlane(vec3 p1, vec3 p2, vec3 normal);
   shared_ptr<GameObject> CreateJoint(vec3 start, vec3 end);
 
-  void Collide(vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
-  void CollideSector(shared_ptr<StabbingTreeNode> stabbing_tree_node, 
-    vec3* player_pos, vec3 old_player_pos, vec3* player_speed, bool* can_jump);
-
-  // shared_ptr<Sector> GetPlayerSector(const vec3& player_pos);
-  
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }
 

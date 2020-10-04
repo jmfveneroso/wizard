@@ -36,19 +36,30 @@ enum CollisionResolutionType {
 enum CollisionType {
   COL_UNDEFINED = 0,
   COL_PERFECT,
-  COL_AABB,
-  COL_OBB,
+  COL_CONVEX_HULL,
   COL_SPHERE,
+  COL_QUICK_SPHERE,
+  COL_BONES,
   COL_OBB_TREE,
   COL_NONE 
 };
 
 enum GameObjectType {
   GAME_OBJ_DEFAULT = 0,
+  GAME_OBJ_PLAYER,
   GAME_OBJ_SECTOR,
   GAME_OBJ_PORTAL,
   GAME_OBJ_MISSILE,
   GAME_OBJ_PARTICLE_GROUP
+};
+
+enum PhysicsBehavior {
+  PHYSICS_UNDEFINED = 0,
+  PHYSICS_NONE,
+  PHYSICS_NORMAL,
+  PHYSICS_LOW_GRAVITY,
+  PHYSICS_NO_FRICTION,
+  PHYSICS_FIXED
 };
 
 struct GameData {
@@ -79,9 +90,11 @@ struct GameAsset {
   // Rendering.
   GLuint shader;
   ConvexHull occluder;
+  ConvexHull collision_hull;
 
   // Collision.
-  CollisionType collision_type;
+  PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
+  CollisionType collision_type = COL_UNDEFINED;
   BoundingSphere bounding_sphere;
   AABB aabb;
   OBB obb;
@@ -99,6 +112,12 @@ struct GameAsset {
   // vector<vector<mat4>> joint_transforms;
 };
 
+struct GameAssetGroup {
+  int id;
+  string name;
+  vector<shared_ptr<GameAsset>> assets;
+};
+
 struct OctreeNode;
 struct Sector;
 
@@ -109,67 +128,71 @@ enum AiAction {
   DIE = 3
 };
 
-// TODO: repeat game asset instead of replicating aabb, sphere polygons for
-// every object.
 struct GameObject {
   GameObjectType type = GAME_OBJ_DEFAULT;
 
   int id;
   string name;
-  shared_ptr<GameAsset> asset;
+  // shared_ptr<GameAsset> asset;
+  shared_ptr<GameAssetGroup> asset_group;
   vec3 position;
+  vec3 prev_position = vec3(0, 0, 0);
+  vec3 target_position = vec3(0, 0, 0);
   vec3 rotation = vec3(0, 0, 0);
   mat4 rotation_matrix = mat4(1.0);
 
-  // TODO: should translate and rotate asset.
-  BoundingSphere bounding_sphere;
-  AABB aabb;
-  OBB obb;
+  quat target_rotation_matrix;
+  int rotation_factor = 0;
+
+  vec3 up = vec3(0, 1, 0); // Determines object up direction.
+  vec3 forward = vec3(0, 0, 1); // Determines object forward direction.
+
+  quat cur_rotation;
+  quat dest_rotation;
+  // TODO: interpolate on each frame by moving from rotation_quat to 
+  // dest_rotation_quat until they are the same. By calling 
+  // quat RotateTowards(quat q1, quat q2, float max_angle.
 
   float distance;
 
   // TODO: remove.
   bool draw = true;
+  bool freeze = false;
 
   string active_animation = "Armature|swimming";
   int frame = 0;
 
-  shared_ptr<OctreeNode> octree_node;
   shared_ptr<Sector> current_sector;
+  shared_ptr<OctreeNode> octree_node;
 
   // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
   shared_ptr<GameObject> parent;
   vector<shared_ptr<GameObject>> children;
-  int parent_bone_id;
+  int parent_bone_id = -1;
 
   // TODO: Stuff that may polymorph.
   float life = 100.0f;
   AiAction ai_action = IDLE;
   vec3 speed = vec3(0, 0, 0);
+  bool can_jump = true;
+  PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
+  double updated_at = 0;
 
   GameObject() {}
   GameObject(GameObjectType type) : type(type) {}
+
+  BoundingSphere GetBoundingSphere();
+  shared_ptr<GameAsset> GetAsset();
 };
 
-struct Player {
-  vec3 position = vec3(0, 0, 0);
-  vec3 next_position = vec3(0, 0, 0);
-  vec3 speed = vec3(0, 0, 0);
-  float h_angle = 0;
-  float v_angle = 0;
-  bool can_jump = true;
-  int life = 100;
-  shared_ptr<GameObject> object;
+struct Player : GameObject {
+  Player() : GameObject(GAME_OBJ_PLAYER) {}
 };
 
-struct MagicMissile {
+struct Missile : GameObject {
   shared_ptr<GameObject> owner = nullptr;
-  shared_ptr<GameObject> objects[6];
-  int frame = 0;
-  int life = 0;
-  vec3 position;
-  vec3 direction;
-  mat4 rotation_matrix;
+
+  Missile() : GameObject(GAME_OBJ_MISSILE) {}
 };
 
 struct Sector;
@@ -189,52 +212,47 @@ struct StabbingTreeNode {
     portal_id(portal_id) {}
 };
 
-struct Portal {
+struct Portal : GameObject {
   bool cave = false;
-  vec3 position;
-  vector<Polygon> polygons;
+  // vec3 position;
+  // vector<Polygon> polygons;
   shared_ptr<Sector> from_sector;
   shared_ptr<Sector> to_sector;
 
   // Object representing portal. It is only useful for cave entrances.
-  shared_ptr<GameObject> object;
+  // shared_ptr<GameObject> object;
+
+  Portal() : GameObject(GAME_OBJ_PORTAL) {}
 };
 
 struct OctreeNode {
+  shared_ptr<OctreeNode> parent = nullptr;
+
   vec3 center;
   vec3 half_dimensions;
   shared_ptr<OctreeNode> children[8] { 
     nullptr, nullptr, nullptr, nullptr, 
     nullptr, nullptr, nullptr, nullptr };
 
-  vector<shared_ptr<GameObject>> objects;
-  vector<shared_ptr<Sector>> sectors;
-  vector<shared_ptr<Portal>> portals;
+  double updated_at = 0;
+
+  unordered_map<int, shared_ptr<GameObject>> objects;
   OctreeNode() {}
   OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
     half_dimensions(half_dimensions) {}
 };
 
-struct Sector {
-  int id;
-  string name;
-
-  // Vertices inside the convex hull are inside the sector.
-  vector<Polygon> convex_hull;
-  BoundingSphere bounding_sphere;
-  vec3 position;
-
+struct Sector : GameObject {
   // Objects inside the sector.
   vector<shared_ptr<GameObject>> objects;
-
-  // Octree.
-  shared_ptr<OctreeNode> octree;
  
   // Portals inside the sector indexed by the outgoing sector id.
   unordered_map<int, shared_ptr<Portal>> portals;
 
   // Starting from this sector, which sectors are visible?
   shared_ptr<StabbingTreeNode> stabbing_tree;
+
+  Sector() : GameObject(GAME_OBJ_SECTOR) {}
 };
 
 enum MovementType {
@@ -292,7 +310,7 @@ struct Particle {
   shared_ptr<ParticleType> type = nullptr;
 
   float size;
-  vec4 color;
+  vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
 
   vec3 pos;
   vec3 speed;
@@ -314,29 +332,27 @@ struct Particle {
   }
 };
 
-struct MissileType {
-  
-};
-
-struct Missile {
-};
-
 // TODO: maybe change to ResourceCatalog.
 class AssetCatalog {
   int id_counter_ = 0;
+  double frame_start_ = 0;
 
   shared_ptr<Configs> configs_;
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;
 
   unordered_map<string, shared_ptr<GameAsset>> assets_;
+  unordered_map<string, shared_ptr<GameAssetGroup>> asset_groups_;
   unordered_map<string, shared_ptr<Sector>> sectors_;
   unordered_map<string, shared_ptr<GameObject>> objects_;
+
+  // TODO: maybe nav meshes?
   unordered_map<string, shared_ptr<Waypoint>> waypoints_;
   unordered_map<string, shared_ptr<ParticleType>> particle_types_;
   unordered_map<string, shared_ptr<Missile>> missiles_;
 
   unordered_map<int, shared_ptr<GameAsset>> assets_by_id_;
+  unordered_map<int, shared_ptr<GameAssetGroup>> asset_groups_by_id_;
   unordered_map<int, shared_ptr<Sector>> sectors_by_id_;
   unordered_map<int, shared_ptr<GameObject>> objects_by_id_;
   unordered_map<int, shared_ptr<Waypoint>> waypoints_by_id_;
@@ -347,8 +363,11 @@ class AssetCatalog {
   shared_ptr<Player> player_;
   string directory_;
 
+  shared_ptr<GameAsset> LoadAsset(const pugi::xml_node& asset);
+
   void LoadShaders(const std::string& directory);
   void LoadAssets(const std::string& directory);
+  void LoadAssetFile(const std::string& xml_filename);
   void LoadAsset(const std::string& xml_filename);
   void LoadObjects(const std::string& directory);
   void LoadSectors(const std::string& xml_filename);
@@ -359,39 +378,34 @@ class AssetCatalog {
   void LoadStabbingTree(const pugi::xml_node& parent_node, 
     shared_ptr<StabbingTreeNode> new_parent_node);
 
-  Particle particle_container_[kMaxParticles];
-  int last_used_particle_ = 0;
-  int FindUnusedParticle();
-
-  // TODO: join all three functions.
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
     shared_ptr<GameObject> object, int depth);
-  void InsertSectorIntoOctree(shared_ptr<OctreeNode> octree_node, 
-    shared_ptr<Sector> sector, int depth);
-  void InsertPortalIntoOctree(shared_ptr<OctreeNode> octree_node, 
-    shared_ptr<Portal> portal, int depth);
 
   vector<TerrainPoint> height_map_;
   vec3 player_pos_;
+  shared_ptr<OctreeNode> outside_octree_;
+
+  shared_ptr<GameAssetGroup> 
+    CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset);
 
  public:
-
   // Instantiating this will fail if OpenGL hasn't been initialized.
   AssetCatalog(const string& directory);
 
-  // TODO: maybe remove?
   void Cleanup();
 
   TerrainPoint GetTerrainPoint(int x, int y);
   void SetTerrainPoint(int x, int y, const TerrainPoint& terrain_point);
 
   shared_ptr<GameAsset> GetAssetByName(const string& name);
+  shared_ptr<GameAssetGroup> GetAssetGroupByName(const string& name);
   shared_ptr<GameObject> GetObjectByName(const string& name);
   shared_ptr<Sector> GetSectorByName(const string& name);
   shared_ptr<Waypoint> GetWaypointByName(const string& name);
   shared_ptr<ParticleType> GetParticleTypeByName(const string& name);
 
   shared_ptr<GameAsset> GetAssetById(int id);
+  shared_ptr<GameAssetGroup> GetAssetGroupById(int id);
   shared_ptr<GameObject> GetObjectById(int id);
   shared_ptr<Sector> GetSectorById(int id);
   shared_ptr<ParticleType> GetParticleTypeById(int id);
@@ -407,6 +421,7 @@ class AssetCatalog {
     const vector<Polygon>& polygons);
 
   shared_ptr<GameObject> CreateGameObjFromAsset(shared_ptr<GameAsset> asset);
+  shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
 
   void UpdateObjectPosition(shared_ptr<GameObject> object);
 
@@ -418,11 +433,6 @@ class AssetCatalog {
 
   Particle* GetParticleContainer() { return particle_container_; }
 
-  void UpdateParticles();
-  void CreateParticleEffect(int num_particles, vec3 pos, 
-    vec3 normal, vec3 color, float size, float life, float spread);
-  void CreateChargeMagicMissileEffect();
-
   shared_ptr<Player> GetPlayer() { return player_; }
   unordered_map<string, shared_ptr<GameObject>>& GetObjects() { 
     return objects_; 
@@ -431,6 +441,27 @@ class AssetCatalog {
   unordered_map<string, shared_ptr<ParticleType>>& GetParticleTypes() { 
     return particle_types_; 
   }
+
+  unordered_map<string, shared_ptr<Missile>>& GetMissiles() {
+    return missiles_;
+  }
+
+  // TODO: all this logic should be moved elsewhere. This class should be mostly
+  // to read and write resources.
+  void UpdateFrameStart();
+  double GetFrameStart() { return frame_start_; }
+  void CastMagicMissile(const Camera& camera);
+  void UpdateMissiles();
+  void UpdateParticles();
+  void CreateParticleEffect(int num_particles, vec3 pos, 
+    vec3 normal, vec3 color, float size, float life, float spread);
+  void CreateChargeMagicMissileEffect();
+  void InitMissiles();
+
+  Particle particle_container_[kMaxParticles];
+  int last_used_particle_ = 0;
+  int FindUnusedParticle();
+
 };
 
 #endif // __ASSET_HPP__
