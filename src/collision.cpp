@@ -243,25 +243,6 @@ bool IsInConvexHull(const AABB& aabb, vector<Polygon> polygons) {
   return true;
 }
 
-AABB GetAABBFromVertices(const vector<vec3>& vertices) {
-  AABB aabb;
-
-  vec3 min_v = vec3(999999.0f, 999999.0f, 999999.0f);
-  vec3 max_v = vec3(-999999.0f, -999999.0f, -999999.0f);
-  for (const vec3& v : vertices) {
-    min_v.x = std::min(min_v.x, v.x);
-    max_v.x = std::max(max_v.x, v.x);
-    min_v.y = std::min(min_v.y, v.y);
-    max_v.y = std::max(max_v.y, v.y);
-    min_v.z = std::min(min_v.z, v.z);
-    max_v.z = std::max(max_v.z, v.z);
-  }
-
-  aabb.point = min_v;
-  aabb.dimensions = max_v - min_v;
-  return aabb;
-}
-
 OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
   OBB obb;
   vector<vec3> vertices;
@@ -422,7 +403,7 @@ Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
 }
 
 bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere, 
-  const Polygon& polygon, vec3* displacement_vector) {
+  const Polygon& polygon, vec3& displacement_vector, vec3& point_of_contact) {
   const vec3& pos = bounding_sphere.center;
   float r = bounding_sphere.radius;
 
@@ -431,58 +412,18 @@ bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere,
   const vec3& b = polygon.vertices[1];
   const vec3& c = polygon.vertices[2];
 
-  // TODO: test against polygon bounding sphere and exit early.
-
   bool inside;
-  vec3 closest_point = ClosestPtPointTriangle(pos, a, b, c, &inside);
+  point_of_contact = ClosestPtPointTriangle(pos, a, b, c, &inside);
 
-  const vec3& v = closest_point - bounding_sphere.center;
+  const vec3& v = point_of_contact - bounding_sphere.center;
   if (length(v) > r) {
-  // if (length(v) > r || dot(pos - a, normal) < 0) {
-    *displacement_vector = vec3(0, 0, 0);
+    displacement_vector = vec3(0, 0, 0);
     return false;
   }
 
   float magnitude = r - length(v);
-  *displacement_vector = magnitude * -normalize(v);
-
-  // float magnitude = r + dot(v, normal) + 0.001f;
-  // *displacement_vector = magnitude * normal;
+  displacement_vector = magnitude * -normalize(v);
   return true;
-  
-
-  // // Collide with edge.
-  // if (!inside) {
-  //   vec3 closest_ab = ClosestPtPointSegment(pos, a, b);
-  //   vec3 closest_bc = ClosestPtPointSegment(pos, b, c);
-  //   vec3 closest_ca = ClosestPtPointSegment(pos, c, a);
-  //   vector<vec3> segments { a-b, b-c, c-a } ;
-  //   vector<vec3> points { closest_ab, closest_bc, closest_ca } ;
-
-  //   float min_distance = 9999.0f;
-  //   float min_index = -1;
-  //   for (int i = 0; i < 3; i++) {
-  //     float distance = length(points[i] - pos);
-  //     if (distance < min_distance) {
-  //       min_index = i;
-  //       min_distance = distance;
-  //     }
-  //   }
-
-  //   if (min_distance < r) {
-  //     vec3 pos_to_p = points[min_index] - pos;
-  //     vec3 tangent = normalize(cross(segments[min_index], normal));
-  //     float proj_tan = abs(dot(pos_to_p, tangent));
-  //     float proj_normal = abs(dot(pos_to_p, normal));
-  //     float magnitude = sqrt(r * r - proj_tan * proj_tan) - proj_normal + 0.001f;
-  //     *displacement_vector = magnitude * normal;
-  //     return true; 
-  //   }
-  // }
-
-  // float magnitude = r + dot(v, normal) + 0.001f;
-  // *displacement_vector = magnitude * normal;
-  // return true;
 }
 
 bool IntersectWithTriangle(const Polygon& polygon, 
@@ -592,7 +533,7 @@ bool IntersectRaySphere(vec3 p, vec3 d, BoundingSphere s, float &t, vec3 &q) {
 }
 
 bool TestMovingSphereSphere(BoundingSphere s0, BoundingSphere s1, vec3 v0, 
-  vec3 v1, float &t) {
+  vec3 v1, float& t, vec3& q) {
   // Expand sphere s1 by the radius of s0
   s1.radius += s0.radius;
 
@@ -601,7 +542,6 @@ bool TestMovingSphereSphere(BoundingSphere s0, BoundingSphere s1, vec3 v0,
 
   // Can now test directed segment s = s0.c + tv, v = (v0-v1)/||v0-v1|| against
   // the expanded sphere for intersection
-  vec3 q;
   float vlen = length(v);
   if (IntersectRaySphere(s0.center, v / vlen, s1, t, q)) {
     return t <= vlen;
@@ -641,7 +581,7 @@ bool IntersectMovingSpherePlane(BoundingSphere s, vec3 v, Plane p, float &t,
 }
 
 bool IntersectMovingSphereTriangle(BoundingSphere s, vec3 v, 
-  const Polygon& polygon, float &t, vec3 &q) {
+  const Polygon& polygon, float &t, vec3& q) {
   const vec3& normal = polygon.normals[0];
   float d = dot(polygon.vertices[0], normal);
 
@@ -655,9 +595,219 @@ bool IntersectMovingSphereTriangle(BoundingSphere s, vec3 v,
   bool inside;
   vec3 closest_point = ClosestPtPointTriangle(q, a, b, c, &inside);
   if (inside) {
-    q = closest_point -s.radius * normalize(v);
+    q = closest_point - s.radius * normalize(v);
     return true;
   }
 
   return IntersectRaySphere(closest_point, -normalize(v), s, t, q);
+}
+
+bool TestSphereAABB(const BoundingSphere& s, const AABB& aabb) {
+  vec3 closest_point = ClosestPtPointAABB(s.center, aabb);
+  return length2(closest_point - s.center) < s.radius * s.radius;
+}
+
+BoundingSphere GetBoundingSphereFromPolygons(const vector<Polygon>& polygons) {
+  vector<vec3> vertices;
+  for (auto& p : polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v);
+    }
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
+BoundingSphere GetBoundingSphereFromPolygons(const Polygon& polygon) {
+  vector<vec3> vertices;
+  for (auto& v : polygon.vertices) {
+    vertices.push_back(v);
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
+// Computes the bounding sphere s of spheres s0 and s1
+// TODO: not quite working.
+BoundingSphere SphereEnclosingSpheres(const BoundingSphere& s0, 
+  const BoundingSphere& s1) {
+  BoundingSphere s;
+
+  // Compute the squared distance between the sphere centers
+  vec3 d = s1.center - s0.center;
+  float dist2 = dot(d, d);
+  if (sqrt(s1.radius - s0.radius) >= dist2) {
+    // The sphere with the larger radius encloses the other;
+    // just set s to be the larger of the two spheres
+    if (s1.radius >= s0.radius) {
+      s = s1;
+    } else {
+      s = s0;
+    }
+  } else {
+    // Spheres partially overlapping or disjoint
+    float dist = sqrt(dist2);
+    s.radius = (dist + s0.radius + s1.radius) * 0.5f;
+    s.center = s0.center;
+    if (dist > 0.001f) {
+      s.center += ((s.radius - s0.radius) / dist) * d;
+    }
+  }
+  return s;
+}
+
+// Sphere tree.
+void SortPolygonsAndSpheres(
+  vector<pair<Polygon, BoundingSphere>>& polygons_and_spheres, int i, int j) {
+  float s[3], s2[3];
+  for (auto& [polygon, sphere] : polygons_and_spheres) {
+    for (int axis = 0; axis < 3; axis++) {
+      s[axis] += sphere.center[axis];
+      s2[axis] += sphere.center[axis] * sphere.center[axis];
+    }
+  }
+
+  float variances[3];
+  for (int axis = 0; axis < 3; axis++) {
+    variances[axis] = s2[axis] - s[axis] * s[axis] /  
+      polygons_and_spheres.size();
+  }
+
+  int sort_axis = 0;
+  if (variances[1] > variances[0]) sort_axis = 1;
+  if (variances[2] > variances[sort_axis]) sort_axis = 2;
+
+  std::sort(
+    polygons_and_spheres.begin() + i,
+    polygons_and_spheres.begin() + j + 1,
+
+    // A should go before B?
+    [sort_axis](const pair<Polygon, BoundingSphere> &a,  
+      const pair<Polygon, BoundingSphere> &b) { 
+      return (a.second.center[sort_axis] < b.second.center[sort_axis]);
+    }
+  );  
+}
+
+shared_ptr<SphereTreeNode> ConstructSphereTreeFromPolygonsAndSpheres(
+  vector<pair<Polygon, BoundingSphere>>& polygons_and_spheres, int i, int j) {
+
+  shared_ptr<SphereTreeNode> node = make_shared<SphereTreeNode>();
+  if (i == j) {
+    node->has_polygon = true;
+    auto& [polygon, sphere] = polygons_and_spheres[i];
+    node->polygon = polygon;
+    node->sphere = sphere;
+    return node;
+  }
+
+  SortPolygonsAndSpheres(polygons_and_spheres, i, j);
+
+  vector<Polygon> polygons;
+  for (int k = i; k <= j; k++) {
+    polygons.push_back(polygons_and_spheres[k].first);
+  }
+  node->sphere = GetBoundingSphereFromPolygons(polygons);
+
+  int mid = (i + j) / 2;
+  node->lft = 
+    ConstructSphereTreeFromPolygonsAndSpheres(polygons_and_spheres, i, mid);
+  node->rgt = 
+    ConstructSphereTreeFromPolygonsAndSpheres(polygons_and_spheres, mid+1, j);
+  return node;
+}
+
+shared_ptr<SphereTreeNode> ConstructSphereTreeFromPolygons(
+  const vector<Polygon>& polygons) {
+  vector<pair<Polygon, BoundingSphere>> polygons_and_spheres;
+  for (const Polygon& polygon : polygons) {
+    BoundingSphere sphere = GetBoundingSphereFromPolygons(polygon);
+    polygons_and_spheres.push_back({ polygon, sphere });
+  }
+  return ConstructSphereTreeFromPolygonsAndSpheres(polygons_and_spheres, 0, 
+    polygons_and_spheres.size() - 1);
+}
+
+// AABB tree.
+void SortPolygonsAndAABB(
+  vector<pair<Polygon, AABB>>& polygons_and_aabb, int i, int j) {
+  float s[3], s2[3];
+  for (auto& [polygon, aabb] : polygons_and_aabb) {
+    for (int axis = 0; axis < 3; axis++) {
+      s[axis] += aabb.point[axis];
+      s2[axis] += aabb.point[axis] * aabb.point[axis];
+    }
+  }
+
+  float variances[3];
+  for (int axis = 0; axis < 3; axis++) {
+    variances[axis] = s2[axis] - s[axis] * s[axis] /  
+      polygons_and_aabb.size();
+  }
+
+  int sort_axis = 0;
+  if (variances[1] > variances[0]) sort_axis = 1;
+  if (variances[2] > variances[sort_axis]) sort_axis = 2;
+
+  std::sort(
+    polygons_and_aabb.begin() + i,
+    polygons_and_aabb.begin() + j + 1,
+
+    // A should go before B?
+    [sort_axis](const pair<Polygon, AABB> &a,  
+      const pair<Polygon, AABB> &b) { 
+      return (a.second.point[sort_axis] < b.second.point[sort_axis]);
+    }
+  );  
+}
+
+shared_ptr<AABBTreeNode> ConstructAABBTreeFromPolygonsAndAABB(
+  vector<pair<Polygon, AABB>>& polygons_and_aabb, int i, int j) {
+
+  shared_ptr<AABBTreeNode> node = make_shared<AABBTreeNode>();
+  if (i == j) {
+    node->has_polygon = true;
+    auto& [polygon, aabb] = polygons_and_aabb[i];
+    node->polygon = polygon;
+    node->aabb = aabb;
+    return node;
+  }
+
+  SortPolygonsAndAABB(polygons_and_aabb, i, j);
+
+  vector<Polygon> polygons;
+  for (int k = i; k <= j; k++) {
+    polygons.push_back(polygons_and_aabb[k].first);
+  }
+  node->aabb = GetAABBFromPolygons(polygons);
+
+  int mid = (i + j) / 2;
+  node->lft = 
+    ConstructAABBTreeFromPolygonsAndAABB(polygons_and_aabb, i, mid);
+  node->rgt = 
+    ConstructAABBTreeFromPolygonsAndAABB(polygons_and_aabb, mid+1, j);
+  return node;
+}
+
+shared_ptr<AABBTreeNode> ConstructAABBTreeFromPolygons(
+  const vector<Polygon>& polygons) {
+  vector<pair<Polygon, AABB>> polygons_and_aabb;
+  for (const Polygon& polygon : polygons) {
+    AABB aabb = GetAABBFromPolygons(polygon);
+    polygons_and_aabb.push_back({ polygon, aabb });
+  }
+  return ConstructAABBTreeFromPolygonsAndAABB(polygons_and_aabb, 0, 
+    polygons_and_aabb.size() - 1);
+}
+
+bool TestSphereSphere(const BoundingSphere& s1, const BoundingSphere& s2, 
+  vec3& displacement_vector, vec3& point_of_contact) {
+  vec3 v = s1.center - s2.center;
+  float total_radius = s1.radius + s2.radius;
+  float distance = length(v);
+  if (distance > total_radius) {
+    return false;
+  }
+  v = normalize(v);
+  displacement_vector = v * (total_radius - distance);
+  point_of_contact = s2.center + v * (distance - s1.radius);
+  return true;
 }

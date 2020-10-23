@@ -21,6 +21,7 @@ GLuint LoadPng(const char* file_name) {
   FILE* fp = fopen(file_name, "rb");
   if (!fp) {
     printf("[read_png_file] File %s could not be opened for reading", file_name);
+    throw runtime_error(string("Couldn't open png file ") + file_name);
   }
 
   char header[8];
@@ -188,9 +189,8 @@ ostream& operator<<(ostream& os, const mat4& m) {
 }
 
 ostream& operator<<(ostream& os, const Polygon& p) {
-  os << "==Polygon==" << endl;
   for (auto& v : p.vertices) {
-    os << v << endl;
+    os << "(" << v << ") ";
   }
   return os;
 }
@@ -221,6 +221,29 @@ ostream& operator<<(ostream& os, const Edge& e) {
 
 ostream& operator<<(ostream& os, const quat& q) {
   os << q[0] << " " << q[1] << " " << q[2] << " " << q[3];
+  return os;
+}
+
+ostream& operator<<(ostream& os, const shared_ptr<SphereTreeNode>& 
+  sphere_tree_node) {
+  queue<tuple<shared_ptr<SphereTreeNode>, int, bool>> q;
+  q.push({ sphere_tree_node, 0, true });
+
+  int counter = 0;
+  while (!q.empty()) {
+    auto& [current, depth, lft] = q.front();
+    q.pop();
+
+    if (current->lft) q.push({ current->lft, depth + 1, true });
+    if (current->rgt) q.push({ current->rgt, depth + 1, false });
+
+    for (int i = 0; i < depth; i++) os << "  ";
+    os << counter++ << "(" << ((lft) ? "lft" : "rgt") << ")";
+    os << ": " << current->polygon << endl; 
+
+    for (int i = 0; i < depth; i++) os << "  ";
+    os << current->sphere;
+  }
   return os;
 }
 
@@ -268,6 +291,14 @@ BoundingSphere operator+(const BoundingSphere& sphere, const vec3& v) {
 
 BoundingSphere operator-(const BoundingSphere& sphere, const vec3& v) {
   return BoundingSphere(sphere.center - v, sphere.radius);
+}
+
+AABB operator+(const AABB& aabb, const vec3& v) {
+  return AABB(aabb.point + v, aabb.dimensions);
+}
+
+AABB operator-(const AABB& aabb, const vec3& v) {
+  return AABB(aabb.point - v, aabb.dimensions);
 }
 
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon) {
@@ -563,4 +594,41 @@ quat RotateTowards(quat q1, quat q2, float max_angle) {
   quat res = (sin((1.0f - ft) * angle) * q1 + sin(ft * angle) * q2) / sin(angle);
   res = normalize(res);
   return res;
+}
+
+AABB GetAABBFromVertices(const vector<vec3>& vertices) {
+  AABB aabb;
+
+  vec3 min_v = vec3(999999.0f, 999999.0f, 999999.0f);
+  vec3 max_v = vec3(-999999.0f, -999999.0f, -999999.0f);
+  for (const vec3& v : vertices) {
+    min_v.x = std::min(min_v.x, v.x);
+    max_v.x = std::max(max_v.x, v.x);
+    min_v.y = std::min(min_v.y, v.y);
+    max_v.y = std::max(max_v.y, v.y);
+    min_v.z = std::min(min_v.z, v.z);
+    max_v.z = std::max(max_v.z, v.z);
+  }
+
+  aabb.point = min_v;
+  aabb.dimensions = max_v - min_v;
+  return aabb;
+}
+
+AABB GetAABBFromPolygons(const vector<Polygon>& polygons) {
+  vector<vec3> vertices;
+  for (auto& p : polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v);
+    }
+  }
+  return GetAABBFromVertices(vertices);
+}
+
+AABB GetAABBFromPolygons(const Polygon& polygon) {
+  vector<vec3> vertices;
+  for (auto& v : polygon.vertices) {
+    vertices.push_back(v);
+  }
+  return GetAABBFromVertices(vertices);
 }

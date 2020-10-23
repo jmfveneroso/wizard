@@ -219,7 +219,7 @@ bool ProcessGameInput() {
       debounce = 20;
     }
 
-    ai->RunSpiderAI(c);
+    ai->RunSpiderAI();
     physics->Run();
     asset_catalog->UpdateParticles();
 

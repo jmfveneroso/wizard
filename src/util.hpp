@@ -5,6 +5,7 @@
 #include <iostream>
 #include <exception>
 #include <memory>
+#include <queue>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -52,6 +53,8 @@ struct Plane {
 struct AABB {
   vec3 point;
   vec3 dimensions;
+  AABB() {}
+  AABB(vec3 point, vec3 dimensions) : point(point), dimensions(dimensions) {}
 };
 
 struct BoundingSphere {
@@ -97,6 +100,24 @@ struct Keyframe {
 struct Animation {
   string name;
   vector<Keyframe> keyframes;
+};
+
+struct SphereTreeNode {
+  BoundingSphere sphere;
+  shared_ptr<SphereTreeNode> lft, rgt;
+
+  bool has_polygon = false;
+  Polygon polygon;
+  SphereTreeNode() {}
+};
+
+struct AABBTreeNode {
+  AABB aabb;
+  shared_ptr<AABBTreeNode> lft, rgt;
+
+  bool has_polygon = false;
+  Polygon polygon;
+  AABBTreeNode() {}
 };
 
 struct Mesh {
@@ -147,6 +168,8 @@ ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
 ostream& operator<<(ostream& os, const BoundingSphere& bs);
+ostream& operator<<(ostream& os, const shared_ptr<SphereTreeNode>& 
+  sphere_tree_node);
 
 vec3 operator*(const mat4& m, const vec3& v);
 Polygon operator*(const mat4& m, const Polygon& poly);
@@ -154,6 +177,8 @@ Polygon operator+(const Polygon& poly, const vec3& v);
 vector<Polygon> operator+(const vector<Polygon>& polys, const vec3& v);
 BoundingSphere operator+(const BoundingSphere& sphere, const vec3& v);
 BoundingSphere operator-(const BoundingSphere& sphere, const vec3& v);
+AABB operator+(const AABB& aabb, const vec3& v);
+AABB operator-(const AABB& aabb, const vec3& v);
 
 template<typename First, typename ...Rest>
 void sample_log(First&& first, Rest&& ...rest) {
@@ -165,5 +190,9 @@ void sample_log(First&& first, Rest&& ...rest) {
 
 quat RotationBetweenVectors(vec3 start, vec3 dest);
 quat RotateTowards(quat q1, quat q2, float max_angle);
+
+AABB GetAABBFromVertices(const vector<vec3>& vertices);
+AABB GetAABBFromPolygons(const vector<Polygon>& polygons);
+AABB GetAABBFromPolygons(const Polygon& polygon);
 
 #endif // __UTIL_HPP__

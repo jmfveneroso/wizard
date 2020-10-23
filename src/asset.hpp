@@ -34,13 +34,13 @@ enum CollisionResolutionType {
 };
 
 enum CollisionType {
-  COL_UNDEFINED = 0,
+  COL_SPHERE = 0,
+  COL_BONES,
+  COL_QUICK_SPHERE,
   COL_PERFECT,
   COL_CONVEX_HULL,
-  COL_SPHERE,
-  COL_QUICK_SPHERE,
-  COL_BONES,
   COL_OBB_TREE,
+  COL_UNDEFINED,
   COL_NONE 
 };
 
@@ -68,7 +68,8 @@ struct GameData {
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
-  vec3 initial_player_pos = vec3(10000, 200, 10000);
+  // vec3 initial_player_pos = vec3(10000, 200, 10000);
+  vec3 initial_player_pos = vec3(9683, 164, 9934);
   float player_speed = 0.03f; 
   float spider_speed = 0.41f; 
 };
@@ -95,31 +96,30 @@ struct GameAsset {
   // Collision.
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   CollisionType collision_type = COL_UNDEFINED;
-  BoundingSphere bounding_sphere;
-  AABB aabb;
+  BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
+  AABB aabb = AABB(vec3(0.0), vec3(0.0));
   OBB obb;
   ConvexHull convex_hull;
+  shared_ptr<SphereTreeNode> sphere_tree = nullptr;
+  shared_ptr<AABBTreeNode> aabb_tree = nullptr;
 
   // Skeleton.
   vector<shared_ptr<GameAsset>> bone_hit_boxes;
-
-  // TODO: implement OBB tree.
-  // shared_ptr<OBBTree> obb_tree;
-
-  // TODO: collision for joints.
-
-  // Animation.
-  // vector<vector<mat4>> joint_transforms;
 };
 
 struct GameAssetGroup {
   int id;
   string name;
   vector<shared_ptr<GameAsset>> assets;
+
+  // Override.
+  BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
+  AABB aabb = AABB(vec3(0.0), vec3(0.0));
 };
 
 struct OctreeNode;
 struct Sector;
+struct Waypoint;
 
 enum AiAction {
   IDLE = 0, 
@@ -133,7 +133,6 @@ struct GameObject {
 
   int id;
   string name;
-  // shared_ptr<GameAsset> asset;
   shared_ptr<GameAssetGroup> asset_group;
   vec3 position;
   vec3 prev_position = vec3(0, 0, 0);
@@ -141,14 +140,14 @@ struct GameObject {
   vec3 rotation = vec3(0, 0, 0);
   mat4 rotation_matrix = mat4(1.0);
 
-  quat target_rotation_matrix;
+  quat target_rotation_matrix = quat(0, 0, 0, 1);
   int rotation_factor = 0;
 
   vec3 up = vec3(0, 1, 0); // Determines object up direction.
   vec3 forward = vec3(0, 0, 1); // Determines object forward direction.
 
-  quat cur_rotation;
-  quat dest_rotation;
+  quat cur_rotation = quat(0, 0, 0, 1);
+  quat dest_rotation = quat(0, 0, 0, 1);
   // TODO: interpolate on each frame by moving from rotation_quat to 
   // dest_rotation_quat until they are the same. By calling 
   // quat RotateTowards(quat q1, quat q2, float max_angle.
@@ -172,18 +171,30 @@ struct GameObject {
 
   // TODO: Stuff that may polymorph.
   float life = 100.0f;
-  AiAction ai_action = IDLE;
+  AiAction ai_action = MOVE;
   vec3 speed = vec3(0, 0, 0);
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   double updated_at = 0;
+  shared_ptr<Waypoint> next_waypoint = nullptr;
+
+  // Override asset properties.
+  ConvexHull collision_hull;
+  shared_ptr<SphereTreeNode> sphere_tree = nullptr;
+  shared_ptr<AABBTreeNode> aabb_tree = nullptr;
+  BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
+  AABB aabb = AABB(vec3(0.0), vec3(0.0));
 
   GameObject() {}
   GameObject(GameObjectType type) : type(type) {}
 
   BoundingSphere GetBoundingSphere();
+  AABB GetAABB();
   shared_ptr<GameAsset> GetAsset();
+  shared_ptr<SphereTreeNode> GetSphereTree();
+  shared_ptr<AABBTreeNode> GetAABBTree();
 };
+using ObjPtr = shared_ptr<GameObject>;
 
 struct Player : GameObject {
   Player() : GameObject(GAME_OBJ_PLAYER) {}
@@ -225,6 +236,13 @@ struct Portal : GameObject {
   Portal() : GameObject(GAME_OBJ_PORTAL) {}
 };
 
+struct SortedStaticObj {
+  float start, end;
+  shared_ptr<GameObject> obj;
+  SortedStaticObj(shared_ptr<GameObject> obj, float start, float end) 
+    : obj(obj), start(start), end(end) {}
+};
+
 struct OctreeNode {
   shared_ptr<OctreeNode> parent = nullptr;
 
@@ -236,7 +254,22 @@ struct OctreeNode {
 
   double updated_at = 0;
 
+  int axis = -1;
+  // After inserting static objects in Octree, traverse octree generating
+  // static objects lists sorted by the best axis. 
+
+  // Then, when comparing with moving objects, sort the moving object in the
+  // same axis and check for overlaps.
+  vector<shared_ptr<GameObject>> down_pass, up_pass;
+
+  // TODO: this should probably be removed.
   unordered_map<int, shared_ptr<GameObject>> objects;
+
+  vector<SortedStaticObj> static_objects;
+  unordered_map<int, shared_ptr<GameObject>> moving_objs;
+
+  vector<shared_ptr<Sector>> sectors;
+
   OctreeNode() {}
   OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 
     half_dimensions(half_dimensions) {}
@@ -359,6 +392,10 @@ class AssetCatalog {
   unordered_map<int, shared_ptr<ParticleType>> particle_types_by_id_;
   unordered_map<int, shared_ptr<Missile>> missiles_by_id_;
 
+  vector<shared_ptr<GameObject>> moving_objects_;
+
+  void AddGameObject(shared_ptr<GameObject> game_obj);
+
   shared_ptr<GameData> game_data_;
   shared_ptr<Player> player_;
   string directory_;
@@ -387,6 +424,11 @@ class AssetCatalog {
 
   shared_ptr<GameAssetGroup> 
     CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset);
+
+  vector<shared_ptr<GameObject>> GenerateOptimizedOctreeAux(
+    shared_ptr<OctreeNode> octree_node, 
+    vector<shared_ptr<GameObject>> top_objs);
+  void GenerateOptimizedOctree();
 
  public:
   // Instantiating this will fail if OpenGL hasn't been initialized.
@@ -446,6 +488,10 @@ class AssetCatalog {
     return missiles_;
   }
 
+  unordered_map<string, shared_ptr<Waypoint>>& GetWaypoints() {
+    return waypoints_;
+  }
+
   // TODO: all this logic should be moved elsewhere. This class should be mostly
   // to read and write resources.
   void UpdateFrameStart();
@@ -462,6 +508,10 @@ class AssetCatalog {
   int last_used_particle_ = 0;
   int FindUnusedParticle();
 
+  vector<shared_ptr<GameObject>>& GetMovingObjects() { return moving_objects_; }
+
+  bool IsMovingObject(shared_ptr<GameObject> game_obj);
+  shared_ptr<OctreeNode> GetOctreeRoot();
 };
 
 #endif // __ASSET_HPP__

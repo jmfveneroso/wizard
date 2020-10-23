@@ -36,15 +36,13 @@ using namespace glm;
 class AI{
   shared_ptr<AssetCatalog> asset_catalog_;
 
-  bool remove_spider = false;
-  int spider_life_ = 100.0f;
-  shared_ptr<Waypoint> spider_next_waypoint_ = nullptr;
+  shared_ptr<Waypoint> GetNextWaypoint(ObjPtr obj);
 
  public:
   AI(shared_ptr<AssetCatalog> asset_catalog);
 
   void InitSpider();
-  void RunSpiderAI(const Camera& camera);
+  void RunSpiderAI();
 };
 
 #endif // __AI_HPP__

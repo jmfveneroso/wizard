@@ -241,8 +241,11 @@ void Renderer::Run(const function<bool()>& process_frame,
     mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
     ExtractFrustumPlanes(MVP, frustum_planes_);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
-    glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
+    if (draw_with_fbo_) {
+      glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
+      glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
+    }
+
     glClearColor(0.73, 0.81, 0.92, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -253,7 +256,10 @@ void Renderer::Run(const function<bool()>& process_frame,
 
     glClear(GL_DEPTH_BUFFER_BIT);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
+    if (draw_with_fbo_) {
+      glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
+    }
+
     shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
     mat4 rotation_matrix = rotate(
       mat4(1.0),
@@ -270,7 +276,10 @@ void Renderer::Run(const function<bool()>& process_frame,
     obj->position += vec3(0, -0.5, 0);
 
     DrawObject(obj);
-    DrawFBO(fbos_["screen"], blur);
+
+    if (draw_with_fbo_) {
+      DrawFBO(fbos_["screen"], blur);
+    }
 
     after_frame();
 
@@ -503,6 +512,20 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
       objects.push_back(obj);
     }
   }
+
+  for (auto& [id, obj] : octree_node->moving_objs) {
+    switch (obj->type) {
+      case GAME_OBJ_DEFAULT:
+      case GAME_OBJ_MISSILE:
+        break;
+      default:
+        continue;
+    }
+
+    if (obj->life > 0) {
+      objects.push_back(obj);
+    }
+  }
 }
 
 vector<shared_ptr<GameObject>> 
@@ -545,8 +568,9 @@ void Renderer::DrawObjects(shared_ptr<Sector> sector) {
     // Object has children.
     if (!obj->children.empty()) {
       for (auto& c : obj->children) {
-        c->rotation_matrix = obj->rotation_matrix;
-        DrawObject(c);
+        // TODO: uncomment to show bones.
+        // c->rotation_matrix = obj->rotation_matrix;
+        // DrawObject(c);
       }
     }
 
@@ -596,7 +620,6 @@ void Renderer::DrawCaves(
 
     // Only write to depth buffer.
     glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    // DrawObject(p->object);
     DrawObject(p);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   }
@@ -638,7 +661,11 @@ void Renderer::DrawSector(
 
     BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
     bool in_frustum = false; 
-    // for (auto& poly : p->polygons) {
+    if (p->id == 119 || p->id == 149) {
+      cout << "ouvino: " << p->name << endl;
+      cout << p->GetAsset()->lod_meshes[0].polygons << endl;
+    }
+
     for (auto& poly : p->GetAsset()->lod_meshes[0].polygons) {
       vec3 portal_point = p->position + poly.vertices[0];
       vec3 normal = poly.normals[0];
@@ -649,7 +676,6 @@ void Renderer::DrawSector(
       }
 
       if (dot(normalize(camera_.position - portal_point), normal) < 0.000001f) {
-      // if (dot(camera_.position - poly.vertices[0], poly.normals[0]) < 0.000001f) {
         continue;
       }
 
@@ -776,19 +802,21 @@ void Renderer::UpdateParticleBuffers() {
 void Renderer::DrawParticles() {
   UpdateParticleBuffers();
 
-  const FBO& fbo = fbos_["post-particles"];
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
-  glViewport(0, 0, fbo.width, fbo.height);
-  glClearColor(0.0, 0.0, 0.0, 0.0f);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  if (draw_with_fbo_) {
+    const FBO& fbo = fbos_["post-particles"];
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
+    glViewport(0, 0, fbo.width, fbo.height);
+    glClearColor(0.0, 0.0, 0.0, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  }
+
+  glDepthMask(GL_FALSE);
+  glDisable(GL_CULL_FACE);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   for (const auto& [name, prd] : particle_render_data_) {
     glBindVertexArray(prd.vao);
-
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     GLuint program_id = asset_catalog_->GetShader("particle");
     glUseProgram(program_id);
@@ -832,6 +860,8 @@ void Renderer::DrawParticles() {
   glEnable(GL_DEPTH_TEST);
   glBindVertexArray(0);
 
-  DrawFBO(fbos_["post-particles"], false, &fbos_["screen"]);
-  glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
+  if (draw_with_fbo_) {
+    DrawFBO(fbos_["post-particles"], false, &fbos_["screen"]);
+  }
+  // glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
 }

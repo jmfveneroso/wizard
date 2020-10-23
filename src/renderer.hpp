@@ -81,6 +81,7 @@ class Renderer {
   float delta_time_ = 0.0f;
 
   // Particles code.
+  bool draw_with_fbo_ = false;
   GLuint particle_vbo_;
   unordered_map<string, ParticleRenderData> particle_render_data_;
 
