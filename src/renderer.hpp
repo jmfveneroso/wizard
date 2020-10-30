@@ -119,7 +119,10 @@ class Renderer {
     vector<shared_ptr<GameObject>>& objects);
   void DrawCaves(shared_ptr<StabbingTreeNode> stabbing_tree_node);
   void DrawCavePortalToStencilBuffer(shared_ptr<Portal> portal);
+
+  // TODO: probably should go somewhere else.
   void UpdateAnimationFrames();
+  void DrawScreenEffects();
 
  public:
   Renderer();  

@@ -195,4 +195,6 @@ AABB GetAABBFromVertices(const vector<vec3>& vertices);
 AABB GetAABBFromPolygons(const vector<Polygon>& polygons);
 AABB GetAABBFromPolygons(const Polygon& polygon);
 
+Mesh CreateDome();
+
 #endif // __UTIL_HPP__

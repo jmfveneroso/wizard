@@ -622,6 +622,32 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
   glUniform3fv(GetUniformId(program_id_, "clipping_normal"), 1, 
     (float*) &clipping_normal_);
 
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  glUniform3fv(GetUniformId(program_id_, "light_direction"), 1,
+    (float*) &configs->sun_position);
+
+  vector<ObjPtr> light_points = asset_catalog_->GetClosestLightPoints( 
+    vec3(0, 0, 0));
+  for (int i = 0; i < 3; i++) {
+    vec3 position = vec3(0, 0, 0);
+    vec3 light_color = vec3(0, 0, 0);
+    float quadratic = 99999999.0f;
+    if (i < light_points.size()) {
+      shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
+      position = light_points[i]->position;
+      light_color = asset->light_color;
+      quadratic = asset->quadratic;
+    }
+
+    string p = string("point_lights[") + boost::lexical_cast<string>(i) + "].";
+    GLuint glsl_pos = GetUniformId(program_id_, p + "position");
+    GLuint glsl_diffuse = GetUniformId(program_id_, p + "diffuse");
+    GLuint glsl_quadratic = GetUniformId(program_id_, p + "quadratic");
+    glUniform3fv(glsl_pos, 1, (float*) &position);
+    glUniform3fv(glsl_diffuse, 1, (float*) &light_color);
+    glUniform1f(glsl_quadratic, quadratic);
+  }
+
   float h = player_pos.y - GetHeight(player_pos.x, player_pos.z);
   int last_visible_index = CLIPMAP_LEVELS-1;
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {

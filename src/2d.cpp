@@ -1,8 +1,12 @@
 #include "2d.hpp"
 
-Draw2D::Draw2D(GLuint shader_id, GLuint polygon_shader_id) : shader_id_(shader_id), 
-  polygon_shader_id_(polygon_shader_id),
+Draw2D::Draw2D(shared_ptr<AssetCatalog> asset_catalog) 
+  : asset_catalog_(asset_catalog),
   window_width_(1200), window_height_(800) {
+
+  shader_id_ = asset_catalog->GetShader("text");
+  polygon_shader_id_ = asset_catalog->GetShader("polygon");
+
   glGenVertexArrays(1, &vao_);
   projection_ = ortho(0.0f, window_width_, 0.0f, window_height_);
 
@@ -11,6 +15,10 @@ Draw2D::Draw2D(GLuint shader_id, GLuint polygon_shader_id) : shader_id_(shader_i
   glGenBuffers(1, &vbo_);
   glBindBuffer(GL_ARRAY_BUFFER, vbo_);
   glBufferData(GL_ARRAY_BUFFER, 32 * sizeof(vec3), nullptr, GL_DYNAMIC_DRAW);
+
+  glGenBuffers(1, &uv_);
+  glBindBuffer(GL_ARRAY_BUFFER, uv_);
+  glBufferData(GL_ARRAY_BUFFER, 32 * sizeof(vec2), nullptr, GL_DYNAMIC_DRAW);
 }
 
 vec3 GetColor(const string& color_name) {
@@ -231,5 +239,55 @@ void Draw2D::DrawRectangle(GLfloat x, GLfloat y, GLfloat width, GLfloat height, 
   BindBuffer(vbo_, 0, 3);
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glEnable(GL_DEPTH_TEST);
+  glBindVertexArray(0);
+}
+
+void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y, 
+  GLfloat width, GLfloat height, GLfloat transparency) {
+  GLuint shader_id = asset_catalog_->GetShader("2d_image");
+
+  glBindVertexArray(vao_);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glUseProgram(shader_id);
+
+  vector<vec3> vertices = {
+    { x        , y         , 0.0 },
+    { x        , y - height, 0.0 },
+    { x + width, y         , 0.0 },
+    { x + width, y         , 0.0 },
+    { x        , y - height, 0.0 },
+    { x + width, y - height, 0.0 }
+  };
+
+  vector<vec2> uvs = {
+    { 0, 0 },
+    { 0, 1 },
+    { 1, 0 },
+    { 1, 0 },
+    { 0, 1 },
+    { 1, 1 }
+  };
+
+  vec3 color = vec3(1.0, 0, 0);
+  glUniform3f(GetUniformId(shader_id, "lineColor"), color.x, color.y, color.z);
+  glUniformMatrix4fv(GetUniformId(shader_id, "projection"), 1, GL_FALSE, &projection_[0][0]);
+  glUniform1f(GetUniformId(shader_id, "transparency"), transparency);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(glm::vec3), &vertices[0]); 
+
+  glBindBuffer(GL_ARRAY_BUFFER, uv_);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, uvs.size() * sizeof(glm::vec2), &uvs[0]); 
+
+  GLuint texture_id = asset_catalog_->GetTextureByName(texture);
+  BindTexture("texture_sampler", shader_id, texture_id);
+
+  BindBuffer(vbo_, 0, 3);
+  BindBuffer(uv_, 1, 2);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
   glBindVertexArray(0);
 }

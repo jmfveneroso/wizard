@@ -37,6 +37,14 @@ class AI{
   shared_ptr<AssetCatalog> asset_catalog_;
 
   shared_ptr<Waypoint> GetNextWaypoint(ObjPtr obj);
+  void ChangeAction(ObjPtr obj, AiAction action);
+
+  bool RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold = 0.75f);
+  void Move(ObjPtr spider);
+  void TurnTowardPlayer(ObjPtr spider);
+  void Attack(ObjPtr spider);
+  void Wander(ObjPtr spider);
+  void Idle(ObjPtr spider);
 
  public:
   AI(shared_ptr<AssetCatalog> asset_catalog);

@@ -265,6 +265,24 @@ vector<shared_ptr<CollisionST>> GetCollisionsST(ObjPtr obj1) {
   return { make_shared<CollisionST>(obj1) };
 }
 
+// Bones - Bones.
+vector<shared_ptr<CollisionBB>> GetCollisionsBB(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1 = obj1->GetBoundingSphere();
+  BoundingSphere s2 = obj2->GetBoundingSphere();
+  vec3 displacement_vector, point_of_contact;
+  if (!TestSphereSphere(s1, s2, displacement_vector, point_of_contact)) {
+    return {};
+  }
+
+  vector<shared_ptr<CollisionBB>> collisions;
+  for (ObjPtr bone1 : obj1->children) {
+    for (ObjPtr bone2 : obj2->children) {
+      collisions.push_back(make_shared<CollisionBB>(obj1, obj2, bone1, bone2));
+    }
+  }
+  return collisions;
+}
+
 // Bones - Perfect.
 vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
   shared_ptr<AABBTreeNode> node, ObjPtr obj1, ObjPtr obj2) {
@@ -297,6 +315,22 @@ vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1) {
     collisions.push_back(make_shared<CollisionBT>(bone->parent, bone));
   }
   return collisions;
+}
+
+// Quick Sphere - Sphere.
+vector<shared_ptr<CollisionQS>> GetCollisionsQS(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1;
+  s1.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
+  s1.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
+    obj1->GetAsset()->bounding_sphere.radius;
+
+  BoundingSphere s2 = obj2->GetBoundingSphere();
+  vec3 displacement_vector, point_of_contact;
+  if (!TestSphereSphere(s1, s2, displacement_vector, point_of_contact)) {
+    return {};
+  }
+
+  return { make_shared<CollisionQS>(obj1, obj2) };
 }
 
 // Quick Sphere - Perfect.
@@ -353,6 +387,7 @@ vector<shared_ptr<CollisionQT>> GetCollisionsQT(ObjPtr obj1) {
 
 vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
   if (!IsPairCollidable(obj1, obj2)) return {};
+
   num_objects_tested_++;
 
   CollisionType col1 = obj1->GetAsset()->collision_type;
@@ -363,13 +398,13 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
   switch (col_pair) {
     case CP_SS: Merge(collisions, GetCollisionsSS(obj1, obj2)); break;
     case CP_SB: Merge(collisions, GetCollisionsSB(obj1, obj2)); break;
-    case CP_SQ: break;
+    case CP_SQ: Merge(collisions, GetCollisionsQS(obj2, obj1)); break;
     case CP_SP: Merge(collisions, GetCollisionsSP(obj1, obj2)); break;
     case CP_BS: Merge(collisions, GetCollisionsSB(obj2, obj1)); break;
-    case CP_BB: break;
+    case CP_BB: Merge(collisions, GetCollisionsBB(obj1, obj2)); break;
     case CP_BQ: Merge(collisions, GetCollisionsQB(obj2, obj1)); break;
     case CP_BP: Merge(collisions, GetCollisionsBP(obj1, obj2)); break;
-    case CP_QS: break;
+    case CP_QS: Merge(collisions, GetCollisionsQS(obj1, obj2)); break;
     case CP_QB: Merge(collisions, GetCollisionsQB(obj1, obj2)); break;
     case CP_QQ: break;
     case CP_QP: Merge(collisions, GetCollisionsQP(obj1, obj2)); break;
@@ -532,14 +567,54 @@ void CollisionResolver::TestCollisionSB(shared_ptr<CollisionSB> c) {
   }
 }
 
+vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector, 
+  const vec3& surface_normal, const vec3& movement) {
+  const vec3 up = vec3(0, 1, 0);
+
+  vec3 penetration = -displacement_vector;
+  float flatness = dot(surface_normal, up);
+
+  // Surface is too steep.
+  if (flatness < 0.5f) {
+    return displacement_vector;
+  }
+
+  // If surface is too flat, displacement is already almost vertical.
+  if (flatness < 0.98f) {
+    vec3 left = normalize(cross(up, penetration)); 
+    vec3 tan_upwards = normalize(cross(penetration, left));
+
+    // Moving downwards.
+    const vec3 v = normalize(movement);
+    float stopped = dot(v, -up) > 0.95f;
+    bool moving_downwards = dot(v, tan_upwards) < -0.1f;
+    if (!stopped && moving_downwards) {
+      return displacement_vector;
+    }
+
+    vec3 h_penetration = vec3(penetration.x, 0, penetration.z);
+    vec3 projection = dot(h_penetration, tan_upwards) * tan_upwards;
+    displacement_vector += projection;
+  }
+  displacement_vector.x = 0;
+  displacement_vector.z = 0;
+  return displacement_vector;
+}
+
 // Test Sphere - Perfect.
 void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
   BoundingSphere s1 = c->obj1->GetBoundingSphere();
+
   c->collided = IntersectBoundingSphereWithTriangle(s1, 
     c->polygon + c->obj2->position, c->displacement_vector, 
     c->point_of_contact);
+
   c->normal = normalize(c->displacement_vector);
   if (c->collided) {
+    const vec3& surface_normal = c->polygon.normals[0];
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, surface_normal, v);
     FillCollisionBlankFields(c);
   }
 }
@@ -557,6 +632,17 @@ void CollisionResolver::TestCollisionST(shared_ptr<CollisionST> c) {
   }
 }
 
+// Test Bones - Bones.
+void CollisionResolver::TestCollisionBB(shared_ptr<CollisionBB> c) {
+  BoundingSphere s1 = GetBoneBoundingSphere(c->bone1);
+  BoundingSphere s2 = GetBoneBoundingSphere(c->bone2);
+  c->collided = TestSphereSphere(s1, s2, c->displacement_vector, 
+    c->point_of_contact);
+  if (c->collided) {
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Bones - Perfect.
 void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
   BoundingSphere s1 = GetBoneBoundingSphere(c->bone);
@@ -565,6 +651,10 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
     c->point_of_contact);
   c->normal = c->polygon.normals[0];
   if (c->collided) {
+    const vec3& surface_normal = c->polygon.normals[0];
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, surface_normal, v);
     FillCollisionBlankFields(c);
   }
 }
@@ -597,6 +687,22 @@ void CollisionResolver::TestCollisionQP(shared_ptr<CollisionQP> c) {
   }
 }
 
+// Test Quick Sphere - Sphere.
+void CollisionResolver::TestCollisionQS(shared_ptr<CollisionQS> c) {
+  BoundingSphere s1 = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
+  BoundingSphere s2 = c->obj2->GetBoundingSphere();
+  vec3 v = c->obj1->position - c->obj1->prev_position;
+
+  float t; // Time of collision.
+  c->collided = TestMovingSphereSphere(s1, s2, v, vec3(0, 0, 0), t, 
+    c->point_of_contact);
+  if (c->collided) {
+    c->displacement_vector = c->point_of_contact - c->obj1->position;
+    c->normal = normalize(s1.center - s2.center);
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Quick Sphere - Bones.
 void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
   BoundingSphere s1 = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
@@ -605,9 +711,6 @@ void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
   float t; // Time of collision.
   c->collided = TestMovingSphereSphere(s1, s2, v, vec3(0, 0, 0), t, 
     c->point_of_contact);
-  // vec3 v2 = c->obj2->position - c->obj2->prev_position;
-  // c->collided = TestMovingSphereSphere(s1, s2, v, v2, t, 
-  //   c->point_of_contact);
   if (c->collided) {
     c->displacement_vector = c->point_of_contact - c->obj1->position;
     c->normal = normalize(s1.center - s2.center);
@@ -664,6 +767,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionSP(static_pointer_cast<CollisionSP>(c)); break;
     case CP_ST:
       TestCollisionST(static_pointer_cast<CollisionST>(c)); break;
+    case CP_BB:
+      TestCollisionBB(static_pointer_cast<CollisionBB>(c)); break;
     case CP_BP:
       TestCollisionBP(static_pointer_cast<CollisionBP>(c)); break;
     case CP_BT:
@@ -674,6 +779,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionQB(static_pointer_cast<CollisionQB>(c)); break;
     case CP_QT:
       TestCollisionQT(static_pointer_cast<CollisionQT>(c)); break;
+    case CP_QS:
+      TestCollisionQS(static_pointer_cast<CollisionQS>(c)); break;
     default: break;
   }
 }
@@ -736,17 +843,36 @@ void CollisionResolver::ResolveCollisions() {
       normal = -(d - 2 * dot(d, n) * n);
 
       obj1->position += displacement_vector;
-      if (obj2 && obj2->name == "spider-001") {
+      if (obj2 && obj2->GetAsset()->name == "spider") {
         obj2->life -= 10;
         asset_catalog_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
           vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
-      } else {
 
+        // TODO: need another class to take care of units. Like HitUnit(unit);
+        // TODO: ChangeStatus(status)
+        if (obj2->life <= 0) {
+          obj2->status = STATUS_DYING;
+          obj2->frame = 0;
+        } else {
+          obj2->status = STATUS_TAKING_HIT;
+          obj2->frame = 0;
+        }
+      } else if (obj2 && obj2->GetAsset()->name == "player") {
+        obj2->life -= 10;
+        asset_catalog_->GetConfigs()->taking_hit = 30.0f;
+
+        // TODO: this check shouldn't be placed here. After I have an engine
+        // class, it should be made there.
+        if (obj2->life <= 0.0f) {
+          obj2->life = 100.0f;
+          obj2->position = asset_catalog_->GetConfigs()->respawn_point;
+        }
+        
+      } else {
         asset_catalog_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
           vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
       }
       obj1->life = -1;
-      // obj1->freeze = true;
       continue;
     }
 
@@ -759,7 +885,10 @@ void CollisionResolver::ResolveCollisions() {
     obj1->position += displacement_vector;
     obj1->speed += abs(dot(obj1->speed, v)) * v;
     obj1->target_position = obj1->position;
-    obj1->up = normal;
+
+    if (dot(normal, vec3(0, 1, 0)) > 0.6) {
+      obj1->up = normal;
+    }
 
     asset_catalog_->UpdateObjectPosition(obj1);
 

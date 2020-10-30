@@ -20,6 +20,7 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 #include <ft2build.h>
+#include "asset.hpp"
 #include "util.hpp"
 #include FT_FREETYPE_H
 
@@ -31,9 +32,11 @@ struct Character {
 };
 
 class Draw2D {
+  shared_ptr<AssetCatalog> asset_catalog_;
   GLuint vao_;
   GLuint text_vbo_;
   GLuint vbo_;
+  GLuint uv_;
   GLuint shader_id_;
   GLuint polygon_shader_id_;
   float window_width_;
@@ -41,15 +44,17 @@ class Draw2D {
   mat4 projection_;
   unordered_map<GLchar, Character> characters_;
 
+
   void LoadFonts();
 
  public:
-  Draw2D(GLuint shader_id, GLuint polygon_shader_id);
+  Draw2D(shared_ptr<AssetCatalog> asset_catalog);
 
   void DrawChar(char, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0);
   void DrawText(const string&, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false);
   void DrawLine(vec2, vec2, GLfloat, vec3);
   void DrawRectangle(GLfloat, GLfloat, GLfloat, GLfloat, vec3);
+  void DrawImage(const string& texture, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
 };
 
 #endif // __2D_HPP__

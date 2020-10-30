@@ -26,10 +26,6 @@
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 
-#define PLAYER_SPEED 0.03f
-// #define PLAYER_SPEED 0.6f
-// #define PLAYER_SPEED 0.3f
-// #define PLAYER_HEIGHT 1.5
 #define PLAYER_HEIGHT 0.75
 // #define JUMP_FORCE 30.0f
 #define JUMP_FORCE 0.3f
@@ -58,6 +54,7 @@ void PressKeyCallback(GLFWwindow* window, int key, int scancode, int action, int
 
 void RunCommand(string command) {
   shared_ptr<Player> player = asset_catalog->GetPlayer();
+  shared_ptr<Configs> configs = asset_catalog->GetConfigs();
 
   vector<string> result; 
   boost::split(result, command, boost::is_any_of(" ")); 
@@ -71,6 +68,14 @@ void RunCommand(string command) {
     float y = boost::lexical_cast<float>(result[2]);
     float z = boost::lexical_cast<float>(result[3]);
     player->position = vec3(x, y, z);
+  } else if (result[0] == "speed") {
+    float speed = boost::lexical_cast<float>(result[1]);
+    configs->player_speed = speed;
+  } else if (result[0] == "sun") {
+    float x = boost::lexical_cast<float>(result[1]);
+    float y = boost::lexical_cast<float>(result[2]);
+    float z = boost::lexical_cast<float>(result[3]);
+    configs->sun_position = vec3(x, y, z);
   } else if (result[0] == "raise") {
     ivec2 top_left = ivec2(player->position.x, player->position.z) - 40;
     for (int x = 0; x < 80; x++) {
@@ -137,28 +142,30 @@ bool ProcessGameInput() {
         shared_ptr<Sector> s = asset_catalog->GetSector(player->position + vec3(0, 0.75, 0));
         ss << "Sector: " << s->name << endl;
 
-        ss << "Life: " << asset_catalog->GetGameData()->life << endl;
+        ss << "Life: " << player->life << endl;
         text_editor->SetContent(ss.str());
         text_mode = true;
       }
       throttle_counter = 20;
     }
-    
+   
+    float player_speed = asset_catalog->GetConfigs()->player_speed; 
+
     // Move forward.
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-      player->speed += front * PLAYER_SPEED;
+      player->speed += front * player_speed;
 
     // Move backward.
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-      player->speed -= front * PLAYER_SPEED;
+      player->speed -= front * player_speed;
 
     // Strafe right.
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-      player->speed += right * PLAYER_SPEED;
+      player->speed += right * player_speed;
 
     // Strafe left.
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-      player->speed -= right * PLAYER_SPEED;
+      player->speed -= right * player_speed;
 
     // Move up.
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
@@ -170,7 +177,7 @@ bool ProcessGameInput() {
 
     // Move down.
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-      player->position -= vec3(0, 1, 0) * PLAYER_SPEED;
+      player->position -= vec3(0, 1, 0) * player_speed;
 
     double x_pos, y_pos;
     glfwGetCursorPos(window, &x_pos, &y_pos);
@@ -224,6 +231,19 @@ bool ProcessGameInput() {
     asset_catalog->UpdateParticles();
 
     collision_resolver->Collide();
+
+    shared_ptr<Configs> configs = asset_catalog->GetConfigs();
+    configs->taking_hit -= 1.0f;
+    if (configs->taking_hit < 0.0) {
+      configs->player_speed = 0.03f;
+    } else {
+      configs->player_speed = 0.005f;
+    }
+
+    asset_catalog->RemoveDead();
+    configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(1.0, 0, 0)) 
+      * vec4(configs->sun_position, 1.0f));
+
     return false;
   }
 }
@@ -237,9 +257,7 @@ void AfterFrame() {
 int main() {
   renderer = make_shared<Renderer>();
   asset_catalog = make_shared<AssetCatalog>("assets");
-  shared_ptr<Draw2D> draw_2d = make_shared<Draw2D>(
-    asset_catalog->GetShader("text"), 
-    asset_catalog->GetShader("polygon"));
+  shared_ptr<Draw2D> draw_2d = make_shared<Draw2D>(asset_catalog);
 
   renderer->set_asset_catalog(asset_catalog);
   renderer->set_draw_2d(draw_2d);

@@ -68,6 +68,13 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
     vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
 
+  shared_ptr<Sector> new_sector = make_shared<Sector>();
+  new_sector->name = "outside";
+  new_sector->octree_node = outside_octree_;
+  sectors_[new_sector->name] = new_sector;
+  new_sector->id = id_counter_++;
+  sectors_by_id_[new_sector->id] = new_sector;
+
   LoadShaders(directory_ + "/shaders");
   LoadAssets(directory_ + "/game_assets");
   LoadObjects(directory_ + "/game_objects");
@@ -98,6 +105,8 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   AddGameObject(player_);
 
   InitMissiles();
+
+  CreateSkydome();
 }
 
 shared_ptr<GameAssetGroup> 
@@ -338,6 +347,18 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
     game_asset->bump_map_id = textures_[texture_filename];
   }
 
+  const pugi::xml_node& light_xml = asset.child("light");
+  if (light_xml) {
+    float r = boost::lexical_cast<float>(light_xml.attribute("r").value());
+    float g = boost::lexical_cast<float>(light_xml.attribute("g").value());
+    float b = boost::lexical_cast<float>(light_xml.attribute("b").value());
+    float quadratic = boost::lexical_cast<float>(light_xml.attribute("quadratic").value());
+
+    game_asset->emits_light = true;
+    game_asset->light_color = vec3(r, g, b);
+    game_asset->quadratic = quadratic;
+  }
+
   if (assets_.find(game_asset->name) != assets_.end()) {
     ThrowError("Asset with name ", game_asset->name, " already exists.");
   }
@@ -474,6 +495,10 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     // Straddling, or no child node to descend into, so link object into list 
     // at this node.
     object->octree_node = octree_node;
+    if (IsLight(object)) {
+      octree_node->lights[object->id] = object;
+    }
+
     if (IsMovingObject(object)) {
       octree_node->moving_objs[object->id] = object;
     } else if (object->type == GAME_OBJ_SECTOR) {
@@ -517,34 +542,22 @@ void AssetCatalog::AddGameObject(shared_ptr<GameObject> game_obj) {
   if (IsMovingObject(game_obj)) {
     moving_objects_.push_back(game_obj);
   }
+
+  if (IsLight(game_obj)) {
+    lights_.push_back(game_obj);
+  }
 }
 
 shared_ptr<GameObject> AssetCatalog::LoadGameObject(
-  const pugi::xml_node& game_obj) {
+  string name, string asset_name, vec3 position, vec3 rotation) {
+
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
-  new_game_obj->name = game_obj.attribute("name").value();
-
-  const pugi::xml_node& position = game_obj.child("position");
-  if (!position) {
-    throw runtime_error("Game object must have a location.");
-  }
-
-  float x = boost::lexical_cast<float>(position.attribute("x").value());
-  float y = boost::lexical_cast<float>(position.attribute("y").value());
-  float z = boost::lexical_cast<float>(position.attribute("z").value());
-  new_game_obj->position = vec3(x, y, z);
-
-  const pugi::xml_node& asset = game_obj.child("asset");
-  if (!asset) {
-    throw runtime_error("Game object must have an asset.");
-  }
-
-  const string& asset_name = asset.text().get();
+  new_game_obj->name = name;
+  new_game_obj->position = position;
   if (asset_groups_.find(asset_name) == asset_groups_.end()) {
     throw runtime_error(string("Asset ") + asset_name + 
       string(" does not exist."));
   }
-
   new_game_obj->asset_group = asset_groups_[asset_name];
 
   // If the object has bone hit boxes.
@@ -566,18 +579,8 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
     AddGameObject(child);
   }
 
-  const pugi::xml_node& animation_xml = game_obj.child("animation");
-  if (animation_xml) {
-    const string& animation_name = animation_xml.text().get();
-    new_game_obj->active_animation = animation_name;
-  }
-
-  const pugi::xml_node& rotation = game_obj.child("rotation");
-  if (rotation) {
-    float x = boost::lexical_cast<float>(rotation.attribute("x").value());
-    float y = boost::lexical_cast<float>(rotation.attribute("y").value());
-    float z = boost::lexical_cast<float>(rotation.attribute("z").value());
-    new_game_obj->rotation_matrix = rotate(mat4(1.0), y, vec3(0, 1, 0));
+  if (rotation.y > 0.0001f) {
+    new_game_obj->rotation_matrix = rotate(mat4(1.0), rotation.y, vec3(0, 1, 0));
 
     shared_ptr<GameAsset> game_asset = new_game_obj->GetAsset();
     if (game_asset->collision_type == COL_PERFECT) {
@@ -610,7 +613,14 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
     }
   }
 
+  Mesh& mesh = new_game_obj->GetAsset()->lod_meshes[0];
+  if (mesh.animations.size() > 0) {
+    new_game_obj->active_animation = mesh.animations.begin()->first;
+  }
+
   AddGameObject(new_game_obj);
+
+  UpdateObjectPosition(new_game_obj);
   return new_game_obj;
 }
 
@@ -628,9 +638,7 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
 
     shared_ptr<Sector> new_sector = make_shared<Sector>();
     new_sector->name = sector.attribute("name").value();
-    if (new_sector->name == "outside") {
-      new_sector->octree_node = outside_octree_;
-    } else {
+    if (new_sector->name != "outside") {
       const pugi::xml_node& position = sector.child("position");
       if (!position) {
         throw runtime_error("Indoors sector must have a location.");
@@ -668,6 +676,14 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
         }
       }
 
+      const pugi::xml_node& lighting_xml = sector.child("lighting");
+      if (lighting_xml) {
+        float r = boost::lexical_cast<float>(lighting_xml.attribute("r").value());
+        float g = boost::lexical_cast<float>(lighting_xml.attribute("g").value());
+        float b = boost::lexical_cast<float>(lighting_xml.attribute("b").value());
+        new_sector->lighting_color = vec3(r, g, b);
+      }
+
       shared_ptr<GameAsset> sector_asset = make_shared<GameAsset>();
       sector_asset->bounding_sphere = GetAssetBoundingSphere(m.polygons);
       sector_asset->aabb = GetObjectAABB(m.polygons);
@@ -687,14 +703,46 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
     const pugi::xml_node& game_objs = sector.child("game-objs");
     for (pugi::xml_node game_obj = game_objs.child("game-obj"); game_obj; 
       game_obj = game_obj.next_sibling("game-obj")) {
-      shared_ptr<GameObject> new_game_obj = LoadGameObject(game_obj);
-      InsertObjectIntoOctree(new_sector->octree_node, new_game_obj, 0);
-      cout << new_game_obj->name << endl;
-      cout << new_game_obj->octree_node->center << endl;
+
+      const string& name = game_obj.attribute("name").value();
+      const pugi::xml_node& position_xml = game_obj.child("position");
+      if (!position_xml) {
+        throw runtime_error("Game object must have a location.");
+      }
+
+      float x = boost::lexical_cast<float>(position_xml.attribute("x").value());
+      float y = boost::lexical_cast<float>(position_xml.attribute("y").value());
+      float z = boost::lexical_cast<float>(position_xml.attribute("z").value());
+      vec3 position = vec3(x, y, z);
+
+      const pugi::xml_node& asset = game_obj.child("asset");
+      if (!asset) {
+        throw runtime_error("Game object must have an asset.");
+      }
+
+      const string& asset_name = asset.text().get();
+
+      vec3 rotation = vec3(0, 0, 0);
+      const pugi::xml_node& rotation_xml = game_obj.child("rotation");
+      if (rotation_xml) {
+        float x = boost::lexical_cast<float>(rotation_xml.attribute("x").value());
+        float y = boost::lexical_cast<float>(rotation_xml.attribute("y").value());
+        float z = boost::lexical_cast<float>(rotation_xml.attribute("z").value());
+        rotation = vec3(x, y, z);
+      }
+
+      shared_ptr<GameObject> new_game_obj = LoadGameObject(name, asset_name, 
+        position, rotation);
+
+      // Only static objects will retain this.
       new_game_obj->current_sector = new_sector;
     }
 
     // TODO: check if sector with that name exists.
+    if (new_sector->name == "outside") {
+      continue;
+    }
+
     if (sectors_.find(new_sector->name) != sectors_.end()) {
       ThrowError("Sector with name ", new_sector->name, " already exists.");
     }
@@ -1137,17 +1185,11 @@ shared_ptr<Missile> AssetCatalog::CreateMissileFromAsset(
 }
 
 shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(
-  shared_ptr<GameAsset> game_asset) {
-  shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
-
-  new_game_obj->name = "object-" + boost::lexical_cast<string>(new_game_obj->id);
-  new_game_obj->position = vec3(0, 0, 0);
-  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
-
-  shared_ptr<Sector> outside = GetSectorByName("outside");
-  InsertObjectIntoOctree(outside->octree_node, new_game_obj, 0);
-  new_game_obj->current_sector = outside;
-  AddGameObject(new_game_obj);
+  string asset_name, vec3 position) {
+  string name = "object-" + boost::lexical_cast<string>(id_counter_ + 1);
+  shared_ptr<GameObject> new_game_obj = 
+    LoadGameObject(name, asset_name, position, vec3(0, 0, 0));
+  cout << "Ended" << endl;
   return new_game_obj;
 }
 
@@ -1158,6 +1200,9 @@ void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
     if (IsMovingObject(obj)) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
+    // if (IsLight(obj)) {
+    //   obj->octree_node->lights.erase(obj->id);
+    // }
     obj->octree_node = nullptr;
   }
 
@@ -1238,18 +1283,9 @@ shared_ptr<Sector> AssetCatalog::GetSector(vec3 position) {
   shared_ptr<Sector> s = GetSectorAux(outside->octree_node, position);
   if (s) return s;
   return outside;
-
-  // for (const auto& [name, s] : sectors_) {
-  //   if (name == "outside") continue;
-
-  //   if (IsInConvexHull(position - s->position, 
-  //     s->GetAsset()->lod_meshes[0].polygons)) {
-  //     return s;
-  //   }
-  // }
-  // return outside;
 }
 
+// TODO: move to particle file.
 int AssetCatalog::FindUnusedParticle(){
   for (int i = last_used_particle_; i < kMaxParticles; i++) {
     if (particle_container_[i].life < 0) {
@@ -1341,9 +1377,8 @@ void AssetCatalog::UpdateParticles() {
   }
 }
 
+// TODO: this should probably go to main.
 void AssetCatalog::CastMagicMissile(const Camera& camera) {
-  cout << "CastMagicMissile" << endl;
-  // TODO: this should probably go to main.
   shared_ptr<Missile> obj = missiles_.begin()->second;
   for (const auto& [string, missile]: missiles_) {
     if (missile->life <= 0) {
@@ -1373,6 +1408,27 @@ void AssetCatalog::CastMagicMissile(const Camera& camera) {
     vec3(0.0f, 0.0f, 1.0f)
   );
   obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+}
+
+// TODO: this should probably go to main.
+void AssetCatalog::SpiderCastMagicMissile(ObjPtr spider, 
+  const vec3& direction) {
+  shared_ptr<Missile> obj = missiles_.begin()->second;
+  for (const auto& [string, missile]: missiles_) {
+    if (missile->life <= 0) {
+      obj = missile;
+      break;
+    }
+  }
+
+  obj->life = 10000;
+  obj->owner = spider;
+
+  obj->position = spider->position + direction * 6.0f;
+  obj->speed = normalize(direction) * 4.0f;
+
+  obj->rotation_matrix = spider->rotation_matrix;
   UpdateObjectPosition(obj);
 }
 
@@ -1534,6 +1590,16 @@ bool AssetCatalog::IsMovingObject(shared_ptr<GameObject> game_obj) {
     && game_obj->GetAsset()->physics_behavior != PHYSICS_FIXED;
 }
 
+bool AssetCatalog::IsLight(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->emits_light;
+}
+
 shared_ptr<OctreeNode> AssetCatalog::GetOctreeRoot() {
   return GetSectorByName("outside")->octree_node;
 }
@@ -1559,3 +1625,80 @@ AABB GameObject::GetAABB() {
   // r.point += position;
   return r;
 }
+
+void AssetCatalog::RemoveDead() {
+  for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
+    ObjPtr obj = *it;
+    if (obj->GetAsset()->name != "spider") continue;
+    if (obj->status != STATUS_DEAD) continue;
+
+    // Clear position data.
+    if (obj->octree_node) {
+      obj->octree_node->objects.erase(obj->id);
+      if (IsMovingObject(obj)) {
+        obj->octree_node->moving_objs.erase(obj->id);
+      }
+      if (IsLight(obj)) {
+        obj->octree_node->lights.erase(obj->id);
+      }
+      obj->octree_node = nullptr;
+    }
+
+    for (ObjPtr c : obj->children) {
+      objects_by_id_.erase(c->id);
+      objects_.erase(c->name);
+    }
+
+    objects_by_id_.erase(obj->id);
+    objects_.erase(obj->name);
+
+    for (int i = 0; i < moving_objects_.size(); i++) {
+      if (moving_objects_[i]->id == obj->id) {
+        it = moving_objects_.erase(moving_objects_.begin() + i);
+        break;
+      }
+    }
+  }
+}
+
+shared_ptr<GameAsset> AssetCatalog::CreateAssetFromMesh(const string& name, 
+  const string& shader_name, Mesh& m) {
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  game_asset->name = name;
+  game_asset->shader = shaders_[shader_name];
+
+  game_asset->lod_meshes[0] = m;
+  m.shader = shaders_[shader_name];
+
+  game_asset->collision_type = COL_NONE;
+  game_asset->physics_behavior = PHYSICS_NONE;
+
+  if (assets_.find(game_asset->name) != assets_.end()) {
+    ThrowError("Asset with name ", game_asset->name, " already exists.");
+  }
+  assets_[game_asset->name] = game_asset;
+  game_asset->id = id_counter_++;
+  assets_by_id_[game_asset->id] = game_asset;
+
+  CreateAssetGroupForSingleAsset(game_asset);
+  return game_asset;
+}
+
+void AssetCatalog::CreateSkydome() {
+  Mesh m = CreateDome();
+  shared_ptr<GameAsset> asset = CreateAssetFromMesh("skydome", "sky", m);
+  skydome_ = CreateGameObjFromAsset("skydome", 
+    vec3(10000, 0, 10000));
+}
+
+vector<ObjPtr> AssetCatalog::GetClosestLightPoints(const vec3& position) {
+  vector<ObjPtr> res;
+  vector<ObjPtr> lights = GetLights();
+  for (auto& l : lights) { 
+    if (l->life > 0.0f) {
+      res.push_back(l);
+    }
+  }
+  return res;
+}
+

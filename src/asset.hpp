@@ -62,16 +62,24 @@ enum PhysicsBehavior {
   PHYSICS_FIXED
 };
 
-struct GameData {
-  int life = 100;
+enum Status {
+  STATUS_NONE = 0,
+  STATUS_TAKING_HIT,
+  STATUS_DYING,
+  STATUS_DEAD
 };
+
+struct GameData {};
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
-  // vec3 initial_player_pos = vec3(10000, 200, 10000);
-  vec3 initial_player_pos = vec3(9683, 164, 9934);
+  vec3 initial_player_pos = vec3(10000, 200, 10000);
+  vec3 respawn_point = vec3(10045, 500, 10015);
+  // vec3 initial_player_pos = vec3(9683, 164, 9934);
   float player_speed = 0.03f; 
   float spider_speed = 0.41f; 
+  float taking_hit = 0.0f; 
+  vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
 };
 
 struct GameAsset {
@@ -105,6 +113,12 @@ struct GameAsset {
 
   // Skeleton.
   vector<shared_ptr<GameAsset>> bone_hit_boxes;
+
+  // Light.
+  // TODO: probably should move somewhere else.
+  bool emits_light = false;
+  float quadratic;  
+  vec3 light_color;
 };
 
 struct GameAssetGroup {
@@ -125,7 +139,9 @@ enum AiAction {
   IDLE = 0, 
   MOVE = 1, 
   ATTACK = 2,
-  DIE = 3
+  DIE = 3,
+  TURN_TOWARD_TARGET = 4,
+  WANDER = 5
 };
 
 struct GameObject {
@@ -139,7 +155,6 @@ struct GameObject {
   vec3 target_position = vec3(0, 0, 0);
   vec3 rotation = vec3(0, 0, 0);
   mat4 rotation_matrix = mat4(1.0);
-
   quat target_rotation_matrix = quat(0, 0, 0, 1);
   int rotation_factor = 0;
 
@@ -158,7 +173,7 @@ struct GameObject {
   bool draw = true;
   bool freeze = false;
 
-  string active_animation = "Armature|swimming";
+  string active_animation = "";
   int frame = 0;
 
   shared_ptr<Sector> current_sector;
@@ -177,7 +192,10 @@ struct GameObject {
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   double updated_at = 0;
   shared_ptr<Waypoint> next_waypoint = nullptr;
-
+  vec3 next_location = vec3(0, 0, 0);
+  float time_wandering = 0;
+  Status status = STATUS_NONE;
+  
   // Override asset properties.
   ConvexHull collision_hull;
   shared_ptr<SphereTreeNode> sphere_tree = nullptr;
@@ -267,6 +285,7 @@ struct OctreeNode {
 
   vector<SortedStaticObj> static_objects;
   unordered_map<int, shared_ptr<GameObject>> moving_objs;
+  unordered_map<int, shared_ptr<GameObject>> lights;
 
   vector<shared_ptr<Sector>> sectors;
 
@@ -276,14 +295,13 @@ struct OctreeNode {
 };
 
 struct Sector : GameObject {
-  // Objects inside the sector.
-  vector<shared_ptr<GameObject>> objects;
- 
   // Portals inside the sector indexed by the outgoing sector id.
   unordered_map<int, shared_ptr<Portal>> portals;
 
   // Starting from this sector, which sectors are visible?
   shared_ptr<StabbingTreeNode> stabbing_tree;
+
+  vec3 lighting_color = vec3(0.7);
 
   Sector() : GameObject(GAME_OBJ_SECTOR) {}
 };
@@ -393,12 +411,14 @@ class AssetCatalog {
   unordered_map<int, shared_ptr<Missile>> missiles_by_id_;
 
   vector<shared_ptr<GameObject>> moving_objects_;
+  vector<shared_ptr<GameObject>> lights_;
 
   void AddGameObject(shared_ptr<GameObject> game_obj);
 
   shared_ptr<GameData> game_data_;
   shared_ptr<Player> player_;
   string directory_;
+  shared_ptr<GameObject> skydome_ = nullptr;
 
   shared_ptr<GameAsset> LoadAsset(const pugi::xml_node& asset);
 
@@ -415,6 +435,9 @@ class AssetCatalog {
   void LoadStabbingTree(const pugi::xml_node& parent_node, 
     shared_ptr<StabbingTreeNode> new_parent_node);
 
+  shared_ptr<GameObject> LoadGameObject(
+    string name, string asset_name, vec3 position, vec3 rotation);
+
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
     shared_ptr<GameObject> object, int depth);
 
@@ -429,6 +452,8 @@ class AssetCatalog {
     shared_ptr<OctreeNode> octree_node, 
     vector<shared_ptr<GameObject>> top_objs);
   void GenerateOptimizedOctree();
+
+  void CreateSkydome();
 
  public:
   // Instantiating this will fail if OpenGL hasn't been initialized.
@@ -462,7 +487,9 @@ class AssetCatalog {
   shared_ptr<GameObject> CreateGameObjFromPolygons(
     const vector<Polygon>& polygons);
 
-  shared_ptr<GameObject> CreateGameObjFromAsset(shared_ptr<GameAsset> asset);
+  shared_ptr<GameObject> CreateGameObjFromAsset(
+    string asset_name, vec3 position);
+
   shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
 
   void UpdateObjectPosition(shared_ptr<GameObject> object);
@@ -497,6 +524,7 @@ class AssetCatalog {
   void UpdateFrameStart();
   double GetFrameStart() { return frame_start_; }
   void CastMagicMissile(const Camera& camera);
+  void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction);
   void UpdateMissiles();
   void UpdateParticles();
   void CreateParticleEffect(int num_particles, vec3 pos, 
@@ -509,9 +537,18 @@ class AssetCatalog {
   int FindUnusedParticle();
 
   vector<shared_ptr<GameObject>>& GetMovingObjects() { return moving_objects_; }
+  vector<shared_ptr<GameObject>>& GetLights() { return lights_; }
 
+  bool IsLight(shared_ptr<GameObject> game_obj);
   bool IsMovingObject(shared_ptr<GameObject> game_obj);
   shared_ptr<OctreeNode> GetOctreeRoot();
+
+  void RemoveDead();
+  shared_ptr<GameAsset> CreateAssetFromMesh(const string& name,
+    const string& shader_name, Mesh& m);
+
+  ObjPtr GetSkydome() { return skydome_; }
+  vector<ObjPtr> GetClosestLightPoints(const vec3& position);
 };
 
 #endif // __ASSET_HPP__

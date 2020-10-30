@@ -35,19 +35,13 @@ void Physics::Run() {
     }
 
     // Gravity.
-    if (physics_behavior == PHYSICS_LOW_GRAVITY
-      //|| physics_behavior == PHYSICS_NO_FRICTION
-    ) {
-      obj->speed += vec3(0, -(GRAVITY * 0.1f), 0);
-    } else {
-      obj->speed += vec3(0, -GRAVITY, 0);
-    }
+    obj->speed += vec3(0, -GRAVITY, 0);
 
     // Friction.
     if (physics_behavior == PHYSICS_NO_FRICTION) {
-      obj->speed.x *= 0.99;
-      obj->speed.y *= 0.99;
-      obj->speed.z *= 0.99;
+      // obj->speed.x *= 0.99;
+      // obj->speed.y *= 0.99;
+      // obj->speed.z *= 0.99;
     } else {
       obj->speed.x *= 0.9;
       obj->speed.y *= 0.99;

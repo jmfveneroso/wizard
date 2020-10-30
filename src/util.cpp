@@ -632,3 +632,62 @@ AABB GetAABBFromPolygons(const Polygon& polygon) {
   }
   return GetAABBFromVertices(vertices);
 }
+
+Mesh CreateDome() {
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<unsigned int> indices;
+
+  const int dome_radius = 9000;
+  const int num_circles = 32;
+  const int num_points_in_circle = 64;
+
+  float vert_angle = (3.141592f / 2);
+  float vert_angle_step = (3.141592f / 2) / (num_circles);
+  vert_angle -= 2 * vert_angle_step;
+
+  float angle_step = (3.141592f * 2) / num_points_in_circle;
+  float y_step = dome_radius / num_circles;
+  float  y = sin(vert_angle) * dome_radius;
+
+  vertices.push_back(glm::vec3(0, dome_radius, 0));
+  uvs.push_back(glm::vec2(0.5, 0.5));
+  for (int i = 0; i < num_circles; i++) {
+    float radius = cos(asin(y / dome_radius)) * dome_radius;
+    float uv_radius = (i + 1) * (0.5f / num_circles);
+    float angle = 0;
+    for (int j = 0; j < num_points_in_circle; j++) {
+      float x = radius * cos(angle);
+      float z = radius * sin(angle);
+      vertices.push_back(glm::vec3(x, y, z));
+      uvs.push_back(glm::vec2(0.5 + uv_radius * cos(angle), 
+        0.5 + uv_radius * sin(angle)));
+      angle += angle_step;
+    }
+
+    y = sin(vert_angle) * dome_radius;
+    vert_angle -= vert_angle_step;
+  } 
+
+  for (int j = 0; j < num_points_in_circle; j++) {
+    indices.push_back(0);
+    int next_j = (j == num_points_in_circle - 1) ? 1 : j + 2;
+    indices.push_back(j + 1);
+    indices.push_back(next_j);
+  }
+
+  for (int i = 0; i < num_circles - 1; i++) {
+    for (int j = 0; j < num_points_in_circle; j++) {
+      int next_j = (j == num_points_in_circle - 1) ? 0 : j + 1;
+      indices.push_back(1 + i       * num_points_in_circle + j);
+      indices.push_back(1 + (i + 1) * num_points_in_circle + j);
+      indices.push_back(1 + i       * num_points_in_circle + next_j);
+      indices.push_back(1 + i       * num_points_in_circle + next_j);
+      indices.push_back(1 + (i + 1) * num_points_in_circle + j);
+      indices.push_back(1 + (i + 1) * num_points_in_circle + next_j);
+    }
+  }
+
+  return CreateMesh(0, vertices, uvs, indices);
+}
+

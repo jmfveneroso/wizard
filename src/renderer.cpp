@@ -199,6 +199,23 @@ void Renderer::UpdateAnimationFrames() {
   }
 }
 
+void Renderer::DrawScreenEffects() {
+  const int kWindowWidth = 1280;
+  const int kWindowHeight = 800;
+  float taking_hit = asset_catalog_->GetConfigs()->taking_hit;
+  if (taking_hit > 0.0) {
+    draw_2d_->DrawImage("hit-effect", 0, kWindowHeight, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
+  }
+
+  draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
+  draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
+
+  ObjPtr player = asset_catalog_->GetPlayer();
+  int hp_bar_width = (player->life / 100.0f) * 200;
+  hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
+  draw_2d_->DrawRectangle(20, 50, hp_bar_width, 20, vec3(0.3, 0.8, 0.3));
+}
+
 // TODO: this should be engine run.
 void Renderer::Run(const function<bool()>& process_frame, 
   const function<void()>& after_frame) {
@@ -280,6 +297,8 @@ void Renderer::Run(const function<bool()>& process_frame,
     if (draw_with_fbo_) {
       DrawFBO(fbos_["screen"], blur);
     }
+
+    DrawScreenEffects();
 
     after_frame();
 
@@ -367,6 +386,7 @@ ConvexHull Renderer::CreateConvexHullFromOccluder(
 bool Renderer::CullObject(shared_ptr<GameObject> obj, 
   const vector<vector<Polygon>>& occluder_convex_hulls) {
   if (obj->name == "hand-001") return true;
+  if (obj->name == "skydome") return true;
   // TODO: draw hand without object.
 
   if (!obj->draw) {
@@ -421,6 +441,45 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
     glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
+    glUniform3fv(GetUniformId(program_id, "camera_pos"), 1,
+      (float*) &camera_.position);
+
+    shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+    glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
+      (float*) &configs->sun_position);
+
+    glUniform1f(GetUniformId(program_id, "outdoors"), 1);
+    if (obj->current_sector) {
+      glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
+        (float*) &obj->current_sector->lighting_color);
+
+      if (obj->current_sector->name != "outside") {
+        glUniform1f(GetUniformId(program_id, "outdoors"), 0);
+      }
+    }
+
+    vector<ObjPtr> light_points = asset_catalog_->GetClosestLightPoints( 
+      obj->position);
+    for (int i = 0; i < 3; i++) {
+      vec3 position = vec3(0, 0, 0);
+      vec3 light_color = vec3(0, 0, 0);
+      float quadratic = 99999999.0f;
+      if (i < light_points.size()) {
+        shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
+        position = light_points[i]->position;
+        light_color = asset->light_color;
+        quadratic = asset->quadratic;
+      }
+
+      string p = string("point_lights[") + boost::lexical_cast<string>(i) + "].";
+      GLuint glsl_pos = GetUniformId(program_id, p + "position");
+      GLuint glsl_diffuse = GetUniformId(program_id, p + "diffuse");
+      GLuint glsl_quadratic = GetUniformId(program_id, p + "quadratic");
+      glUniform3fv(glsl_pos, 1, (float*) &position);
+      glUniform3fv(glsl_diffuse, 1, (float*) &light_color);
+      glUniform1f(glsl_quadratic, quadratic);
+    }
+
     if (program_id == asset_catalog_->GetShader("animated_object")) {
       vector<mat4> joint_transforms;
       if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
@@ -455,6 +514,17 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       BindTexture("texture_sampler", program_id, asset->texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else {
+      if (program_id == asset_catalog_->GetShader("sky")) {
+        shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+        const vec3 sun_position = configs->sun_position;
+        glUniform3f(GetUniformId(program_id, "sun_position"), 
+          sun_position.x, sun_position.y, sun_position.z);
+
+        const vec3 player_pos = asset_catalog_->GetPlayer()->position;
+        glUniform3f(GetUniformId(program_id, "player_position"), 
+          player_pos.x, player_pos.y, player_pos.z);
+      }
+
       // Is bone.
       shared_ptr<GameObject> parent = obj->parent;
       if (parent) {
@@ -502,13 +572,19 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
   for (auto& [id, obj] : octree_node->objects) {
     switch (obj->type) {
       case GAME_OBJ_DEFAULT:
-      case GAME_OBJ_MISSILE:
         break;
+      case GAME_OBJ_MISSILE: {
+        if (obj->life > 0.0f) {
+          break;
+        } else {
+          continue;
+        }
+      }
       default:
         continue;
     }
 
-    if (obj->life > 0) {
+    if (obj->status != STATUS_DEAD) {
       objects.push_back(obj);
     }
   }
@@ -516,13 +592,19 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
   for (auto& [id, obj] : octree_node->moving_objs) {
     switch (obj->type) {
       case GAME_OBJ_DEFAULT:
-      case GAME_OBJ_MISSILE:
         break;
+      case GAME_OBJ_MISSILE: {
+        if (obj->life > 0.0f) {
+          break;
+        } else {
+          continue;
+        }
+      }
       default:
         continue;
     }
 
-    if (obj->life > 0) {
+    if (obj->status != STATUS_DEAD) {
       objects.push_back(obj);
     }
   }
@@ -646,6 +728,15 @@ void Renderer::DrawSector(
 
     terrain_->Draw(projection_matrix_, view_matrix_, camera_.position, 
       clip_to_portal);
+
+    ObjPtr player = asset_catalog_->GetPlayer();
+    ObjPtr skydome = asset_catalog_->GetSkydome();
+    if (!skydome) {
+      throw runtime_error("Skydome does not exit.");
+    }
+    skydome->position = player->position;
+    skydome->position.y = -1000;
+    DrawObject(skydome);
   }
 
   DrawObjects(s);
@@ -661,11 +752,6 @@ void Renderer::DrawSector(
 
     BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
     bool in_frustum = false; 
-    if (p->id == 119 || p->id == 149) {
-      cout << "ouvino: " << p->name << endl;
-      cout << p->GetAsset()->lod_meshes[0].polygons << endl;
-    }
-
     for (auto& poly : p->GetAsset()->lod_meshes[0].polygons) {
       vec3 portal_point = p->position + poly.vertices[0];
       vec3 normal = poly.normals[0];

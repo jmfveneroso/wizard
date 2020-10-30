@@ -115,6 +115,14 @@ struct CollisionST : Collision {
   CollisionST(ObjPtr o1) : Collision(CP_ST, o1, nullptr) {}
 };
 
+struct CollisionBB : Collision {
+  ObjPtr bone1;
+  ObjPtr bone2;
+  CollisionBB() {}
+  CollisionBB(ObjPtr o1, ObjPtr o2, ObjPtr b1, ObjPtr b2) 
+    : Collision(CP_BB, o1, o2), bone1(b1), bone2(b2) {}
+};
+
 struct CollisionBP : Collision {
   ObjPtr bone;
   Polygon polygon;
@@ -130,7 +138,10 @@ struct CollisionBT : Collision {
     : Collision(CP_BT, o1, nullptr), bone(bone) {}
 };
 
-struct CollisionQS : Collision {};
+struct CollisionQS : Collision {
+  CollisionQS() {}
+  CollisionQS(ObjPtr o1, ObjPtr o2) : Collision(CP_QS, o1, o2) {}
+};
 
 struct CollisionQP : Collision {
   Polygon polygon;
@@ -173,8 +184,10 @@ class CollisionResolver {
   void TestCollisionSB(shared_ptr<CollisionSB> c);
   void TestCollisionSP(shared_ptr<CollisionSP> c);
   void TestCollisionST(shared_ptr<CollisionST> c);
+  void TestCollisionBB(shared_ptr<CollisionBB> c);
   void TestCollisionBP(shared_ptr<CollisionBP> c);
   void TestCollisionBT(shared_ptr<CollisionBT> c);
+  void TestCollisionQS(shared_ptr<CollisionQS> c);
   void TestCollisionQP(shared_ptr<CollisionQP> c);
   void TestCollisionQB(shared_ptr<CollisionQB> c);
   void TestCollisionQT(shared_ptr<CollisionQT> c);
