@@ -1,7 +1,7 @@
 #include "asset.hpp"
 
-// const int kHeightMapSize = 8000;
-const int kHeightMapSize = 1000;
+const int kHeightMapSize = 8000;
+// const int kHeightMapSize = 1000;
 
 void DoInOrder() {};
 template<typename Lambda0, typename ...Lambdas>
@@ -78,9 +78,10 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   LoadShaders(directory_ + "/shaders");
   LoadAssets(directory_ + "/game_assets");
   LoadObjects(directory_ + "/game_objects");
-  // LoadHeightMap(directory_ + "/height_map2.dat");
-  LoadHeightMap(directory_ + "/small_height_map.dat");
-  // SaveHeightMap(directory_ + "/small_height_map.dat");
+  LoadHeightMap(directory_ + "/height_map2_compressed.dat");
+  // LoadHeightMap(directory_ + "/small_height_map.dat");
+  // LoadHeightMap(directory_ + "/small_height_map_compressed.dat");
+  // SaveHeightMap(directory_ + "/height_map2_compressed.dat");
 
   // TODO: load config
   // LoadConfig(directory + "/config.xml");
@@ -921,56 +922,117 @@ void AssetCatalog::LoadHeightMap(const std::string& dat_filename) {
   cout << "Started loading height map" << endl;
   int i = 0;
   FILE* f = fopen(dat_filename.c_str(), "rb");
-  TerrainPoint terrain_point;
-  while (fread(&terrain_point.height, sizeof(float), 1, f) == 1) {
-    fread(&terrain_point.blending.x, sizeof(float), 1, f);
-    fread(&terrain_point.blending.y, sizeof(float), 1, f);
-    fread(&terrain_point.blending.z, sizeof(float), 1, f);
-    fread(&terrain_point.tile_set.x, sizeof(float), 1, f);
-    fread(&terrain_point.tile_set.y, sizeof(float), 1, f);
+
+  float last_height = 0;
+  int last_tile = 0;
+  unsigned char byte;
+  while (fread(&byte, sizeof(unsigned char), 1, f) == 1) {
+    TerrainPoint terrain_point;
+    float height_delta = ((byte & 127) - 63) * 0.0625f; 
+    terrain_point.height = last_height + height_delta;
+
+    bool has_tile_data = (byte & 128);
+    if (has_tile_data) {
+      if (fread(&byte, sizeof(unsigned char), 1, f) != 1) {
+        throw runtime_error("Error reading height map.");
+      }
+      terrain_point.tile = byte;
+    } else {
+      terrain_point.tile = last_tile;
+    }
+
+    terrain_point.blending = vec3(0, 0, 0);
+    if (terrain_point.tile > 0) {
+      terrain_point.blending[terrain_point.tile-1] = 1.0f;
+    }
+
     height_map_[i++] = terrain_point;
+    last_tile = terrain_point.tile;
+    last_height = terrain_point.height;
   }
   fclose(f);
 
-  for (int i = 0; i < height_map_.size(); i++) {
-    float x = (i % kHeightMapSize) + configs_->world_center.x - kHeightMapSize / 2;
-    float z = (i / kHeightMapSize) + configs_->world_center.z - kHeightMapSize / 2;
-    vec3 a = vec3(x    , GetTerrainPoint(x, z).height    , z    );
-    vec3 b = vec3(x + 1, GetTerrainPoint(x + 1, z).height, z    );
-    vec3 c = vec3(x    , GetTerrainPoint(x, z + 1).height, z + 1);
-    vec3 tangent = b - a;
-    vec3 bitangent = c - a;
-    vec3 normal = normalize(cross(bitangent, tangent));
-    height_map_[i].normal = normalize(cross(bitangent, tangent));
+  // Old loading code.
+  // TerrainPoint terrain_point;
+  // while (fread(&terrain_point.height, sizeof(float), 1, f) == 1) {
+  //   fread(&terrain_point.blending.x, sizeof(float), 1, f);
+  //   fread(&terrain_point.blending.y, sizeof(float), 1, f);
+  //   fread(&terrain_point.blending.z, sizeof(float), 1, f);
+  //   fread(&terrain_point.tile_set.x, sizeof(float), 1, f);
+  //   fread(&terrain_point.tile_set.y, sizeof(float), 1, f);
+  //   height_map_[i++] = terrain_point;
+  // }
+
+  int side = kHeightMapSize;
+  for (int x = 0; x < side; x++) {
+    for (int z = 0; z < side; z++) {
+      int i = x       + z       * kHeightMapSize;
+      int j = (x + 1) + z       * kHeightMapSize;
+      int k = x       + (z + 1) * kHeightMapSize;
+
+      vec3 a = vec3(x    , height_map_[i].height, z    );
+      vec3 b = vec3(x + 1, height_map_[j].height, z    );
+      vec3 c = vec3(x    , height_map_[k].height, z + 1);
+      height_map_[i].normal = normalize(cross(c - a, b - a));
+    }
   }
   cout << "Ended loading height map" << endl;
-
-
-  // for (int i = 0; i < height_map_.size(); i++) {
-  //   int x = i % kHeightMapSize;
-  //   int y = i / kHeightMapSize;
-  //   TerrainPoint tp = GetTerrainPoint(x + 6000, y + 6000);
-  //   SetTerrainPoint(x, y, tp);
-  // }
-  // cout << "Ended loading height map" << endl;
 }
 
 void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
   FILE* f = fopen(dat_filename.c_str(), "wb");
+
+  float last_height = 0;
+  int last_tile = 0;
+
   for (int i = 0; i < height_map_.size(); i++) {
     int x = i % kHeightMapSize;
     int y = i / kHeightMapSize;
-    if (x < 3500 || x >= 4500 || y < 3500 || y >= 4500) {
-      continue;
+
+    // 7 bits (128): Terrain Height Var (min: -4, max: +4, delta: 0.0625)
+    // 1 bit (2): Tile is new?
+    // 8 bits (256): Tileset (256 tiles)
+    const TerrainPoint& p = height_map_[i];
+
+    int height_delta = int((p.height - last_height) / 0.0625f); 
+    if (height_delta >= 63) height_delta = 63;
+    if (height_delta <= -63) height_delta = -63;
+    height_delta += 63;
+
+    last_height += (height_delta - 63) * 0.0625f;
+
+
+    int tile = 0;
+    if (length(p.blending) > 0.001f) {
+      if (p.blending.x > 0.1f) {
+        tile = 1;
+      } else if (p.blending.y > 0.1f) {
+        tile = 2;
+      } else {
+        tile = 3;
+      }
     }
 
-    const TerrainPoint& p = height_map_[i];
-    fwrite(&p.height, sizeof(float), 1, f);
-    fwrite(&p.blending.x, sizeof(float), 1, f);
-    fwrite(&p.blending.y, sizeof(float), 1, f);
-    fwrite(&p.blending.z, sizeof(float), 1, f);
-    fwrite(&p.tile_set.x, sizeof(float), 1, f);
-    fwrite(&p.tile_set.y, sizeof(float), 1, f);
+    // int tile = p.tile; 
+    if (tile == last_tile) {
+      unsigned char byte1 = (unsigned char) height_delta;
+      fwrite(&byte1, sizeof(unsigned char), 1, f);
+    } else {
+      unsigned char byte1 = (unsigned char) height_delta + 128;
+      unsigned char byte2 = (unsigned char) tile;
+      fwrite(&byte1, sizeof(unsigned char), 1, f);
+      fwrite(&byte2, sizeof(unsigned char), 1, f);
+    }
+    last_tile = tile;
+    
+
+    // fwrite(&p.height, sizeof(float), 1, f);
+
+    // fwrite(&p.blending.x, sizeof(float), 1, f);
+    // fwrite(&p.blending.y, sizeof(float), 1, f);
+    // fwrite(&p.blending.z, sizeof(float), 1, f);
+    // fwrite(&p.tile_set.x, sizeof(float), 1, f);
+    // fwrite(&p.tile_set.y, sizeof(float), 1, f);
   }
 
   // for (const TerrainPoint& p : height_map_) {

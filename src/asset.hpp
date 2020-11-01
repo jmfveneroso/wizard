@@ -75,7 +75,6 @@ struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
   vec3 initial_player_pos = vec3(10000, 200, 10000);
   vec3 respawn_point = vec3(10045, 500, 10015);
-  // vec3 initial_player_pos = vec3(9683, 164, 9934);
   float player_speed = 0.03f; 
   float spider_speed = 0.41f; 
   float taking_hit = 0.0f; 
@@ -326,8 +325,12 @@ struct Waypoint {
 
 struct TerrainPoint {
   float height = 0.0;
+  int tile = 0;
+
+  // Shouldn't be set manually.
   vec3 blending = vec3(0, 0, 0);
   vec2 tile_set = vec2(0, 0);
+
   vec3 normal = vec3(0, 0, 0);
   TerrainPoint() {}
   TerrainPoint(float height) : height(height) {}
