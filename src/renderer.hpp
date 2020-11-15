@@ -27,6 +27,7 @@
 #include "util.hpp"
 #include "terrain.hpp"
 #include "2d.hpp"
+#include "4d.hpp"
 
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 800
@@ -69,6 +70,7 @@ struct ParticleRenderData {
 class Renderer {
   shared_ptr<AssetCatalog> asset_catalog_;
   shared_ptr<Draw2D> draw_2d_;
+  shared_ptr<Project4D> project_4d_;
   GLFWwindow* window_;
   int window_width_ = WINDOW_WIDTH;
   int window_height_ = WINDOW_HEIGHT;
@@ -145,6 +147,10 @@ class Renderer {
 
   void set_draw_2d(shared_ptr<Draw2D> draw_2d) { 
     draw_2d_ = draw_2d; 
+  } 
+
+  void set_project_4d(shared_ptr<Project4D> project_4d) { 
+    project_4d_ = project_4d; 
   } 
 
   void ChargeMagicMissile();

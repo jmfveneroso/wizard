@@ -149,6 +149,8 @@ vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
 vector<Edge> GetPolygonEdges(const Polygon& polygon);
 Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices);
+void UpdateMesh(Mesh& m, GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices);
 Mesh CreateMeshFromConvexHull(const ConvexHull& ch);
 Mesh CreateCube(vec3 dimensions, vec3 position);
 Mesh CreateMeshFromAABB(const AABB& aabb);
@@ -160,8 +162,9 @@ Mesh CreateJoint(vec3 start, vec3 end);
 // ========================
 ostream& operator<<(ostream& os, const vec2& v);
 ostream& operator<<(ostream& os, const vec3& v);
-ostream& operator<<(ostream& os, const ivec3& v);
 ostream& operator<<(ostream& os, const vec4& v);
+ostream& operator<<(ostream& os, const vector<vec4>& v);
+ostream& operator<<(ostream& os, const ivec3& v);
 ostream& operator<<(ostream& os, const mat4& m);
 ostream& operator<<(ostream& os, const quat& q);
 ostream& operator<<(ostream& os, const Edge& e);
@@ -196,5 +199,7 @@ AABB GetAABBFromPolygons(const vector<Polygon>& polygons);
 AABB GetAABBFromPolygons(const Polygon& polygon);
 
 Mesh CreateDome();
+
+float clamp(float v, float low, float high);
 
 #endif // __UTIL_HPP__

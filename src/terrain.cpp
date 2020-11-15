@@ -87,11 +87,6 @@ const vector<ivec2> subregion_offsets = {
   {1, 0}, // 10: 3, 1
   {1, 0}, // 11: 3, 2
   {0, 0}  // 12: 3, 3
-
-  // {0, 0}, 
-  // {1, 0}, 
-  // {1, 1}, 
-  // {1, 0}
 };
 
 const vector<ivec2> subregion_size_offsets = {
@@ -108,37 +103,7 @@ const vector<ivec2> subregion_size_offsets = {
   {0, 0}, // 10: 3, 1
   {0, 0}, // 11: 3, 2
   {0, 0}  // 12: 3, 3
-
-  // { 1,  0}, 
-  // { 0,  1}, 
-  // { 0, -1}, 
-  // {-1,  0}
 };
-
-float Terrain::GetHeight(float x, float y) { 
-  glm::ivec2 top_left = (glm::ivec2(x, y) / TILE_SIZE) * TILE_SIZE;
-  if (x < 0 && fabs(top_left.x - x) > 0.00001) top_left.x -= TILE_SIZE;
-  if (y < 0 && fabs(top_left.y - y) > 0.00001) top_left.y -= TILE_SIZE;
-
-  float v[4];
-  v[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y).height;
-  v[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + TILE_SIZE + 0.1).height;
-  v[2] = asset_catalog_->GetTerrainPoint(top_left.x + TILE_SIZE + 0.1, top_left.y + TILE_SIZE + 0.1).height;
-  v[3] = asset_catalog_->GetTerrainPoint(top_left.x + TILE_SIZE + 0.1, top_left.y).height;
-
-  glm::vec2 tile_v = (glm::vec2(x, y) - glm::vec2(top_left)) / float(TILE_SIZE);
-
-  // Top triangle.
-  float h;
-  if (tile_v.x + tile_v.y < 1.0f) {
-    return v[0] + tile_v.x * (v[3] - v[0]) + tile_v.y * (v[1] - v[0]);
-
-  // Bottom triangle.
-  } else {
-    tile_v = glm::vec2(1.0f) - tile_v; 
-    return v[2] + tile_v.x * (v[1] - v[2]) + tile_v.y * (v[3] - v[2]);
-  }
-}
 
 ivec2 WorldToGridCoordinates(vec3 coords) {
   return ivec2(coords.x, coords.z) / TILE_SIZE;
@@ -535,6 +500,24 @@ bool Terrain::FrustumCullSubregion(shared_ptr<Clipmap> clipmap,
   return !CollideAABBFrustum(aabb, planes, player_pos);
 }
 
+vec3 GetLightColor(vec3 sun_position) {
+  vec3 night_sky = vec3(0.07, 0.07, 0.25);
+  vec3 sky_color = vec3(0.4, 0.7, 0.8);
+  vec3 sunset_color = vec3(0.99, 0.54, 0.0);
+
+  float sun_pos = 1.5 * (1 - dot(vec3(0, 1, 0), sun_position));
+  sun_pos = clamp(sun_pos, 0.0, 1.0);
+
+  float sky_pos = dot(vec3(0, 1, 0), vec3(0, 0, 1));
+  vec3 color = (1 - sun_pos) * sky_color + sun_pos * sunset_color;
+  color = (1 - sky_pos) * color + sky_pos * sky_color;
+
+  float how_night = dot(vec3(0, -1, 0), sun_position);
+  how_night = clamp(how_night, 0.0, 1.0);
+  color = (1 - how_night) * color + how_night * night_sky;
+  return color;
+}
+
 void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, 
   vec3 player_pos) {
   static float move_factor = 0.0f;
@@ -543,53 +526,95 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
   glBindVertexArray(vao_);
   glUseProgram(water_program_id_);
 
-  int level = CLIPMAP_LEVELS - 1;
-  shared_ptr<Clipmap> clipmap = clipmaps_[level];
+  vec3 normal;
+  float h = asset_catalog_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
+  int last_visible_index = CLIPMAP_LEVELS-1;
+  const int kFirstIndex = 2;
+  for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
+    if (clipmaps_[i]->invalid) break;
+    int clipmap_size = (CLIPMAP_SIZE + 1) * TILE_SIZE * GetTileSize(i + 1);
+    if (2.5 * h > clipmap_size) break;
+    last_visible_index = i;
+  }
 
-  // Remove this PURE_TILE_SIZE / TILE_SIZE mess.
-  // These uniforms can probably be bound with the VAO.
-  glUniform3fv(GetUniformId(water_program_id_, "camera_position"), 1, (float*) &player_pos);
+  glUniform1f(GetUniformId(water_program_id_, "MAX_HEIGHT"), MAX_HEIGHT);
+  glUniform1i(GetUniformId(water_program_id_, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
   glUniformMatrix4fv(GetUniformId(water_program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
-  BindBuffer(vertex_buffer_, 0, 3);
 
-  const glm::ivec2& top_left = clipmap->clipmap_top_left;
-  mat4 ModelMatrix = glm::translate(glm::mat4(1.0), glm::vec3(top_left.x * TILE_SIZE, 0, top_left.y * TILE_SIZE));
-  mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
-  mat3 ModelView3x3Matrix = glm::mat3(ModelViewMatrix);
-  mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-  glUniformMatrix4fv(GetUniformId(water_program_id_, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-  glUniformMatrix4fv(GetUniformId(water_program_id_, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-  glUniformMatrix3fv(GetUniformId(water_program_id_, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  vec3 light_position_worldspace = configs->sun_position * 1000.0f;
+  glUniform3fv(GetUniformId(water_program_id_, "light_position_worldspace"), 1,
+    (float*) &light_position_worldspace);
 
-  glUniform1i(GetUniformId(water_program_id_, "TILE_SIZE"), TILE_SIZE * GetTileSize(level + 1));
+  glUniform3fv(GetUniformId(water_program_id_, "sun_position"), 1,
+    (float*) &configs->sun_position);
 
-  glUniform2iv(GetUniformId(water_program_id_, "buffer_top_left"), 1, (int*) &clipmap->top_left);
-  glUniform1f(GetUniformId(water_program_id_, "move_factor"), move_factor);
+  vec3 light_color = GetLightColor(configs->sun_position);
+  glUniform3fv(GetUniformId(water_program_id_, "light_color"), 1,
+    (float*) &light_color);
 
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, water_texture_);
-  glUniform1i(GetUniformId(water_program_id_, "dudv_map"), 0);
+  for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
+    if (i < last_visible_index) break;
 
-  glActiveTexture(GL_TEXTURE1);
-  glBindTexture(GL_TEXTURE_2D, water_normal_texture_);
-  glUniform1i(GetUniformId(water_program_id_, "normal_map"), 1);
+    // int level = CLIPMAP_LEVELS - 1;
+    int level = i;
+    shared_ptr<Clipmap> clipmap = clipmaps_[level];
 
-  for (int region = 0 ; region < NUM_SUBREGIONS; region++) {
-    mat4 ModelMatrix = translate(mat4(1.0), player_pos);
+    glUniform3fv(GetUniformId(water_program_id_, "camera_position"), 1, (float*) &player_pos);
+    BindBuffer(vertex_buffer_, 0, 3);
+
+    const glm::ivec2& top_left = clipmap->clipmap_top_left;
+    mat4 ModelMatrix = glm::translate(glm::mat4(1.0), glm::vec3(top_left.x * TILE_SIZE, 0, top_left.y * TILE_SIZE));
     mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
-    mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+    mat3 ModelView3x3Matrix = glm::mat3(ModelViewMatrix);
     mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-    // if (clipmap->min_height > 5) {
-    //   continue;
-    // }
+    glUniformMatrix4fv(GetUniformId(water_program_id_, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+    glUniformMatrix4fv(GetUniformId(water_program_id_, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+    glUniformMatrix3fv(GetUniformId(water_program_id_, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
-    // if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
-    //   continue;
-    // }
+    glUniform1i(GetUniformId(water_program_id_, "TILE_SIZE"), TILE_SIZE * GetTileSize(i + 1));
+    glUniform2iv(GetUniformId(water_program_id_, "buffer_top_left"), 1, (int*) &clipmaps_[i]->top_left);
+    glUniform1f(GetUniformId(water_program_id_, "move_factor"), move_factor);
 
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][0][0]);
-    glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][0][0], 
-      GL_UNSIGNED_INT, (void*) 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->height_texture);
+    glUniform1i(GetUniformId(water_program_id_, "height_sampler"), 0);
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, water_texture_);
+    glUniform1i(GetUniformId(water_program_id_, "dudv_map"), 1);
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, water_normal_texture_);
+    glUniform1i(GetUniformId(water_program_id_, "normal_map"), 2);
+
+    ivec2 offset = ivec2(0, 0);
+    ivec2 grid_coords = WorldToGridCoordinates(player_pos);
+    int tile_size = GetTileSize(i + 1);
+    offset = ClampGridCoordinates(grid_coords, tile_size >> 1);
+    offset -= ClampGridCoordinates(grid_coords, tile_size);
+    offset /= GetTileSize(i + 1);
+
+    for (int region = 0 ; region < NUM_SUBREGIONS; region++) {
+      if (i != last_visible_index && region == 0) continue;
+
+      mat4 ModelMatrix = translate(mat4(1.0), player_pos);
+      mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
+      mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+      mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
+      // if (clipmap->min_height > 5) {
+      //   continue;
+      // }
+
+      // if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
+      //   continue;
+      // }
+
+      int x = offset.x; int y = offset.y;
+      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
+      glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 
+        GL_UNSIGNED_INT, (void*) 0);
+    }
   }
 
   glBindVertexArray(0);
@@ -599,10 +624,9 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
   bool clip_against_plane) {
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
+  glDisable(GL_BLEND);
   glEnable(GL_CULL_FACE);
   glEnable(GL_STENCIL_TEST);
-  glStencilFunc(GL_ALWAYS, 1, 0xFF); // Pass test if stencil value is 1
-  glStencilMask(0x00);
 
   // Remove this PURE_TILE_SIZE / TILE_SIZE mess.
   // These uniforms can probably be bound with the VAO.
@@ -648,9 +672,12 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
     glUniform1f(glsl_quadratic, quadratic);
   }
 
-  float h = player_pos.y - GetHeight(player_pos.x, player_pos.z);
+  vec3 normal;
+  float h = asset_catalog_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
-  for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
+
+  const int kFirstIndex = 2;
+  for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
     if (clipmaps_[i]->invalid) break;
     int clipmap_size = (CLIPMAP_SIZE + 1) * TILE_SIZE * GetTileSize(i + 1);
     if (2.5 * h > clipmap_size) break;
@@ -729,70 +756,77 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
     cull_count++;
   }
 
-  glDisable(GL_STENCIL_TEST);
   glBindVertexArray(0);
 
   DrawWater(ProjectionMatrix, ViewMatrix, player_pos);
 }
 
-// TODO: load the terrain. Everything else is flat. Save another height map
-// with the real game map size with only Cos functions that get flat as they 
-// reach the ocean.
-void Terrain::LoadTerrain(const string& filename) {
-  ifstream is(filename, ifstream::binary);
-  if (!is) return;
+bool Terrain::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
+  vec3 ray = end - start;
 
-  int size;
-  is >> size;
+  ivec2 start_tile = ivec2(start.x, start.z);
+  ivec2 end_tile = ivec2(end.x, end.z);
+  ivec2 cur_tile = start_tile;
 
-  // The map is 41 X 41, where each tile is 5 x 5 meters wide.
-  // But in our actual map, each tile is 1 x 1 meters wide.
-  vector< vector<float> > height_data(size+1, vector<float>(size+1, 0.0));
 
-  float height;
-  for (int i = 0; i < size; i++) {
-    for (int j = 0; j < size; j++) {
-      is >> height_data[i][j];
+  int dx = end_tile.x - cur_tile.x;
+  int dy = end_tile.y - cur_tile.y;
+  float slope = dy / float(dx);
+
+  while (cur_tile.x != end_tile.x) {
+    cur_tile.y = start_tile.y + (cur_tile.x - start_tile.x) * slope;
+
+    int size = 2;
+    for (int x = -size; x <= size; x++) {
+      for (int y = -size; y <= size; y++) {
+        ivec2 cur_tile_ = cur_tile + ivec2(x, y);
+
+        TerrainPoint p[4];
+        p[0] = asset_catalog_->GetTerrainPoint(cur_tile_.x, cur_tile_.y);
+        p[1] = asset_catalog_->GetTerrainPoint(cur_tile_.x, cur_tile_.y + 1.1);
+        p[2] = asset_catalog_->GetTerrainPoint(cur_tile_.x + 1.1, cur_tile_.y + 1.1);
+        p[3] = asset_catalog_->GetTerrainPoint(cur_tile_.x + 1.1, cur_tile_.y);
+
+        const float& h0 = p[0].height;
+        const float& h1 = p[1].height;
+        const float& h2 = p[2].height;
+        const float& h3 = p[3].height;
+ 
+        vec3 v[4];
+        v[0] = vec3(cur_tile_.x,     p[0].height, cur_tile_.y);
+        v[1] = vec3(cur_tile_.x,     p[1].height, cur_tile_.y + 1);
+        v[2] = vec3(cur_tile_.x + 1, p[2].height, cur_tile_.y + 1);
+        v[3] = vec3(cur_tile_.x + 1, p[3].height, cur_tile_.y);
+
+        vec3 r;
+        if (IntersectLineQuad(start, end, v[0], v[1], v[2], v[3], r)) {
+          tile = cur_tile_;
+          return true;
+        }
+      }
+    }
+
+    if (cur_tile.x > end_tile.x) {
+      cur_tile.x--;
+    } else {
+      cur_tile.x++;
     }
   }
-  is.close();
 
-  // The step is the gap between sample points in the map grid.
-  int step = 5;
-  size = (size-1) * step + 1;
-  height_map_ = vector< vector<float> >(size, vector<float>(size, 0.0));
+  return false;
+}
 
-  // Now we need to do linear interpolation to obtain the 1 x 1 meter wide
-  // tile heights.
-  for (int i = 0; i < size; i++) {
-    for (int j = 0; j < size; j++) {
-      int grid_x = i / step;
-      int grid_y = j / step;
-      int offset_x = i % step;
-      int offset_y = j % step;
+void Terrain::InvalidatePoint(ivec2 tile) {
+  for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
+    int level = i + 1;
+    shared_ptr<Clipmap> clipmap = clipmaps_[i];
+    ivec2 top_left = clipmap->clipmap_top_left;
+    ivec2 hb_top_left = clipmap->top_left;
 
-      float top_lft = height_data[grid_x][grid_y];
-      float top_rgt = height_data[grid_x+1][grid_y];
-      float bot_lft = height_data[grid_x][grid_y+1];
-      float bot_rgt = height_data[grid_x+1][grid_y+1];
-
-      float height = 0.0;
-      height_map_[i][j] = top_lft;
-  
-      // Top left triangle.
-      if (offset_x + offset_y <= step) {
-        height = top_lft;
-        height += (top_rgt - top_lft) * (offset_x / float(step));
-        height += (bot_lft - top_lft) * (offset_y / float(step));
-
-      // Bottom right triangle.
-      } else {
-        height = bot_rgt;
-        height += (bot_lft - bot_rgt) * (1 - (offset_x / float(step)));
-        height += (top_rgt - bot_rgt) * (1 - (offset_y / float(step)));
-      }
-
-      height_map_[i][j] = height;
-    }
+    ivec2 buffer_coords = GridToBufferCoordinates(tile, level, 
+      hb_top_left, top_left);
+    clipmap->valid_cols[buffer_coords.x] = 0;
+    clipmap->valid_rows[buffer_coords.y] = 0;
+    clipmap->invalid = true;
   }
 }

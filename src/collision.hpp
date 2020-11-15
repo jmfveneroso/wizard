@@ -100,6 +100,9 @@ shared_ptr<AABBTreeNode> ConstructAABBTreeFromPolygons(
 bool TestSphereSphere(const BoundingSphere& s1, const BoundingSphere& s2, 
   vec3& displacement_vector, vec3& point_of_contact);
 
+bool IntersectLineQuad(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, vec3 d,
+  vec3 &r);
+
 // bool IntersectMovingSphereAABB(Sphere s, Vector d, AABB b, float &t);
 // https://github.com/vancegroup-mirrors/hapi/blob/master/src/CollisionObjects.cpp
 

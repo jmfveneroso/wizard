@@ -176,7 +176,6 @@ class CollisionResolver {
 
   // Aux methods.
   void GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons);
-  float GetTerrainHeight(vec2 pos, vec3* normal);
   bool IsPairCollidable(ObjPtr obj1, ObjPtr obj2);
   void CollideAlongAxis(shared_ptr<OctreeNode> octree_node, ObjPtr obj);
 

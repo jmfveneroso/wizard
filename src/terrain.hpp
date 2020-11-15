@@ -38,6 +38,7 @@ struct Clipmap {
   int level = -1;
   ivec2 clipmap_top_left = ivec2(0, 0);
   ivec2 top_left = ivec2(1, 1);
+
   float row_heights[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
   float col_heights[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
 
@@ -111,9 +112,6 @@ class Terrain {
  public:
   Terrain(GLuint program_id, GLuint water_program_id);
 
-  void LoadTerrain(const string& filename);
-  float GetHeight(float x, float y);
-
   void UpdateClipmaps(vec3 player_pos);
   void Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
     bool clip_against_plane = false);
@@ -126,6 +124,9 @@ class Terrain {
 
   void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
     asset_catalog_ = asset_catalog; } 
+
+  bool CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile);
+  void InvalidatePoint(ivec2 tile);
 };
 
 #endif

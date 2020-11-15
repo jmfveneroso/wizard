@@ -61,6 +61,7 @@ set(
   src/collision_resolver.cpp 
   src/ai.cpp 
   src/physics.cpp 
+  src/4d.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

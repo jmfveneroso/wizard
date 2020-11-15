@@ -35,7 +35,13 @@ void Physics::Run() {
     }
 
     // Gravity.
-    obj->speed += vec3(0, -GRAVITY, 0);
+    shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+    if (obj->name == "player" && configs->levitate) {
+      obj->can_jump = true;
+      obj->speed.y *= 0.9f;
+    } else { 
+      obj->speed += vec3(0, -GRAVITY, 0);
+    }
 
     // Friction.
     if (physics_behavior == PHYSICS_NO_FRICTION) {

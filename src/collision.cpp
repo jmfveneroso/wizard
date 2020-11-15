@@ -811,3 +811,53 @@ bool TestSphereSphere(const BoundingSphere& s1, const BoundingSphere& s2,
   point_of_contact = s2.center + v * (distance - s1.radius);
   return true;
 }
+
+float ScalarTriple(vec3 a, vec3 b, vec3 c) {
+  return dot(a, cross(b, c));
+}
+
+// Given line pq and ccw quadrilateral abcd, return whether the line
+// pierces the triangle. If so, also return the point r of intersection
+bool IntersectLineQuad(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, vec3 d,
+  vec3 &r) {
+  vec3 pq = q - p;
+  vec3 pa = a - p;
+  vec3 pb = b - p;
+  vec3 pc = c - p;
+
+  // Determine which triangle to test against by testing against diagonal first
+  vec3 m = cross(pc, pq);
+  float v = dot(pa, m); // ScalarTriple(pq, pa, pc);
+  if (v >= 0.0f) {
+    // Test intersection against triangle abc
+    float u = -dot(pb, m); // ScalarTriple(pq, pc, pb);
+    if (u < 0.0f) return false;
+
+    float w = ScalarTriple(pq, pb, pa);
+    if (w < 0.0f) return false;
+
+    // Compute r, r = u*a + v*b + w*c, from barycentric coordinates (u, v, w)
+    float denom = 1.0f / (u + v + w);
+    u *= denom;
+    v *= denom;
+    w *= denom; // w = 1.0f - u - v;
+    r = u*a + v*b + w*c;
+  } else {
+    // Test intersection against triangle dac
+    vec3 pd = d - p;
+    float u = dot(pd, m); // ScalarTriple(pq, pd, pc);
+    if (u < 0.0f) return false;
+
+    float w = ScalarTriple(pq, pa, pd);
+    if (w < 0.0f) return false;
+
+    v = -v;
+    // Compute r, r = u*a + v*d + w*c, from barycentric coordinates (u, v, w)
+    float denom = 1.0f / (u + v + w);
+    u *= denom;
+    v *= denom;
+    w *= denom; // w = 1.0f - u - v;
+    r = u*a + v*d + w*c;
+  }
+  return true;
+}

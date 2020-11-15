@@ -227,6 +227,8 @@ void Renderer::Run(const function<bool()>& process_frame,
 
   CreateParticleBuffers();
 
+  vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+
   double last_time = glfwGetTime();
   int frames = 0;
   do {
@@ -266,6 +268,9 @@ void Renderer::Run(const function<bool()>& process_frame,
     glClearColor(0.73, 0.81, 0.92, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    project_4d_->CreateHypercube(vec3(11645, 37, 7265), hypercube_rotation);
+    hypercube_rotation[2] += 0.02;
+
     shared_ptr<Sector> sector = 
       asset_catalog_->GetSector(camera_.position);
     DrawSector(sector->stabbing_tree);
@@ -300,6 +305,29 @@ void Renderer::Run(const function<bool()>& process_frame,
 
     DrawScreenEffects();
 
+    shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+    if (configs->edit_terrain != "none") {
+      vec3 start = camera_.position;
+      vec3 end = camera_.position + camera_.direction * 200.0f;
+      ivec2 tile;
+      if (terrain_->CollideRayAgainstTerrain(start, end, tile)) {
+        int size = 20;
+        for (int x = -size; x <= size; x++) {
+          for (int y = -size; y <= size; y++) {
+            TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x + x, tile.y + y);
+            if (configs->edit_terrain == "tile") {
+              p.blending = vec3(0, 1, 0);
+              p.tile_set = vec2(0, 0);
+            } else if (configs->edit_terrain == "height") {
+              p.height += 0.03;
+            }
+            asset_catalog_->SetTerrainPoint(tile.x+x, tile.y+y, p);
+            terrain_->InvalidatePoint(tile + ivec2(x, y));
+          }
+        }
+      }
+    }
+
     after_frame();
 
     glfwSwapBuffers(window_);
@@ -317,21 +345,6 @@ void Renderer::Run(const function<bool()>& process_frame,
 // ==========================
 // TODO: improve these functions
 // ==========================
-
-// shared_ptr<Sector> Renderer::GetPlayerSector(const vec3& player_pos) {
-//   // TODO: look for the sector in the octree.
-//   const unordered_map<string, shared_ptr<Sector>>& sectors = 
-//     asset_catalog_->GetSectors();
-// 
-//   for (const auto& it : sectors) {
-//     shared_ptr<Sector> sector = it.second;
-//     if (sector->name == "outside") continue;
-//     if (IsInConvexHull(player_pos, sector->convex_hull)) {
-//       return sector;
-//     }
-//   }
-//   return asset_catalog_->GetSectorByName("outside");
-// }
 
 ConvexHull Renderer::CreateConvexHullFromOccluder(
   const vector<Polygon>& polygons, const vec3& player_pos) {
@@ -513,6 +526,12 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     } else if (program_id == asset_catalog_->GetShader("noshadow_object")) {
       BindTexture("texture_sampler", program_id, asset->texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+    } else if (program_id == asset_catalog_->GetShader("hypercube")) {
+      glDisable(GL_CULL_FACE);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDisable(GL_BLEND);
     } else {
       if (program_id == asset_catalog_->GetShader("sky")) {
         shared_ptr<Configs> configs = asset_catalog_->GetConfigs();

@@ -73,12 +73,18 @@ struct GameData {};
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
+  // vec3 initial_player_pos = vec3(10000, 200, 6820);
   vec3 initial_player_pos = vec3(10000, 200, 10000);
   vec3 respawn_point = vec3(10045, 500, 10015);
+  float target_player_speed = 0.03f; 
   float player_speed = 0.03f; 
   float spider_speed = 0.41f; 
   float taking_hit = 0.0f; 
   vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
+  bool disable_attacks = false;
+  string edit_terrain = "none";
+  bool levitate = false;
+  float jump_force = 0.3f;
 };
 
 struct GameAsset {
@@ -134,13 +140,59 @@ struct OctreeNode;
 struct Sector;
 struct Waypoint;
 
-enum AiAction {
+enum AiState {
   IDLE = 0, 
   MOVE = 1, 
-  ATTACK = 2,
+  AI_ATTACK = 2,
   DIE = 3,
   TURN_TOWARD_TARGET = 4,
   WANDER = 5
+};
+
+enum ActionType {
+  ACTION_MOVE = 0,
+  ACTION_IDLE,
+  ACTION_RANGED_ATTACK,
+  ACTION_CHANGE_STATE,
+  ACTION_TAKE_AIM
+};
+
+struct Action {
+  ActionType type;
+  float issued_at;
+
+  Action(ActionType type) : type(type) {
+    issued_at = glfwGetTime();
+  }
+};
+
+struct MoveAction : Action {
+  vec3 destination;
+
+  MoveAction(vec3 destination) 
+    : Action(ACTION_MOVE), destination(destination) {}
+};
+
+struct IdleAction : Action {
+  float duration;
+
+  IdleAction(float duration) 
+    : Action(ACTION_IDLE), duration(duration) {}
+};
+
+struct RangedAttackAction : Action {
+  RangedAttackAction() : Action(ACTION_RANGED_ATTACK) {}
+};
+
+struct ChangeStateAction : Action {
+  AiState new_state;
+  ChangeStateAction(AiState new_state) 
+    : Action(ACTION_CHANGE_STATE), new_state(new_state) {}
+};
+
+struct TakeAimAction : Action {
+  TakeAimAction() 
+    : Action(ACTION_TAKE_AIM) {}
 };
 
 struct GameObject {
@@ -157,7 +209,7 @@ struct GameObject {
   quat target_rotation_matrix = quat(0, 0, 0, 1);
   int rotation_factor = 0;
 
-  vec3 up = vec3(0, 1, 0); // Determines object up direction.
+  vec3 up = vec3(0, -1, 0); // Determines object up direction.
   vec3 forward = vec3(0, 0, 1); // Determines object forward direction.
 
   quat cur_rotation = quat(0, 0, 0, 1);
@@ -185,7 +237,6 @@ struct GameObject {
 
   // TODO: Stuff that may polymorph.
   float life = 100.0f;
-  AiAction ai_action = MOVE;
   vec3 speed = vec3(0, 0, 0);
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
@@ -195,6 +246,10 @@ struct GameObject {
   float time_wandering = 0;
   Status status = STATUS_NONE;
   
+  AiState ai_state = WANDER;
+  float state_changed_at = 0;
+  queue<shared_ptr<Action>> actions;
+
   // Override asset properties.
   ConvexHull collision_hull;
   shared_ptr<SphereTreeNode> sphere_tree = nullptr;
@@ -203,7 +258,9 @@ struct GameObject {
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
 
   GameObject() {}
-  GameObject(GameObjectType type) : type(type) {}
+  GameObject(GameObjectType type) : type(type) {
+    state_changed_at = glfwGetTime();
+  }
 
   BoundingSphere GetBoundingSphere();
   AABB GetAABB();
@@ -493,6 +550,12 @@ class AssetCatalog {
   shared_ptr<GameObject> CreateGameObjFromAsset(
     string asset_name, vec3 position);
 
+  shared_ptr<GameObject> CreateGameObjFromPolygons(const Mesh& m);
+
+  shared_ptr<GameObject> CreateGameObjFromMesh(const Mesh& m, 
+    string shader_name, const vec3 position,
+    const vector<Polygon>& polygons);
+
   shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
 
   void UpdateObjectPosition(shared_ptr<GameObject> object);
@@ -546,12 +609,15 @@ class AssetCatalog {
   bool IsMovingObject(shared_ptr<GameObject> game_obj);
   shared_ptr<OctreeNode> GetOctreeRoot();
 
+  void DeleteAsset(shared_ptr<GameAsset> asset);
+  void DeleteObject(ObjPtr obj);
   void RemoveDead();
   shared_ptr<GameAsset> CreateAssetFromMesh(const string& name,
     const string& shader_name, Mesh& m);
 
   ObjPtr GetSkydome() { return skydome_; }
   vector<ObjPtr> GetClosestLightPoints(const vec3& position);
+  float GetTerrainHeight(vec2 pos, vec3* normal);
 };
 
 #endif // __ASSET_HPP__

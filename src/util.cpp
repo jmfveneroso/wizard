@@ -180,6 +180,13 @@ ostream& operator<<(ostream& os, const vec4& v) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const vector<vec4>& v) {
+  for (const auto& v_ : v) {
+    os << v_ << endl;
+  }
+  return os;
+}
+
 ostream& operator<<(ostream& os, const mat4& m) {
   os << m[0][0] << " " << m[0][1] << " " << m[0][2] << " " << m[0][3] << endl;
   os << m[1][0] << " " << m[1][1] << " " << m[1][2] << " " << m[1][3] << endl;
@@ -205,7 +212,7 @@ ostream& operator<<(ostream& os, const ConvexHull& ch) {
 
 ostream& operator<<(ostream& os, const BoundingSphere& bs) {
   os << "Bounding Sphere (center: " << bs.center << ", radius: " << bs.radius 
-    << ")" << endl;
+    << ")";
   return os;
 }
 
@@ -382,6 +389,67 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
     glDisableVertexAttribArray(slot);
   }
   return m;
+}
+
+void UpdateMesh(Mesh& m, GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices) {
+  glBindVertexArray(m.vao_);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
+    &vertices[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
+    GL_STATIC_DRAW);
+
+  // Compute tangents and bitangents.
+  vector<vec3> tangents(vertices.size());
+  vector<vec3> bitangents(vertices.size());
+  for (int i = 0; i < vertices.size(); i += 3) {
+    vec3 delta_pos1 = vertices[i+1] - vertices[i+0];
+    vec3 delta_pos2 = vertices[i+2] - vertices[i+0];
+    vec2 delta_uv1 = uvs[i+1] - uvs[i+0];
+    vec2 delta_uv2 = uvs[i+2] - uvs[i+0];
+
+    float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+    vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+    vec3 bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+    tangents.push_back(tangent);
+    tangents.push_back(tangent);
+    tangents.push_back(tangent);
+    tangents.push_back(bitangent);
+    tangents.push_back(bitangent);
+    tangents.push_back(bitangent);
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
+    &tangents[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, m.bitangent_buffer_);
+  glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
+    &bitangents[0], GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
+  glBufferData(
+    GL_ELEMENT_ARRAY_BUFFER, 
+    indices.size() * sizeof(unsigned int), 
+    &indices[0], 
+    GL_STATIC_DRAW
+  );
+  m.num_indices = indices.size();
+
+  BindBuffer(m.vertex_buffer_, 0, 3);
+  BindBuffer(m.uv_buffer_, 1, 2);
+  BindBuffer(m.tangent_buffer_, 2, 3);
+  BindBuffer(m.bitangent_buffer_, 3, 3);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
+  glBindVertexArray(0);
+  for (int slot = 0; slot < 2; slot++) {
+    glDisableVertexAttribArray(slot);
+  }
 }
 
 Mesh CreateMeshFromConvexHull(const ConvexHull& ch) {
@@ -691,3 +759,11 @@ Mesh CreateDome() {
   return CreateMesh(0, vertices, uvs, indices);
 }
 
+float clamp(float v, float low, float high) {
+  if (v < low) {
+    v = low;
+  } else if (v > high) {
+    v = high;
+  }
+  return v;
+}

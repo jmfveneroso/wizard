@@ -257,7 +257,21 @@ vector<shared_ptr<CollisionSP>> GetCollisionsSPAux(shared_ptr<AABBTreeNode> node
 }
 
 vector<shared_ptr<CollisionSP>> GetCollisionsSP(ObjPtr obj1, ObjPtr obj2) {
-  return GetCollisionsSPAux(obj2->GetAABBTree(), obj1, obj2);
+  vector<shared_ptr<CollisionSP>> cols;
+
+  if (obj2->aabb_tree) {
+    cols = GetCollisionsSPAux(obj2->aabb_tree, obj1, obj2);
+  } else {
+    if (!obj2->asset_group) return {};
+    for (int i = 0; i < obj2->asset_group->assets.size(); i++) {
+      shared_ptr<GameAsset> asset = obj2->asset_group->assets[i];
+      if (!asset) continue;
+      vector<shared_ptr<CollisionSP>> aux = 
+        GetCollisionsSPAux(asset->aabb_tree, obj1, obj2);
+      cols.insert(cols.end(), aux.begin(), aux.end());
+    }
+  }
+  return cols;
 }
 
 // Sphere - Terrain.
@@ -295,15 +309,29 @@ vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
     cols.insert(cols.end(), rgt_cols.begin(), rgt_cols.end());
     return cols;
   }
-  return { make_shared<CollisionBP>(obj1->parent, obj2, obj1, node->polygon) };
+
+  vector<shared_ptr<CollisionBP>> cols;
+  for (auto bone : obj1->children) {
+    cols.push_back(make_shared<CollisionBP>(obj1, obj2, bone, node->polygon));
+  }
+  return cols;
 }
 
 vector<shared_ptr<CollisionBP>> GetCollisionsBP(ObjPtr obj1, ObjPtr obj2) {
   vector<shared_ptr<CollisionBP>> collisions;
-  for (ObjPtr bone : obj1->children) {
-    vector<shared_ptr<CollisionBP>> tmp_cols = 
-      GetCollisionsBPAux(obj2->GetAABBTree(), bone, obj2);
-    collisions.insert(collisions.end(), tmp_cols.begin(), tmp_cols.end());
+  if (obj2->aabb_tree) {
+    vector<shared_ptr<CollisionBP>> cols = 
+      GetCollisionsBPAux(obj2->aabb_tree, obj1, obj2);
+    collisions.insert(collisions.end(), cols.begin(), cols.end());
+  } else {
+    if (!obj2->asset_group) return {};
+    for (int i = 0; i < obj2->asset_group->assets.size(); i++) {
+      shared_ptr<GameAsset> asset = obj2->asset_group->assets[i];
+      if (!asset) continue;
+      vector<shared_ptr<CollisionBP>> tmp_cols = 
+        GetCollisionsBPAux(asset->aabb_tree, obj1, obj2);
+      collisions.insert(collisions.end(), tmp_cols.begin(), tmp_cols.end());
+    }
   }
   return collisions;
 }
@@ -356,7 +384,23 @@ vector<shared_ptr<CollisionQP>> GetCollisionsQP(ObjPtr obj1, ObjPtr obj2) {
   s.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
   s.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
     obj1->GetAsset()->bounding_sphere.radius;
-  return GetCollisionsQPAux(obj2->GetAABBTree(), s, obj1, obj2);
+
+  vector<shared_ptr<CollisionQP>> cols;
+  if (obj2->aabb_tree) {
+    cols = GetCollisionsQPAux(obj2->aabb_tree, s, obj1, obj2);
+  } else {  
+    if (!obj2->asset_group) return {};
+    for (int i = 0; i < obj2->asset_group->assets.size(); i++) {
+      shared_ptr<GameAsset> asset = obj2->asset_group->assets[i];
+      if (!asset) continue;
+      vector<shared_ptr<CollisionQP>> aux = 
+        GetCollisionsQPAux(asset->aabb_tree, s, obj1, obj2);
+      cols.insert(cols.end(), aux.begin(), aux.end());
+    }
+  }
+  return cols;
+
+  // return GetCollisionsQPAux(obj2->GetAABBTree(), s, obj1, obj2);
 }
 
 // Quick Sphere - Bones.
@@ -517,34 +561,6 @@ void CollisionResolver::GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons) 
   polygons[1].normals.push_back(p[0].normal);
 }
 
-float CollisionResolver::GetTerrainHeight(vec2 pos, vec3* normal) {
-  ivec2 top_left = ivec2(pos.x, pos.y);
-
-  TerrainPoint p[4];
-  p[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y);
-  p[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + 1.1);
-  p[2] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
-  p[3] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y);
-
-  const float& h0 = p[0].height;
-  const float& h1 = p[1].height;
-  const float& h2 = p[2].height;
-  const float& h3 = p[3].height;
-
-  // Top triangle.
-  vec2 tile_v = pos - vec2(top_left);
-  if (tile_v.x + tile_v.y < 1.0f) {
-    *normal = p[0].normal;
-    return h0 + tile_v.x * (h3 - h0) + tile_v.y * (h1 - h0);
-
-  // Bottom triangle.
-  } else {
-    *normal = p[2].normal;
-    tile_v = vec2(1.0f) - tile_v; 
-    return h2 + tile_v.x * (h1 - h2) + tile_v.y * (h3 - h2);
-  }
-}
-
 // Test Sphere - Sphere.
 void CollisionResolver::TestCollisionSS(shared_ptr<CollisionSS> c) {
   BoundingSphere s1 = c->obj1->GetBoundingSphere();
@@ -622,7 +638,7 @@ void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
 // Test Sphere - Terrain.
 void CollisionResolver::TestCollisionST(shared_ptr<CollisionST> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
-  float h = GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = asset_catalog_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
@@ -655,6 +671,7 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
     const vec3 v = c->obj1->position - c->obj1->prev_position;
     c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
       c->displacement_vector, surface_normal, v);
+
     FillCollisionBlankFields(c);
   }
 }
@@ -662,7 +679,7 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
   BoundingSphere s = GetBoneBoundingSphere(c->bone);
-  float h = GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = asset_catalog_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
@@ -721,7 +738,7 @@ void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
 // Test Quick Sphere - Terrain.
 void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
-  float h = GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = asset_catalog_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     vector<Polygon> polygons;

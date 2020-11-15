@@ -770,6 +770,9 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
     float z = boost::lexical_cast<float>(position.attribute("z").value());
     new_waypoint->position = vec3(x, y, z);
 
+    CreateGameObjFromAsset("wooden-box", 
+      new_waypoint->position);
+
     waypoints_[new_waypoint->name] = new_waypoint;
     cout << "Adding waypoint: " << new_waypoint->name << endl;
     new_waypoint->id = id_counter_++;
@@ -1064,7 +1067,7 @@ TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
   y += kHeightMapSize / 2;
 
   if (x < 0 || y < 0 || x >= kHeightMapSize || y >= kHeightMapSize) {
-    return TerrainPoint(0);
+    return TerrainPoint(-100);
   }
   return height_map_[x + y * kHeightMapSize];
 
@@ -1224,10 +1227,40 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
 
   // Create object.
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
+  new_game_obj->id = id_counter_++;
   new_game_obj->name = "polygon-obj-" + boost::lexical_cast<string>(new_game_obj->id);
   new_game_obj->position = vec3(0, 0, 0);
   new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
   AddGameObject(new_game_obj);
+  return new_game_obj;
+}
+
+shared_ptr<GameObject> AssetCatalog::CreateGameObjFromMesh(const Mesh& m, 
+  string shader_name, const vec3 position, 
+  const vector<Polygon>& polygons) {
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  game_asset->id = id_counter_++;
+  assets_by_id_[game_asset->id] = game_asset;
+  game_asset->name = "mesh-asset-" + boost::lexical_cast<string>(game_asset->id);
+  assets_[game_asset->name] = game_asset;
+
+  game_asset->lod_meshes[0] = m;
+  game_asset->lod_meshes[0].polygons = polygons;
+
+  game_asset->shader = shaders_[shader_name];
+  game_asset->aabb = GetObjectAABB(m.polygons);
+  game_asset->bounding_sphere = GetAssetBoundingSphere(polygons);
+  game_asset->collision_type = COL_NONE;
+  game_asset->physics_behavior = PHYSICS_NONE;
+
+  // Create object.
+  shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
+  new_game_obj->id = id_counter_++;
+  new_game_obj->name = "mesh-obj-" + boost::lexical_cast<string>(new_game_obj->id);
+  new_game_obj->position = position;
+  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
+  AddGameObject(new_game_obj);
+  UpdateObjectPosition(new_game_obj);
   return new_game_obj;
 }
 
@@ -1251,7 +1284,6 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(
   string name = "object-" + boost::lexical_cast<string>(id_counter_ + 1);
   shared_ptr<GameObject> new_game_obj = 
     LoadGameObject(name, asset_name, position, vec3(0, 0, 0));
-  cout << "Ended" << endl;
   return new_game_obj;
 }
 
@@ -1688,6 +1720,32 @@ AABB GameObject::GetAABB() {
   return r;
 }
 
+void AssetCatalog::DeleteAsset(shared_ptr<GameAsset> asset) {
+  assets_by_id_.erase(asset->id);
+  assets_.erase(asset->name);
+}
+
+void AssetCatalog::DeleteObject(ObjPtr obj) {
+  if (obj->octree_node) {
+    obj->octree_node->objects.erase(obj->id);
+    if (IsMovingObject(obj)) {
+      obj->octree_node->moving_objs.erase(obj->id);
+    }
+    if (IsLight(obj)) {
+      obj->octree_node->lights.erase(obj->id);
+    }
+    obj->octree_node = nullptr;
+  }
+
+  for (ObjPtr c : obj->children) {
+    objects_by_id_.erase(c->id);
+    objects_.erase(c->name);
+  }
+
+  objects_by_id_.erase(obj->id);
+  objects_.erase(obj->name);
+}
+
 void AssetCatalog::RemoveDead() {
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
@@ -1762,5 +1820,33 @@ vector<ObjPtr> AssetCatalog::GetClosestLightPoints(const vec3& position) {
     }
   }
   return res;
+}
+
+float AssetCatalog::GetTerrainHeight(vec2 pos, vec3* normal) {
+  ivec2 top_left = ivec2(pos.x, pos.y);
+
+  TerrainPoint p[4];
+  p[0] = GetTerrainPoint(top_left.x, top_left.y);
+  p[1] = GetTerrainPoint(top_left.x, top_left.y + 1.1);
+  p[2] = GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
+  p[3] = GetTerrainPoint(top_left.x + 1.1, top_left.y);
+
+  const float& h0 = p[0].height;
+  const float& h1 = p[1].height;
+  const float& h2 = p[2].height;
+  const float& h3 = p[3].height;
+
+  // Top triangle.
+  vec2 tile_v = pos - vec2(top_left);
+  if (tile_v.x + tile_v.y < 1.0f) {
+    *normal = p[0].normal;
+    return h0 + tile_v.x * (h3 - h0) + tile_v.y * (h1 - h0);
+
+  // Bottom triangle.
+  } else {
+    *normal = p[2].normal;
+    tile_v = vec2(1.0f) - tile_v; 
+    return h2 + tile_v.x * (h1 - h2) + tile_v.y * (h3 - h2);
+  }
 }
 

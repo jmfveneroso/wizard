@@ -27,8 +27,6 @@
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 
 #define PLAYER_HEIGHT 0.75
-// #define JUMP_FORCE 30.0f
-#define JUMP_FORCE 0.3f
 #define PLAYER_START_POSITION vec3(10000, 220, 10000)
 
 using namespace std;
@@ -37,6 +35,7 @@ using namespace glm;
 bool text_mode = false;
 int throttle_counter = 0;
 
+shared_ptr<Project4D> project_4d = nullptr;
 shared_ptr<Renderer> renderer = nullptr;
 shared_ptr<TextEditor> text_editor = nullptr;
 shared_ptr<AssetCatalog> asset_catalog = nullptr;
@@ -70,12 +69,16 @@ void RunCommand(string command) {
     player->position = vec3(x, y, z);
   } else if (result[0] == "speed") {
     float speed = boost::lexical_cast<float>(result[1]);
-    configs->player_speed = speed;
+    configs->target_player_speed = speed;
   } else if (result[0] == "sun") {
     float x = boost::lexical_cast<float>(result[1]);
     float y = boost::lexical_cast<float>(result[2]);
     float z = boost::lexical_cast<float>(result[3]);
     configs->sun_position = vec3(x, y, z);
+  } else if (result[0] == "levitate") {
+    configs->levitate = true;
+  } else if (result[0] == "nolevitate") {
+    configs->levitate = false;
   } else if (result[0] == "raise") {
     ivec2 top_left = ivec2(player->position.x, player->position.z) - 40;
     for (int x = 0; x < 80; x++) {
@@ -91,8 +94,18 @@ void RunCommand(string command) {
     }
     renderer->terrain()->Invalidate();
     cout << "Raised terrain" << endl; 
+  } else if (result[0] == "disable-attacks") {
+    configs->disable_attacks = true;
+  } else if (result[0] == "allow-attacks") {
+    configs->disable_attacks = false;
+  } else if (result[0] == "edit-tile") {
+    configs->edit_terrain = "tile";
+  } else if (result[0] == "edit-height") {
+    configs->edit_terrain = "height";
+  } else if (result[0] == "noedit") {
+    configs->edit_terrain = "none";
   } else if (result[0] == "save") {
-    asset_catalog->SaveHeightMap("assets/height_map2.dat");
+    asset_catalog->SaveHeightMap("assets/height_map2_compressed.dat");
   }
 }
 
@@ -150,6 +163,7 @@ bool ProcessGameInput() {
     }
    
     float player_speed = asset_catalog->GetConfigs()->player_speed; 
+    float jump_force = asset_catalog->GetConfigs()->jump_force; 
 
     // Move forward.
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -171,13 +185,14 @@ bool ProcessGameInput() {
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
       if (player->can_jump) {
         player->can_jump = false;
-        player->speed.y += JUMP_FORCE;
+        player->speed.y += jump_force;
       }
     }
 
     // Move down.
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-      player->position -= vec3(0, 1, 0) * player_speed;
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+      player->position -= jump_force;
+    }
 
     double x_pos, y_pos;
     glfwGetCursorPos(window, &x_pos, &y_pos);
@@ -235,9 +250,9 @@ bool ProcessGameInput() {
     shared_ptr<Configs> configs = asset_catalog->GetConfigs();
     configs->taking_hit -= 1.0f;
     if (configs->taking_hit < 0.0) {
-      configs->player_speed = 0.03f;
+      configs->player_speed = configs->target_player_speed;
     } else {
-      configs->player_speed = 0.005f;
+      configs->player_speed = configs->target_player_speed / 6.0f;
     }
 
     asset_catalog->RemoveDead();
@@ -258,7 +273,9 @@ int main() {
   renderer = make_shared<Renderer>();
   asset_catalog = make_shared<AssetCatalog>("assets");
   shared_ptr<Draw2D> draw_2d = make_shared<Draw2D>(asset_catalog);
+  project_4d  = make_shared<Project4D>(asset_catalog);
 
+  renderer->set_project_4d(project_4d);
   renderer->set_asset_catalog(asset_catalog);
   renderer->set_draw_2d(draw_2d);
   renderer->Init();

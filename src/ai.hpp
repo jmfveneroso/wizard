@@ -23,6 +23,7 @@
 #include <map>
 #include <unordered_map>
 #include <unordered_set>
+#include <random>
 #include <utility>
 #include <png.h>
 #include "asset.hpp"
@@ -35,16 +36,26 @@ using namespace glm;
 
 class AI{
   shared_ptr<AssetCatalog> asset_catalog_;
+  std::default_random_engine generator_;
 
-  shared_ptr<Waypoint> GetNextWaypoint(ObjPtr obj);
-  void ChangeAction(ObjPtr obj, AiAction action);
+  shared_ptr<Waypoint> GetClosestWaypoint(const vec3& position);
+  void ChangeState(ObjPtr obj, AiState state);
 
   bool RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold = 0.75f);
-  void Move(ObjPtr spider);
-  void TurnTowardPlayer(ObjPtr spider);
   void Attack(ObjPtr spider);
   void Wander(ObjPtr spider);
-  void Idle(ObjPtr spider);
+
+  bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
+  bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);
+  bool ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action);
+  bool ProcessChangeStateAction(ObjPtr spider, 
+    shared_ptr<ChangeStateAction> action);
+  bool ProcessRangedAttackAction(ObjPtr spider, 
+    shared_ptr<RangedAttackAction> action);
+
+  bool ProcessStatus(ObjPtr spider);
+  void ProcessMentalState(ObjPtr spider);
+  void ProcessNextAction(ObjPtr spider);
 
  public:
   AI(shared_ptr<AssetCatalog> asset_catalog);
