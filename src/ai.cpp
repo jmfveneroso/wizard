@@ -4,14 +4,25 @@ AI::AI(shared_ptr<AssetCatalog> asset_catalog) : asset_catalog_(asset_catalog) {
 }
 
 void AI::InitSpider() {
-  shared_ptr<GameObject> spider = asset_catalog_->GetObjectByName("spider-001");
-  spider->next_waypoint = asset_catalog_->GetWaypointByName("waypoint-017");
 }
 
 void AI::ChangeState(ObjPtr obj, AiState state) {
   obj->ai_state = state;
   obj->frame = 0;
   obj->state_changed_at = glfwGetTime();
+}
+
+ObjPtr AI::GetClosestUnit(ObjPtr spider) {
+  float min_distance = 99999.9f;
+  ObjPtr closest_unit = nullptr;
+  for (ObjPtr obj1 : asset_catalog_->GetMovingObjects()) {
+    if (obj1->GetAsset()->name != "spider") continue;
+    float distance = length(spider->position - obj1->position);
+    if (distance < min_distance) {
+      closest_unit = obj1;
+    } 
+  }
+  return closest_unit;
 }
 
 shared_ptr<Waypoint> AI::GetClosestWaypoint(const vec3& position) {
@@ -77,6 +88,30 @@ void AI::Attack(ObjPtr spider) {
   spider->actions.push(make_shared<ChangeStateAction>(WANDER));
 }
 
+void AI::Chase(ObjPtr spider) {
+  if (!spider->actions.empty()) {
+    // Complete the actions before choosing other actions.
+    return;
+  }
+
+  int dice = rand() % 3; 
+  ObjPtr player = asset_catalog_->GetObjectByName("player");
+  vec3 dir = player->position - spider->position;
+  if (length(dir) > 100 && dice < 2) {
+    vec3 next_pos = spider->position + normalize(dir) * 50.0f;
+    spider->actions.push(make_shared<MoveAction>(next_pos));
+  } else {
+    spider->actions.push(make_shared<TakeAimAction>());
+    spider->actions.push(make_shared<RangedAttackAction>());
+    spider->actions.push(make_shared<IdleAction>(2));
+  }
+
+  if (glfwGetTime() > spider->state_changed_at + 30) {
+    spider->actions = {};
+    spider->actions.push(make_shared<ChangeStateAction>(WANDER));
+  }
+}
+
 void AI::Wander(ObjPtr spider) {
   if (!spider->actions.empty()) {
     // Complete the actions before choosing other actions.
@@ -91,8 +126,24 @@ void AI::Wander(ObjPtr spider) {
   }
 
   if (glfwGetTime() > spider->state_changed_at + 20) {
+    ObjPtr player = asset_catalog_->GetObjectByName("player");
+    vec3 dir = player->position - spider->position;
+    ObjPtr closest_unit = GetClosestUnit(spider);
+    if (length(spider->position - closest_unit->position) < 50) {
+      spider->actions = {};
+      spider->actions.push(make_shared<MoveAction>(closest_wp->position));
+      shared_ptr<Waypoint> next_wp = closest_wp->next_waypoints[0];
+      spider->actions.push(make_shared<MoveAction>(next_wp->position));
+      spider->actions.push(make_shared<IdleAction>(5));
+      return;
+    }
+  }
+
+  ObjPtr player = asset_catalog_->GetObjectByName("player");
+  vec3 dir = player->position - spider->position;
+  if (length(dir) < 100) {
     spider->actions = {};
-    spider->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+    spider->actions.push(make_shared<ChangeStateAction>(CHASE));
     return;
   }
 
@@ -111,6 +162,8 @@ bool AI::ProcessStatus(ObjPtr spider) {
     case STATUS_TAKING_HIT: {
       spider->active_animation = "Armature|hit";
       if (spider->frame >= 39) {
+        spider->actions = {};
+        spider->actions.push(make_shared<ChangeStateAction>(CHASE));
         spider->status = STATUS_NONE;
       }
       return false;
@@ -139,6 +192,7 @@ void AI::ProcessMentalState(ObjPtr spider) {
   switch (spider->ai_state) {
     case WANDER: Wander(spider); break;
     case AI_ATTACK: Attack(spider); break;
+    case CHASE: Chase(spider); break;
     default: break;
   }
 }
@@ -203,12 +257,18 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
 
   vec3 to_next_location = action->destination - spider->position;
   to_next_location.y = 0;
+
+  // Check how much time happened since the order was issued.
+  if (glfwGetTime() > action->issued_at + 5) {
+    return true;
+  }
+
   float dist_next_location = length(to_next_location);
   if (dist_next_location < 7.0f) {
     return true;
   }
 
-  float speed = 0.02;
+  float speed = 0.05;
   bool is_rotating = RotateSpider(spider, action->destination);
   if (!is_rotating) {
     spider->speed += spider->forward * speed;
@@ -324,3 +384,8 @@ void AI::RunSpiderAI() {
     ChangeState(obj, WANDER);
   }
 }
+
+// Objetivo da aranha é se espalhar.
+
+// Só ataca quando está perto do player.
+

@@ -45,11 +45,6 @@ const vector<ivec2> subregion_top_left {
   {CLIPMAP_SIZE / 4, 3 * CLIPMAP_SIZE / 4},            // 10: 3, 1
   {CLIPMAP_SIZE / 2 - 1, 3 * CLIPMAP_SIZE / 4},        // 11: 3, 2
   {3 * CLIPMAP_SIZE / 4 - 1, 3 * CLIPMAP_SIZE / 4 - 1} // 12: 3, 3
-
-  // {0, 0},                                                   
-  // {CLIPMAP_SIZE / 4, 0},                                    
-  // {CLIPMAP_SIZE / 4, CLIPMAP_SIZE / 4 + CLIPMAP_SIZE / 2},  
-  // {CLIPMAP_SIZE / 4 + CLIPMAP_SIZE / 2, 0},                 
 };
 
 const vector<ivec2> subregion_size {
@@ -66,11 +61,6 @@ const vector<ivec2> subregion_size {
   {CLIPMAP_SIZE / 4, CLIPMAP_SIZE / 4 + 1},     // 10: 3, 1
   {CLIPMAP_SIZE / 4 + 1, CLIPMAP_SIZE / 4 + 1}, // 11: 3, 2
   {CLIPMAP_SIZE / 4 + 2, CLIPMAP_SIZE / 4 + 2}  // 12: 3, 3
-
-  // {CLIPMAP_SIZE / 4, CLIPMAP_SIZE},                           
-  // {CLIPMAP_SIZE / 2, CLIPMAP_SIZE / 4},                       
-  // {CLIPMAP_SIZE / 2, CLIPMAP_SIZE / 2 - CLIPMAP_SIZE / 4},    
-  // {CLIPMAP_SIZE / 2 - CLIPMAP_SIZE / 4, CLIPMAP_SIZE},        
 };
 
 const vector<ivec2> subregion_offsets = {
@@ -142,13 +132,6 @@ ivec2 BufferToGridCoordinates(ivec2 p, unsigned int level, ivec2 hb_top_left,
   return top_left + toroidal_coords * GetTileSize(level);
 }
 
-void CreateOffsetIndices(std::vector<unsigned int>& indices, 
-  ivec2 coords, vector<ivec2> offsets) {
-  for (const auto& o : offsets) {
-    indices.push_back((coords.y + o.y) * (CLIPMAP_SIZE + 1) + (coords.x + o.x));
-  }
-}
-
 Terrain::Terrain(GLuint program_id, GLuint water_program_id) 
   : program_id_(program_id), water_program_id_(water_program_id) {
   glm::vec3 vertices[(CLIPMAP_SIZE+1) * (CLIPMAP_SIZE+1)];
@@ -168,7 +151,8 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glBindVertexArray(vao_);
 
   // TODO: take the tiles file as input.
-  texture_ = LoadPng("assets/textures_png/tiles2.png");
+  texture_ = LoadPng("assets/textures_png/tiles.png", true/* poor filtering */);
+  // texture_ = LoadPng("assets/textures_png/stone_wall_diffuse.png");
   water_texture_ = LoadPng("assets/textures_png/water_dudv.png");
   water_normal_texture_ = LoadPng("assets/textures_png/water_normal.png");
 
@@ -211,6 +195,7 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
       for (int y = 0; y < 2; y++) {
         CreateSubregionBuffer(region, {x,y}, 
           &subregion_buffers_[region][x][y], 
+          &subregion_uv_buffers_[region][x][y], 
           &subregion_buffer_sizes_[region][x][y]);
       }
     }
@@ -218,13 +203,22 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glBindVertexArray(0);
 }
 
+void CreateOffsetIndices(std::vector<unsigned int>& indices, 
+  vector<vec2>& uvs, ivec2 coords, vector<ivec2> offsets) {
+  for (const auto& o : offsets) {
+    indices.push_back((coords.y + o.y) * (CLIPMAP_SIZE + 1) + (coords.x + o.x));
+    uvs.push_back({o.x, o.y});
+  }
+}
+
 void Terrain::CreateSubregionBuffer(int subregion, ivec2 offset, 
-  GLuint* buffer_id, unsigned int* buffer_size) {
+  GLuint* buffer_id, GLuint* uv_buffer_id, unsigned int* buffer_size) {
   ivec2 start = subregion_top_left[subregion] + 
     subregion_offsets[subregion] * offset;
   ivec2 end = start + subregion_size[subregion] + 
     subregion_size_offsets[subregion] * offset;
 
+  vector<vec2> uvs;
   vector<unsigned int> indices;
   for (int y = start.y; y < end.y; y++) {
     for (int x = start.x; x < end.x; x++) {
@@ -233,23 +227,23 @@ void Terrain::CreateSubregionBuffer(int subregion, ivec2 offset,
       bool left_border = x == 0;
       bool right_border = x == CLIPMAP_SIZE - 1;
       if (top_border && left_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[0][0]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[0][0]);
       } else if (top_border && right_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[0][1]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[0][1]);
       } else if (bottom_border && left_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[0][2]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[0][2]);
       } else if (bottom_border && right_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[0][3]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[0][3]);
       } else if (top_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[x%2][4]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[x%2][4]);
       } else if (bottom_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[x%2][5]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[x%2][5]);
       } else if (left_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[y%2][6]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[y%2][6]);
       } else if (right_border) {
-        CreateOffsetIndices(indices, {x, y}, tile_patterns[y%2][7]);
+        CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[y%2][7]);
       }
-      CreateOffsetIndices(indices, {x, y}, tile_patterns[y%2==x%2][8]);
+      CreateOffsetIndices(indices, uvs, {x, y}, tile_patterns[y%2==x%2][8]);
     } 
   }
 
@@ -262,6 +256,12 @@ void Terrain::CreateSubregionBuffer(int subregion, ivec2 offset,
     GL_STATIC_DRAW
   );
   *buffer_size = indices.size();
+
+  // Also produce UVs here.
+  glGenBuffers(1, uv_buffer_id);
+  glBindBuffer(GL_ARRAY_BUFFER, *uv_buffer_id);
+  glBufferData(GL_ARRAY_BUFFER, indices.size()  * sizeof(vec2), &uvs[0], 
+    GL_STATIC_DRAW);
 }
 
 int Terrain::InvalidateOuterBuffer(shared_ptr<Clipmap> clipmap, 
@@ -609,8 +609,9 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
       // if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
       //   continue;
       // }
-
       int x = offset.x; int y = offset.y;
+      BindBuffer(subregion_uv_buffers_[region][x][y], 1, 2);
+
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
       glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 
         GL_UNSIGNED_INT, (void*) 0);
@@ -638,15 +639,22 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
   glUniformMatrix4fv(GetUniformId(program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
   BindBuffer(vertex_buffer_, 0, 3);
 
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  int show_grid = -1;
+  if (configs->edit_terrain != "none") {
+    show_grid = 1;
+  }
+
   // Set clipping plane.
   glUniform1i(GetUniformId(program_id_, "clip_against_plane"), 
     (int) clip_against_plane);
+  glUniform1i(GetUniformId(program_id_, "show_grid"), 
+    (int) show_grid);
   glUniform3fv(GetUniformId(program_id_, "clipping_point"), 1, 
     (float*) &clipping_point_);
   glUniform3fv(GetUniformId(program_id_, "clipping_normal"), 1, 
     (float*) &clipping_normal_);
 
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
   glUniform3fv(GetUniformId(program_id_, "light_direction"), 1,
     (float*) &configs->sun_position);
 
@@ -657,10 +665,16 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
     vec3 light_color = vec3(0, 0, 0);
     float quadratic = 99999999.0f;
     if (i < light_points.size()) {
-      shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
       position = light_points[i]->position;
-      light_color = asset->light_color;
-      quadratic = asset->quadratic;
+      if (light_points[i]->override_light) {
+        light_color = light_points[i]->light_color;
+        quadratic = light_points[i]->quadratic;
+        position.y += 10;
+      } else {
+        shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
+        light_color = asset->light_color;
+        quadratic = asset->quadratic;
+      }
     }
 
     string p = string("point_lights[") + boost::lexical_cast<string>(i) + "].";
@@ -748,6 +762,8 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
       }
 
       int x = offset.x; int y = offset.y;
+      BindBuffer(subregion_uv_buffers_[region][x][y], 1, 2);
+
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
       glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 
         GL_UNSIGNED_INT, (void*) 0);
@@ -759,61 +775,6 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
   glBindVertexArray(0);
 
   DrawWater(ProjectionMatrix, ViewMatrix, player_pos);
-}
-
-bool Terrain::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
-  vec3 ray = end - start;
-
-  ivec2 start_tile = ivec2(start.x, start.z);
-  ivec2 end_tile = ivec2(end.x, end.z);
-  ivec2 cur_tile = start_tile;
-
-
-  int dx = end_tile.x - cur_tile.x;
-  int dy = end_tile.y - cur_tile.y;
-  float slope = dy / float(dx);
-
-  while (cur_tile.x != end_tile.x) {
-    cur_tile.y = start_tile.y + (cur_tile.x - start_tile.x) * slope;
-
-    int size = 2;
-    for (int x = -size; x <= size; x++) {
-      for (int y = -size; y <= size; y++) {
-        ivec2 cur_tile_ = cur_tile + ivec2(x, y);
-
-        TerrainPoint p[4];
-        p[0] = asset_catalog_->GetTerrainPoint(cur_tile_.x, cur_tile_.y);
-        p[1] = asset_catalog_->GetTerrainPoint(cur_tile_.x, cur_tile_.y + 1.1);
-        p[2] = asset_catalog_->GetTerrainPoint(cur_tile_.x + 1.1, cur_tile_.y + 1.1);
-        p[3] = asset_catalog_->GetTerrainPoint(cur_tile_.x + 1.1, cur_tile_.y);
-
-        const float& h0 = p[0].height;
-        const float& h1 = p[1].height;
-        const float& h2 = p[2].height;
-        const float& h3 = p[3].height;
- 
-        vec3 v[4];
-        v[0] = vec3(cur_tile_.x,     p[0].height, cur_tile_.y);
-        v[1] = vec3(cur_tile_.x,     p[1].height, cur_tile_.y + 1);
-        v[2] = vec3(cur_tile_.x + 1, p[2].height, cur_tile_.y + 1);
-        v[3] = vec3(cur_tile_.x + 1, p[3].height, cur_tile_.y);
-
-        vec3 r;
-        if (IntersectLineQuad(start, end, v[0], v[1], v[2], v[3], r)) {
-          tile = cur_tile_;
-          return true;
-        }
-      }
-    }
-
-    if (cur_tile.x > end_tile.x) {
-      cur_tile.x--;
-    } else {
-      cur_tile.x++;
-    }
-  }
-
-  return false;
 }
 
 void Terrain::InvalidatePoint(ivec2 tile) {

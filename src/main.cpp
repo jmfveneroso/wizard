@@ -3,6 +3,7 @@
 #include <iostream>
 #include <exception>
 #include <memory>
+#include <random>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -22,26 +23,32 @@
 #include "collision_resolver.hpp"
 #include "ai.hpp"
 #include "physics.hpp"
+#include "player.hpp"
+#include "inventory.hpp"
+#include "item.hpp"
+#include "craft.hpp"
+#include "dialog.hpp"
 
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
 
-#define PLAYER_HEIGHT 0.75
-#define PLAYER_START_POSITION vec3(10000, 220, 10000)
-
 using namespace std;
 using namespace glm;
 
-bool text_mode = false;
 int throttle_counter = 0;
 
 shared_ptr<Project4D> project_4d = nullptr;
 shared_ptr<Renderer> renderer = nullptr;
 shared_ptr<TextEditor> text_editor = nullptr;
+shared_ptr<Inventory> inventory = nullptr;
+shared_ptr<Craft> craft = nullptr;
 shared_ptr<AssetCatalog> asset_catalog = nullptr;
 shared_ptr<CollisionResolver> collision_resolver = nullptr;
 shared_ptr<AI> ai = nullptr;
 shared_ptr<Physics> physics = nullptr;
+shared_ptr<PlayerInput> player_input = nullptr;
+shared_ptr<Item> item = nullptr;
+shared_ptr<Dialog> dialog = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -49,8 +56,11 @@ void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
 
 void PressKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
   text_editor->PressKeyCallback(key, scancode, action, mods);
+  craft->PressKeyCallback(key, scancode, action, mods);
+  dialog->PressKeyCallback(key, scancode, action, mods);
 }
 
+// TODO: move this elsewhere.
 void RunCommand(string command) {
   shared_ptr<Player> player = asset_catalog->GetPlayer();
   shared_ptr<Configs> configs = asset_catalog->GetConfigs();
@@ -70,6 +80,9 @@ void RunCommand(string command) {
   } else if (result[0] == "speed") {
     float speed = boost::lexical_cast<float>(result[1]);
     configs->target_player_speed = speed;
+  } else if (result[0] == "raise-factor") {
+    float raise_factor = boost::lexical_cast<float>(result[1]);
+    configs->raise_factor = raise_factor;
   } else if (result[0] == "sun") {
     float x = boost::lexical_cast<float>(result[1]);
     float y = boost::lexical_cast<float>(result[2]);
@@ -102,6 +115,8 @@ void RunCommand(string command) {
     configs->edit_terrain = "tile";
   } else if (result[0] == "edit-height") {
     configs->edit_terrain = "height";
+  } else if (result[0] == "edit-flatten") {
+    configs->edit_terrain = "flatten";
   } else if (result[0] == "noedit") {
     configs->edit_terrain = "none";
   } else if (result[0] == "save") {
@@ -110,162 +125,177 @@ void RunCommand(string command) {
 }
 
 bool ProcessGameInput() {
-  static double last_time = glfwGetTime();
-  double current_time = glfwGetTime();
   asset_catalog->UpdateFrameStart();
   asset_catalog->UpdateMissiles();
 
   --throttle_counter;
   GLFWwindow* window = renderer->window();
 
-  shared_ptr<Player> player = asset_catalog->GetPlayer();
-  if (text_mode) { 
-    if (!text_editor->enabled) {
-      text_mode = false;
-    }
-    return true;
-  } else {
-    vec3 direction(
-      cos(player->rotation.x) * sin(player->rotation.y), 
-      sin(player->rotation.x),
-      cos(player->rotation.x) * cos(player->rotation.y)
-    );
-    
-    vec3 right = glm::vec3(
-      sin(player->rotation.y - 3.14f/2.0f), 
-      0,
-      cos(player->rotation.y - 3.14f/2.0f)
-    );
+  shared_ptr<Configs> configs = asset_catalog->GetConfigs();
+  switch (asset_catalog->GetGameState()) {
+    case STATE_GAME: {
+      shared_ptr<Player> player = asset_catalog->GetPlayer();
 
-    vec3 front = glm::vec3(
-      cos(player->rotation.x) * sin(player->rotation.y), 
-      0,
-      cos(player->rotation.x) * cos(player->rotation.y)
-    );
-    
-    glm::vec3 up = glm::cross(right, direction);
-    
-    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-      if (throttle_counter < 0) {
-        text_editor->Enable();
-  
-        stringstream ss;
-        ss << "Player pos: " << player->position << endl;
+      // TODO: all of this should go into a class player.
+      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          text_editor->Enable();
+      
+          stringstream ss;
+          ss << "Player pos: " << player->position << endl;
 
-        shared_ptr<Sector> s = asset_catalog->GetSector(player->position + vec3(0, 0.75, 0));
-        ss << "Sector: " << s->name << endl;
+          shared_ptr<Sector> s = asset_catalog->GetSector(player->position + vec3(0, 0.75, 0));
+          ss << "Sector: " << s->name << endl;
 
-        ss << "Life: " << player->life << endl;
-        text_editor->SetContent(ss.str());
-        text_mode = true;
+          ss << "Life: " << player->life << endl;
+
+          if (configs->edit_terrain != "none") {
+            ss << "Brush size: " << configs->brush_size << endl;
+            ss << "Mode: " << configs->edit_terrain << endl;
+            ss << "Selected tile: " << configs->selected_tile << endl;
+            ss << "Raise factor: " << configs->raise_factor << endl;
+          }
+
+          text_editor->SetContent(ss.str());
+          asset_catalog->SetGameState(STATE_EDITOR);
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          inventory->Enable();
+          asset_catalog->SetGameState(STATE_INVENTORY);
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->brush_size--;
+          if (configs->brush_size < 0) {
+            configs->brush_size = 0;
+          }
+        }
+        throttle_counter = 4;
+      } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->brush_size++;
+          if (configs->brush_size > 1000) {
+            configs->brush_size = 1000;
+          }
+        }
+        throttle_counter = 4;
+      } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 0;
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 1;
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 2;
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 3;
+        }
+        throttle_counter = 20;
       }
-      throttle_counter = 20;
-    }
-   
-    float player_speed = asset_catalog->GetConfigs()->player_speed; 
-    float jump_force = asset_catalog->GetConfigs()->jump_force; 
 
-    // Move forward.
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-      player->speed += front * player_speed;
+      Camera c = player_input->ProcessInput(window);
+      item->ProcessItems();
+      craft->ProcessCrafting();
 
-    // Move backward.
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-      player->speed -= front * player_speed;
+      renderer->SetCamera(c);
 
-    // Strafe right.
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-      player->speed += right * player_speed;
+      ai->RunSpiderAI();
+      physics->Run();
+      asset_catalog->UpdateParticles();
 
-    // Strafe left.
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-      player->speed -= right * player_speed;
+      collision_resolver->Collide();
 
-    // Move up.
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-      if (player->can_jump) {
-        player->can_jump = false;
-        player->speed.y += jump_force;
+      configs->taking_hit -= 1.0f;
+      if (configs->taking_hit < 0.0) {
+        configs->player_speed = configs->target_player_speed;
+      } else {
+        configs->player_speed = configs->target_player_speed / 6.0f;
       }
+
+      asset_catalog->RemoveDead();
+      configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(0.0, 0, 1.0)) 
+        * vec4(configs->sun_position, 1.0f));
+
+      return false;
     }
-
-    // Move down.
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-      player->position -= jump_force;
-    }
-
-    double x_pos, y_pos;
-    glfwGetCursorPos(window, &x_pos, &y_pos);
-    glfwSetCursorPos(window, 0, 0);
-
-    // Change orientation.
-    float mouse_sensitivity = 0.003f;
-    player->rotation.y += mouse_sensitivity * float(-x_pos);
-    player->rotation.x += mouse_sensitivity * float(-y_pos);
-    if (player->rotation.x < -1.57f) player->rotation.x = -1.57f;
-    if (player->rotation.x >  1.57f) player->rotation.x = +1.57f;
-    last_time = current_time;
-
-    Camera c = Camera(player->position + vec3(0, 0.75, 0), direction, up);
-    c.rotation.x = player->rotation.x;
-    c.rotation.y = player->rotation.y;
-
-    renderer->SetCamera(c);
-
-    static int debounce = 0;
-    --debounce;
-    static int animation_frame = 0;
-    --animation_frame;
-    if (animation_frame == 0 && glfwGetKey(window, GLFW_KEY_C) != GLFW_PRESS) {
-      shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
-      obj->active_animation = "Armature|idle";
-      obj->frame = 0;
-    } else if (animation_frame <= 0 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
-      shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
-      obj->active_animation = "Armature|shoot";
-      obj->frame = 0;
-      animation_frame  = 60;
-      asset_catalog->CreateChargeMagicMissileEffect();
-    } else if (animation_frame == 20) {
-      asset_catalog->CastMagicMissile(c);
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
-      if (debounce < 0) {
-        shared_ptr<GameObject> obj = asset_catalog->GetObjectByName("hand-001");
-        obj->active_animation = "Armature|shoot";
-        obj->frame = 0;
-        animation_frame = 60;
-        asset_catalog->CreateChargeMagicMissileEffect();
+    case STATE_EDITOR: {
+      if (!text_editor->enabled) {
+        asset_catalog->SetGameState(STATE_GAME);
       }
-      debounce = 20;
+      return true;
     }
-
-    ai->RunSpiderAI();
-    physics->Run();
-    asset_catalog->UpdateParticles();
-
-    collision_resolver->Collide();
-
-    shared_ptr<Configs> configs = asset_catalog->GetConfigs();
-    configs->taking_hit -= 1.0f;
-    if (configs->taking_hit < 0.0) {
-      configs->player_speed = configs->target_player_speed;
-    } else {
-      configs->player_speed = configs->target_player_speed / 6.0f;
+    case STATE_INVENTORY: {
+      if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          inventory->Disable();
+        }
+        throttle_counter = 20;
+      }
+      if (!inventory->enabled) {
+        asset_catalog->SetGameState(STATE_GAME);
+      }
+      return true;
     }
-
-    asset_catalog->RemoveDead();
-    configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(1.0, 0, 0)) 
-      * vec4(configs->sun_position, 1.0f));
-
-    return false;
+    case STATE_CRAFT: {
+      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          craft->Disable();
+        }
+        throttle_counter = 20;
+      }
+      if (!craft->enabled) {
+        asset_catalog->SetGameState(STATE_GAME);
+      }
+      return true;
+    }
+    case STATE_DIALOG: {
+      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          dialog->Disable();
+        }
+        throttle_counter = 20;
+      }
+      if (!dialog->enabled) {
+        asset_catalog->SetGameState(STATE_GAME);
+      }
+      return true;
+    }
+    default:
+      return true;
   }
 }
 
 void AfterFrame() {
-  if (text_mode) {
-    text_editor->Draw();
+  switch (asset_catalog->GetGameState()) {
+    case STATE_EDITOR: {
+      text_editor->Draw();
+      break;
+    }
+    case STATE_INVENTORY: {
+      inventory->Draw();
+      break;
+    }
+    case STATE_CRAFT: {
+      craft->Draw();
+      break;
+    }
+    case STATE_DIALOG: {
+      dialog->Draw();
+      break;
+    }
+    default:
+      break; 
   }
 }
 
@@ -288,10 +318,17 @@ int main() {
   ai->InitSpider();
 
   text_editor = make_shared<TextEditor>(draw_2d);
+  inventory = make_shared<Inventory>(asset_catalog, draw_2d);
+  craft = make_shared<Craft>(asset_catalog, draw_2d, project_4d);
+  dialog = make_shared<Dialog>(asset_catalog, draw_2d);
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);
   glfwSetKeyCallback(renderer->window(), PressKeyCallback);
   text_editor->set_run_command_fn(RunCommand);
+
+  player_input = make_shared<PlayerInput>(asset_catalog, project_4d, craft, 
+    renderer->terrain(), dialog);
+  item = make_shared<Item>(asset_catalog);
 
   renderer->Run(ProcessGameInput, AfterFrame);
   return 0;

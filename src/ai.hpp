@@ -34,16 +34,20 @@
 using namespace std;
 using namespace glm;
 
-class AI{
+class AI {
   shared_ptr<AssetCatalog> asset_catalog_;
   std::default_random_engine generator_;
 
+  ObjPtr spiders_;
+
   shared_ptr<Waypoint> GetClosestWaypoint(const vec3& position);
   void ChangeState(ObjPtr obj, AiState state);
+  ObjPtr GetClosestUnit(ObjPtr spider);
 
   bool RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold = 0.75f);
   void Attack(ObjPtr spider);
   void Wander(ObjPtr spider);
+  void Chase(ObjPtr spider);
 
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
   bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);

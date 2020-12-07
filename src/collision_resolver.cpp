@@ -53,6 +53,7 @@ bool IsCollidable(shared_ptr<GameObject> obj) {
   }
 
   if (obj->parent_bone_id != -1) return false;
+  if (obj->status == STATUS_DYING) return false;
   return true;
 }
 
@@ -861,7 +862,7 @@ void CollisionResolver::ResolveCollisions() {
 
       obj1->position += displacement_vector;
       if (obj2 && obj2->GetAsset()->name == "spider") {
-        obj2->life -= 10;
+        obj2->life -= 50;
         asset_catalog_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
           vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
 

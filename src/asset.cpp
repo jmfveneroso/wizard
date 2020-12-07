@@ -88,7 +88,7 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
 
   // Create player asset.
   shared_ptr<GameAsset> player_asset = make_shared<GameAsset>();
-  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 1.5f);
+  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 2.0f);
   player_asset->id = id_counter_++;
   assets_by_id_[player_asset->id] = player_asset;
   // player_asset->name = "player-" + 
@@ -108,6 +108,44 @@ AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
   InitMissiles();
 
   CreateSkydome();
+}
+
+bool AssetCatalog::IsMovingObject(shared_ptr<GameObject> game_obj) {
+  return (game_obj->type == GAME_OBJ_DEFAULT
+    || game_obj->type == GAME_OBJ_PLAYER 
+    || game_obj->type == GAME_OBJ_MISSILE)
+    && game_obj->parent_bone_id == -1
+    && game_obj->GetAsset()->physics_behavior != PHYSICS_FIXED;
+}
+
+bool AssetCatalog::IsItem(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->item;
+}
+
+bool AssetCatalog::IsExtractable(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->extractable;
+}
+
+bool AssetCatalog::IsLight(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->emits_light;
 }
 
 shared_ptr<GameAssetGroup> 
@@ -223,6 +261,14 @@ BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons) {
 shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
   game_asset->name = asset.attribute("name").value();
+
+  if (asset.attribute("extractable")) {
+    game_asset->extractable = true;
+  }
+
+  if (asset.attribute("item")) {
+    game_asset->item = true;
+  }
 
   const string& shader_name = asset.child("shader").text().get();
   if (shader_name.size() > 0) {
@@ -358,6 +404,16 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
     game_asset->emits_light = true;
     game_asset->light_color = vec3(r, g, b);
     game_asset->quadratic = quadratic;
+  }
+
+  const pugi::xml_node& parent = asset.child("parent");
+  if (parent) {
+    const string& parent_name = parent.text().get();
+    shared_ptr<GameAsset> parent_asset = GetAssetByName(parent_name);
+    if (!parent_asset) {
+      ThrowError("Parent asset with name ", parent_asset, " does no exist.");
+    }
+    game_asset->parent = parent_asset;
   }
 
   if (assets_.find(game_asset->name) != assets_.end()) {
@@ -544,6 +600,14 @@ void AssetCatalog::AddGameObject(shared_ptr<GameObject> game_obj) {
     moving_objects_.push_back(game_obj);
   }
 
+  if (IsItem(game_obj)) {
+    items_.push_back(game_obj);
+  }
+
+  if (IsExtractable(game_obj)) {
+    extractables_.push_back(game_obj);
+  }
+
   if (IsLight(game_obj)) {
     lights_.push_back(game_obj);
   }
@@ -551,7 +615,6 @@ void AssetCatalog::AddGameObject(shared_ptr<GameObject> game_obj) {
 
 shared_ptr<GameObject> AssetCatalog::LoadGameObject(
   string name, string asset_name, vec3 position, vec3 rotation) {
-
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
   new_game_obj->name = name;
   new_game_obj->position = position;
@@ -734,6 +797,15 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
 
       shared_ptr<GameObject> new_game_obj = LoadGameObject(name, asset_name, 
         position, rotation);
+
+      const pugi::xml_node& animation = game_obj.child("animation");
+      if (animation) {
+        const string& animation_name = animation.text().get();
+        Mesh& mesh = new_game_obj->GetAsset()->lod_meshes[0];
+        if (mesh.animations.find(animation_name) != mesh.animations.end()) {
+          new_game_obj->active_animation = animation_name;
+        }
+      }
 
       // Only static objects will retain this.
       new_game_obj->current_sector = new_sector;
@@ -1676,24 +1748,6 @@ void AssetCatalog::GenerateOptimizedOctree() {
   // PrintOctree(octree);
 }
 
-bool AssetCatalog::IsMovingObject(shared_ptr<GameObject> game_obj) {
-  return (game_obj->type == GAME_OBJ_DEFAULT
-    || game_obj->type == GAME_OBJ_PLAYER 
-    || game_obj->type == GAME_OBJ_MISSILE)
-    && game_obj->parent_bone_id == -1
-    && game_obj->GetAsset()->physics_behavior != PHYSICS_FIXED;
-}
-
-bool AssetCatalog::IsLight(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->emits_light;
-}
-
 shared_ptr<OctreeNode> AssetCatalog::GetOctreeRoot() {
   return GetSectorByName("outside")->octree_node;
 }
@@ -1746,38 +1800,68 @@ void AssetCatalog::DeleteObject(ObjPtr obj) {
   objects_.erase(obj->name);
 }
 
+void AssetCatalog::RemoveObject(ObjPtr obj) {
+  // Clear position data.
+  if (obj->octree_node) {
+    obj->octree_node->objects.erase(obj->id);
+    if (IsMovingObject(obj)) {
+      obj->octree_node->moving_objs.erase(obj->id);
+    }
+    if (IsLight(obj)) {
+      obj->octree_node->lights.erase(obj->id);
+    }
+    obj->octree_node = nullptr;
+  }
+
+  for (ObjPtr c : obj->children) {
+    objects_by_id_.erase(c->id);
+    objects_.erase(c->name);
+  }
+
+  objects_by_id_.erase(obj->id);
+  objects_.erase(obj->name);
+
+  for (int i = 0; i < moving_objects_.size(); i++) {
+    if (moving_objects_[i]->id == obj->id) {
+      moving_objects_.erase(moving_objects_.begin() + i);
+      break;
+    }
+  }
+
+  for (int i = 0; i < items_.size(); i++) {
+    if (items_[i]->id == obj->id) {
+      items_.erase(items_.begin() + i);
+      break;
+    }
+  }
+
+  for (int i = 0; i < extractables_.size(); i++) {
+    if (extractables_[i]->id == obj->id) {
+      extractables_.erase(extractables_.begin() + i);
+      break;
+    }
+  }
+
+  int index = -1; 
+  for (int i = 0; i < lights_.size(); i++) {
+    if (lights_[i]->id == obj->id) {
+      index = i;
+      break;
+    }
+  }
+
+  if (index != -1) {
+    lights_.erase(lights_.begin() + index);
+  }
+}
+
 void AssetCatalog::RemoveDead() {
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
     if (obj->GetAsset()->name != "spider") continue;
     if (obj->status != STATUS_DEAD) continue;
 
-    // Clear position data.
-    if (obj->octree_node) {
-      obj->octree_node->objects.erase(obj->id);
-      if (IsMovingObject(obj)) {
-        obj->octree_node->moving_objs.erase(obj->id);
-      }
-      if (IsLight(obj)) {
-        obj->octree_node->lights.erase(obj->id);
-      }
-      obj->octree_node = nullptr;
-    }
-
-    for (ObjPtr c : obj->children) {
-      objects_by_id_.erase(c->id);
-      objects_.erase(c->name);
-    }
-
-    objects_by_id_.erase(obj->id);
-    objects_.erase(obj->name);
-
-    for (int i = 0; i < moving_objects_.size(); i++) {
-      if (moving_objects_[i]->id == obj->id) {
-        it = moving_objects_.erase(moving_objects_.begin() + i);
-        break;
-      }
-    }
+    RemoveObject(obj);
   }
 }
 
@@ -1848,5 +1932,70 @@ float AssetCatalog::GetTerrainHeight(vec2 pos, vec3* normal) {
     tile_v = vec2(1.0f) - tile_v; 
     return h2 + tile_v.x * (h1 - h2) + tile_v.y * (h3 - h2);
   }
+}
+
+void AssetCatalog::MakeGlow(ObjPtr obj) {
+  if (obj->override_light) return;
+
+  obj->override_light = true;
+  obj->emits_light = true;
+  obj->light_color = vec3(0.5, 0.5, 1.0);
+  obj->quadratic = 0.02;
+  obj->life = 10.0f;
+  lights_.push_back(obj);
+}
+
+bool AssetCatalog::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
+  vec3 ray = end - start;
+
+  ivec2 start_tile = ivec2(start.x, start.z);
+  ivec2 end_tile = ivec2(end.x, end.z);
+  ivec2 cur_tile = start_tile;
+
+  int dx = end_tile.x - cur_tile.x;
+  int dy = end_tile.y - cur_tile.y;
+  float slope = dy / float(dx);
+
+  while (cur_tile.x != end_tile.x) {
+    cur_tile.y = start_tile.y + (cur_tile.x - start_tile.x) * slope;
+
+    int size = 2;
+    for (int x = -size; x <= size; x++) {
+      for (int y = -size; y <= size; y++) {
+        ivec2 cur_tile_ = cur_tile + ivec2(x, y);
+
+        TerrainPoint p[4];
+        p[0] = GetTerrainPoint(cur_tile_.x, cur_tile_.y);
+        p[1] = GetTerrainPoint(cur_tile_.x, cur_tile_.y + 1.1);
+        p[2] = GetTerrainPoint(cur_tile_.x + 1.1, cur_tile_.y + 1.1);
+        p[3] = GetTerrainPoint(cur_tile_.x + 1.1, cur_tile_.y);
+
+        const float& h0 = p[0].height;
+        const float& h1 = p[1].height;
+        const float& h2 = p[2].height;
+        const float& h3 = p[3].height;
+ 
+        vec3 v[4];
+        v[0] = vec3(cur_tile_.x,     p[0].height, cur_tile_.y);
+        v[1] = vec3(cur_tile_.x,     p[1].height, cur_tile_.y + 1);
+        v[2] = vec3(cur_tile_.x + 1, p[2].height, cur_tile_.y + 1);
+        v[3] = vec3(cur_tile_.x + 1, p[3].height, cur_tile_.y);
+
+        vec3 r;
+        if (IntersectLineQuad(start, end, v[0], v[1], v[2], v[3], r)) {
+          tile = cur_tile_;
+          return true;
+        }
+      }
+    }
+
+    if (cur_tile.x > end_tile.x) {
+      cur_tile.x--;
+    } else {
+      cur_tile.x++;
+    }
+  }
+
+  return false;
 }
 

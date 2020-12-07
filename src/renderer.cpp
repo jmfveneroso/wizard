@@ -202,7 +202,8 @@ void Renderer::UpdateAnimationFrames() {
 void Renderer::DrawScreenEffects() {
   const int kWindowWidth = 1280;
   const int kWindowHeight = 800;
-  float taking_hit = asset_catalog_->GetConfigs()->taking_hit;
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  float taking_hit = configs->taking_hit;
   if (taking_hit > 0.0) {
     draw_2d_->DrawImage("hit-effect", 0, kWindowHeight, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
   }
@@ -210,10 +211,24 @@ void Renderer::DrawScreenEffects() {
   draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
   draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
 
-  ObjPtr player = asset_catalog_->GetPlayer();
+  shared_ptr<Player> player = asset_catalog_->GetPlayer();
   int hp_bar_width = (player->life / 100.0f) * 200;
   hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
   draw_2d_->DrawRectangle(20, 50, hp_bar_width, 20, vec3(0.3, 0.8, 0.3));
+
+  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells), 250, 22, vec3(1, 0.69, 0.23));
+  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells_2), 300, 22, vec3(1, 0.69, 0.23));
+
+  if (configs->edit_terrain != "none") {
+    draw_2d_->DrawText("Brush size:", 350, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->brush_size), 400, 22, vec3(1, 0.3, 0.3));
+
+    draw_2d_->DrawText("Selected tile:", 450, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->selected_tile), 500, 22, vec3(1, 0.3, 0.3));
+
+    draw_2d_->DrawText("Raise Factor:", 550, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 600, 22, vec3(1, 0.3, 0.3));
+  }
 }
 
 // TODO: this should be engine run.
@@ -304,29 +319,6 @@ void Renderer::Run(const function<bool()>& process_frame,
     }
 
     DrawScreenEffects();
-
-    shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
-    if (configs->edit_terrain != "none") {
-      vec3 start = camera_.position;
-      vec3 end = camera_.position + camera_.direction * 200.0f;
-      ivec2 tile;
-      if (terrain_->CollideRayAgainstTerrain(start, end, tile)) {
-        int size = 20;
-        for (int x = -size; x <= size; x++) {
-          for (int y = -size; y <= size; y++) {
-            TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x + x, tile.y + y);
-            if (configs->edit_terrain == "tile") {
-              p.blending = vec3(0, 1, 0);
-              p.tile_set = vec2(0, 0);
-            } else if (configs->edit_terrain == "height") {
-              p.height += 0.03;
-            }
-            asset_catalog_->SetTerrainPoint(tile.x+x, tile.y+y, p);
-            terrain_->InvalidatePoint(tile + ivec2(x, y));
-          }
-        }
-      }
-    }
 
     after_frame();
 
@@ -478,10 +470,16 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       vec3 light_color = vec3(0, 0, 0);
       float quadratic = 99999999.0f;
       if (i < light_points.size()) {
-        shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
         position = light_points[i]->position;
-        light_color = asset->light_color;
-        quadratic = asset->quadratic;
+        if (light_points[i]->override_light) {
+          light_color = light_points[i]->light_color;
+          quadratic = light_points[i]->quadratic;
+          position.y += 10;
+        } else {
+          shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
+          light_color = asset->light_color;
+          quadratic = asset->quadratic;
+        }
       }
 
       string p = string("point_lights[") + boost::lexical_cast<string>(i) + "].";
@@ -507,6 +505,23 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
       BindTexture("texture_sampler", program_id, asset->texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+    } else if (program_id == asset_catalog_->GetShader("animated_transparent_object")) {
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      vector<mat4> joint_transforms;
+      if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
+        const Animation& animation = mesh.animations[obj->active_animation];
+        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        }
+      }
+
+      glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
+        joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+
+      BindTexture("texture_sampler", program_id, asset->texture_id);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDisable(GL_BLEND);
     } else if (program_id == asset_catalog_->GetShader("object")) {
       BindTexture("texture_sampler", program_id, asset->texture_id);
       if (asset->bump_map_id == 0) {
@@ -532,6 +547,20 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
       glDisable(GL_BLEND);
+    } else if (program_id == asset_catalog_->GetShader("mana_pool")) {
+      BindTexture("dudv_map", program_id, asset->texture_id);
+      BindTexture("normal_map", program_id, asset->texture_id, 1);
+
+      vec3 light_position_worldspace = vec3(0, 1, 0);
+      glUniform3fv(GetUniformId(program_id, "light_position_worldspace"), 1,
+        (float*) &light_position_worldspace);
+
+      static float move_factor = 0.0f;
+      move_factor += 0.0005f;
+      const vec3 player_pos = asset_catalog_->GetPlayer()->position;
+      glUniform3fv(GetUniformId(program_id, "camera_position"), 1, (float*) &player_pos);
+      glUniform1f(GetUniformId(program_id, "move_factor"), move_factor);
+      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else {
       if (program_id == asset_catalog_->GetShader("sky")) {
         shared_ptr<Configs> configs = asset_catalog_->GetConfigs();

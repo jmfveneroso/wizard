@@ -12,7 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/norm.hpp>
-#include <glm/gtx/rotate_vector.hpp> 
+#include <glm/gtx/rotate_vector.hpp>
 #include <exception>
 #include <memory>
 #include <thread>
@@ -26,6 +26,15 @@
 #include "fbx_loader.hpp"
 
 const int kMaxParticles = 1000;
+
+enum GameState {
+  STATE_GAME = 0,
+  STATE_EDITOR,
+  STATE_INVENTORY,
+  STATE_CRAFT,
+  STATE_TERRAIN_EDITOR,
+  STATE_DIALOG
+};
 
 enum CollisionResolutionType {
   COLRES_SLIDE = 0,
@@ -66,25 +75,35 @@ enum Status {
   STATUS_NONE = 0,
   STATUS_TAKING_HIT,
   STATUS_DYING,
-  STATUS_DEAD
+  STATUS_DEAD,
+  STATUS_BEING_EXTRACTED
+};
+
+enum PlayerAction {
+  PLAYER_IDLE,
+  PLAYER_CASTING,
+  PLAYER_EXTRACTING,
 };
 
 struct GameData {};
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
-  // vec3 initial_player_pos = vec3(10000, 200, 6820);
-  vec3 initial_player_pos = vec3(10000, 200, 10000);
+  vec3 initial_player_pos = vec3(11508, 33, 7065);
+  // vec3 initial_player_pos = vec3(10000, 200, 10000);
   vec3 respawn_point = vec3(10045, 500, 10015);
   float target_player_speed = 0.03f; 
   float player_speed = 0.03f; 
   float spider_speed = 0.41f; 
   float taking_hit = 0.0f; 
   vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
-  bool disable_attacks = false;
+  bool disable_attacks = true;
   string edit_terrain = "none";
   bool levitate = false;
   float jump_force = 0.3f;
+  int brush_size = 10;
+  int selected_tile = 0;
+  float raise_factor = 1;
 };
 
 struct GameAsset {
@@ -119,11 +138,16 @@ struct GameAsset {
   // Skeleton.
   vector<shared_ptr<GameAsset>> bone_hit_boxes;
 
+  shared_ptr<GameAsset> parent = nullptr;
+
   // Light.
   // TODO: probably should move somewhere else.
   bool emits_light = false;
   float quadratic;  
   vec3 light_color;
+
+  bool item = false;
+  bool extractable = false;
 };
 
 struct GameAssetGroup {
@@ -146,7 +170,8 @@ enum AiState {
   AI_ATTACK = 2,
   DIE = 3,
   TURN_TOWARD_TARGET = 4,
-  WANDER = 5
+  WANDER = 5,
+  CHASE = 6
 };
 
 enum ActionType {
@@ -235,20 +260,20 @@ struct GameObject {
   vector<shared_ptr<GameObject>> children;
   int parent_bone_id = -1;
 
-  // TODO: Stuff that may polymorph.
+  // TODO: Stuff that should polymorph to something that depends on GameObject.
   float life = 100.0f;
   vec3 speed = vec3(0, 0, 0);
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   double updated_at = 0;
-  shared_ptr<Waypoint> next_waypoint = nullptr;
-  vec3 next_location = vec3(0, 0, 0);
-  float time_wandering = 0;
   Status status = STATUS_NONE;
   
   AiState ai_state = WANDER;
   float state_changed_at = 0;
   queue<shared_ptr<Action>> actions;
+
+  // TODO: move to polymorphed class.   
+  double extraction_completion = 0.0;
 
   // Override asset properties.
   ConvexHull collision_hull;
@@ -256,6 +281,11 @@ struct GameObject {
   shared_ptr<AABBTreeNode> aabb_tree = nullptr;
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
+
+  bool override_light = false;
+  bool emits_light = false;
+  float quadratic;  
+  vec3 light_color;
 
   GameObject() {}
   GameObject(GameObjectType type) : type(type) {
@@ -271,6 +301,11 @@ struct GameObject {
 using ObjPtr = shared_ptr<GameObject>;
 
 struct Player : GameObject {
+  PlayerAction player_action = PLAYER_IDLE;
+  int num_spells = 10;
+  int num_spells_2 = 2;
+  int selected_spell = 0;
+
   Player() : GameObject(GAME_OBJ_PLAYER) {}
 };
 
@@ -448,6 +483,7 @@ class AssetCatalog {
   int id_counter_ = 0;
   double frame_start_ = 0;
 
+  GameState game_state_;
   shared_ptr<Configs> configs_;
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;
@@ -472,6 +508,9 @@ class AssetCatalog {
 
   vector<shared_ptr<GameObject>> moving_objects_;
   vector<shared_ptr<GameObject>> lights_;
+  vector<shared_ptr<GameObject>> items_;
+  vector<shared_ptr<GameObject>> extractables_;
+  vector<tuple<shared_ptr<GameAsset>, int>> inventory_;
 
   void AddGameObject(shared_ptr<GameObject> game_obj);
 
@@ -518,6 +557,9 @@ class AssetCatalog {
  public:
   // Instantiating this will fail if OpenGL hasn't been initialized.
   AssetCatalog(const string& directory);
+
+  GameState GetGameState() { return game_state_; }
+  void SetGameState(GameState new_state) { game_state_ = new_state; }
 
   void Cleanup();
 
@@ -585,6 +627,8 @@ class AssetCatalog {
     return waypoints_;
   }
 
+  vector<tuple<shared_ptr<GameAsset>, int>>& GetInventory() { return inventory_; }
+
   // TODO: all this logic should be moved elsewhere. This class should be mostly
   // to read and write resources.
   void UpdateFrameStart();
@@ -604,7 +648,11 @@ class AssetCatalog {
 
   vector<shared_ptr<GameObject>>& GetMovingObjects() { return moving_objects_; }
   vector<shared_ptr<GameObject>>& GetLights() { return lights_; }
+  vector<shared_ptr<GameObject>>& GetItems() { return items_; }
+  vector<shared_ptr<GameObject>>& GetExtractables() { return extractables_; }
 
+  bool IsItem(shared_ptr<GameObject> game_obj);
+  bool IsExtractable(shared_ptr<GameObject> game_obj);
   bool IsLight(shared_ptr<GameObject> game_obj);
   bool IsMovingObject(shared_ptr<GameObject> game_obj);
   shared_ptr<OctreeNode> GetOctreeRoot();
@@ -618,6 +666,9 @@ class AssetCatalog {
   ObjPtr GetSkydome() { return skydome_; }
   vector<ObjPtr> GetClosestLightPoints(const vec3& position);
   float GetTerrainHeight(vec2 pos, vec3* normal);
+  void MakeGlow(ObjPtr obj);
+  void RemoveObject(ObjPtr obj);
+  bool CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile);
 };
 
 #endif // __ASSET_HPP__

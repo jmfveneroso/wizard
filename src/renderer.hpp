@@ -1,3 +1,6 @@
+#ifndef __RENDERER_HPP__
+#define __RENDERER_HPP__
+
 #include <fbxsdk.h>
 #include <stdio.h>
 #include <iostream>
@@ -156,3 +159,5 @@ class Renderer {
   void ChargeMagicMissile();
   void CastMagicMissile();
 };
+
+#endif

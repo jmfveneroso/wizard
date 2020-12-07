@@ -142,7 +142,7 @@ GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
 void BindTexture(const std::string& sampler, 
   const GLuint& program_id, const GLuint& texture_id, int num = 0);
-GLuint LoadPng(const char* file_name);
+GLuint LoadPng(const char* file_name, bool poor_filtering=false);
 GLuint LoadShader(const std::string& directory, const std::string& name);
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
 vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);

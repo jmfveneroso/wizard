@@ -24,7 +24,7 @@
 #define CLIPMAP_OFFSET ((CLIPMAP_SIZE - 2) / 2)
 #define CLIPMAP_LEVELS 8
 #define MAX_HEIGHT 400.0f
-#define TILES_PER_TEXTURE 4
+#define TILES_PER_TEXTURE 8
 #define HEIGHT_MAP_SIZE 5000
 #define NUM_SUBREGIONS 13
 
@@ -96,7 +96,7 @@ class Terrain {
 
   // TODO: comments explaining all functions.
   void CreateSubregionBuffer(
-    int subregion, ivec2 offset, GLuint* buffer_id, 
+    int subregion, ivec2 offset, GLuint* buffer_id, GLuint* uv_buffer_id, 
     unsigned int* buffer_size);
 
   bool FrustumCullSubregion(shared_ptr<Clipmap> clipmap, int 
@@ -125,7 +125,6 @@ class Terrain {
   void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
     asset_catalog_ = asset_catalog; } 
 
-  bool CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile);
   void InvalidatePoint(ivec2 tile);
 };
 

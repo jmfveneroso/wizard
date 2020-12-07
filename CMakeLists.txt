@@ -62,6 +62,11 @@ set(
   src/ai.cpp 
   src/physics.cpp 
   src/4d.cpp 
+  src/player.cpp 
+  src/inventory.cpp 
+  src/item.cpp 
+  src/craft.cpp 
+  src/dialog.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

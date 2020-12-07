@@ -38,6 +38,8 @@ class Project4D {
 
   void CreateHypercube(const vec3 position, 
     const vector<float>& rotations);
+
+  ObjPtr* GetCubes() { return cubes_; }
 };
 
 
