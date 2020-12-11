@@ -3,12 +3,13 @@
 
 // TODO: do we need terrain here?
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
-  // Sphere / Bones / Quick Sphere / Perfect / Terrain
-  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_ST }, // Sphere 
-  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BT }, // Bones
-  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QT }, // Quick Sphere 
-  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PT }, // Perfect
-  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TT }  // Terrain
+  // Sphere / Bones / Quick Sphere / Perfect / C. Hull / Terrain 
+  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SH,    CP_ST }, // Sphere 
+  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BH,    CP_BT }, // Bones
+  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QH,    CP_QT }, // Quick Sphere 
+  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PH,    CP_PT }, // Perfect
+  { CP_HS,    CP_HB,  CP_HQ,         CP_HP,    CP_HH,    CP_HT }, // C. Hull
+  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TH,    CP_TT }  // Terrain
 };
 
 CollisionResolver::CollisionResolver(
@@ -97,9 +98,11 @@ void CollisionResolver::Collide() {
   collisions_.reserve(256);
   ClearMetrics();
   UpdateObjectPositions();
+
   FindCollisions(asset_catalog_->GetOctreeRoot(), {});
   FindCollisionsWithTerrain();
   ResolveCollisions();
+
   // PrintMetrics();
 }
 
@@ -246,6 +249,10 @@ vector<shared_ptr<CollisionSB>> GetCollisionsSB(ObjPtr obj1, ObjPtr obj2) {
 // Sphere - Perfect.
 vector<shared_ptr<CollisionSP>> GetCollisionsSPAux(shared_ptr<AABBTreeNode> node, ObjPtr obj1, 
   ObjPtr obj2) {
+  if (!node) {
+    return {};
+  }
+
   BoundingSphere s = obj1->GetBoundingSphere();
   if (!TestSphereAABB(s, node->aabb + obj2->position)) return {};
 
@@ -282,6 +289,38 @@ vector<shared_ptr<CollisionST>> GetCollisionsST(ObjPtr obj1) {
   return { make_shared<CollisionST>(obj1) };
 }
 
+// Sphere - Convex Hull.
+vector<shared_ptr<CollisionSH>> GetCollisionsSH(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1 = obj1->GetBoundingSphere();
+  BoundingSphere s2 = obj2->GetBoundingSphere();
+
+  vec3 point_of_contact;
+  if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
+    return {};
+  }
+
+  vector<shared_ptr<CollisionSH>> cols;
+  shared_ptr<GameAsset> game_asset = obj2->GetAsset();
+  for (const Polygon& polygon : game_asset->collision_hull) {
+    Polygon p = (obj2->rotation_matrix * polygon) + obj2->position;
+
+    // bool collided = false;
+    // for (vec3 v : p.vertices) {
+    //   if (length(s1.center - v) < s1.radius + s2.radius) {
+    //     collided = true;
+    //     break;
+    //   }
+    // }
+
+    // if (collided) { 
+    //   cout << "wtf wtf" << endl;
+    //   cols.push_back(make_shared<CollisionSH>(obj1, obj2, p));
+    // }
+    cols.push_back(make_shared<CollisionSH>(obj1, obj2, p));
+  }
+  return cols;
+}
+
 // Bones - Bones.
 vector<shared_ptr<CollisionBB>> GetCollisionsBB(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetBoundingSphere();
@@ -303,6 +342,10 @@ vector<shared_ptr<CollisionBB>> GetCollisionsBB(ObjPtr obj1, ObjPtr obj2) {
 // Bones - Perfect.
 vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
   shared_ptr<AABBTreeNode> node, ObjPtr obj1, ObjPtr obj2) {
+  if (!node) {
+    return {};
+  }
+
   BoundingSphere s = obj1->GetBoundingSphere();
   if (!TestSphereAABB(s, node->aabb + obj2->position)) return {};
 
@@ -367,6 +410,10 @@ vector<shared_ptr<CollisionQS>> GetCollisionsQS(ObjPtr obj1, ObjPtr obj2) {
 // Quick Sphere - Perfect.
 vector<shared_ptr<CollisionQP>> GetCollisionsQPAux(shared_ptr<AABBTreeNode> node, 
   const BoundingSphere& s, ObjPtr obj1, ObjPtr obj2) {
+  if (!node) {
+    return {};
+  }
+
   // TODO: moving sphere against AABB.
   if (!TestSphereAABB(s, node->aabb + obj2->position)) {
     return {};
@@ -402,8 +449,6 @@ vector<shared_ptr<CollisionQP>> GetCollisionsQP(ObjPtr obj1, ObjPtr obj2) {
     }
   }
   return cols;
-
-  // return GetCollisionsQPAux(obj2->GetAABBTree(), s, obj1, obj2);
 }
 
 // Quick Sphere - Bones.
@@ -432,9 +477,42 @@ vector<shared_ptr<CollisionQT>> GetCollisionsQT(ObjPtr obj1) {
   return { make_shared<CollisionQT>(obj1) };
 }
 
-// Perfect - Terrain.
-vector<shared_ptr<CollisionPT>> GetCollisionsPT(ObjPtr obj1, shared_ptr<AssetCatalog> asset_catalog) {
-  vector<shared_ptr<CollisionPT>> collisions;
+// Quick Sphere - Convex Hull.
+vector<shared_ptr<CollisionQH>> GetCollisionsQH(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1;
+  s1.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
+  s1.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
+    obj1->GetAsset()->bounding_sphere.radius;
+
+  BoundingSphere s2 = obj2->GetBoundingSphere();
+  vec3 displacement_vector, point_of_contact;
+  if (!TestSphereSphere(s1, s2, displacement_vector, point_of_contact)) {
+    return {};
+  }
+
+  vector<shared_ptr<CollisionQH>> cols;
+  shared_ptr<GameAsset> game_asset = obj2->GetAsset();
+  for (const Polygon& polygon : game_asset->collision_hull) {
+    Polygon p = (obj2->rotation_matrix * polygon) + obj2->position;
+
+    bool collided = false;
+    for (vec3 v : p.vertices) {
+      if (length(s1.center - v) < s1.radius + s2.radius) {
+        collided = true;
+        break;
+      }
+    }
+
+    if (collided) { 
+      cols.push_back(make_shared<CollisionQH>(obj1, obj2, p));
+    }
+  }
+  return cols;
+}
+
+// Convex Hull - Terrain.
+vector<shared_ptr<CollisionHT>> GetCollisionsHT(ObjPtr obj1, shared_ptr<AssetCatalog> asset_catalog) {
+  vector<shared_ptr<CollisionHT>> collisions;
   shared_ptr<GameAsset> game_asset = obj1->GetAsset();
 
   BoundingSphere s = obj1->GetBoundingSphere();
@@ -444,12 +522,7 @@ vector<shared_ptr<CollisionPT>> GetCollisionsPT(ObjPtr obj1, shared_ptr<AssetCat
     return {};
   }
 
-  return { make_shared<CollisionPT>(obj1, Polygon()) };
-
-  // for (const Polygon& polygon : game_asset->collision_hull) {
-  //   collisions.push_back(make_shared<CollisionPT>(obj1, polygon + obj1->position));
-  // }
-  // return collisions;
+  return { make_shared<CollisionHT>(obj1, Polygon()) };
 }
 
 vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
@@ -467,6 +540,7 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_SB: Merge(collisions, GetCollisionsSB(obj1, obj2)); break;
     case CP_SQ: Merge(collisions, GetCollisionsQS(obj2, obj1)); break;
     case CP_SP: Merge(collisions, GetCollisionsSP(obj1, obj2)); break;
+    case CP_SH: Merge(collisions, GetCollisionsSH(obj1, obj2)); break;
     case CP_BS: Merge(collisions, GetCollisionsSB(obj2, obj1)); break;
     case CP_BB: Merge(collisions, GetCollisionsBB(obj1, obj2)); break;
     case CP_BQ: Merge(collisions, GetCollisionsQB(obj2, obj1)); break;
@@ -475,10 +549,13 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_QB: Merge(collisions, GetCollisionsQB(obj1, obj2)); break;
     case CP_QQ: break;
     case CP_QP: Merge(collisions, GetCollisionsQP(obj1, obj2)); break;
+    case CP_QH: Merge(collisions, GetCollisionsQH(obj1, obj2)); break;
     case CP_PS: Merge(collisions, GetCollisionsSP(obj2, obj1)); break;
     case CP_PB: Merge(collisions, GetCollisionsBP(obj2, obj1)); break;
     case CP_PQ: Merge(collisions, GetCollisionsQP(obj2, obj1)); break;
     case CP_PP: break;
+    case CP_HS: Merge(collisions, GetCollisionsSH(obj2, obj1)); break;
+    case CP_HQ: Merge(collisions, GetCollisionsQH(obj2, obj1)); break;
     default: break;  
   }
   return collisions;
@@ -497,7 +574,7 @@ void CollisionResolver::FindCollisionsWithTerrain() {
       case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1)); break;
       case COL_BONES:        Merge(collisions, GetCollisionsBT(obj1)); break;
       case COL_QUICK_SPHERE: Merge(collisions, GetCollisionsQT(obj1)); break;
-      case COL_PERFECT:      Merge(collisions, GetCollisionsPT(obj1, asset_catalog_)); break;
+      case COL_CONVEX_HULL:  Merge(collisions, GetCollisionsHT(obj1, asset_catalog_)); break;
       default: break;
     }
   }
@@ -672,6 +749,32 @@ void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
   }
 }
 
+// Test Sphere - Convex Hull.
+void CollisionResolver::TestCollisionSH(shared_ptr<CollisionSH> c) {
+  BoundingSphere s1 = c->obj1->GetBoundingSphere();
+
+  c->collided = IntersectBoundingSphereWithTriangle(s1, c->polygon, 
+    c->displacement_vector, c->point_of_contact);
+
+  c->normal = normalize(c->displacement_vector);
+  if (c->collided) {
+    const vec3& surface_normal = c->polygon.normals[0];
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    const vec3 v2 = c->obj2->position - c->obj2->prev_position;
+
+    bool in_contact;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, surface_normal, v, in_contact);
+
+    if (in_contact) {
+      // c->displacement_vector += v2;
+      c->obj1->in_contact_with = c->obj2;
+    }
+
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Sphere - Terrain.
 void CollisionResolver::TestCollisionST(shared_ptr<CollisionST> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
@@ -801,22 +904,35 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
   }
 }
 
+void CollisionResolver::TestCollisionQH(shared_ptr<CollisionQH> c) {
+  BoundingSphere s = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
+  vec3 v = c->obj1->position - c->obj1->prev_position;
+  float t; // Time of collision.
+  c->collided = IntersectMovingSphereTriangle(s, v, c->polygon, t, 
+    c->point_of_contact);
+  if (c->collided) {
+    c->displacement_vector = c->point_of_contact - c->obj1->position;
+    c->normal = c->polygon.normals[0];
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Perfect - Terrain.
-void CollisionResolver::TestCollisionPT(shared_ptr<CollisionPT> c) {
-  vector<Polygon> polygons;
-  GetTerrainPolygons(vec2(c->obj1->position.x, c->obj1->position.z), polygons);
-
-  vec3 normal = polygons[0].normals[0];
-  vec3 pivot = polygons[0].vertices[0];
-
-  vector<vec3> points_of_contact;
-
+void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
   c->collided = false;
   float max_magnitude = 0;
+  vector<vec3> points_of_contact;
+
   shared_ptr<GameAsset> game_asset = c->obj1->GetAsset();
   for (const Polygon& polygon : game_asset->collision_hull) {
     Polygon p = (c->obj1->rotation_matrix * polygon) + c->obj1->position;
     for (vec3 v : p.vertices) {
+      vector<Polygon> terrain_polygons;
+      GetTerrainPolygons(vec2(v.x, v.z), terrain_polygons);
+
+      vec3 normal = terrain_polygons[0].normals[0];
+      vec3 pivot = terrain_polygons[0].vertices[0];
+
       float magnitude = -dot(v - pivot, normal);
       if (magnitude > 0) {
         c->collided = true;
@@ -828,6 +944,32 @@ void CollisionResolver::TestCollisionPT(shared_ptr<CollisionPT> c) {
       }
     }
   }
+
+  // vector<Polygon> polygons;
+  // GetTerrainPolygons(vec2(c->obj1->position.x, c->obj1->position.z), polygons);
+
+  // vec3 normal = polygons[0].normals[0];
+  // vec3 pivot = polygons[0].vertices[0];
+
+  // vector<vec3> points_of_contact;
+
+  // c->collided = false;
+  // float max_magnitude = 0;
+  // shared_ptr<GameAsset> game_asset = c->obj1->GetAsset();
+  // for (const Polygon& polygon : game_asset->collision_hull) {
+  //   Polygon p = (c->obj1->rotation_matrix * polygon) + c->obj1->position;
+  //   for (vec3 v : p.vertices) {
+  //     float magnitude = -dot(v - pivot, normal);
+  //     if (magnitude > 0) {
+  //       c->collided = true;
+  //       points_of_contact.push_back(v + c->displacement_vector);
+  //       if (magnitude > max_magnitude) {
+  //         max_magnitude = magnitude;
+  //         c->displacement_vector = magnitude * normal;
+  //       }
+  //     }
+  //   }
+  // }
 
   c->point_of_contact = vec3(0);
   for (const auto& p : points_of_contact) {
@@ -847,6 +989,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionSB(static_pointer_cast<CollisionSB>(c)); break;
     case CP_SP:
       TestCollisionSP(static_pointer_cast<CollisionSP>(c)); break;
+    case CP_SH:
+      TestCollisionSH(static_pointer_cast<CollisionSH>(c)); break;
     case CP_ST:
       TestCollisionST(static_pointer_cast<CollisionST>(c)); break;
     case CP_BB:
@@ -863,8 +1007,10 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionQT(static_pointer_cast<CollisionQT>(c)); break;
     case CP_QS:
       TestCollisionQS(static_pointer_cast<CollisionQS>(c)); break;
-    case CP_PT:
-      TestCollisionPT(static_pointer_cast<CollisionPT>(c)); break;
+    case CP_QH:
+      TestCollisionQH(static_pointer_cast<CollisionQH>(c)); break;
+    case CP_HT:
+      TestCollisionHT(static_pointer_cast<CollisionHT>(c)); break;
     default: break;
   }
 }
@@ -954,11 +1100,11 @@ void CollisionResolver::ResolveCollisions() {
         
       } else {
         if (obj2) {
-          if (obj2->GetAsset()->collision_type == COL_PERFECT && 
+          if (obj2->GetAsset()->collision_type == COL_CONVEX_HULL && 
             obj2->GetAsset()->physics_behavior != PHYSICS_FIXED) {
             vec3 r = c->point_of_contact - c->obj2->position;
             vec3 f = -c->displacement_vector;
-            vec3 torque = cross(r, f);
+            vec3 torque = cross(r, f) * 0.1f;
             if (length(torque) > 0.02f) {
               torque = normalize(torque) * 0.02f;
             } 
@@ -979,19 +1125,24 @@ void CollisionResolver::ResolveCollisions() {
     }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.85) obj1->can_jump = true;
-    vec3 v = normalize(displacement_vector);
     obj1->position += displacement_vector;
-    obj1->speed += abs(dot(obj1->speed, v)) * v;
+
+    vec3 v = normalize(displacement_vector);
+    float k = dot(obj1->speed, v);
+    if (!isnan(k)) {
+      obj1->speed += abs(k) * v;
+    }
+
     obj1->target_position = obj1->position;
 
     if (dot(normal, vec3(0, 1, 0)) > 0.6) {
       obj1->up = normal;
     }
 
-    if (c->collision_pair == CP_PT) {
+    if (c->collision_pair == CP_HT) {
       vec3 r = c->point_of_contact - c->obj1->position;
       vec3 f = c->displacement_vector;
-      vec3 torque = cross(r, f);
+      vec3 torque = cross(r, f) * 0.1f;
       if (length(torque) > 0.02f) {
         torque = normalize(torque) * 0.02f;
       } 

@@ -40,26 +40,37 @@ enum CollisionPair {
   CP_SQ,     // SPHERE -> QUICK_SPHERE
   CP_SP,     // SPHERE -> PERFECT
   CP_ST,     // SPHERE -> TERRAIN
+  CP_SH,     // SPHERE -> C. HULL (Not implemented)
   CP_BS,     // BONES -> SPHERE
   CP_BB,     // BONES -> BONES
   CP_BQ,     // BONES -> QUICK_SPHERE 
   CP_BP,     // BONES -> PERFECT
   CP_BT,     // BONES -> TERRAIN
+  CP_BH,     // BONES -> C. HULL (Not implemented)
   CP_QS,     // QUICK_SPHERE -> SPHERE
   CP_QB,     // QUICK_SPHERE -> BONES
   CP_QQ,     // QUICK_SPHERE -> QUICK_SPHERE (Not implemented)
   CP_QP,     // QUICK_SPHERE -> PERFECT
   CP_QT,     // QUICK_SPHERE -> TERRAIN
+  CP_QH,     // QUICK_SPHERE -> C. HULL
   CP_PS,     // PERFECT -> SPHERE
   CP_PB,     // PERFECT -> BONES
   CP_PQ,     // PERFECT -> QUICK_SPHERE
   CP_PP,     // PERFECT -> PERFECT (Not implemented)             
-  CP_PT,     // PERFECT -> TERRAIN
+  CP_PT,     // PERFECT -> TERRAIN (Not implemented)             
+  CP_PH,     // PERFECT -> C. HULL (Not implemented)
   CP_TS,     // TERRAIN -> SPHERE
   CP_TB,     // TERRAIN -> BONES
   CP_TQ,     // TERRAIN -> QUICK_SPHERE
   CP_TP,     // TERRAIN -> PERFECT (Not implemented)             
   CP_TT,     // TERRAIN -> TERRAIN (Not implemented)             
+  CP_TH,     // TERRAIN -> C. HULL (Not implemented)             
+  CP_HS,     // C. HULL -> SPHERE (Not implemented)
+  CP_HB,     // C. HULL -> BONES (Not implemented)
+  CP_HQ,     // C. HULL -> QUICK_SPHERE
+  CP_HP,     // C. HULL -> PERFECT (Not implemented)             
+  CP_HT,     // C. HULL -> TERRAIN
+  CP_HH,     // C. HULL -> C. HULL (Not implemented)             
   CP_UNDEFINED 
 };
 
@@ -108,6 +119,13 @@ struct CollisionSP : Collision {
   CollisionSP() {}
   CollisionSP(ObjPtr o1, ObjPtr o2, Polygon polygon)
     : Collision(CP_SP, o1, o2), polygon(polygon) {}
+};
+
+struct CollisionSH : Collision {
+  Polygon polygon;
+  CollisionSH() {}
+  CollisionSH(ObjPtr o1, ObjPtr o2, Polygon polygon)
+    : Collision(CP_SH, o1, o2), polygon(polygon) {}
 };
 
 struct CollisionST : Collision {
@@ -162,11 +180,18 @@ struct CollisionQT : Collision {
   CollisionQT(ObjPtr o1) : Collision(CP_QT, o1, nullptr) {}
 };
 
-struct CollisionPT : Collision {
+struct CollisionQH : Collision {
   Polygon polygon;
-  CollisionPT() {}
-  CollisionPT(ObjPtr o1, Polygon p) 
-    : Collision(CP_PT, o1, nullptr), polygon(p) {}
+  CollisionQH() {}
+  CollisionQH(ObjPtr o1, ObjPtr o2, Polygon p) 
+    : Collision(CP_QH, o1, o2), polygon(p) {}
+};
+
+struct CollisionHT : Collision {
+  Polygon polygon;
+  CollisionHT() {}
+  CollisionHT(ObjPtr o1, Polygon p) 
+    : Collision(CP_HT, o1, nullptr), polygon(p) {}
 };
 
 class CollisionResolver {
@@ -189,6 +214,7 @@ class CollisionResolver {
   void TestCollisionSS(shared_ptr<CollisionSS> c);
   void TestCollisionSB(shared_ptr<CollisionSB> c);
   void TestCollisionSP(shared_ptr<CollisionSP> c);
+  void TestCollisionSH(shared_ptr<CollisionSH> c);
   void TestCollisionST(shared_ptr<CollisionST> c);
   void TestCollisionBB(shared_ptr<CollisionBB> c);
   void TestCollisionBP(shared_ptr<CollisionBP> c);
@@ -197,7 +223,8 @@ class CollisionResolver {
   void TestCollisionQP(shared_ptr<CollisionQP> c);
   void TestCollisionQB(shared_ptr<CollisionQB> c);
   void TestCollisionQT(shared_ptr<CollisionQT> c);
-  void TestCollisionPT(shared_ptr<CollisionPT> c);
+  void TestCollisionQH(shared_ptr<CollisionQH> c);
+  void TestCollisionHT(shared_ptr<CollisionHT> c);
   void TestCollision(ColPtr c);
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

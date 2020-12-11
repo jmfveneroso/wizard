@@ -49,9 +49,8 @@ enum CollisionType {
   COL_QUICK_SPHERE,
   COL_PERFECT,
   COL_CONVEX_HULL,
-  COL_OBB_TREE,
-  COL_UNDEFINED,
-  COL_NONE 
+  COL_NONE ,
+  COL_UNDEFINED
 };
 
 enum GameObjectType {
@@ -224,7 +223,7 @@ struct GameObject {
 
   int id;
   string name;
-  shared_ptr<GameAssetGroup> asset_group;
+  shared_ptr<GameAssetGroup> asset_group = nullptr;
   vec3 position;
   vec3 prev_position = vec3(0, 0, 0);
   vec3 target_position = vec3(0, 0, 0);

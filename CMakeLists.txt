@@ -1,6 +1,7 @@
 cmake_minimum_required (VERSION 3.0)
 project (Fbx)
 set (CMAKE_CXX_STANDARD 17)
+set(CMAKE_BUILD_TYPE Debug)
 
 find_package(OpenGL REQUIRED)
 
@@ -9,7 +10,6 @@ set(ALL_LIBS
   glfw
   glew
   freetype
-  boost_regex-mt
   boost_system 
   boost_filesystem
   fbxsdk
@@ -24,7 +24,7 @@ set(INCLUDE_DIRS
   /usr/local/Cellar/glfw/3.2.1/include
   /usr/local/Cellar/glm/0.9.9.4/include
   /usr/local/Cellar/boost/1.70.0/include
-  /usr/local/Cellar/freetype/2.10.1/include/freetype2
+  /usr/local/opt/freetype/include/freetype2
   /Applications/Autodesk/FBX\ SDK/2020.0.1/include
   ${ZLIB_INCLUDE_DIR}
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
@@ -35,7 +35,7 @@ set(LINK_DIRS
   /usr/local/Cellar/glfw/3.2.1/lib
   /usr/local/Cellar/glm/0.9.9.4/lib
   /usr/local/Cellar/boost/1.70.0/lib
-  /usr/local/Cellar/freetype/2.10.1/lib
+  /usr/local/opt/freetype/lib
   "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/"
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
 )
@@ -68,6 +68,7 @@ set(
   src/craft.cpp 
   src/dialog.cpp 
   src/npc.cpp 
+  # src/engine.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

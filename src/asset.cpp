@@ -22,14 +22,13 @@ void ThrowError(First first, Args&& ...args) {
 
 CollisionType StrToCollisionType(const std::string& s) {
   static unordered_map<string, CollisionType> str_to_col_type ({
-    { "undefined", COL_UNDEFINED },
-    { "perfect", COL_PERFECT },
     { "sphere", COL_SPHERE },
-    { "convex-hull", COL_CONVEX_HULL},
-    { "quick-sphere", COL_QUICK_SPHERE },
-    { "obb-tree", COL_OBB_TREE },
     { "bones", COL_BONES },
-    { "none", COL_NONE }
+    { "perfect", COL_PERFECT },
+    { "quick-sphere", COL_QUICK_SPHERE },
+    { "convex-hull", COL_CONVEX_HULL},
+    { "none", COL_NONE },
+    { "undefined", COL_UNDEFINED }
   });
   return str_to_col_type[s];
 }

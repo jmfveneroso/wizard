@@ -58,7 +58,7 @@ void Physics::Run() {
 
     obj->target_position = obj->position + obj->speed;
 
-    if (length(obj->torque) > 0.001f) {
+    if (length(obj->torque) > 0.005f) {
       obj->rotation_matrix = rotate(
         mat4(1.0),
         length(obj->torque) * obj->inertia,
