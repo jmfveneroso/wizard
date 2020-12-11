@@ -28,6 +28,7 @@
 #include "item.hpp"
 #include "craft.hpp"
 #include "dialog.hpp"
+#include "npc.hpp"
 
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
@@ -49,6 +50,7 @@ shared_ptr<Physics> physics = nullptr;
 shared_ptr<PlayerInput> player_input = nullptr;
 shared_ptr<Item> item = nullptr;
 shared_ptr<Dialog> dialog = nullptr;
+shared_ptr<Npc> npc = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -77,9 +79,14 @@ void RunCommand(string command) {
     float y = boost::lexical_cast<float>(result[2]);
     float z = boost::lexical_cast<float>(result[3]);
     player->position = vec3(x, y, z);
+  } else if (result[0] == "spells") {
+    player->num_spells += 100;
+    player->num_spells_2 += 100;
   } else if (result[0] == "speed") {
-    float speed = boost::lexical_cast<float>(result[1]);
-    configs->target_player_speed = speed;
+    if (result.size() == 2) {
+      float speed = boost::lexical_cast<float>(result[1]);
+      configs->target_player_speed = speed;
+    }
   } else if (result[0] == "raise-factor") {
     float raise_factor = boost::lexical_cast<float>(result[1]);
     configs->raise_factor = raise_factor;
@@ -119,8 +126,19 @@ void RunCommand(string command) {
     configs->edit_terrain = "flatten";
   } else if (result[0] == "noedit") {
     configs->edit_terrain = "none";
+  } else if (result[0] == "create") {
+    string asset_name = result[1];
+    if (asset_catalog->GetAssetGroupByName(asset_name)) {
+      configs->new_building = asset_catalog->CreateGameObjFromAsset(
+        asset_name, vec3(0));
+      configs->place_object = true;
+      configs->new_building->torque = vec3(0, 0.02f, 0);
+      asset_catalog->AddNewObject(configs->new_building);
+    }
   } else if (result[0] == "save") {
     asset_catalog->SaveHeightMap("assets/height_map2_compressed.dat");
+  } else if (result[0] == "save-objs") {
+    asset_catalog->SaveNewObjects();
   }
 }
 
@@ -133,7 +151,7 @@ bool ProcessGameInput() {
 
   shared_ptr<Configs> configs = asset_catalog->GetConfigs();
   switch (asset_catalog->GetGameState()) {
-    case STATE_GAME: {
+    case STATE_GAME: { 
       shared_ptr<Player> player = asset_catalog->GetPlayer();
 
       // TODO: all of this should go into a class player.
@@ -207,6 +225,7 @@ bool ProcessGameInput() {
       Camera c = player_input->ProcessInput(window);
       item->ProcessItems();
       craft->ProcessCrafting();
+      npc->ProcessNpcs();
 
       renderer->SetCamera(c);
 
@@ -271,6 +290,20 @@ bool ProcessGameInput() {
       }
       return true;
     }
+    case STATE_BUILD: {
+      Camera c = player_input->ProcessInput(window);
+      renderer->SetCamera(c);
+
+      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        asset_catalog->SetGameState(STATE_GAME);
+        ObjPtr player = asset_catalog->GetPlayer();
+        shared_ptr<Configs> configs = asset_catalog->GetConfigs();
+        player->position = configs->old_position;
+        throttle_counter = 20;
+        asset_catalog->RemoveObject(configs->new_building);
+      }
+      return true;
+    }
     default:
       return true;
   }
@@ -278,6 +311,10 @@ bool ProcessGameInput() {
 
 void AfterFrame() {
   switch (asset_catalog->GetGameState()) {
+    case STATE_GAME: {
+      renderer->DrawHand();
+      break;
+    }
     case STATE_EDITOR: {
       text_editor->Draw();
       break;
@@ -321,6 +358,7 @@ int main() {
   inventory = make_shared<Inventory>(asset_catalog, draw_2d);
   craft = make_shared<Craft>(asset_catalog, draw_2d, project_4d);
   dialog = make_shared<Dialog>(asset_catalog, draw_2d);
+  npc = make_shared<Npc>(asset_catalog, ai);
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);
   glfwSetKeyCallback(renderer->window(), PressKeyCallback);
@@ -330,6 +368,6 @@ int main() {
     renderer->terrain(), dialog);
   item = make_shared<Item>(asset_catalog);
 
-  renderer->Run(ProcessGameInput, AfterFrame);
+  renderer->Draw(ProcessGameInput, AfterFrame);
   return 0;
 }

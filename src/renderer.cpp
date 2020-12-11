@@ -51,10 +51,37 @@ void Renderer::Init() {
   fbos_["screen"] = CreateFramebuffer(window_width_, window_height_);
   fbos_["post-particles"] = CreateFramebuffer(window_width_, window_height_);
 
+  InitShadowFramebuffer();
+
   // TODO: terrain rendering should be another lib.
   terrain_ = make_shared<Terrain>(asset_catalog_->GetShader("terrain"), 
     asset_catalog_->GetShader("water"));
   terrain_->set_asset_catalog(asset_catalog_);
+  terrain_->set_shadow_texture(shadow_texture_);
+}
+
+void Renderer::InitShadowFramebuffer() {
+ // The framebuffer, which regroups 0, 1, or more textures, and 0 or 1 depth buffer.
+  glGenFramebuffers(1, &shadow_framebuffer_);
+  glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffer_);
+ 
+  // Depth texture. Slower than a depth buffer, but you can sample it later in your shader
+  glGenTextures(1, &shadow_texture_);
+  glBindTexture(GL_TEXTURE_2D, shadow_texture_);
+  glTexImage2D(GL_TEXTURE_2D, 0,GL_DEPTH_COMPONENT16, 1024, 1024, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+ 
+  glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_texture_, 0);
+  glDrawBuffer(GL_NONE); // No color buffer is drawn to.
+ 
+  // Always check that our framebuffer is ok
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    throw runtime_error("Error creating shadow framebuffer");
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 FBO Renderer::CreateFramebuffer(int width, int height) {
@@ -231,8 +258,50 @@ void Renderer::DrawScreenEffects() {
   }
 }
 
+void Renderer::DrawShadows() {
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  if (dot(vec3(0, 1, 0), normalize(configs->sun_position)) < 0.0f) {
+    return;
+  }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffer_);
+  glViewport(0, 0, 1024, 1024);
+
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS); 
+  // glEnable(GL_CULL_FACE);
+
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  shared_ptr<Sector> sector = 
+    asset_catalog_->GetSector(camera_.position);
+  drawing_shadow_ = true;
+  DrawSector(sector->stabbing_tree);
+  drawing_shadow_ = false;
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void Renderer::DrawHand() {
+  shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera_.rotation.y + 4.71f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera_.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  obj->position = camera_.position + camera_.direction * -5.0f;
+  obj->position += vec3(0, -0.5, 0);
+
+  DrawObject(obj);
+}
+
 // TODO: this should be engine run.
-void Renderer::Run(const function<bool()>& process_frame, 
+void Renderer::Draw(const function<bool()>& process_frame, 
   const function<void()>& after_frame) {
   GLint major_version, minor_version;
   glGetIntegerv(GL_MAJOR_VERSION, &major_version); 
@@ -275,44 +344,33 @@ void Renderer::Run(const function<bool()>& process_frame,
     mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
     ExtractFrustumPlanes(MVP, frustum_planes_);
 
+    DrawShadows();
+
     if (draw_with_fbo_) {
       glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
       glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
+    } else {
+      glViewport(0, 0, window_width_, window_height_);
     }
 
     glClearColor(0.73, 0.81, 0.92, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    project_4d_->CreateHypercube(vec3(11645, 37, 7265), hypercube_rotation);
+    project_4d_->CreateHypercube(vec3(11623, 177, 7550), hypercube_rotation);
     hypercube_rotation[2] += 0.02;
 
+    lakes_.clear();
     shared_ptr<Sector> sector = 
       asset_catalog_->GetSector(camera_.position);
     DrawSector(sector->stabbing_tree);
     DrawParticles();
+    DrawLakes();
 
     glClear(GL_DEPTH_BUFFER_BIT);
 
     if (draw_with_fbo_) {
       glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
     }
-
-    shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
-    mat4 rotation_matrix = rotate(
-      mat4(1.0),
-      camera_.rotation.y + 4.71f,
-      vec3(0.0f, 1.0f, 0.0f)
-    );
-    rotation_matrix = rotate(
-      rotation_matrix,
-      camera_.rotation.x,
-      vec3(0.0f, 0.0f, 1.0f)
-    );
-    obj->rotation_matrix = rotation_matrix;
-    obj->position = camera_.position + camera_.direction * -5.0f;
-    obj->position += vec3(0, -0.5, 0);
-
-    DrawObject(obj);
 
     if (draw_with_fbo_) {
       DrawFBO(fbos_["screen"], blur);
@@ -420,7 +478,63 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   return false;
 }
 
-void Renderer::DrawObject(shared_ptr<GameObject> obj) {
+mat4 Renderer::GetShadowMatrix(bool bias) {
+  mat4 projection_matrix = ortho<float>(-100, 100, -100, 100, -10, 400);
+
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  mat4 view_matrix = lookAt(
+    camera_.position + normalize(configs->sun_position) * 300.0f,
+    camera_.position,
+    // camera_.up
+    vec3(0, 1, 0)
+  );
+
+  const mat4 bias_matrix (
+    0.5, 0.0, 0.0, 0.0, 
+    0.0, 0.5, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.5, 0.5, 0.5, 1.0
+  );
+
+  if (bias) {
+    return bias_matrix * projection_matrix * view_matrix;
+  } else {
+    return projection_matrix * view_matrix;
+  }
+}
+
+void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj) {
+  for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
+    int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
+    for (; lod >= 0; lod--) {
+      if (asset->lod_meshes[lod].vao_ > 0) {
+        break;
+      }
+    }
+
+    Mesh& mesh = asset->lod_meshes[lod];
+
+    GLuint program_id = asset_catalog_->GetShader("shadow");
+    glUseProgram(program_id);
+    glBindVertexArray(mesh.vao_);
+
+    // Check if animated object.
+    mat4 projection_view_matrix = GetShadowMatrix();
+    mat4 model_matrix = translate(mat4(1.0), obj->position);
+    model_matrix = model_matrix * obj->rotation_matrix;
+    mat4 MVP = projection_view_matrix * model_matrix;
+
+    glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+  }
+}
+
+void Renderer::DrawObject(shared_ptr<GameObject> obj, bool draw_lakes) {
+  if (drawing_shadow_) {
+    DrawObjectShadow(obj);
+    return;
+  }
+
   for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
     int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
     for (; lod >= 0; lod--) {
@@ -432,6 +546,16 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     Mesh& mesh = asset->lod_meshes[lod];
 
     GLuint program_id = asset->shader;
+
+    if (program_id == asset_catalog_->GetShader("mana_pool") && !draw_lakes) {
+      lakes_.push_back(obj);
+      continue;
+    }
+
+    if (program_id != asset_catalog_->GetShader("mana_pool") && draw_lakes) {
+      continue;
+    }
+
     glUseProgram(program_id);
 
     glBindVertexArray(mesh.vao_);
@@ -445,6 +569,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
     mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
     glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
+
+    mat4 shadow_matrix = GetShadowMatrix(true/*bias*/);
+    mat4 DepthMVP = shadow_matrix * ModelMatrix;
+    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
 
     glUniform3fv(GetUniformId(program_id, "camera_pos"), 1,
       (float*) &camera_.position);
@@ -491,6 +619,17 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform1f(glsl_quadratic, quadratic);
     }
 
+    GLuint texture_id = 0;
+    if (asset->index > obj->active_textures.size()) {
+      cout << "Asset name: " << asset->name << endl;
+      throw runtime_error("Asset index bigger than active textures.");
+    } else {
+      int texture_num = obj->active_textures[asset->index];
+      if (texture_num < asset->textures.size()) {
+        texture_id = asset->textures[texture_num];
+      }
+    }
+
     if (program_id == asset_catalog_->GetShader("animated_object")) {
       vector<mat4> joint_transforms;
       if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
@@ -503,7 +642,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
-      BindTexture("texture_sampler", program_id, asset->texture_id);
+      BindTexture("texture_sampler", program_id, texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else if (program_id == asset_catalog_->GetShader("animated_transparent_object")) {
       glEnable(GL_BLEND);
@@ -519,13 +658,13 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
-      BindTexture("texture_sampler", program_id, asset->texture_id);
+      BindTexture("texture_sampler", program_id, texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == asset_catalog_->GetShader("object")) {
-      BindTexture("texture_sampler", program_id, asset->texture_id);
+      BindTexture("texture_sampler", program_id, texture_id);
       if (asset->bump_map_id == 0) {
-        BindTexture("bump_map_sampler", program_id, asset->texture_id, 1);
+        BindTexture("bump_map_sampler", program_id, texture_id, 1);
         glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
       } else {
         BindTexture("bump_map_sampler", program_id, asset->bump_map_id, 1);
@@ -535,11 +674,11 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     } else if (program_id == asset_catalog_->GetShader("transparent_object")) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      BindTexture("texture_sampler", program_id, asset->texture_id);
+      BindTexture("texture_sampler", program_id, texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == asset_catalog_->GetShader("noshadow_object")) {
-      BindTexture("texture_sampler", program_id, asset->texture_id);
+      BindTexture("texture_sampler", program_id, texture_id);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
     } else if (program_id == asset_catalog_->GetShader("hypercube")) {
       glDisable(GL_CULL_FACE);
@@ -548,8 +687,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == asset_catalog_->GetShader("mana_pool")) {
-      BindTexture("dudv_map", program_id, asset->texture_id);
-      BindTexture("normal_map", program_id, asset->texture_id, 1);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      BindTexture("dudv_map", program_id, texture_id);
+      BindTexture("normal_map", program_id, texture_id, 1);
 
       vec3 light_position_worldspace = vec3(0, 1, 0);
       glUniform3fv(GetUniformId(program_id, "light_position_worldspace"), 1,
@@ -561,6 +702,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform3fv(GetUniformId(program_id, "camera_position"), 1, (float*) &player_pos);
       glUniform1f(GetUniformId(program_id, "move_factor"), move_factor);
       glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDisable(GL_BLEND); 
     } else {
       if (program_id == asset_catalog_->GetShader("sky")) {
         shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
@@ -595,6 +737,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
     glBindVertexArray(0);
   }
+  glBindVertexArray(0);
 }
 
 void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
@@ -774,8 +917,9 @@ void Renderer::DrawSector(
       terrain_->SetClippingPlane(clipping_point, clipping_normal);
     }
 
+    mat4 shadow_matrix = GetShadowMatrix(true);
     terrain_->Draw(projection_matrix_, view_matrix_, camera_.position, 
-      clip_to_portal);
+      shadow_matrix, drawing_shadow_, clip_to_portal);
 
     ObjPtr player = asset_catalog_->GetPlayer();
     ObjPtr skydome = asset_catalog_->GetSkydome();
@@ -998,4 +1142,10 @@ void Renderer::DrawParticles() {
     DrawFBO(fbos_["post-particles"], false, &fbos_["screen"]);
   }
   // glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
+}
+
+void Renderer::DrawLakes() {
+  for (auto lake : lakes_) {
+    DrawObject(lake, true /*draw_lakes*/);
+  }
 }

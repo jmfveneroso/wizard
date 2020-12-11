@@ -374,14 +374,14 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
   }
 
   // Texture.
-  const pugi::xml_node& texture = asset.child("texture");
-  if (texture) {
+  for (pugi::xml_node texture = asset.child("texture"); texture; 
+    texture = texture.next_sibling("texture")) {
     const string& texture_filename = texture.text().get();
     if (textures_.find(texture_filename) == textures_.end()) {
       GLuint texture_id = LoadPng(texture_filename.c_str());
       textures_[texture_filename] = texture_id;
     }
-    game_asset->texture_id = textures_[texture_filename];
+    game_asset->textures.push_back(textures_[texture_filename]);
   }
 
   const pugi::xml_node& xml_bump_map = asset.child("bump-map");
@@ -416,6 +416,17 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
     game_asset->parent = parent_asset;
   }
 
+  // Speed - Turn Rate.
+  const pugi::xml_node& xml_base_speed = asset.child("base-speed");
+  if (xml_base_speed) {
+    game_asset->base_speed = boost::lexical_cast<float>(xml_base_speed.text().get());
+  }
+
+  const pugi::xml_node& xml_turn_rate = asset.child("base-turn-rate");
+  if (xml_turn_rate) {
+    game_asset->base_turn_rate = boost::lexical_cast<float>(xml_turn_rate.text().get());
+  }
+
   if (assets_.find(game_asset->name) != assets_.end()) {
     ThrowError("Asset with name ", game_asset->name, " already exists.");
   }
@@ -445,13 +456,16 @@ void AssetCatalog::LoadAssetFile(const std::string& xml_filename) {
     shared_ptr<GameAssetGroup> asset_group = make_shared<GameAssetGroup>();
 
     vector<Polygon> polygons;
+    int i = 0;
     for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
       asset_xml = asset_xml.next_sibling("asset")) {
       shared_ptr<GameAsset> asset = LoadAsset(asset_xml);
+      asset->index = i;
       asset_group->assets.push_back(asset);
 
       Mesh m = asset->lod_meshes[0];
       polygons.insert(polygons.begin(), m.polygons.begin(), m.polygons.end());
+      i++;
     }
     asset_group->bounding_sphere = GetAssetBoundingSphere(polygons);
 
@@ -985,11 +999,11 @@ void AssetCatalog::LoadPortals(const std::string& xml_filename) {
     sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
 
     pugi::xml_node stabbing_tree_xml = sector_xml.child("stabbing-tree");
-    if (!stabbing_tree_xml) {
-      throw runtime_error("Sector must have a stabbing tree.");
+    if (stabbing_tree_xml) {
+      LoadStabbingTree(stabbing_tree_xml, sector->stabbing_tree);
+    } else {
+      // throw runtime_error("Sector must have a stabbing tree.");
     }
-
-    LoadStabbingTree(stabbing_tree_xml, sector->stabbing_tree);
   }
 }
 
@@ -1999,3 +2013,33 @@ bool AssetCatalog::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
   return false;
 }
 
+void AssetCatalog::SaveNewObjects() {
+  pugi::xml_document doc;
+  string xml_filename = directory_ + "/game_objects/auto_objects.xml";
+  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
+  if (!result) {
+    throw runtime_error(string("Could not load xml file: ") + xml_filename);
+  }
+
+  pugi::xml_node xml = doc.child("xml");
+  pugi::xml_node sector = xml.child("sector");
+  pugi::xml_node game_objs = sector.child("game-objs");
+  for (auto obj : new_objects_) {
+    pugi::xml_node node = game_objs.append_child("game-obj");
+
+    double time = glfwGetTime();
+    string ms = boost::lexical_cast<string>(time);
+    node.append_attribute("name") = string(obj->name + "-" + ms).c_str();
+
+    pugi::xml_node asset = node.append_child("asset");
+    asset.append_child(pugi::node_pcdata).set_value(obj->asset_group->name.c_str());
+
+    pugi::xml_node position = node.append_child("position");
+    position.append_attribute("x") = obj->position.x;
+    position.append_attribute("y") = obj->position.y;
+    position.append_attribute("z") = obj->position.z;
+  }
+
+  doc.save_file(xml_filename.c_str());
+  cout << "Saved objects: " << xml_filename << endl;
+}

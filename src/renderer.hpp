@@ -84,6 +84,13 @@ class Renderer {
   unordered_map<string, FBO> fbos_;
   shared_ptr<Terrain> terrain_;
   float delta_time_ = 0.0f;
+  mat4 depth_mvp_;
+
+  GLuint shadow_framebuffer_ = 0;
+  GLuint shadow_texture_ = 0;
+  bool drawing_shadow_ = false;
+
+  vector<ObjPtr> lakes_;
 
   // Particles code.
   bool draw_with_fbo_ = false;
@@ -93,13 +100,15 @@ class Renderer {
   void CreateParticleBuffers();
   void UpdateParticleBuffers();
   void DrawParticles();
+  void DrawLakes();
 
   FBO CreateFramebuffer(int width, int height);
   void DrawFBO(const FBO& fbo, bool blur, FBO* target_fbo = nullptr);
 
   bool CullObject(shared_ptr<GameObject> obj, 
     const vector<vector<Polygon>>& occluder_convex_hulls);
-  void DrawObject(shared_ptr<GameObject> obj);
+  void DrawObjectShadow(ObjPtr obj);
+  void DrawObject(ObjPtr obj, bool draw_lakes=false);
   vector<shared_ptr<GameObject>> 
   GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector);
   void DrawObjects(shared_ptr<Sector> sector);
@@ -128,11 +137,14 @@ class Renderer {
   // TODO: probably should go somewhere else.
   void UpdateAnimationFrames();
   void DrawScreenEffects();
+  void InitShadowFramebuffer();
+  void DrawShadows();
+  mat4 GetShadowMatrix(bool bias=false);
 
  public:
   Renderer();  
   void Init();
-  void Run(const function<bool()>& process_frame, 
+  void Draw(const function<bool()>& process_frame, 
     const function<void()>& after_frame);
   void SetCamera(const Camera& camera) { camera_ = camera; }
 
@@ -158,6 +170,7 @@ class Renderer {
 
   void ChargeMagicMissile();
   void CastMagicMissile();
+  void DrawHand();
 };
 
 #endif

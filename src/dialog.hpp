@@ -20,12 +20,8 @@
 #include <vector>
 #include <map>
 #include <unordered_map>
-#include "pugixml.hpp"
-#include "util.hpp"
-#include "collision.hpp"
 #include "asset.hpp"
 #include "2d.hpp"
-#include "4d.hpp"
 
 class Dialog {
   shared_ptr<AssetCatalog> asset_catalog_;

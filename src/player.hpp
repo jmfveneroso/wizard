@@ -44,6 +44,8 @@ class PlayerInput {
   void Extract(const Camera& c);
   void InteractWithItem(const Camera& c);
   void EditTerrain(GLFWwindow* window, const Camera& c);
+  void Build(GLFWwindow* window, const Camera& c);
+  void PlaceObject(GLFWwindow* window, const Camera& c);
 
  public:
   PlayerInput(shared_ptr<AssetCatalog> asset_catalog, 
@@ -51,6 +53,7 @@ class PlayerInput {
     shared_ptr<Terrain> terrain, shared_ptr<Dialog> dialog);
 
   Camera ProcessInput(GLFWwindow* window);
+  Camera ProcessBuildInput(GLFWwindow* window);
 };
 
 #endif

@@ -39,22 +39,22 @@ enum CollisionPair {
   CP_SB,     // SPHERE -> BONES
   CP_SQ,     // SPHERE -> QUICK_SPHERE
   CP_SP,     // SPHERE -> PERFECT
-  CP_ST,     // SPHERE -> TERRAIN (Not implemented)             
+  CP_ST,     // SPHERE -> TERRAIN
   CP_BS,     // BONES -> SPHERE
-  CP_BB,     // BONES -> BONES  (Not implemented)
+  CP_BB,     // BONES -> BONES
   CP_BQ,     // BONES -> QUICK_SPHERE 
   CP_BP,     // BONES -> PERFECT
-  CP_BT,     // BONES -> TERRAIN (Not implemented)             
-  CP_QS,     // QUICK_SPHERE -> SPHERE (Not implemented)
+  CP_BT,     // BONES -> TERRAIN
+  CP_QS,     // QUICK_SPHERE -> SPHERE
   CP_QB,     // QUICK_SPHERE -> BONES
   CP_QQ,     // QUICK_SPHERE -> QUICK_SPHERE (Not implemented)
   CP_QP,     // QUICK_SPHERE -> PERFECT
-  CP_QT,     // QUICK_SPHERE -> TERRAIN (Not implemented)             
+  CP_QT,     // QUICK_SPHERE -> TERRAIN
   CP_PS,     // PERFECT -> SPHERE
   CP_PB,     // PERFECT -> BONES
   CP_PQ,     // PERFECT -> QUICK_SPHERE
   CP_PP,     // PERFECT -> PERFECT (Not implemented)             
-  CP_PT,     // PERFECT -> TERRAIN (Not implemented)             
+  CP_PT,     // PERFECT -> TERRAIN
   CP_TS,     // TERRAIN -> SPHERE
   CP_TB,     // TERRAIN -> BONES
   CP_TQ,     // TERRAIN -> QUICK_SPHERE
@@ -162,6 +162,13 @@ struct CollisionQT : Collision {
   CollisionQT(ObjPtr o1) : Collision(CP_QT, o1, nullptr) {}
 };
 
+struct CollisionPT : Collision {
+  Polygon polygon;
+  CollisionPT() {}
+  CollisionPT(ObjPtr o1, Polygon p) 
+    : Collision(CP_PT, o1, nullptr), polygon(p) {}
+};
+
 class CollisionResolver {
   shared_ptr<AssetCatalog> asset_catalog_;
 
@@ -190,6 +197,7 @@ class CollisionResolver {
   void TestCollisionQP(shared_ptr<CollisionQP> c);
   void TestCollisionQB(shared_ptr<CollisionQB> c);
   void TestCollisionQT(shared_ptr<CollisionQT> c);
+  void TestCollisionPT(shared_ptr<CollisionPT> c);
   void TestCollision(ColPtr c);
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

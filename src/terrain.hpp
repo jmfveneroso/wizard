@@ -90,6 +90,7 @@ class Terrain {
   GLuint texture_;
   GLuint water_texture_;
   GLuint water_normal_texture_;
+  GLuint shadow_texture_;
 
   vec3 clipping_point_ = vec3(0, 0, 0);
   vec3 clipping_normal_ = vec3(0, 0, 0);
@@ -114,7 +115,7 @@ class Terrain {
 
   void UpdateClipmaps(vec3 player_pos);
   void Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
-    bool clip_against_plane = false);
+    mat4 shadow_matrix, bool drawing_shadow, bool clip_against_plane = false);
   void DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos);
   void Invalidate();
   void SetClippingPlane(const vec3& point, const vec3& normal) {
@@ -122,8 +123,13 @@ class Terrain {
     clipping_normal_ = normal;
   }
 
+  mat4 GetShadowMatrix(bool bias);
+
   void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
     asset_catalog_ = asset_catalog; } 
+
+  void set_shadow_texture(GLuint shadow_texture) { 
+    shadow_texture_ = shadow_texture; } 
 
   void InvalidatePoint(ivec2 tile);
 };

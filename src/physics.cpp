@@ -52,9 +52,19 @@ void Physics::Run() {
       obj->speed.x *= 0.9;
       obj->speed.y *= 0.99;
       obj->speed.z *= 0.9;
+
+      obj->torque *= 0.99;
     }
 
     obj->target_position = obj->position + obj->speed;
+
+    if (length(obj->torque) > 0.001f) {
+      obj->rotation_matrix = rotate(
+        mat4(1.0),
+        length(obj->torque) * obj->inertia,
+        normalize(obj->torque)
+      ) * obj->rotation_matrix;
+    }
     obj->updated_at = glfwGetTime();
   }
 }

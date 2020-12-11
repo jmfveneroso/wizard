@@ -52,6 +52,8 @@ void PlayerInput::InteractWithItem(const Camera& c) {
     dialog_->SetDialogOptions({ "Build", "Goodbye" });
     dialog_->Enable();
     asset_catalog_->SetGameState(STATE_DIALOG);
+    while (!fisherman->actions.empty()) fisherman->actions.pop();
+    fisherman->actions.push(make_shared<TalkAction>());
   }
 }
 
@@ -126,6 +128,58 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
   }
 }
 
+void PlayerInput::Build(GLFWwindow* window, const Camera& c) {
+  if (asset_catalog_->GetGameState() != STATE_BUILD) {
+    return;
+  }
+
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+
+  vec3 start = c.position;
+  vec3 end = c.position + c.direction * 500.0f;
+  ivec2 tile;
+  if (asset_catalog_->CollideRayAgainstTerrain(start, end, tile)) {
+    TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x, tile.y);
+    configs->new_building->position = vec3(tile.x, p.height, tile.y);
+
+    int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+    if (state == GLFW_PRESS) {
+      asset_catalog_->SetGameState(STATE_GAME);
+      ObjPtr player = asset_catalog_->GetPlayer();
+      shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+      player->position = configs->old_position;
+    }
+  }
+}
+
+void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  if (!configs->place_object) {
+    return;
+  }
+
+  vec3 start = c.position;
+  vec3 end = c.position + c.direction * 500.0f;
+  ivec2 tile;
+  if (asset_catalog_->CollideRayAgainstTerrain(start, end, tile)) {
+    TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x, tile.y);
+    configs->new_building->position = vec3(tile.x, p.height, tile.y);
+
+    int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
+    if (state == GLFW_PRESS) {
+      configs->place_object = false;
+      asset_catalog_->RemoveObject(configs->new_building);  
+      return;
+    }
+
+    state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+    if (state == GLFW_PRESS) {
+      asset_catalog_->SetGameState(STATE_GAME);
+      configs->place_object = false;
+    }
+  }
+}
+
 Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   static double last_time = glfwGetTime();
   double current_time = glfwGetTime();
@@ -164,33 +218,54 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   float player_speed = asset_catalog_->GetConfigs()->player_speed; 
   float jump_force = asset_catalog_->GetConfigs()->jump_force; 
 
-  // Move forward.
-  if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-    player->speed += front * player_speed;
+  if (asset_catalog_->GetGameState() == STATE_BUILD) {
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+      player->position += front * 10.0f;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+      player->position -= front * 10.0f;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+      player->position += right * 10.0f;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+      player->position -= right * 10.0f;
 
-  // Move backward.
-  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-    player->speed -= front * player_speed;
+    if (player->position.x < 11200)
+      player->position.x = 11200;
+    if (player->position.x > 11800)
+      player->position.x = 11800;
+    if (player->position.z < 7400)
+      player->position.z = 7400;
+    if (player->position.z > 7900)
+      player->position.z = 7900;
 
-  // Strafe right.
-  if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-    player->speed += right * player_speed;
+  } else {
+    // Move forward.
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+      player->speed += front * player_speed;
 
-  // Strafe left.
-  if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-    player->speed -= right * player_speed;
+    // Move backward.
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+      player->speed -= front * player_speed;
 
-  // Move up.
-  if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-    if (player->can_jump) {
-      player->can_jump = false;
-      player->speed.y += jump_force;
+    // Strafe right.
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+      player->speed += right * player_speed;
+
+    // Strafe left.
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+      player->speed -= right * player_speed;
+
+    // Move up.
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+      if (player->can_jump) {
+        player->can_jump = false;
+        player->speed.y += jump_force;
+      }
     }
-  }
 
-  // Move down.
-  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-    player->speed.y -= jump_force;
+    // Move down.
+    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+      player->speed.y -= jump_force;
+    }
   }
 
   double x_pos, y_pos;
@@ -299,5 +374,12 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   }
 
   EditTerrain(window, c);
+  Build(window, c);
+  PlaceObject(window, c);
+
+  ObjPtr plank = asset_catalog_->GetObjectByName("plank-001");
+  plank->position.y = 50;
+  plank->speed = vec3(0.01, 0, 0);
+
   return c;
 }

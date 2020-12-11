@@ -42,7 +42,7 @@ shared_ptr<Waypoint> AI::GetClosestWaypoint(const vec3& position) {
 }
 
 bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
-  float turn_rate = 0.01;
+  float turn_rate = spider->GetAsset()->base_turn_rate;
 
   vec3 to_point = point - spider->position;
   to_point.y = 0;
@@ -188,6 +188,8 @@ bool AI::ProcessStatus(ObjPtr spider) {
 // Given the environment and the queued actions, what should be the next 
 // actions? 
 void AI::ProcessMentalState(ObjPtr spider) {
+  if (spider->GetAsset()->name != "spider") return;
+
   // TODO: mental states should be Attack, Flee, Patrol (search), Hunt, Wander.
   switch (spider->ai_state) {
     case WANDER: Wander(spider); break;
@@ -252,23 +254,56 @@ bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
   return false;
 }
 
+bool AI::ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action) {
+  spider->active_textures[1] = 1;
+  spider->active_animation = "Armature|talk";
+
+  // vec3 to_next_location = action->target - spider->position;
+  // to_next_location.y = 0;
+
+  // // Check how much time happened since the order was issued.
+  // if (glfwGetTime() > action->issued_at + 5) {
+  //   return true;
+  // }
+
+  // float dist_next_location = length(to_next_location);
+  // if (dist_next_location < 7.0f) {
+  //   return true;
+  // }
+
+  // float speed = spider->GetAsset()->base_speed;
+  // bool is_rotating = RotateSpider(spider, action->destination);
+  // if (!is_rotating) {
+  //   spider->speed += spider->forward * speed;
+  // }
+  return false;
+
+}
+
+bool AI::ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action) {
+  spider->active_textures[1] = 0;
+  spider->active_animation = "Armature|idle";
+  return false;
+}
+
 bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
+  spider->active_textures[1] = 0;
   spider->active_animation = "Armature|walking";
 
   vec3 to_next_location = action->destination - spider->position;
   to_next_location.y = 0;
 
   // Check how much time happened since the order was issued.
-  if (glfwGetTime() > action->issued_at + 5) {
-    return true;
-  }
+  // if (glfwGetTime() > action->issued_at + 5) {
+  //   return true;
+  // }
 
   float dist_next_location = length(to_next_location);
   if (dist_next_location < 7.0f) {
     return true;
   }
 
-  float speed = 0.05;
+  float speed = spider->GetAsset()->base_speed;
   bool is_rotating = RotateSpider(spider, action->destination);
   if (!is_rotating) {
     spider->speed += spider->forward * speed;
@@ -338,6 +373,24 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_STAND: {
+      shared_ptr<StandAction> stand_action =  
+        static_pointer_cast<StandAction>(action);
+      if (ProcessStandAction(spider, stand_action)) {
+        spider->actions.pop();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_TALK: {
+      shared_ptr<TalkAction> talk_action =  
+        static_pointer_cast<TalkAction>(action);
+      if (ProcessTalkAction(spider, talk_action)) {
+        spider->actions.pop();
+        spider->frame = 0;
+      }
+      break;
+    }
     default: 
       break;
   }
@@ -351,8 +404,12 @@ void AI::ProcessNextAction(ObjPtr spider) {
 void AI::RunSpiderAI() {
   int num_spiders = 0;
   for (ObjPtr obj1 : asset_catalog_->GetMovingObjects()) {
-    if (obj1->GetAsset()->name != "spider") continue;
-    num_spiders++;
+    if (obj1->GetAsset()->name != "spider" && 
+      obj1->GetAsset()->name != "fisherman-body") continue;
+
+    if (obj1->GetAsset()->name == "spider") {
+      num_spiders++;
+    }
 
     ObjPtr spider = obj1;
 

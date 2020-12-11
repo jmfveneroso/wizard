@@ -43,7 +43,6 @@ vec3 ClosestPtPointSegment(vec3 c, vec3 a, vec3 b);
 
 vec3 ClosestPtPointAABB(const vec3& p, const AABB& aabb);
 
-
 bool IsBehindPlane(const vec3& p, const vec3& plane_point, const vec3& normal);
 
 bool IsInConvexHull(const vec3& p, vector<Polygon> polygons);

@@ -201,5 +201,6 @@ AABB GetAABBFromPolygons(const Polygon& polygon);
 Mesh CreateDome();
 
 float clamp(float v, float low, float high);
+vec3 clamp(vec3 v, float low, float high);
 
 #endif // __UTIL_HPP__

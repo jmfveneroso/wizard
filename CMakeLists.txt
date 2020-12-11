@@ -67,6 +67,7 @@ set(
   src/item.cpp 
   src/craft.cpp 
   src/dialog.cpp 
+  src/npc.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

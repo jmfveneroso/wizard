@@ -621,8 +621,34 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
   glBindVertexArray(0);
 }
 
+mat4 Terrain::GetShadowMatrix(bool bias) {
+  mat4 projection_matrix = ortho<float>(-200, 200, -200, 200, -10, 500);
+
+  shared_ptr<Player> player = asset_catalog_->GetPlayer();
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  mat4 view_matrix = lookAt(
+    player->position + normalize(configs->sun_position) * 300.0f,
+    player->position,
+    // camera_.up
+    vec3(0, 1, 0)
+  );
+
+  const mat4 bias_matrix (
+    0.5, 0.0, 0.0, 0.0, 
+    0.0, 0.5, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.5, 0.5, 0.5, 1.0
+  );
+
+  if (bias) {
+    return bias_matrix * projection_matrix * view_matrix;
+  } else {
+    return projection_matrix * view_matrix;
+  }
+}
+
 void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
-  bool clip_against_plane) {
+  mat4 shadow_matrix, bool drawing_shadow, bool clip_against_plane) {
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
   glDisable(GL_BLEND);
@@ -641,7 +667,8 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
 
   shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
   int show_grid = -1;
-  if (configs->edit_terrain != "none") {
+  if (configs->edit_terrain != "none" || 
+    asset_catalog_->GetGameState() == STATE_BUILD) {
     show_grid = 1;
   }
 
@@ -698,47 +725,62 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
     last_visible_index = i;
   }
 
+  GLuint program_id = program_id_;
+  if (drawing_shadow) {
+    program_id = asset_catalog_->GetShader("terrain_shadow");
+  }
+
   // TODO: don't create buffers for clipmaps that won't be used.
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
     if (i < last_visible_index) break;
 
+    glUniform1i(GetUniformId(program_id_, "draw_shadows"), 
+      (i == last_visible_index) ? 1 : 0);
+
     // TODO: check the shaders. Remove code if possible.
     const glm::ivec2& top_left = clipmaps_[i]->clipmap_top_left;
-    glm::mat4 ModelMatrix = glm::translate(glm::mat4(1.0), glm::vec3(top_left.x * TILE_SIZE, 0, top_left.y * TILE_SIZE));
-    glm::mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
-    glm::mat3 ModelView3x3Matrix = glm::mat3(ModelViewMatrix);
-    glm::mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-    glUniform2iv(GetUniformId(program_id_, "top_left"), 1, (int*) &top_left);
-    glUniformMatrix4fv(GetUniformId(program_id_, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-    glUniformMatrix4fv(GetUniformId(program_id_, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-    glUniformMatrix3fv(GetUniformId(program_id_, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
+    mat4 ModelMatrix = translate(glm::mat4(1.0), vec3(top_left.x * TILE_SIZE, 0, top_left.y * TILE_SIZE));
+    mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
+    mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+    mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
+    glUniform2iv(GetUniformId(program_id, "top_left"), 1, (int*) &top_left);
+    glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+    glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+    glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
-    glUniform1i(GetUniformId(program_id_, "TILE_SIZE"), TILE_SIZE * GetTileSize(i + 1));
-    glUniform2iv(GetUniformId(program_id_, "buffer_top_left"), 1, (int*) &clipmaps_[i]->top_left);
+    mat4 DepthMVP = shadow_matrix * ModelMatrix;
+    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
+
+    glUniform1i(GetUniformId(program_id, "TILE_SIZE"), TILE_SIZE * GetTileSize(i + 1));
+    glUniform2iv(GetUniformId(program_id, "buffer_top_left"), 1, (int*) &clipmaps_[i]->top_left);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->height_texture);
-    glUniform1i(GetUniformId(program_id_, "height_sampler"), 0);
+    glUniform1i(GetUniformId(program_id, "height_sampler"), 0);
     
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->normals_texture);
-    glUniform1i(GetUniformId(program_id_, "normal_sampler"), 1);
+    glUniform1i(GetUniformId(program_id, "normal_sampler"), 1);
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->tileset_texture);
-    glUniform1i(GetUniformId(program_id_, "tile_type_sampler"), 2);
+    glUniform1i(GetUniformId(program_id, "tile_type_sampler"), 2);
 
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->blending_texture);
-    glUniform1i(GetUniformId(program_id_, "blending_sampler"), 3);
+    glUniform1i(GetUniformId(program_id, "blending_sampler"), 3);
 
     glActiveTexture(GL_TEXTURE4);
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->coarser_blending_texture);
-    glUniform1i(GetUniformId(program_id_, "coarser_blending_sampler"), 4);
+    glUniform1i(GetUniformId(program_id, "coarser_blending_sampler"), 4);
 
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, texture_);
-    glUniform1i(GetUniformId(program_id_, "texture_sampler"), 5);
+    glUniform1i(GetUniformId(program_id, "texture_sampler"), 5);
+
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_2D, shadow_texture_);
+    glUniform1i(GetUniformId(program_id, "shadow_sampler"), 6);
 
     ivec2 offset = ivec2(0, 0);
     ivec2 grid_coords = WorldToGridCoordinates(player_pos);
@@ -746,6 +788,12 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
     offset = ClampGridCoordinates(grid_coords, tile_size >> 1);
     offset -= ClampGridCoordinates(grid_coords, tile_size);
     offset /= GetTileSize(i + 1);
+
+    if (drawing_shadow) {
+      mat4 projection_view_matrix = GetShadowMatrix(false);
+      mat4 MVP = projection_view_matrix * ModelMatrix;
+      glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+    }
 
     int cull_count = 0;
     for (int region = 0 ; region < NUM_SUBREGIONS; region++) {

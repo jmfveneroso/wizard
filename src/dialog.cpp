@@ -12,8 +12,7 @@ void Dialog::PressKeyCallback(int key, int scancode, int action, int mods) {
   ProcessDefaultInput(key, scancode, action, mods);
 }
 
-bool Dialog::ProcessDefaultInput(int key, int scancode, int action, 
-  int mods) {
+bool Dialog::ProcessDefaultInput(int key, int scancode, int action, int mods) {
   switch (key) {
     case GLFW_KEY_K: {
       cursor_--;
@@ -26,7 +25,17 @@ bool Dialog::ProcessDefaultInput(int key, int scancode, int action,
       return true;
     }
     case GLFW_KEY_ENTER: {
-      // CraftSpell(cursor_);
+      if (cursor_ == 0) {
+        asset_catalog_->SetGameState(STATE_BUILD);
+
+        ObjPtr player = asset_catalog_->GetPlayer();
+        shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+        configs->old_position = player->position;
+        player->position = vec3(11361, 331, 7888);
+
+        configs->new_building = asset_catalog_->CreateGameObjFromAsset(
+          "windmill", vec3(0));
+      }
       Disable();
       return true;
     }
@@ -58,21 +67,9 @@ void Dialog::Draw(int win_x, int win_y) {
 
   for (int i = 0; i < dialog_options_.size(); i++) {
     pos_y += 16;
-
     if (cursor_ == i) {
-      draw_2d_->DrawRectangle(win_x, kWindowHeight - pos_y, win_x + 600, 18, vec3(1, 0.69, 0.23));
-      draw_2d_->DrawText(dialog_options_[i], win_x-1, kWindowHeight - pos_y, vec3(0.3));
-    } else {
-      draw_2d_->DrawText(dialog_options_[i], win_x-1, kWindowHeight - pos_y, vec3(1));
+      draw_2d_->DrawRectangle(win_x, kWindowHeight - (pos_y - 16), win_x + 600, 18, vec3(1, 0.69, 0.23));
     }
+    draw_2d_->DrawText(dialog_options_[i], win_x-1, kWindowHeight - pos_y, vec3(1));
   }
-
-  // if (cursor_ == 0) {
-  //   draw_2d_->DrawRectangle(win_x + 18, kWindowHeight - 600, 54, 54, vec3(0, 0, 1));
-  // } else {
-  //   draw_2d_->DrawRectangle(win_x + 73, kWindowHeight - 600, 54, 54, vec3(0, 0, 1));
-  // }
-
-  // draw_2d_->DrawRectangle(win_x + 20, kWindowHeight - 602, 50, 50, vec3(0, 1, 0));
-  // draw_2d_->DrawRectangle(win_x + 75, kWindowHeight - 602, 50, 50, vec3(1, 0, 0));
 }

@@ -33,7 +33,8 @@ enum GameState {
   STATE_INVENTORY,
   STATE_CRAFT,
   STATE_TERRAIN_EDITOR,
-  STATE_DIALOG
+  STATE_DIALOG,
+  STATE_BUILD
 };
 
 enum CollisionResolutionType {
@@ -87,34 +88,17 @@ enum PlayerAction {
 
 struct GameData {};
 
-struct Configs {
-  vec3 world_center = vec3(10000, 0, 10000);
-  vec3 initial_player_pos = vec3(11508, 33, 7065);
-  // vec3 initial_player_pos = vec3(10000, 200, 10000);
-  vec3 respawn_point = vec3(10045, 500, 10015);
-  float target_player_speed = 0.03f; 
-  float player_speed = 0.03f; 
-  float spider_speed = 0.41f; 
-  float taking_hit = 0.0f; 
-  vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
-  bool disable_attacks = true;
-  string edit_terrain = "none";
-  bool levitate = false;
-  float jump_force = 0.3f;
-  int brush_size = 10;
-  int selected_tile = 0;
-  float raise_factor = 1;
-};
-
 struct GameAsset {
   int id;
+  int index = 0;
   string name;
 
   // Mesh.
   unordered_map<int, Mesh> lod_meshes;
 
   // Texture.
-  GLuint texture_id = 0;
+  vector<GLuint> textures;
+
   GLuint bump_map_id = 0;
 
   // Animation.
@@ -148,6 +132,9 @@ struct GameAsset {
 
   bool item = false;
   bool extractable = false;
+
+  float base_speed = 0.05;
+  float base_turn_rate = 0.01;
 };
 
 struct GameAssetGroup {
@@ -179,7 +166,9 @@ enum ActionType {
   ACTION_IDLE,
   ACTION_RANGED_ATTACK,
   ACTION_CHANGE_STATE,
-  ACTION_TAKE_AIM
+  ACTION_TAKE_AIM,
+  ACTION_STAND,
+  ACTION_TALK
 };
 
 struct Action {
@@ -220,6 +209,16 @@ struct TakeAimAction : Action {
     : Action(ACTION_TAKE_AIM) {}
 };
 
+struct StandAction : Action {
+  StandAction() 
+    : Action(ACTION_STAND) {}
+};
+
+struct TalkAction : Action {
+  TalkAction() 
+    : Action(ACTION_TALK) {}
+};
+
 struct GameObject {
   GameObjectType type = GAME_OBJ_DEFAULT;
 
@@ -229,9 +228,16 @@ struct GameObject {
   vec3 position;
   vec3 prev_position = vec3(0, 0, 0);
   vec3 target_position = vec3(0, 0, 0);
-  vec3 rotation = vec3(0, 0, 0);
+
   mat4 rotation_matrix = mat4(1.0);
-  quat target_rotation_matrix = quat(0, 0, 0, 1);
+  mat4 target_rotation_matrix = mat4(1.0);
+
+  // Reference for torque: https://www.toptal.com/game/video-game-physics-part-i-an-introduction-to-rigid-body-dynamics
+  // https://gamedevelopment.tutsplus.com/tutorials/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756
+  vec3 torque = vec3(0.0);
+  float inertia = 0.3;
+  shared_ptr<GameObject> in_contact_with = nullptr;
+
   int rotation_factor = 0;
 
   vec3 up = vec3(0, -1, 0); // Determines object up direction.
@@ -286,6 +292,7 @@ struct GameObject {
   bool emits_light = false;
   float quadratic;  
   vec3 light_color;
+  vector<int> active_textures { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
   GameObject() {}
   GameObject(GameObjectType type) : type(type) {
@@ -300,11 +307,34 @@ struct GameObject {
 };
 using ObjPtr = shared_ptr<GameObject>;
 
+struct Configs {
+  vec3 world_center = vec3(10000, 0, 10000);
+  vec3 initial_player_pos = vec3(11508, 33, 7065);
+  // vec3 initial_player_pos = vec3(10000, 200, 10000);
+  vec3 respawn_point = vec3(10045, 500, 10015);
+  float target_player_speed = 0.03f; 
+  float player_speed = 0.03f; 
+  float spider_speed = 0.41f; 
+  float taking_hit = 0.0f; 
+  vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
+  bool disable_attacks = true;
+  string edit_terrain = "none";
+  bool levitate = false;
+  float jump_force = 0.3f;
+  int brush_size = 10;
+  int selected_tile = 0;
+  float raise_factor = 1;
+  vec3 old_position;
+  ObjPtr new_building;
+  bool place_object = false;
+};
+
 struct Player : GameObject {
   PlayerAction player_action = PLAYER_IDLE;
   int num_spells = 10;
   int num_spells_2 = 2;
   int selected_spell = 0;
+  vec3 rotation = vec3(0, 0, 0);
 
   Player() : GameObject(GAME_OBJ_PLAYER) {}
 };
@@ -506,6 +536,7 @@ class AssetCatalog {
   unordered_map<int, shared_ptr<ParticleType>> particle_types_by_id_;
   unordered_map<int, shared_ptr<Missile>> missiles_by_id_;
 
+  vector<shared_ptr<GameObject>> new_objects_;
   vector<shared_ptr<GameObject>> moving_objects_;
   vector<shared_ptr<GameObject>> lights_;
   vector<shared_ptr<GameObject>> items_;
@@ -669,6 +700,8 @@ class AssetCatalog {
   void MakeGlow(ObjPtr obj);
   void RemoveObject(ObjPtr obj);
   bool CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile);
+  void SaveNewObjects();
+  void AddNewObject(ObjPtr obj) { new_objects_.push_back(obj); }
 };
 
 #endif // __ASSET_HPP__

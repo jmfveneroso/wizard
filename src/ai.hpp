@@ -56,6 +56,8 @@ class AI {
     shared_ptr<ChangeStateAction> action);
   bool ProcessRangedAttackAction(ObjPtr spider, 
     shared_ptr<RangedAttackAction> action);
+  bool ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action);
+  bool ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessMentalState(ObjPtr spider);
