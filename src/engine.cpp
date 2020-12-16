@@ -1,41 +1,9 @@
 #include "engine.hpp"
 
-// Portal culling:
-// http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
-
-using namespace std;
-using namespace glm;
-
-int throttle_counter = 0;
-
-shared_ptr<Project4D> project_4d = nullptr;
-shared_ptr<Renderer> renderer = nullptr;
-shared_ptr<TextEditor> text_editor = nullptr;
-shared_ptr<Inventory> inventory = nullptr;
-shared_ptr<Craft> craft = nullptr;
-shared_ptr<AssetCatalog> asset_catalog = nullptr;
-shared_ptr<CollisionResolver> collision_resolver = nullptr;
-shared_ptr<AI> ai = nullptr;
-shared_ptr<Physics> physics = nullptr;
-shared_ptr<PlayerInput> player_input = nullptr;
-shared_ptr<Item> item = nullptr;
-shared_ptr<Dialog> dialog = nullptr;
-shared_ptr<Npc> npc = nullptr;
-
-void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
-//  text_editor->PressCharCallback(string(1, (char) char_code));
-}
-
-void PressKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-//  text_editor->PressKeyCallback(key, scancode, action, mods);
-//  craft->PressKeyCallback(key, scancode, action, mods);
-//  dialog->PressKeyCallback(key, scancode, action, mods);
-}
-
 // TODO: move this elsewhere.
-void RunCommand(string command) {
-  shared_ptr<Player> player = asset_catalog->GetPlayer();
-  shared_ptr<Configs> configs = asset_catalog->GetConfigs();
+void Engine::RunCommand(string command) {
+  shared_ptr<Player> player = asset_catalog_->GetPlayer();
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
 
   vector<string> result; 
   boost::split(result, command, boost::is_any_of(" ")); 
@@ -77,12 +45,12 @@ void RunCommand(string command) {
         float y_ = y / 10.0f - 4.0f;
         float h = (50.0f / (2.0f * 3.14f)) * exp(-0.5 * (x_*x_ + y_*y_));
 
-        TerrainPoint p = asset_catalog->GetTerrainPoint(top_left.x + x, top_left.y + y);
+        TerrainPoint p = asset_catalog_->GetTerrainPoint(top_left.x + x, top_left.y + y);
         p.height += h;
-        asset_catalog->SetTerrainPoint(top_left.x + x, top_left.y + y, p);
+        asset_catalog_->SetTerrainPoint(top_left.x + x, top_left.y + y, p);
       }
     }
-    renderer->terrain()->Invalidate();
+    renderer_->terrain()->Invalidate();
     cout << "Raised terrain" << endl; 
   } else if (result[0] == "disable-attacks") {
     configs->disable_attacks = true;
@@ -98,112 +66,112 @@ void RunCommand(string command) {
     configs->edit_terrain = "none";
   } else if (result[0] == "create") {
     string asset_name = result[1];
-    if (asset_catalog->GetAssetGroupByName(asset_name)) {
-      configs->new_building = asset_catalog->CreateGameObjFromAsset(
+    if (asset_catalog_->GetAssetGroupByName(asset_name)) {
+      configs->new_building = asset_catalog_->CreateGameObjFromAsset(
         asset_name, vec3(0));
       configs->place_object = true;
       configs->new_building->torque = vec3(0, 0.02f, 0);
-      asset_catalog->AddNewObject(configs->new_building);
+      asset_catalog_->AddNewObject(configs->new_building);
     }
   } else if (result[0] == "save") {
-    asset_catalog->SaveHeightMap("assets/height_map2_compressed.dat");
+    asset_catalog_->SaveHeightMap("assets/height_map2_compressed.dat");
   } else if (result[0] == "save-objs") {
-    asset_catalog->SaveNewObjects();
+    asset_catalog_->SaveNewObjects();
   }
 }
 
-bool ProcessGameInput() {
-  asset_catalog->UpdateFrameStart();
-  asset_catalog->UpdateMissiles();
+bool Engine::ProcessGameInput() {
+  asset_catalog_->UpdateFrameStart();
+  asset_catalog_->UpdateMissiles();
 
   --throttle_counter;
-  GLFWwindow* window = renderer->window();
+  GLFWwindow* window = renderer_->window();
 
-  shared_ptr<Configs> configs = asset_catalog->GetConfigs();
-  switch (asset_catalog->GetGameState()) {
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  switch (asset_catalog_->GetGameState()) {
     case STATE_GAME: { 
-      shared_ptr<Player> player = asset_catalog->GetPlayer();
+      shared_ptr<Player> player = asset_catalog_->GetPlayer();
 
-      // // TODO: all of this should go into a class player.
-      // if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     text_editor->Enable();
-      // 
-      //     stringstream ss;
-      //     ss << "Player pos: " << player->position << endl;
+      // TODO: all of this should go into a class player.
+      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          text_editor_->Enable();
+      
+          stringstream ss;
+          ss << "Player pos: " << player->position << endl;
 
-      //     shared_ptr<Sector> s = asset_catalog->GetSector(player->position + vec3(0, 0.75, 0));
-      //     ss << "Sector: " << s->name << endl;
+          shared_ptr<Sector> s = asset_catalog_->GetSector(player->position + vec3(0, 0.75, 0));
+          ss << "Sector: " << s->name << endl;
 
-      //     ss << "Life: " << player->life << endl;
+          ss << "Life: " << player->life << endl;
 
-      //     if (configs->edit_terrain != "none") {
-      //       ss << "Brush size: " << configs->brush_size << endl;
-      //       ss << "Mode: " << configs->edit_terrain << endl;
-      //       ss << "Selected tile: " << configs->selected_tile << endl;
-      //       ss << "Raise factor: " << configs->raise_factor << endl;
-      //     }
+          if (configs->edit_terrain != "none") {
+            ss << "Brush size: " << configs->brush_size << endl;
+            ss << "Mode: " << configs->edit_terrain << endl;
+            ss << "Selected tile: " << configs->selected_tile << endl;
+            ss << "Raise factor: " << configs->raise_factor << endl;
+          }
 
-      //     text_editor->SetContent(ss.str());
-      //     asset_catalog->SetGameState(STATE_EDITOR);
-      //   }
-      //   throttle_counter = 20;
-      // } else if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     inventory->Enable();
-      //     asset_catalog->SetGameState(STATE_INVENTORY);
-      //   }
-      //   throttle_counter = 20;
-      // } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     configs->brush_size--;
-      //     if (configs->brush_size < 0) {
-      //       configs->brush_size = 0;
-      //     }
-      //   }
-      //   throttle_counter = 4;
-      // } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     configs->brush_size++;
-      //     if (configs->brush_size > 1000) {
-      //       configs->brush_size = 1000;
-      //     }
-      //   }
-      //   throttle_counter = 4;
-      // } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     configs->selected_tile = 0;
-      //   }
-      //   throttle_counter = 20;
-      // } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     configs->selected_tile = 1;
-      //   }
-      //   throttle_counter = 20;
-      // } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     configs->selected_tile = 2;
-      //   }
-      //   throttle_counter = 20;
-      // } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
-      //   if (throttle_counter < 0) {
-      //     configs->selected_tile = 3;
-      //   }
-      //   throttle_counter = 20;
-      // }
+          text_editor_->SetContent(ss.str());
+          asset_catalog_->SetGameState(STATE_EDITOR);
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          inventory_->Enable();
+          asset_catalog_->SetGameState(STATE_INVENTORY);
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->brush_size--;
+          if (configs->brush_size < 0) {
+            configs->brush_size = 0;
+          }
+        }
+        throttle_counter = 4;
+      } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->brush_size++;
+          if (configs->brush_size > 1000) {
+            configs->brush_size = 1000;
+          }
+        }
+        throttle_counter = 4;
+      } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 0;
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 1;
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 2;
+        }
+        throttle_counter = 20;
+      } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+        if (throttle_counter < 0) {
+          configs->selected_tile = 3;
+        }
+        throttle_counter = 20;
+      }
 
-      Camera c = player_input->ProcessInput(window);
-      item->ProcessItems();
-      craft->ProcessCrafting();
-      npc->ProcessNpcs();
+      Camera c = player_input_->ProcessInput(window);
+      item_->ProcessItems();
+      craft_->ProcessCrafting();
+      npc_->ProcessNpcs();
 
-      renderer->SetCamera(c);
+      renderer_->SetCamera(c);
 
-      ai->RunSpiderAI();
-      physics->Run();
-      asset_catalog->UpdateParticles();
+      ai_->RunSpiderAI();
+      physics_->Run();
+      asset_catalog_->UpdateParticles();
 
-      collision_resolver->Collide();
+      collision_resolver_->Collide();
 
       configs->taking_hit -= 1.0f;
       if (configs->taking_hit < 0.0) {
@@ -212,65 +180,65 @@ bool ProcessGameInput() {
         configs->player_speed = configs->target_player_speed / 6.0f;
       }
 
-      asset_catalog->RemoveDead();
+      asset_catalog_->RemoveDead();
       configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(0.0, 0, 1.0)) 
         * vec4(configs->sun_position, 1.0f));
 
       return false;
     }
     case STATE_EDITOR: {
-      if (!text_editor->enabled) {
-        asset_catalog->SetGameState(STATE_GAME);
+      if (!text_editor_->enabled) {
+        asset_catalog_->SetGameState(STATE_GAME);
       }
       return true;
     }
     case STATE_INVENTORY: {
       if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter < 0) {
-          inventory->Disable();
+          inventory_->Disable();
         }
         throttle_counter = 20;
       }
-      if (!inventory->enabled) {
-        asset_catalog->SetGameState(STATE_GAME);
+      if (!inventory_->enabled) {
+        asset_catalog_->SetGameState(STATE_GAME);
       }
       return true;
     }
     case STATE_CRAFT: {
       if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
         if (throttle_counter < 0) {
-          craft->Disable();
+          craft_->Disable();
         }
         throttle_counter = 20;
       }
-      if (!craft->enabled) {
-        asset_catalog->SetGameState(STATE_GAME);
+      if (!craft_->enabled) {
+        asset_catalog_->SetGameState(STATE_GAME);
       }
       return true;
     }
     case STATE_DIALOG: {
       if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
         if (throttle_counter < 0) {
-          dialog->Disable();
+          dialog_->Disable();
         }
         throttle_counter = 20;
       }
-      if (!dialog->enabled) {
-        asset_catalog->SetGameState(STATE_GAME);
+      if (!dialog_->enabled) {
+        asset_catalog_->SetGameState(STATE_GAME);
       }
       return true;
     }
     case STATE_BUILD: {
-      Camera c = player_input->ProcessInput(window);
-      renderer->SetCamera(c);
+      Camera c = player_input_->ProcessInput(window);
+      renderer_->SetCamera(c);
 
       if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-        asset_catalog->SetGameState(STATE_GAME);
-        ObjPtr player = asset_catalog->GetPlayer();
-        shared_ptr<Configs> configs = asset_catalog->GetConfigs();
+        asset_catalog_->SetGameState(STATE_GAME);
+        ObjPtr player = asset_catalog_->GetPlayer();
+        shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
         player->position = configs->old_position;
         throttle_counter = 20;
-        asset_catalog->RemoveObject(configs->new_building);
+        asset_catalog_->RemoveObject(configs->new_building);
       }
       return true;
     }
@@ -279,26 +247,26 @@ bool ProcessGameInput() {
   }
 }
 
-void AfterFrame() {
-  switch (asset_catalog->GetGameState()) {
+void Engine::AfterFrame() {
+  switch (asset_catalog_->GetGameState()) {
     case STATE_GAME: {
-      renderer->DrawHand();
+      renderer_->DrawHand();
       break;
     }
     case STATE_EDITOR: {
-      text_editor->Draw();
+      text_editor_->Draw();
       break;
     }
     case STATE_INVENTORY: {
-      inventory->Draw();
+      inventory_->Draw();
       break;
     }
     case STATE_CRAFT: {
-      craft->Draw();
+      craft_->Draw();
       break;
     }
     case STATE_DIALOG: {
-      dialog->Draw();
+      dialog_->Draw();
       break;
     }
     default:
@@ -306,38 +274,27 @@ void AfterFrame() {
   }
 }
 
-int main() {
-  renderer = make_shared<Renderer>();
-  asset_catalog = make_shared<AssetCatalog>("assets");
-  shared_ptr<Draw2D> draw_2d = make_shared<Draw2D>(asset_catalog);
-  project_4d  = make_shared<Project4D>(asset_catalog);
+Engine::Engine(
+  shared_ptr<Project4D> project_4d,
+  shared_ptr<Renderer> renderer,
+  shared_ptr<TextEditor> text_editor,
+  shared_ptr<Inventory> inventory,
+  shared_ptr<Craft> craft,
+  shared_ptr<AssetCatalog> asset_catalog,
+  shared_ptr<CollisionResolver> collision_resolver,
+  shared_ptr<AI> ai,
+  shared_ptr<Physics> physics,
+  shared_ptr<PlayerInput> player_input,
+  shared_ptr<Item> item,
+  shared_ptr<Dialog> dialog,
+  shared_ptr<Npc> npc
+) : project_4d_(project_4d), renderer_(renderer), text_editor_(text_editor),
+    inventory_(inventory), craft_(craft), asset_catalog_(asset_catalog),
+    collision_resolver_(collision_resolver), ai_(ai), physics_(physics),
+    player_input_(player_input), item_(item), dialog_(dialog), npc_(npc) {
+}
 
-  renderer->set_project_4d(project_4d);
-  renderer->set_asset_catalog(asset_catalog);
-  renderer->set_draw_2d(draw_2d);
-  renderer->Init();
-
-  physics = make_shared<Physics>(asset_catalog);
-
-  collision_resolver = make_shared<CollisionResolver>(asset_catalog);
-
-  ai = make_shared<AI>(asset_catalog);
-  ai->InitSpider();
-
-  text_editor = make_shared<TextEditor>(draw_2d);
-  inventory = make_shared<Inventory>(asset_catalog, draw_2d);
-  craft = make_shared<Craft>(asset_catalog, draw_2d, project_4d);
-  dialog = make_shared<Dialog>(asset_catalog, draw_2d);
-  npc = make_shared<Npc>(asset_catalog, ai);
-
-  glfwSetCharCallback(renderer->window(), PressCharCallback);
-  glfwSetKeyCallback(renderer->window(), PressKeyCallback);
-  text_editor->set_run_command_fn(RunCommand);
-
-  player_input = make_shared<PlayerInput>(asset_catalog, project_4d, craft, 
-    renderer->terrain(), dialog);
-  item = make_shared<Item>(asset_catalog);
-
-  renderer->Draw(ProcessGameInput, AfterFrame);
-  return 0;
+void Engine::Run() {
+  // text_editor_->set_run_command_fn(RunCommand);
+  // renderer_->Draw(ProcessGameInput, AfterFrame);
 }

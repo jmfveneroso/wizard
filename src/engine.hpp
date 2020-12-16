@@ -30,20 +30,29 @@
 #include "dialog.hpp"
 #include "npc.hpp"
 
+using namespace std;
+using namespace glm;
+
 class Engine {
-  shared_ptr<Project4D> project_4d = nullptr;
-  shared_ptr<Renderer> renderer = nullptr;
-  shared_ptr<TextEditor> text_editor = nullptr;
-  shared_ptr<Inventory> inventory = nullptr;
-  shared_ptr<Craft> craft = nullptr;
-  shared_ptr<AssetCatalog> asset_catalog = nullptr;
-  shared_ptr<CollisionResolver> collision_resolver = nullptr;
-  shared_ptr<AI> ai = nullptr;
-  shared_ptr<Physics> physics = nullptr;
-  shared_ptr<PlayerInput> player_input = nullptr;
-  shared_ptr<Item> item = nullptr;
-  shared_ptr<Dialog> dialog = nullptr;
-  shared_ptr<Npc> npc = nullptr;
+  shared_ptr<Project4D> project_4d_ = nullptr;
+  shared_ptr<Renderer> renderer_ = nullptr;
+  shared_ptr<TextEditor> text_editor_ = nullptr;
+  shared_ptr<Inventory> inventory_ = nullptr;
+  shared_ptr<Craft> craft_ = nullptr;
+  shared_ptr<AssetCatalog> asset_catalog_ = nullptr;
+  shared_ptr<CollisionResolver> collision_resolver_ = nullptr;
+  shared_ptr<AI> ai_ = nullptr;
+  shared_ptr<Physics> physics_ = nullptr;
+  shared_ptr<PlayerInput> player_input_ = nullptr;
+  shared_ptr<Item> item_ = nullptr;
+  shared_ptr<Dialog> dialog_ = nullptr;
+  shared_ptr<Npc> npc_ = nullptr;
+
+  int throttle_counter = 0;
+
+  void RunCommand(string command);
+  bool ProcessGameInput();
+  void AfterFrame();
 
  public:
   Engine(
@@ -61,4 +70,6 @@ class Engine {
     shared_ptr<Dialog> dialog,
     shared_ptr<Npc> npc
   );
+
+  void Run();
 };

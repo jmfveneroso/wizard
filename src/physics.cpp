@@ -38,7 +38,7 @@ void Physics::Run() {
     shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
     if (obj->name == "player" && configs->levitate) {
       obj->can_jump = true;
-      obj->speed.y *= 0.9f;
+      obj->speed.y *= 0.95f;
     } else { 
       obj->speed += vec3(0, -GRAVITY, 0);
     }
@@ -53,15 +53,22 @@ void Physics::Run() {
       obj->speed.y *= 0.99;
       obj->speed.z *= 0.9;
 
-      obj->torque *= 0.99;
+      obj->torque *= 0.96;
     }
 
     obj->target_position = obj->position + obj->speed;
 
-    if (length(obj->torque) > 0.005f) {
+    if (length(obj->torque) > 0.0001f) {
+      // float rotation_angle = length(obj->torque) * obj->inertia;
+      // quat new_rotation = angleAxis(degrees(rotation_angle), normalize(obj->torque));
+
+      // obj->cur_rotation = obj->cur_rotation * new_rotation;
+      // obj->rotation_matrix = mat4_cast(obj->cur_rotation);
+
+      float inertia = 1.0f / obj->GetAsset()->mass;
       obj->rotation_matrix = rotate(
         mat4(1.0),
-        length(obj->torque) * obj->inertia,
+        length(obj->torque) * inertia,
         normalize(obj->torque)
       ) * obj->rotation_matrix;
     }

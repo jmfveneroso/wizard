@@ -380,6 +380,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   ObjPtr plank = asset_catalog_->GetObjectByName("plank-001");
   plank->position.y = 50;
   plank->speed = vec3(0.01, 0, 0);
+  plank->torque = vec3(0.0, 0.5, 0);
 
   return c;
 }

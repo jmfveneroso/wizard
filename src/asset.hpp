@@ -25,6 +25,10 @@
 #include "collision.hpp"
 #include "fbx_loader.hpp"
 
+#define NEAR_CLIPPING 1.00f
+#define FAR_CLIPPING 10000.0f
+#define FIELD_OF_VIEW 45.0f
+
 const int kMaxParticles = 1000;
 
 enum GameState {
@@ -134,6 +138,10 @@ struct GameAsset {
 
   float base_speed = 0.05;
   float base_turn_rate = 0.01;
+  float mass = 1.0;
+
+  vector<vec3> vertices;
+  vector<vec3> GetVertices();
 };
 
 struct GameAssetGroup {
@@ -234,7 +242,6 @@ struct GameObject {
   // Reference for torque: https://www.toptal.com/game/video-game-physics-part-i-an-introduction-to-rigid-body-dynamics
   // https://gamedevelopment.tutsplus.com/tutorials/how-to-create-a-custom-2d-physics-engine-friction-scene-and-jump-table--gamedev-7756
   vec3 torque = vec3(0.0);
-  float inertia = 0.3;
   shared_ptr<GameObject> in_contact_with = nullptr;
 
   int rotation_factor = 0;
@@ -315,7 +322,8 @@ struct Configs {
   float player_speed = 0.03f; 
   float spider_speed = 0.41f; 
   float taking_hit = 0.0f; 
-  vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
+  vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
+  // vec3 sun_position = vec3(0.0f, -1.0f, 0.0f); 
   bool disable_attacks = true;
   string edit_terrain = "none";
   bool levitate = false;
@@ -512,7 +520,7 @@ class AssetCatalog {
   int id_counter_ = 0;
   double frame_start_ = 0;
 
-  GameState game_state_;
+  GameState game_state_ = STATE_EDITOR;
   shared_ptr<Configs> configs_;
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;

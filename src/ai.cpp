@@ -62,7 +62,6 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
   quat cur_h_rotation = RotationBetweenVectors(front, 
     normalize(cur_forward));
 
-  // bool is_rotating = abs(dot(h_rotation, cur_h_rotation)) < 0.75f;
   bool is_rotating = abs(dot(h_rotation, cur_h_rotation)) < rotation_threshold;
   if (dot(spider->cur_rotation, target_rotation) < 0.999f) {
     spider->cur_rotation =  

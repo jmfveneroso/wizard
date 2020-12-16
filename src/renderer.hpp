@@ -35,9 +35,6 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 800
 #define APP_NAME "test"
-#define NEAR_CLIPPING 1.00f
-#define FAR_CLIPPING 10000.0f
-#define FIELD_OF_VIEW 45.0f
 #define LOD_DISTANCE 100.0f
 
 using namespace std;
@@ -70,6 +67,13 @@ struct ParticleRenderData {
   vec2 particle_uvs[kMaxParticles];
 };
 
+struct CascadedShadowMap {
+  float near_range;
+  float far_range;
+  BoundingSphere bounding_sphere;
+  float resolution = 2048;
+};
+
 class Renderer {
   shared_ptr<AssetCatalog> asset_catalog_;
   shared_ptr<Draw2D> draw_2d_;
@@ -86,8 +90,8 @@ class Renderer {
   float delta_time_ = 0.0f;
   mat4 depth_mvp_;
 
-  GLuint shadow_framebuffer_ = 0;
-  GLuint shadow_texture_ = 0;
+  vector<GLuint> shadow_framebuffers_ { 0, 0, 0 };
+  vector<GLuint> shadow_textures_ { 0, 0, 0 };
   bool drawing_shadow_ = false;
 
   vector<ObjPtr> lakes_;
@@ -140,6 +144,9 @@ class Renderer {
   void InitShadowFramebuffer();
   void DrawShadows();
   mat4 GetShadowMatrix(bool bias=false);
+
+  void GetFrustumPlanes(vec4 frustum_planes[6]);
+  shared_ptr<ObjPtr> GetVisibleObjects(vec4 frustum_planes[6]);
 
  public:
   Renderer();  

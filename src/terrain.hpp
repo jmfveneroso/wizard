@@ -114,9 +114,9 @@ class Terrain {
   Terrain(GLuint program_id, GLuint water_program_id);
 
   void UpdateClipmaps(vec3 player_pos);
-  void Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
+  void Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
     mat4 shadow_matrix, bool drawing_shadow, bool clip_against_plane = false);
-  void DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos);
+  void DrawWater(Camera& camera, mat4 ViewMatrix, vec3 player_pos);
   void Invalidate();
   void SetClippingPlane(const vec3& point, const vec3& normal) {
     clipping_point_ = point;

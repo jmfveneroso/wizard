@@ -426,6 +426,11 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
     game_asset->base_turn_rate = boost::lexical_cast<float>(xml_turn_rate.text().get());
   }
 
+  const pugi::xml_node& mass = asset.child("mass");
+  if (mass) {
+    game_asset->mass = boost::lexical_cast<float>(mass.text().get());
+  }
+
   if (assets_.find(game_asset->name) != assets_.end()) {
     ThrowError("Asset with name ", game_asset->name, " already exists.");
   }
@@ -2041,4 +2046,25 @@ void AssetCatalog::SaveNewObjects() {
 
   doc.save_file(xml_filename.c_str());
   cout << "Saved objects: " << xml_filename << endl;
+}
+
+vector<vec3> GameAsset::GetVertices() {
+  if (!vertices.empty()) return vertices;
+  
+  float threshold = 0.01f;
+  for (const Polygon& polygon : collision_hull) {
+    for (vec3 v : polygon.vertices) {
+      bool add = true;
+      for (vec3 added_v : vertices) {
+        if (length(v - added_v) < threshold) {
+          add = false;
+          break;
+        }
+      }
+      if (add) {
+        vertices.push_back(v);
+      }
+    }
+  }
+  return vertices;
 }

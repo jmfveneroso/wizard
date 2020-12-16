@@ -29,6 +29,7 @@
 #include "craft.hpp"
 #include "dialog.hpp"
 #include "npc.hpp"
+#include "engine.hpp"
 
 // Portal culling:
 // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
@@ -51,6 +52,7 @@ shared_ptr<PlayerInput> player_input = nullptr;
 shared_ptr<Item> item = nullptr;
 shared_ptr<Dialog> dialog = nullptr;
 shared_ptr<Npc> npc = nullptr;
+shared_ptr<Engine> engine = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -83,7 +85,7 @@ void RunCommand(string command) {
     player->num_spells += 100;
     player->num_spells_2 += 100;
   } else if (result[0] == "speed") {
-    if (result.size() == 2) {
+    if (result.size() == 2 && !result[1].empty()) {
       float speed = boost::lexical_cast<float>(result[1]);
       configs->target_player_speed = speed;
     }
@@ -132,7 +134,6 @@ void RunCommand(string command) {
       configs->new_building = asset_catalog->CreateGameObjFromAsset(
         asset_name, vec3(0));
       configs->place_object = true;
-      configs->new_building->torque = vec3(0, 0.02f, 0);
       asset_catalog->AddNewObject(configs->new_building);
     }
   } else if (result[0] == "save") {
@@ -243,8 +244,9 @@ bool ProcessGameInput() {
       }
 
       asset_catalog->RemoveDead();
-      configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(0.0, 0, 1.0)) 
-        * vec4(configs->sun_position, 1.0f));
+
+      // configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(0.0, 0, 1.0)) 
+      //   * vec4(configs->sun_position, 1.0f));
 
       return false;
     }
@@ -369,5 +371,11 @@ int main() {
   item = make_shared<Item>(asset_catalog);
 
   renderer->Draw(ProcessGameInput, AfterFrame);
+
+  // shared_ptr<Engine> engine = make_shared<Engine>(
+  //   project_4d, renderer, text_editor, inventory, craft, asset_catalog,
+  //   collision_resolver, ai, physics, player_input, item, dialog, npc
+  // );
+  // engine->Run();
   return 0;
 }

@@ -518,7 +518,7 @@ vec3 GetLightColor(vec3 sun_position) {
   return color;
 }
 
-void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix, 
+void Terrain::DrawWater(Camera& camera, mat4 ViewMatrix, 
   vec3 player_pos) {
   static float move_factor = 0.0f;
   move_factor += 0.0005f;
@@ -536,6 +536,13 @@ void Terrain::DrawWater(mat4 ProjectionMatrix, mat4 ViewMatrix,
     if (2.5 * h > clipmap_size) break;
     last_visible_index = i;
   }
+
+  float delta_h = camera.position.y - h;
+  if (delta_h <= 500.0f) {
+    delta_h = 0;
+  }
+  mat4 ProjectionMatrix = glm::perspective(glm::radians(FIELD_OF_VIEW), 
+    4.0f / 3.0f, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
 
   glUniform1f(GetUniformId(water_program_id_, "MAX_HEIGHT"), MAX_HEIGHT);
   glUniform1i(GetUniformId(water_program_id_, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
@@ -647,7 +654,7 @@ mat4 Terrain::GetShadowMatrix(bool bias) {
   }
 }
 
-void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos, 
+void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
   mat4 shadow_matrix, bool drawing_shadow, bool clip_against_plane) {
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
@@ -730,12 +737,23 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
     program_id = asset_catalog_->GetShader("terrain_shadow");
   }
 
+  float delta_h = camera.position.y - h;
+  if (delta_h <= 500.0f) {
+    delta_h = 0;
+  }
+
+  mat4 ProjectionMatrix = glm::perspective(glm::radians(FIELD_OF_VIEW), 
+    4.0f / 3.0f, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
+
   // TODO: don't create buffers for clipmaps that won't be used.
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
     if (i < last_visible_index) break;
 
-    glUniform1i(GetUniformId(program_id_, "draw_shadows"), 
-      (i == last_visible_index) ? 1 : 0);
+    // Uncomment to only draw shadows in the last clipmap.
+    // glUniform1i(GetUniformId(program_id_, "draw_shadows"), 
+    //   (i == last_visible_index) ? 1 : 0);
+
+    glUniform1i(GetUniformId(program_id_, "draw_shadows"), 1);
 
     // TODO: check the shaders. Remove code if possible.
     const glm::ivec2& top_left = clipmaps_[i]->clipmap_top_left;
@@ -822,7 +840,7 @@ void Terrain::Draw(mat4 ProjectionMatrix, mat4 ViewMatrix, vec3 player_pos,
 
   glBindVertexArray(0);
 
-  DrawWater(ProjectionMatrix, ViewMatrix, player_pos);
+  DrawWater(camera, ViewMatrix, player_pos);
 }
 
 void Terrain::InvalidatePoint(ivec2 tile) {

@@ -1,4 +1,5 @@
 cmake_minimum_required (VERSION 3.0)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE "STATIC_LIBRARY")
 project (Fbx)
 set (CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
@@ -20,8 +21,8 @@ set(ALL_LIBS
 set(INCLUDE_DIRS
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37
-  /usr/local/Cellar/glew/2.1.0/include
-  /usr/local/Cellar/glfw/3.2.1/include
+  /usr/local/Cellar/glew/2.2.0/include
+  /usr/local/Cellar/glfw/3.3.2/include
   /usr/local/Cellar/glm/0.9.9.4/include
   /usr/local/Cellar/boost/1.70.0/include
   /usr/local/opt/freetype/include/freetype2
@@ -31,8 +32,8 @@ set(INCLUDE_DIRS
 )
 
 set(LINK_DIRS
-  /usr/local/Cellar/glew/2.1.0/lib
-  /usr/local/Cellar/glfw/3.2.1/lib
+  /usr/local/Cellar/glew/2.2.0/lib
+  /usr/local/Cellar/glfw/3.3.2/lib
   /usr/local/Cellar/glm/0.9.9.4/lib
   /usr/local/Cellar/boost/1.70.0/lib
   /usr/local/opt/freetype/lib
@@ -68,7 +69,7 @@ set(
   src/craft.cpp 
   src/dialog.cpp 
   src/npc.cpp 
-  # src/engine.cpp 
+  src/engine.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

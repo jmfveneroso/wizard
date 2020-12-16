@@ -924,52 +924,24 @@ void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
   vector<vec3> points_of_contact;
 
   shared_ptr<GameAsset> game_asset = c->obj1->GetAsset();
-  for (const Polygon& polygon : game_asset->collision_hull) {
-    Polygon p = (c->obj1->rotation_matrix * polygon) + c->obj1->position;
-    for (vec3 v : p.vertices) {
-      vector<Polygon> terrain_polygons;
-      GetTerrainPolygons(vec2(v.x, v.z), terrain_polygons);
+  for (vec3 v : game_asset->GetVertices()) {
+    v = (c->obj1->rotation_matrix * v) + c->obj1->position;
+    vector<Polygon> terrain_polygons;
+    GetTerrainPolygons(vec2(v.x, v.z), terrain_polygons);
 
-      vec3 normal = terrain_polygons[0].normals[0];
-      vec3 pivot = terrain_polygons[0].vertices[0];
+    vec3 normal = terrain_polygons[0].normals[0];
+    vec3 pivot = terrain_polygons[0].vertices[0];
 
-      float magnitude = -dot(v - pivot, normal);
-      if (magnitude > 0) {
-        c->collided = true;
-        points_of_contact.push_back(v + c->displacement_vector);
-        if (magnitude > max_magnitude) {
-          max_magnitude = magnitude;
-          c->displacement_vector = magnitude * normal;
-        }
-      }
+    float magnitude = -dot(v - pivot, normal);
+    if (magnitude < 0) continue;
+
+    c->collided = true;
+    points_of_contact.push_back(v);
+    if (magnitude > max_magnitude) {
+      max_magnitude = magnitude;
+      c->displacement_vector = magnitude * normal;
     }
   }
-
-  // vector<Polygon> polygons;
-  // GetTerrainPolygons(vec2(c->obj1->position.x, c->obj1->position.z), polygons);
-
-  // vec3 normal = polygons[0].normals[0];
-  // vec3 pivot = polygons[0].vertices[0];
-
-  // vector<vec3> points_of_contact;
-
-  // c->collided = false;
-  // float max_magnitude = 0;
-  // shared_ptr<GameAsset> game_asset = c->obj1->GetAsset();
-  // for (const Polygon& polygon : game_asset->collision_hull) {
-  //   Polygon p = (c->obj1->rotation_matrix * polygon) + c->obj1->position;
-  //   for (vec3 v : p.vertices) {
-  //     float magnitude = -dot(v - pivot, normal);
-  //     if (magnitude > 0) {
-  //       c->collided = true;
-  //       points_of_contact.push_back(v + c->displacement_vector);
-  //       if (magnitude > max_magnitude) {
-  //         max_magnitude = magnitude;
-  //         c->displacement_vector = magnitude * normal;
-  //       }
-  //     }
-  //   }
-  // }
 
   c->point_of_contact = vec3(0);
   for (const auto& p : points_of_contact) {
@@ -1010,6 +982,7 @@ void CollisionResolver::TestCollision(ColPtr c) {
     case CP_QH:
       TestCollisionQH(static_pointer_cast<CollisionQH>(c)); break;
     case CP_HT:
+      // TODO: perform many until converge.
       TestCollisionHT(static_pointer_cast<CollisionHT>(c)); break;
     default: break;
   }
@@ -1104,14 +1077,14 @@ void CollisionResolver::ResolveCollisions() {
             obj2->GetAsset()->physics_behavior != PHYSICS_FIXED) {
             vec3 r = c->point_of_contact - c->obj2->position;
             vec3 f = -c->displacement_vector;
-            vec3 torque = cross(r, f) * 0.1f;
-            if (length(torque) > 0.02f) {
-              torque = normalize(torque) * 0.02f;
+            vec3 torque = cross(r, f);
+            if (length(torque) > 5.0f) {
+              torque = normalize(torque) * 5.0f;
             } 
 
             obj2->speed += -c->displacement_vector;
             obj2->torque += torque;
-          }
+          } 
         }
         asset_catalog_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
           vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
@@ -1124,6 +1097,18 @@ void CollisionResolver::ResolveCollisions() {
       continue;
     }
 
+    if (c->collision_pair == CP_HT) {
+      vec3 r = c->point_of_contact - c->obj1->position;
+      vec3 f = c->displacement_vector;
+      vec3 torque = cross(r, f);
+
+      float max_torque = 5.0f;
+      if (length(torque) > max_torque) {
+        torque = normalize(torque) * max_torque;
+      } 
+      obj1->torque = torque;
+    }
+
     if (dot(normal, vec3(0, 1, 0)) > 0.85) obj1->can_jump = true;
     obj1->position += displacement_vector;
 
@@ -1133,21 +1118,11 @@ void CollisionResolver::ResolveCollisions() {
       obj1->speed += abs(k) * v;
     }
 
-    obj1->target_position = obj1->position;
-
     if (dot(normal, vec3(0, 1, 0)) > 0.6) {
       obj1->up = normal;
     }
 
-    if (c->collision_pair == CP_HT) {
-      vec3 r = c->point_of_contact - c->obj1->position;
-      vec3 f = c->displacement_vector;
-      vec3 torque = cross(r, f) * 0.1f;
-      if (length(torque) > 0.02f) {
-        torque = normalize(torque) * 0.02f;
-      } 
-      obj1->torque += torque;
-    }
+    obj1->target_position = obj1->position;
 
     asset_catalog_->UpdateObjectPosition(obj1);
 
@@ -1167,11 +1142,17 @@ void CollisionResolver::ResolveCollisions() {
     }
 
     vec3 v = obj->in_contact_with->position - obj->in_contact_with->prev_position;
-
-    cout << "Name 1: " << obj->name << endl;
-    cout << "Name 2: " << obj->in_contact_with->name << endl;
-    cout << "v: " << obj->in_contact_with->name << endl;
-
     obj->position += v;
+
+    float inertia = 1.0f / obj->in_contact_with->GetAsset()->mass;
+    mat4 rotation_matrix = rotate(
+      mat4(1.0),
+      length(obj->in_contact_with->torque) * inertia,
+      normalize(obj->in_contact_with->torque)
+    );
+
+    vec3 relative_position = obj->position - obj->in_contact_with->position;
+    obj->position = obj->in_contact_with->position + vec3(rotation_matrix * 
+      vec4(relative_position, 1.0f));
   }
 }

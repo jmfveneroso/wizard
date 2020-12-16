@@ -27,6 +27,9 @@ Renderer::Renderer() {
   glfwGetFramebufferSize(window_, &window_width_, &window_height_);
   glfwMakeContextCurrent(window_);
 
+  // window_width_ *= 2.65;
+  // window_height_ *= 2.65;
+
   // Needed for core profile.
   glewExperimental = true; 
   if (glewInit() != GLEW_OK) {
@@ -38,9 +41,10 @@ Renderer::Renderer() {
   glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   glfwPollEvents();
   glfwSetCursorPos(window_, 0, 0);
-
+ 
+  // TODO: comment this.
   projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
-    4.0f / 3.0f, NEAR_CLIPPING, FAR_CLIPPING);
+    4.0F / 3.0F, NEAR_CLIPPING, FAR_CLIPPING);
 
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LESS); 
@@ -57,250 +61,259 @@ void Renderer::Init() {
   terrain_ = make_shared<Terrain>(asset_catalog_->GetShader("terrain"), 
     asset_catalog_->GetShader("water"));
   terrain_->set_asset_catalog(asset_catalog_);
-  terrain_->set_shadow_texture(shadow_texture_);
+  terrain_->set_shadow_texture(shadow_textures_[0]);
 }
 
-void Renderer::InitShadowFramebuffer() {
- // The framebuffer, which regroups 0, 1, or more textures, and 0 or 1 depth buffer.
-  glGenFramebuffers(1, &shadow_framebuffer_);
-  glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffer_);
- 
-  // Depth texture. Slower than a depth buffer, but you can sample it later in your shader
-  glGenTextures(1, &shadow_texture_);
-  glBindTexture(GL_TEXTURE_2D, shadow_texture_);
-  glTexImage2D(GL_TEXTURE_2D, 0,GL_DEPTH_COMPONENT16, 1024, 1024, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
- 
-  glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_texture_, 0);
-  glDrawBuffer(GL_NONE); // No color buffer is drawn to.
- 
-  // Always check that our framebuffer is ok
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    throw runtime_error("Error creating shadow framebuffer");
-  }
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+void Renderer::GetFrustumPlanes(vec4 frustum_planes[6]) {
+  mat4 ModelMatrix = translate(mat4(1.0), camera_.position);
+  mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
+  mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
+  mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
+  ExtractFrustumPlanes(MVP, frustum_planes);
 }
 
-FBO Renderer::CreateFramebuffer(int width, int height) {
-  FBO fbo(width, height);
-
-  glGenTextures(1, &fbo.texture);
-  glBindTexture(GL_TEXTURE_2D, fbo.texture);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo.width, fbo.height, 0, GL_RGBA, 
-    GL_UNSIGNED_BYTE, 0);
-
-  // If we didn't need to sample the depth buffer.
-  // glGenRenderbuffers(1, &fbo.depth_rbo);
-  // glBindRenderbuffer(GL_RENDERBUFFER, fbo.depth_rbo);
-  // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_EXT, fbo.width, 
-  //   fbo.height);
-  // glBindRenderbuffer(GL_RENDERBUFFER, 0);
-  // glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
-  //   GL_DEPTH_COMPONENT, GL_FLOAT, 0);
-
-  glGenTextures(1, &fbo.depth_texture);
-  glBindTexture(GL_TEXTURE_2D, fbo.depth_texture);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
-    GL_DEPTH_COMPONENT, GL_FLOAT, 0);
-
-  glGenFramebuffers(1, &fbo.framebuffer);
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 
-    fbo.texture, 0);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 
-    fbo.depth_texture, 0);
-  // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
-  //   GL_RENDERBUFFER, fbo.depth_rbo);
-
-  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-    throw;
-  }
-
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-  // Framebuffer mesh. 
-  vector<vec3> vertices {
-    { -1, -1, 0.0 }, { -1,  1, 0.0 }, {  1, -1, 0.0 }, {  1, -1, 0.0 }, 
-    { -1,  1, 0.0 }, {  1,  1, 0.0 }
-  };
-
-  vector<vec2> uvs = {
-    { 0, 0 }, { 0, 1 }, { 1, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }
-  };
-
-  vector<unsigned int> indices { 0, 1, 2, 3, 4, 5 };
-
-  GLuint vertex_buffer, uv_buffer, element_buffer;
-  glGenBuffers(1, &vertex_buffer);
-  glGenBuffers(1, &uv_buffer);
-  glGenBuffers(1, &element_buffer);
-  glGenVertexArrays(1, &fbo.vao);
-
-  glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
-  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
-    &vertices[0], GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ARRAY_BUFFER, uv_buffer);
-  glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
-    GL_STATIC_DRAW);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer); 
-  glBufferData(
-    GL_ELEMENT_ARRAY_BUFFER, 
-    indices.size() * sizeof(unsigned int), 
-    &indices[0], 
-    GL_STATIC_DRAW
-  );
-
-  glBindVertexArray(fbo.vao);
-
-  BindBuffer(vertex_buffer, 0, 3);
-  BindBuffer(uv_buffer, 1, 2);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer);
-  glBindVertexArray(0);
-
-  for (int slot = 0; slot < 2; slot++) {
-    glDisableVertexAttribArray(slot);
-  }
-  return fbo;
-}
-
-void Renderer::DrawFBO(const FBO& fbo, bool blur, FBO* target_fbo) {
-  glDisable(GL_DEPTH_TEST);
-  glDisable(GL_CULL_FACE);
-  GLuint program_id = asset_catalog_->GetShader("screen");
-  glBindVertexArray(fbo.vao);
-
-  glUseProgram(program_id);
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, fbo.depth_texture);
-  glUniform1i(GetUniformId(program_id, "depth_sampler"), 0);
-
-  glActiveTexture(GL_TEXTURE1);
-  glBindTexture(GL_TEXTURE_2D, fbo.texture);
-  glUniform1i(GetUniformId(program_id, "texture_sampler"), 1);
-
-  glUniform1f(GetUniformId(program_id, "blur"), (blur) ? 1.0 : 0.0);
-  if (target_fbo) {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glBindFramebuffer(GL_FRAMEBUFFER, target_fbo->framebuffer);
-    glViewport(0, 0, fbo.width, fbo.height);
-  } else {
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, fbo.width, fbo.height);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-  }
-  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*) 0);
-  glEnable(GL_CULL_FACE);
-  glEnable(GL_DEPTH_TEST);
-  glDisable(GL_BLEND);
-  glBindVertexArray(0);
-}
-
-void Renderer::UpdateAnimationFrames() {
-  unordered_map<string, shared_ptr<GameObject>>& objs = 
-    asset_catalog_->GetObjects();
-  for (auto& [name, obj] : objs) {
-    if (obj->type != GAME_OBJ_DEFAULT) {
-      continue;
-    }
-
-    Mesh& mesh = obj->GetAsset()->lod_meshes[0];
-    const Animation& animation = mesh.animations[obj->active_animation];
-    obj->frame++;
-    if (obj->frame >= animation.keyframes.size()) {
-      obj->frame = 0;
-    }
-  }
-}
-
-void Renderer::DrawScreenEffects() {
-  const int kWindowWidth = 1280;
-  const int kWindowHeight = 800;
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
-  float taking_hit = configs->taking_hit;
-  if (taking_hit > 0.0) {
-    draw_2d_->DrawImage("hit-effect", 0, kWindowHeight, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
-  }
-
-  draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
-  draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
-
-  shared_ptr<Player> player = asset_catalog_->GetPlayer();
-  int hp_bar_width = (player->life / 100.0f) * 200;
-  hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
-  draw_2d_->DrawRectangle(20, 50, hp_bar_width, 20, vec3(0.3, 0.8, 0.3));
-
-  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells), 250, 22, vec3(1, 0.69, 0.23));
-  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells_2), 300, 22, vec3(1, 0.69, 0.23));
-
-  if (configs->edit_terrain != "none") {
-    draw_2d_->DrawText("Brush size:", 350, 22, vec3(1, 0.3, 0.3));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->brush_size), 400, 22, vec3(1, 0.3, 0.3));
-
-    draw_2d_->DrawText("Selected tile:", 450, 22, vec3(1, 0.3, 0.3));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->selected_tile), 500, 22, vec3(1, 0.3, 0.3));
-
-    draw_2d_->DrawText("Raise Factor:", 550, 22, vec3(1, 0.3, 0.3));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 600, 22, vec3(1, 0.3, 0.3));
-  }
-}
-
-void Renderer::DrawShadows() {
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
-  if (dot(vec3(0, 1, 0), normalize(configs->sun_position)) < 0.0f) {
+void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
+  shared_ptr<OctreeNode> octree_node,
+  vector<shared_ptr<GameObject>>& objects) {
+  if (!octree_node) {
     return;
   }
 
-  glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffer_);
-  glViewport(0, 0, 1024, 1024);
+  AABB aabb;
+  aabb.point = octree_node->center - octree_node->half_dimensions;
+  aabb.dimensions = octree_node->half_dimensions * 2.0f;
 
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LESS); 
-  // glEnable(GL_CULL_FACE);
+  // TODO: find better name for this function.
+  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
+    return;
+  }
 
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  for (int i = 0; i < 8; i++) {
+    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
+  }
 
-  shared_ptr<Sector> sector = 
-    asset_catalog_->GetSector(camera_.position);
-  drawing_shadow_ = true;
-  DrawSector(sector->stabbing_tree);
-  drawing_shadow_ = false;
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  for (auto& [id, obj] : octree_node->objects) {
+    switch (obj->type) {
+      case GAME_OBJ_DEFAULT:
+        break;
+      case GAME_OBJ_MISSILE: {
+        if (obj->life > 0.0f) {
+          break;
+        } else {
+          continue;
+        }
+      }
+      default:
+        continue;
+    }
+
+    if (obj->status != STATUS_DEAD) {
+      objects.push_back(obj);
+    }
+  }
+
+  for (auto& [id, obj] : octree_node->moving_objs) {
+    switch (obj->type) {
+      case GAME_OBJ_DEFAULT:
+        break;
+      case GAME_OBJ_MISSILE: {
+        if (obj->life > 0.0f) {
+          break;
+        } else {
+          continue;
+        }
+      }
+      default:
+        continue;
+    }
+
+    if (obj->status != STATUS_DEAD) {
+      objects.push_back(obj);
+    }
+  }
 }
 
-void Renderer::DrawHand() {
-  shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    camera_.rotation.y + 4.71f,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    camera_.rotation.x,
-    vec3(0.0f, 0.0f, 1.0f)
-  );
-  obj->rotation_matrix = rotation_matrix;
-  obj->position = camera_.position + camera_.direction * -5.0f;
-  obj->position += vec3(0, -0.5, 0);
+vector<shared_ptr<GameObject>> 
+Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
+  vector<shared_ptr<GameObject>> objs;
+  GetPotentiallyVisibleObjects(camera_.position, sector->octree_node, objs);
 
-  DrawObject(obj);
+  // Sort from closest to farthest.
+  for (auto& obj : objs) {
+    obj->distance = length(camera_.position - obj->position);
+  }
+  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
+    return lhs->distance < rhs->distance;
+  });
+  return objs;
 }
 
-// TODO: this should be engine run.
+void Renderer::DrawObjects(shared_ptr<Sector> sector) {
+  // TODO: cull faces.
+  glDisable(GL_CULL_FACE);
+  vector<shared_ptr<GameObject>> objs =
+    GetPotentiallyVisibleObjectsFromSector(sector);
+
+  vector<shared_ptr<GameObject>> transparent_objs;
+
+  // Occlusion culling
+  // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
+  vector<vector<Polygon>> occluder_convex_hulls;
+  for (auto& obj : objs) {
+    if (CullObject(obj, occluder_convex_hulls)) {
+      continue;
+    }
+
+    if (obj->GetAsset()->shader == asset_catalog_->GetShader("transparent_object")) {
+      transparent_objs.push_back(obj);
+    }
+
+    DrawObject(obj);
+   
+    // Object has children.
+    if (!obj->children.empty()) {
+      for (auto& c : obj->children) {
+        // TODO: uncomment to show bones.
+        // c->rotation_matrix = obj->rotation_matrix;
+        // DrawObject(c);
+      }
+    }
+
+    if (obj->GetAsset()->occluder.empty()) continue;
+
+    // Add occlusion hull.
+    vector<Polygon> polygons = obj->GetAsset()->occluder;
+    for (auto& poly : polygons) {
+      for (auto& v : poly.vertices) {
+        v += obj->position;
+      }
+    }
+
+    ConvexHull convex_hull = CreateConvexHullFromOccluder(polygons, 
+      camera_.position);
+    if (!convex_hull.empty()) {
+      occluder_convex_hulls.push_back(convex_hull);
+    }
+  }
+
+  for (int i = transparent_objs.size() - 1; i >= 0; i--) {
+    DrawObject(transparent_objs[i]);
+  }
+  glEnable(GL_CULL_FACE);
+}
+
+void Renderer::DrawCaves(
+  shared_ptr<StabbingTreeNode> stabbing_tree_node) {
+  shared_ptr<Sector> s = stabbing_tree_node->sector;
+
+  for (auto& node : stabbing_tree_node->children) {
+    if (s->portals.find(node->sector->id) == s->portals.end()) {
+      throw runtime_error("Sector should have portal.");
+    }
+
+    // TODO: cull portal.
+    shared_ptr<Portal> p = s->portals[node->sector->id];
+    if (!p->cave) continue;
+
+    DrawSector(node);
+
+    // TODO: when we have multiple cave entrances. Optimize by first drawing all
+    // cave interiors and only then running DrawParticles. And then drawing the
+    // portals. This is OK, the drawing algorithm works in two passes. First,
+    // the caves then the outside world.
+    DrawParticles();
+
+    // Only write to depth buffer.
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    DrawObject(p);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  }
+}
+
+void Renderer::DrawSector(
+  shared_ptr<StabbingTreeNode> stabbing_tree_node, 
+  bool clip_to_portal,
+  shared_ptr<Portal> parent_portal) {
+  shared_ptr<Sector> s = stabbing_tree_node->sector;
+
+  // Outdoors.
+  if (s->name == "outside") {
+    DrawCaves(stabbing_tree_node);
+    terrain_->UpdateClipmaps(camera_.position);
+
+    if (clip_to_portal) {
+      // Polygon& poly = parent_portal->polygons[0];
+      Polygon& poly = parent_portal->GetAsset()->lod_meshes[0].polygons[0];
+      vec3 clipping_point = poly.vertices[0] + parent_portal->position;
+      vec3 clipping_normal = poly.normals[0];
+      terrain_->SetClippingPlane(clipping_point, clipping_normal);
+    }
+
+    mat4 shadow_matrix = GetShadowMatrix(true);
+    if (!drawing_shadow_) {
+      terrain_->Draw(camera_, view_matrix_, camera_.position, 
+        shadow_matrix, false, clip_to_portal);
+    }
+
+    ObjPtr player = asset_catalog_->GetPlayer();
+    ObjPtr skydome = asset_catalog_->GetSkydome();
+    if (!skydome) {
+      throw runtime_error("Skydome does not exit.");
+    }
+    skydome->position = player->position;
+    skydome->position.y = -1000;
+    DrawObject(skydome);
+  }
+
+  DrawObjects(s);
+
+  // Portal culling 
+  // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
+  for (auto& node : stabbing_tree_node->children) {
+    if (s->portals.find(node->sector->id) == s->portals.end()) {
+      throw runtime_error("Sector should have portal.");
+    }
+    shared_ptr<Portal> p = s->portals[node->sector->id];
+    if (p->cave) continue;
+
+    BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
+    bool in_frustum = false; 
+    for (auto& poly : p->GetAsset()->lod_meshes[0].polygons) {
+      vec3 portal_point = p->position + poly.vertices[0];
+      vec3 normal = poly.normals[0];
+
+      if (TestSphereTriangleIntersection(sphere - p->position, poly.vertices)) {
+        in_frustum = true;
+        break;
+      }
+
+      if (dot(normalize(camera_.position - portal_point), normal) < 0.000001f) {
+        continue;
+      }
+
+      if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
+        camera_.position - p->position)) {
+        in_frustum = true;
+        break;
+      }
+    }
+
+    // TODO: check other types of culling.
+    if (in_frustum) {
+      if (node->sector->name == "outside") {
+        DrawSector(node, true, p);
+      } else {
+        DrawSector(node);
+      }
+    }
+  }
+}
+
+shared_ptr<ObjPtr> Renderer::GetVisibleObjects(vec4 frustum_planes[6]) {
+  return {};
+}
+
+// TODO: this should go to the engine run, except for the drawing code.
 void Renderer::Draw(const function<bool()>& process_frame, 
   const function<void()>& after_frame) {
   GLint major_version, minor_version;
@@ -316,42 +329,43 @@ void Renderer::Draw(const function<bool()>& process_frame,
   double last_time = glfwGetTime();
   int frames = 0;
   do {
-    double current_time = glfwGetTime();
-    frames++;
-    delta_time_ = current_time - last_time;
+    // TODO: Should go to engine.
+    { 
+      double current_time = glfwGetTime();
+      frames++;
+      delta_time_ = current_time - last_time;
 
-    // If last printf() was more than 1 second ago.
-    if (delta_time_ >= 1.0) { 
-      cout << 1000.0 / double(frames) << " ms/frame" << endl;
-      frames = 0;
-      last_time += 1.0;
+      // If last printf() was more than 1 second ago.
+      if (delta_time_ >= 1.0) { 
+        cout << 1000.0 / double(frames) << " ms/frame" << endl;
+        frames = 0;
+        last_time += 1.0;
+      }
+
+      vec3 normal;
+      float h = asset_catalog_->GetTerrainHeight(vec2(camera_.position.x, camera_.position.z), &normal);
+      float delta_h = camera_.position.y - h;
+      if (delta_h < 500.0f) {
+        delta_h = 0.0f;
+      }
+      projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
+        4.0f / 3.0f, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
+
+      UpdateAnimationFrames();
+      bool blur = process_frame();
     }
-
-    UpdateAnimationFrames();
-    bool blur = process_frame();
 
    // View matrix:
    // https://www.3dgep.com/understanding-the-view-matrix/#:~:text=The%20view%20matrix%20is%20used,things%20are%20the%20same%20thing!&text=The%20View%20Matrix%3A%20This%20matrix,of%20the%20camera's%20transformation%20matrix.
     view_matrix_ = glm::lookAt(
       camera_.position,                     // Camera is here
       camera_.position + camera_.direction, // and looks here : at the same position, plus "direction"
-      camera_.up                            // Head is up (set to 0,-1,0 to look upside-down)
+      camera_.up                            // Head is up (set to vec3(0, -1, 0) to look upside-down)
     );
-
-    mat4 ModelMatrix = translate(mat4(1.0), camera_.position);
-    mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
-    mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
-    mat4 MVP = projection_matrix_ * view_matrix_ * ModelMatrix;
-    ExtractFrustumPlanes(MVP, frustum_planes_);
 
     DrawShadows();
 
-    if (draw_with_fbo_) {
-      glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
-      glViewport(0, 0, fbos_["screen"].width, fbos_["screen"].height);
-    } else {
-      glViewport(0, 0, window_width_, window_height_);
-    }
+    glViewport(0, 0, window_width_, window_height_);
 
     glClearColor(0.73, 0.81, 0.92, 1.0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -362,19 +376,19 @@ void Renderer::Draw(const function<bool()>& process_frame,
     lakes_.clear();
     shared_ptr<Sector> sector = 
       asset_catalog_->GetSector(camera_.position);
+
+    // TODO: change to:
+    // - shared_ptr<ObjPtr> objects = GetVisibleObjects(Frustum frustum).
+    // - DrawObjects(shared_ptr<ObjPtr> objects).
+    GetFrustumPlanes(frustum_planes_);
+    shared_ptr<ObjPtr> objects = GetVisibleObjects(frustum_planes_);
+
     DrawSector(sector->stabbing_tree);
+
     DrawParticles();
     DrawLakes();
 
     glClear(GL_DEPTH_BUFFER_BIT);
-
-    if (draw_with_fbo_) {
-      glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
-    }
-
-    if (draw_with_fbo_) {
-      DrawFBO(fbos_["screen"], blur);
-    }
 
     DrawScreenEffects();
 
@@ -387,146 +401,6 @@ void Renderer::Draw(const function<bool()>& process_frame,
   // Cleanup VBO and shader.
   asset_catalog_->Cleanup();
   glfwTerminate();
-}
-
-
-
-
-// ==========================
-// TODO: improve these functions
-// ==========================
-
-ConvexHull Renderer::CreateConvexHullFromOccluder(
-  const vector<Polygon>& polygons, const vec3& player_pos) {
-  ConvexHull convex_hull;
-
-  unordered_map<string, Edge> edges;
-
-  // Find occlusion hull edges.
-  for (const Polygon& p : polygons) {
-    const vec3& plane_point = p.vertices[0];
-    const vec3& normal = p.normals[0];
-    if (IsBehindPlane(player_pos, plane_point, normal)) {
-      continue;
-    }
-
-    convex_hull.push_back(p);
-
-    // If the polygon faces viewer, do the following for all its edges: 
-    // If the edge is already in the edge list, remove the edge from the 
-    // list. Otherwise, add the edge into the list.
-    const vector<vec3>& vertices = p.vertices;
-    const vector<vec3>& normals = p.normals;
-    const vector<unsigned int>& indices = p.indices;
-
-    // TODO: contemplate not triangular polygons. Maybe?
-    vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
-    for (auto& [a, b] : comparisons) {
-      int i = (p.indices[a] < p.indices[b]) ? a : b;
-      int j = (p.indices[a] < p.indices[b]) ? b : a;
-      
-      string key = boost::lexical_cast<string>(indices[i]) + "-" + 
-        boost::lexical_cast<string>(indices[j]);
-      if (edges.find(key) == edges.end()) {
-        edges[key] = Edge(vertices[i], vertices[j], indices[i], indices[j], normals[i], normals[j]);
-      } else {
-        edges.erase(key);
-      }
-    }
-  }
-
-  if (edges.empty()) {
-    return convex_hull;
-  }
-
-  for (auto& [key, e] : edges) {
-    Polygon plane = CreatePolygonFrom3Points(player_pos, e.a, e.b, e.a_normal);
-    convex_hull.push_back(plane);
-  }
-  return convex_hull;
-}
-
-bool Renderer::CullObject(shared_ptr<GameObject> obj, 
-  const vector<vector<Polygon>>& occluder_convex_hulls) {
-  if (obj->name == "hand-001") return true;
-  if (obj->name == "skydome") return true;
-  // TODO: draw hand without object.
-
-  if (!obj->draw) {
-    return true;
-  }
-
-  // Frustum cull.
-  BoundingSphere bounding_sphere = obj->GetBoundingSphere();
-  // bounding_sphere.center += obj->position;
-  if (!CollideSphereFrustum(bounding_sphere, frustum_planes_, camera_.position)) {
-    return true;
-  }
-
-  // if (!CollideAABBFrustum(obj->aabb, frustum_planes_, camera_.position)) {
-  //   return true;
-  // }
-
-  // TODO: fix IsInConvexHull
-  // Occlusion cull.
-  // for (auto& ch : occluder_convex_hulls) {
-  //   if (IsInConvexHull(bounding_sphere, ch)) {
-  //   // if (IsInConvexHull(obj->aabb, ch)) {
-  //     return true;
-  //   }
-  // }
-  return false;
-}
-
-mat4 Renderer::GetShadowMatrix(bool bias) {
-  mat4 projection_matrix = ortho<float>(-100, 100, -100, 100, -10, 400);
-
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
-  mat4 view_matrix = lookAt(
-    camera_.position + normalize(configs->sun_position) * 300.0f,
-    camera_.position,
-    // camera_.up
-    vec3(0, 1, 0)
-  );
-
-  const mat4 bias_matrix (
-    0.5, 0.0, 0.0, 0.0, 
-    0.0, 0.5, 0.0, 0.0,
-    0.0, 0.0, 0.5, 0.0,
-    0.5, 0.5, 0.5, 1.0
-  );
-
-  if (bias) {
-    return bias_matrix * projection_matrix * view_matrix;
-  } else {
-    return projection_matrix * view_matrix;
-  }
-}
-
-void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj) {
-  for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
-    int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
-    for (; lod >= 0; lod--) {
-      if (asset->lod_meshes[lod].vao_ > 0) {
-        break;
-      }
-    }
-
-    Mesh& mesh = asset->lod_meshes[lod];
-
-    GLuint program_id = asset_catalog_->GetShader("shadow");
-    glUseProgram(program_id);
-    glBindVertexArray(mesh.vao_);
-
-    // Check if animated object.
-    mat4 projection_view_matrix = GetShadowMatrix();
-    mat4 model_matrix = translate(mat4(1.0), obj->position);
-    model_matrix = model_matrix * obj->rotation_matrix;
-    mat4 MVP = projection_view_matrix * model_matrix;
-
-    glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
-  }
 }
 
 void Renderer::DrawObject(shared_ptr<GameObject> obj, bool draw_lakes) {
@@ -740,240 +614,296 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, bool draw_lakes) {
   glBindVertexArray(0);
 }
 
-void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
-  if (!octree_node) {
-    return;
-  }
-
-  AABB aabb;
-  aabb.point = octree_node->center - octree_node->half_dimensions;
-  aabb.dimensions = octree_node->half_dimensions * 2.0f;
-
-  // TODO: find better name for this function.
-  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
-    return;
-  }
-
-  for (int i = 0; i < 8; i++) {
-    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
-  }
-
-  for (auto& [id, obj] : octree_node->objects) {
-    switch (obj->type) {
-      case GAME_OBJ_DEFAULT:
-        break;
-      case GAME_OBJ_MISSILE: {
-        if (obj->life > 0.0f) {
-          break;
-        } else {
-          continue;
-        }
-      }
-      default:
-        continue;
-    }
-
-    if (obj->status != STATUS_DEAD) {
-      objects.push_back(obj);
-    }
-  }
-
-  for (auto& [id, obj] : octree_node->moving_objs) {
-    switch (obj->type) {
-      case GAME_OBJ_DEFAULT:
-        break;
-      case GAME_OBJ_MISSILE: {
-        if (obj->life > 0.0f) {
-          break;
-        } else {
-          continue;
-        }
-      }
-      default:
-        continue;
-    }
-
-    if (obj->status != STATUS_DEAD) {
-      objects.push_back(obj);
-    }
+void Renderer::DrawLakes() {
+  for (auto lake : lakes_) {
+    DrawObject(lake, true /*draw_lakes*/);
   }
 }
 
-vector<shared_ptr<GameObject>> 
-Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
-  vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyVisibleObjects(camera_.position, sector->octree_node, objs);
+bool Renderer::CullObject(shared_ptr<GameObject> obj, 
+  const vector<vector<Polygon>>& occluder_convex_hulls) {
+  if (obj->name == "hand-001") return true;
+  if (obj->name == "skydome") return true;
+  // TODO: draw hand without object.
 
-  // Sort from closest to farthest.
-  for (auto& obj : objs) {
-    obj->distance = length(camera_.position - obj->position);
+  if (!obj->draw) {
+    return true;
   }
-  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
-    return lhs->distance < rhs->distance;
-  });
-  return objs;
+
+  // Frustum cull.
+  BoundingSphere bounding_sphere = obj->GetBoundingSphere();
+  if (!CollideSphereFrustum(bounding_sphere, frustum_planes_, camera_.position)) {
+    return true;
+  }
+
+  // TODO: fix IsInConvexHull
+  // Occlusion cull.
+  // for (auto& ch : occluder_convex_hulls) {
+  //   if (IsInConvexHull(bounding_sphere, ch)) {
+  //   // if (IsInConvexHull(obj->aabb, ch)) {
+  //     return true;
+  //   }
+  // }
+  return false;
 }
 
-void Renderer::DrawObjects(shared_ptr<Sector> sector) {
-  // TODO: cull faces.
-  glDisable(GL_CULL_FACE);
-  vector<shared_ptr<GameObject>> objs =
-    GetPotentiallyVisibleObjectsFromSector(sector);
 
-  vector<shared_ptr<GameObject>> transparent_objs;
+// ==========================
+//  Shadows
+// ==========================
+void Renderer::InitShadowFramebuffer() {
+  // TODO: initialize all cascades.
 
-  // Occlusion culling
-  // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
-  vector<vector<Polygon>> occluder_convex_hulls;
-  for (auto& obj : objs) {
-    if (CullObject(obj, occluder_convex_hulls)) {
+  // The framebuffer, which regroups 0, 1, or more textures, and 0 or 1 depth buffer.
+  glGenFramebuffers(1, &shadow_framebuffers_[0]);
+  glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffers_[0]);
+ 
+  // Depth texture. Slower than a depth buffer, but you can sample it later in your shader
+  glGenTextures(1, &shadow_textures_[0]);
+  glBindTexture(GL_TEXTURE_2D, shadow_textures_[0]);
+  glTexImage2D(GL_TEXTURE_2D, 0,GL_DEPTH_COMPONENT16, 2048, 2048, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+ 
+  glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_textures_[0], 0);
+  glDrawBuffer(GL_NONE); // No color buffer is drawn to.
+ 
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    throw runtime_error("Error creating shadow framebuffer");
+  }
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+mat4 Renderer::GetShadowMatrix(bool bias) {
+  // TODO: get shadow matrix for cascade.
+
+  // For each:
+  //   1 - Calculate Bounding Sphere
+  //   2 - Calculate Projection Matrix
+  //   3 - Calculate View Matrix
+  //   4 - Check if update
+  //   5 - Get visible objects in frustum
+  //   6 - Draw objects
+
+
+  float size = 100;
+  mat4 projection_matrix = ortho<float>(-size, size, -size, size, 0, 1000);
+
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  // vec3 pos = vec3(11508, 33, 7065);
+  vec3 pos = camera_.position + camera_.direction * 100.0f;
+
+  vec3 sun_dir = normalize(configs->sun_position);
+  mat4 view_matrix = lookAt(
+    pos + sun_dir * 500.0f,
+    pos,
+    // camera_.up
+    vec3(0, 1, 0)
+  );
+
+  const mat4 bias_matrix (
+    0.5, 0.0, 0.0, 0.0, 
+    0.0, 0.5, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.5, 0.5, 0.5, 1.0
+  );
+
+  if (bias) {
+    return bias_matrix * projection_matrix * view_matrix;
+  } else {
+    return projection_matrix * view_matrix;
+  }
+}
+
+void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj) {
+  for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
+    int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
+    for (; lod >= 0; lod--) {
+      if (asset->lod_meshes[lod].vao_ > 0) {
+        break;
+      }
+    }
+
+    Mesh& mesh = asset->lod_meshes[lod];
+
+    GLuint program_id = asset_catalog_->GetShader("shadow");
+    glUseProgram(program_id);
+    glBindVertexArray(mesh.vao_);
+
+    // Check if animated object.
+    mat4 projection_view_matrix = GetShadowMatrix();
+    mat4 model_matrix = translate(mat4(1.0), obj->position);
+    model_matrix = model_matrix * obj->rotation_matrix;
+    mat4 MVP = projection_view_matrix * model_matrix;
+
+    glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+  }
+}
+
+void Renderer::DrawShadows() {
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  if (dot(vec3(0, 1, 0), normalize(configs->sun_position)) < 0.0f) {
+    return;
+  }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffers_[0]);
+  glViewport(0, 0, 2048, 2048);
+
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS); 
+  // glEnable(GL_CULL_FACE);
+
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  shared_ptr<Sector> sector = 
+    asset_catalog_->GetSector(camera_.position);
+  drawing_shadow_ = true;
+
+  // TODO: get visible objects according to frustum and then draw.
+  DrawSector(sector->stabbing_tree);
+
+  drawing_shadow_ = false;
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+
+// TODO: should go to the engine loop.
+void Renderer::UpdateAnimationFrames() {
+  unordered_map<string, shared_ptr<GameObject>>& objs = 
+    asset_catalog_->GetObjects();
+  for (auto& [name, obj] : objs) {
+    if (obj->type != GAME_OBJ_DEFAULT) {
       continue;
     }
 
-    if (obj->GetAsset()->shader == asset_catalog_->GetShader("transparent_object")) {
-      transparent_objs.push_back(obj);
+    Mesh& mesh = obj->GetAsset()->lod_meshes[0];
+    const Animation& animation = mesh.animations[obj->active_animation];
+    obj->frame++;
+    if (obj->frame >= animation.keyframes.size()) {
+      obj->frame = 0;
     }
-
-    DrawObject(obj);
-   
-    // Object has children.
-    if (!obj->children.empty()) {
-      for (auto& c : obj->children) {
-        // TODO: uncomment to show bones.
-        // c->rotation_matrix = obj->rotation_matrix;
-        // DrawObject(c);
-      }
-    }
-
-    if (obj->GetAsset()->occluder.empty()) continue;
-
-    // Add occlusion hull.
-    vector<Polygon> polygons = obj->GetAsset()->occluder;
-    for (auto& poly : polygons) {
-      for (auto& v : poly.vertices) {
-        v += obj->position;
-      }
-    }
-
-    ConvexHull convex_hull = CreateConvexHullFromOccluder(polygons, 
-      camera_.position);
-    if (!convex_hull.empty()) {
-      occluder_convex_hulls.push_back(convex_hull);
-    }
-  }
-
-  for (int i = transparent_objs.size() - 1; i >= 0; i--) {
-    DrawObject(transparent_objs[i]);
-  }
-  glEnable(GL_CULL_FACE);
-}
-
-void Renderer::DrawCaves(
-  shared_ptr<StabbingTreeNode> stabbing_tree_node) {
-  shared_ptr<Sector> s = stabbing_tree_node->sector;
-
-  for (auto& node : stabbing_tree_node->children) {
-    if (s->portals.find(node->sector->id) == s->portals.end()) {
-      throw runtime_error("Sector should have portal.");
-    }
-
-    // TODO: cull portal.
-    shared_ptr<Portal> p = s->portals[node->sector->id];
-    if (!p->cave) continue;
-
-    DrawSector(node);
-
-    // TODO: when we have multiple cave entrances. Optimize by first drawing all
-    // cave interiors and only then running DrawParticles. And then drawing the
-    // portals. This is OK, the drawing algorithm works in two passes. First,
-    // the caves then the outside world.
-    DrawParticles();
-
-    // Only write to depth buffer.
-    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-    DrawObject(p);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   }
 }
 
-void Renderer::DrawSector(
-  shared_ptr<StabbingTreeNode> stabbing_tree_node, 
-  bool clip_to_portal,
-  shared_ptr<Portal> parent_portal) {
-  shared_ptr<Sector> s = stabbing_tree_node->sector;
 
-  // Outdoors.
-  if (s->name == "outside") {
-    DrawCaves(stabbing_tree_node);
-    terrain_->UpdateClipmaps(camera_.position);
+// ==================
+// Static draw
+// ==================
 
-    if (clip_to_portal) {
-      // Polygon& poly = parent_portal->polygons[0];
-      Polygon& poly = parent_portal->GetAsset()->lod_meshes[0].polygons[0];
-      vec3 clipping_point = poly.vertices[0] + parent_portal->position;
-      vec3 clipping_normal = poly.normals[0];
-      terrain_->SetClippingPlane(clipping_point, clipping_normal);
-    }
-
-    mat4 shadow_matrix = GetShadowMatrix(true);
-    terrain_->Draw(projection_matrix_, view_matrix_, camera_.position, 
-      shadow_matrix, drawing_shadow_, clip_to_portal);
-
-    ObjPtr player = asset_catalog_->GetPlayer();
-    ObjPtr skydome = asset_catalog_->GetSkydome();
-    if (!skydome) {
-      throw runtime_error("Skydome does not exit.");
-    }
-    skydome->position = player->position;
-    skydome->position.y = -1000;
-    DrawObject(skydome);
+void Renderer::DrawScreenEffects() {
+  const int kWindowWidth = 1280;
+  const int kWindowHeight = 800;
+  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  float taking_hit = configs->taking_hit;
+  if (taking_hit > 0.0) {
+    draw_2d_->DrawImage("hit-effect", 0, kWindowHeight, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
   }
 
-  DrawObjects(s);
+  draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
+  draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
 
-  // Portal culling 
-  // http://di.ubi.pt/~agomes/tjv/teoricas/07-culling.pdf
-  for (auto& node : stabbing_tree_node->children) {
-    if (s->portals.find(node->sector->id) == s->portals.end()) {
-      throw runtime_error("Sector should have portal.");
+  shared_ptr<Player> player = asset_catalog_->GetPlayer();
+  int hp_bar_width = (player->life / 100.0f) * 200;
+  hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
+  draw_2d_->DrawRectangle(20, 50, hp_bar_width, 20, vec3(0.3, 0.8, 0.3));
+
+  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells), 250, 22, vec3(1, 0.69, 0.23));
+  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells_2), 300, 22, vec3(1, 0.69, 0.23));
+
+  if (configs->edit_terrain != "none") {
+    draw_2d_->DrawText("Brush size:", 350, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->brush_size), 400, 22, vec3(1, 0.3, 0.3));
+
+    draw_2d_->DrawText("Selected tile:", 450, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->selected_tile), 500, 22, vec3(1, 0.3, 0.3));
+
+    draw_2d_->DrawText("Raise Factor:", 550, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 600, 22, vec3(1, 0.3, 0.3));
+  }
+}
+
+void Renderer::DrawHand() {
+  shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera_.rotation.y + 4.71f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera_.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  obj->position = camera_.position + camera_.direction * -5.0f;
+  obj->position += vec3(0, -0.5, 0);
+
+  DrawObject(obj);
+}
+
+
+
+// ==========================
+// TODO: improve these functions
+// ==========================
+
+ConvexHull Renderer::CreateConvexHullFromOccluder(
+  const vector<Polygon>& polygons, const vec3& player_pos) {
+  ConvexHull convex_hull;
+
+  unordered_map<string, Edge> edges;
+
+  // Find occlusion hull edges.
+  for (const Polygon& p : polygons) {
+    const vec3& plane_point = p.vertices[0];
+    const vec3& normal = p.normals[0];
+    if (IsBehindPlane(player_pos, plane_point, normal)) {
+      continue;
     }
-    shared_ptr<Portal> p = s->portals[node->sector->id];
-    if (p->cave) continue;
 
-    BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
-    bool in_frustum = false; 
-    for (auto& poly : p->GetAsset()->lod_meshes[0].polygons) {
-      vec3 portal_point = p->position + poly.vertices[0];
-      vec3 normal = poly.normals[0];
+    convex_hull.push_back(p);
 
-      if (TestSphereTriangleIntersection(sphere - p->position, poly.vertices)) {
-        in_frustum = true;
-        break;
-      }
+    // If the polygon faces viewer, do the following for all its edges: 
+    // If the edge is already in the edge list, remove the edge from the 
+    // list. Otherwise, add the edge into the list.
+    const vector<vec3>& vertices = p.vertices;
+    const vector<vec3>& normals = p.normals;
+    const vector<unsigned int>& indices = p.indices;
 
-      if (dot(normalize(camera_.position - portal_point), normal) < 0.000001f) {
-        continue;
-      }
-
-      if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
-        camera_.position - p->position)) {
-        in_frustum = true;
-        break;
-      }
-    }
-
-    // TODO: check other types of culling.
-    if (in_frustum) {
-      if (node->sector->name == "outside") {
-        DrawSector(node, true, p);
+    // TODO: contemplate not triangular polygons. Maybe?
+    vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
+    for (auto& [a, b] : comparisons) {
+      int i = (p.indices[a] < p.indices[b]) ? a : b;
+      int j = (p.indices[a] < p.indices[b]) ? b : a;
+      
+      string key = boost::lexical_cast<string>(indices[i]) + "-" + 
+        boost::lexical_cast<string>(indices[j]);
+      if (edges.find(key) == edges.end()) {
+        edges[key] = Edge(vertices[i], vertices[j], indices[i], indices[j], normals[i], normals[j]);
       } else {
-        DrawSector(node);
+        edges.erase(key);
       }
     }
   }
+
+  if (edges.empty()) {
+    return convex_hull;
+  }
+
+  for (auto& [key, e] : edges) {
+    Polygon plane = CreatePolygonFrom3Points(player_pos, e.a, e.b, e.a_normal);
+    convex_hull.push_back(plane);
+  }
+  return convex_hull;
 }
+
+
+// ===================
+// Particles
+// ===================
 
 void Renderer::CreateParticleBuffers() {
   static const GLfloat vertex_buffer_data[] = {
@@ -1144,8 +1074,130 @@ void Renderer::DrawParticles() {
   // glBindFramebuffer(GL_FRAMEBUFFER, fbos_["screen"].framebuffer);
 }
 
-void Renderer::DrawLakes() {
-  for (auto lake : lakes_) {
-    DrawObject(lake, true /*draw_lakes*/);
+
+// Probably no longer needed.
+FBO Renderer::CreateFramebuffer(int width, int height) {
+  FBO fbo(width, height);
+
+  glGenTextures(1, &fbo.texture);
+  glBindTexture(GL_TEXTURE_2D, fbo.texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo.width, fbo.height, 0, GL_RGBA, 
+    GL_UNSIGNED_BYTE, 0);
+
+  // If we didn't need to sample the depth buffer.
+  // glGenRenderbuffers(1, &fbo.depth_rbo);
+  // glBindRenderbuffer(GL_RENDERBUFFER, fbo.depth_rbo);
+  // glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8_EXT, fbo.width, 
+  //   fbo.height);
+  // glBindRenderbuffer(GL_RENDERBUFFER, 0);
+  // glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
+  //   GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+
+  glGenTextures(1, &fbo.depth_texture);
+  glBindTexture(GL_TEXTURE_2D, fbo.depth_texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, fbo.width, fbo.height, 0, 
+    GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+
+  glGenFramebuffers(1, &fbo.framebuffer);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo.framebuffer);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 
+    fbo.texture, 0);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, 
+    fbo.depth_texture, 0);
+  // glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, 
+  //   GL_RENDERBUFFER, fbo.depth_rbo);
+
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    throw;
   }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+  // Framebuffer mesh. 
+  vector<vec3> vertices {
+    { -1, -1, 0.0 }, { -1,  1, 0.0 }, {  1, -1, 0.0 }, {  1, -1, 0.0 }, 
+    { -1,  1, 0.0 }, {  1,  1, 0.0 }
+  };
+
+  vector<vec2> uvs = {
+    { 0, 0 }, { 0, 1 }, { 1, 0 }, { 1, 0 }, { 0, 1 }, { 1, 1 }
+  };
+
+  vector<unsigned int> indices { 0, 1, 2, 3, 4, 5 };
+
+  GLuint vertex_buffer, uv_buffer, element_buffer;
+  glGenBuffers(1, &vertex_buffer);
+  glGenBuffers(1, &uv_buffer);
+  glGenBuffers(1, &element_buffer);
+  glGenVertexArrays(1, &fbo.vao);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
+    &vertices[0], GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ARRAY_BUFFER, uv_buffer);
+  glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
+    GL_STATIC_DRAW);
+
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer); 
+  glBufferData(
+    GL_ELEMENT_ARRAY_BUFFER, 
+    indices.size() * sizeof(unsigned int), 
+    &indices[0], 
+    GL_STATIC_DRAW
+  );
+
+  glBindVertexArray(fbo.vao);
+
+  BindBuffer(vertex_buffer, 0, 3);
+  BindBuffer(uv_buffer, 1, 2);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer);
+  glBindVertexArray(0);
+
+  for (int slot = 0; slot < 2; slot++) {
+    glDisableVertexAttribArray(slot);
+  }
+  return fbo;
 }
+
+void Renderer::DrawFBO(const FBO& fbo, bool blur, FBO* target_fbo) {
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+  GLuint program_id = asset_catalog_->GetShader("screen");
+  glBindVertexArray(fbo.vao);
+
+  glUseProgram(program_id);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, fbo.depth_texture);
+  glUniform1i(GetUniformId(program_id, "depth_sampler"), 0);
+
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, fbo.texture);
+  glUniform1i(GetUniformId(program_id, "texture_sampler"), 1);
+
+  glUniform1f(GetUniformId(program_id, "blur"), (blur) ? 1.0 : 0.0);
+  if (target_fbo) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBindFramebuffer(GL_FRAMEBUFFER, target_fbo->framebuffer);
+    glViewport(0, 0, fbo.width, fbo.height);
+  } else {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, fbo.width, fbo.height);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  }
+  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*) 0);
+  glEnable(GL_CULL_FACE);
+  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+  glBindVertexArray(0);
+}
+
