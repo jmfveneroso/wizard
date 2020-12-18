@@ -1,6 +1,4 @@
 build
 src/*.swp
-assets
-assets_sketchy
-assets_backup
+resources
 *.swp

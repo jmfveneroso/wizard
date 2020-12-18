@@ -26,14 +26,14 @@ bool Dialog::ProcessDefaultInput(int key, int scancode, int action, int mods) {
     }
     case GLFW_KEY_ENTER: {
       if (cursor_ == 0) {
-        asset_catalog_->SetGameState(STATE_BUILD);
+        resources_->SetGameState(STATE_BUILD);
 
-        ObjPtr player = asset_catalog_->GetPlayer();
-        shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+        ObjPtr player = resources_->GetPlayer();
+        shared_ptr<Configs> configs = resources_->GetConfigs();
         configs->old_position = player->position;
         player->position = vec3(11361, 331, 7888);
 
-        configs->new_building = asset_catalog_->CreateGameObjFromAsset(
+        configs->new_building = resources_->CreateGameObjFromAsset(
           "windmill", vec3(0));
       }
       Disable();
@@ -44,9 +44,9 @@ bool Dialog::ProcessDefaultInput(int key, int scancode, int action, int mods) {
   }
 }
 
-Dialog::Dialog(shared_ptr<AssetCatalog> asset_catalog, 
+Dialog::Dialog(shared_ptr<Resources> asset_catalog, 
   shared_ptr<Draw2D> draw_2d)
-  : asset_catalog_(asset_catalog), draw_2d_(draw_2d) {
+  : resources_(asset_catalog), draw_2d_(draw_2d) {
 }
 
 void Dialog::SetDialogOptions(vector<string> dialog_options) {

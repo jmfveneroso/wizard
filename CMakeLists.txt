@@ -56,7 +56,7 @@ set(
   src/util.cpp 
   src/collision.cpp 
   src/fbx_loader.cpp 
-  src/asset.cpp 
+  src/resources.cpp 
   src/2d.cpp 
   src/text_editor.cpp 
   src/collision_resolver.cpp 

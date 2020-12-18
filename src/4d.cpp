@@ -1,7 +1,7 @@
 #include "4d.hpp"
 
-Project4D::Project4D(shared_ptr<AssetCatalog> asset_catalog) 
-  : asset_catalog_(asset_catalog) {
+Project4D::Project4D(shared_ptr<Resources> asset_catalog) 
+  : resources_(asset_catalog) {
 }
 
 void RotateAroundPlane(const mat4& m, vector<vec4>& vertices) {
@@ -139,7 +139,7 @@ void Project4D::BuildCube(int i, const vector<vec3>& v, const vec3& pos) {
     cubes_[i]->GetAsset()->lod_meshes[0].polygons = polygons;
   } else {
     Mesh m = CreateMesh(0, vertices, uvs, indices);
-    cubes_[i] = asset_catalog_->CreateGameObjFromMesh(m, "hypercube", 
+    cubes_[i] = resources_->CreateGameObjFromMesh(m, "hypercube", 
       pos, polygons);
     cubes_[i]->draw = false;
   }

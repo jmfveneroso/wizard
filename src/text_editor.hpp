@@ -1,28 +1,7 @@
 #ifndef _TEXT_EDITOR_HPP_
 #define _TEXT_EDITOR_HPP_
 
-#include <algorithm>
-#include <vector>
-#include <iostream>
-#include <memory>
-#include <fstream>
-#include <cstring>
-#include <sstream>
-#include <unordered_map>
-#include <math.h>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/rotate_vector.hpp> 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
 #include "2d.hpp"
-
-using namespace std;
-using namespace glm;
 
 enum TextEditorMode {
   TXT_FILE,

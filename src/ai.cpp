@@ -1,9 +1,6 @@
 #include "ai.hpp"
 
-AI::AI(shared_ptr<AssetCatalog> asset_catalog) : asset_catalog_(asset_catalog) {
-}
-
-void AI::InitSpider() {
+AI::AI(shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {
 }
 
 void AI::ChangeState(ObjPtr obj, AiState state) {
@@ -15,7 +12,7 @@ void AI::ChangeState(ObjPtr obj, AiState state) {
 ObjPtr AI::GetClosestUnit(ObjPtr spider) {
   float min_distance = 99999.9f;
   ObjPtr closest_unit = nullptr;
-  for (ObjPtr obj1 : asset_catalog_->GetMovingObjects()) {
+  for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (obj1->GetAsset()->name != "spider") continue;
     float distance = length(spider->position - obj1->position);
     if (distance < min_distance) {
@@ -27,7 +24,7 @@ ObjPtr AI::GetClosestUnit(ObjPtr spider) {
 
 shared_ptr<Waypoint> AI::GetClosestWaypoint(const vec3& position) {
   const unordered_map<string, shared_ptr<Waypoint>>& waypoints = 
-    asset_catalog_->GetWaypoints();
+    resources_->GetWaypoints();
 
   shared_ptr<Waypoint> res_waypoint = nullptr;
   float min_distance = 99999999.9f;
@@ -72,7 +69,7 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
 }
 
 void AI::Attack(ObjPtr spider) {
-  if (asset_catalog_->GetConfigs()->disable_attacks) {
+  if (resources_->GetConfigs()->disable_attacks) {
     ChangeState(spider, WANDER);
     return;
   }
@@ -94,7 +91,7 @@ void AI::Chase(ObjPtr spider) {
   }
 
   int dice = rand() % 3; 
-  ObjPtr player = asset_catalog_->GetObjectByName("player");
+  ObjPtr player = resources_->GetObjectByName("player");
   vec3 dir = player->position - spider->position;
   if (length(dir) > 100 && dice < 2) {
     vec3 next_pos = spider->position + normalize(dir) * 50.0f;
@@ -125,7 +122,7 @@ void AI::Wander(ObjPtr spider) {
   }
 
   if (glfwGetTime() > spider->state_changed_at + 20) {
-    ObjPtr player = asset_catalog_->GetObjectByName("player");
+    ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = player->position - spider->position;
     ObjPtr closest_unit = GetClosestUnit(spider);
     if (length(spider->position - closest_unit->position) < 50) {
@@ -138,7 +135,7 @@ void AI::Wander(ObjPtr spider) {
     }
   }
 
-  ObjPtr player = asset_catalog_->GetObjectByName("player");
+  ObjPtr player = resources_->GetObjectByName("player");
   vec3 dir = player->position - spider->position;
   if (length(dir) < 100) {
     spider->actions = {};
@@ -170,7 +167,7 @@ bool AI::ProcessStatus(ObjPtr spider) {
     case STATUS_DYING: {
       spider->active_animation = "Armature|death";
       if (spider->frame >= 78) {
-        asset_catalog_->CreateParticleEffect(64, spider->position, 
+        resources_->CreateParticleEffect(64, spider->position, 
           vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
         spider->status = STATUS_DEAD;
       }
@@ -207,7 +204,7 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
   }
 
   if (spider->frame == 44) {
-    ObjPtr player = asset_catalog_->GetObjectByName("player");
+    ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = player->position - spider->position;
 
     vec3 forward = normalize(vec3(dir.x, 0, dir.z));
@@ -227,11 +224,11 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
     float angle = atan(tan); 
     dir = vec3(rotate(mat4(1.0f), angle, right) * vec4(forward, 1.0f));  
 
-    asset_catalog_->CreateParticleEffect(40, 
+    resources_->CreateParticleEffect(40, 
       spider->position + dir * 5.0f + vec3(0, 2.0, 0), 
       dir * 5.0f, vec3(0.0, 1.0, 0.0), -1.0, 40.0f, 3.0f);
 
-    asset_catalog_->SpiderCastMagicMissile(spider, dir);
+    resources_->SpiderCastMagicMissile(spider, dir);
   }
   return false;
 }
@@ -245,7 +242,7 @@ bool AI::ProcessChangeStateAction(ObjPtr spider,
 bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
   spider->active_animation = "Armature|walking";
 
-  ObjPtr player = asset_catalog_->GetObjectByName("player");
+  ObjPtr player = resources_->GetObjectByName("player");
   bool is_rotating = RotateSpider(spider, player->position, 0.99f);
   if (!is_rotating) {
     return true;
@@ -402,7 +399,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
 // the object status into consideration.
 void AI::RunSpiderAI() {
   int num_spiders = 0;
-  for (ObjPtr obj1 : asset_catalog_->GetMovingObjects()) {
+  for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (obj1->GetAsset()->name != "spider" && 
       obj1->GetAsset()->name != "fisherman-body") continue;
 
@@ -434,7 +431,7 @@ void AI::RunSpiderAI() {
       position = vec3(9610, 132, 9885);
     } 
 
-    shared_ptr<GameObject> obj = asset_catalog_->CreateGameObjFromAsset(
+    shared_ptr<GameObject> obj = resources_->CreateGameObjFromAsset(
       "spider", position);
     obj->position = position;
     ChangeState(obj, WANDER);

@@ -1,7 +1,4 @@
-#include "asset.hpp"
-
-const int kHeightMapSize = 8000;
-// const int kHeightMapSize = 1000;
+#include "resources.hpp"
 
 void DoInOrder() {};
 template<typename Lambda0, typename ...Lambdas>
@@ -53,180 +50,6 @@ PhysicsBehavior StrToPhysicsBehavior(const std::string& s) {
   return str_to_p_behavior[s];
 }
 
-AssetCatalog::AssetCatalog(const string& directory) : directory_(directory),
-  height_map_(kHeightMapSize * kHeightMapSize, TerrainPoint()),
-  configs_(make_shared<Configs>()), game_data_(make_shared<GameData>()), 
-  player_(make_shared<Player>()) {
-
-  // TODO: change directory to resources.
-  //    resources/
-  //      assets/          -> FBX
-  //      objects/         -> Sectors, portals and game objects
-  //      height_map.data  -> Terrain height
-  //      config.xml       -> General config (gravity, speed, etc.)
-  outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
-    vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
-
-  shared_ptr<Sector> new_sector = make_shared<Sector>();
-  new_sector->name = "outside";
-  new_sector->octree_node = outside_octree_;
-  sectors_[new_sector->name] = new_sector;
-  new_sector->id = id_counter_++;
-  sectors_by_id_[new_sector->id] = new_sector;
-
-  LoadShaders(directory_ + "/shaders");
-  LoadAssets(directory_ + "/game_assets");
-  LoadObjects(directory_ + "/game_objects");
-  LoadHeightMap(directory_ + "/height_map2_compressed.dat");
-  // LoadHeightMap(directory_ + "/small_height_map.dat");
-  // LoadHeightMap(directory_ + "/small_height_map_compressed.dat");
-  // SaveHeightMap(directory_ + "/height_map2_compressed.dat");
-
-  // TODO: load config
-  // LoadConfig(directory + "/config.xml");
-
-  // Create player asset.
-  shared_ptr<GameAsset> player_asset = make_shared<GameAsset>();
-  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 2.0f);
-  player_asset->id = id_counter_++;
-  assets_by_id_[player_asset->id] = player_asset;
-  // player_asset->name = "player-" + 
-  //   boost::lexical_cast<string>(player_asset->id);
-  player_asset->name = "player";
-  player_asset->collision_type = COL_SPHERE;
-  assets_[player_asset->name] = player_asset;
-
-  player_->life = 100.0f;
-  player_->name = "player";
-  player_->asset_group = CreateAssetGroupForSingleAsset(player_asset);
-
-  player_->physics_behavior = PHYSICS_NORMAL;
-  player_->position = configs_->initial_player_pos;
-  AddGameObject(player_);
-
-  InitMissiles();
-
-  CreateSkydome();
-}
-
-bool AssetCatalog::IsMovingObject(shared_ptr<GameObject> game_obj) {
-  return (game_obj->type == GAME_OBJ_DEFAULT
-    || game_obj->type == GAME_OBJ_PLAYER 
-    || game_obj->type == GAME_OBJ_MISSILE)
-    && game_obj->parent_bone_id == -1
-    && game_obj->GetAsset()->physics_behavior != PHYSICS_FIXED;
-}
-
-bool AssetCatalog::IsItem(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->item;
-}
-
-bool AssetCatalog::IsExtractable(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->extractable;
-}
-
-bool AssetCatalog::IsLight(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->emits_light;
-}
-
-shared_ptr<GameAssetGroup> 
-  AssetCatalog::CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset) {
-  shared_ptr<GameAssetGroup> asset_group = GetAssetGroupByName(asset->name);
-  if (asset_group) {
-    return asset_group;
-  }
-
-  asset_group = make_shared<GameAssetGroup>();
-  asset_group->assets.push_back(asset);
-
-  asset_group->name = asset->name;
-  asset_groups_[asset_group->name] = asset_group;
-  asset_group->id = id_counter_++;
-  asset_groups_by_id_[asset_group->id] = asset_group;
-  return asset_group;
-}
-
-// TODO: merge these directory iteration functions into the same function.
-void AssetCatalog::LoadShaders(const std::string& directory) {
-  boost::filesystem::path p (directory);
-  boost::filesystem::directory_iterator end_itr;
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (boost::ends_with(current_file, ".vert") ||
-      boost::ends_with(current_file, ".frag") ||
-      boost::ends_with(current_file, ".geom")) { 
-      string prefix = current_file.substr(0, current_file.size() - 5);
-      if (shaders_.find(prefix) == shaders_.end()) {
-        cout << prefix << endl;
-        shaders_[prefix] = LoadShader(directory, prefix);
-      }
-    }
-  }
-}
-
-void AssetCatalog::LoadAssets(const std::string& directory) {
-  boost::filesystem::path p (directory);
-  boost::filesystem::directory_iterator end_itr;
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".xml")) {
-      continue;
-    }
-    LoadAssetFile(directory + "/" + current_file);
-  }
-}
-
-void AssetCatalog::LoadObjects(const std::string& directory) {
-  boost::filesystem::path p (directory);
-  boost::filesystem::directory_iterator end_itr;
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".xml")) {
-      continue;
-    }
-    LoadSectors(directory + "/" + current_file);
-  }
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".xml")) {
-      continue;
-    }
-    LoadPortals(directory + "/" + current_file);
-  }
-
-  shared_ptr<OctreeNode> outside_octree = 
-    GetSectorByName("outside")->octree_node;
-  for (const auto& [name, s] : sectors_) {
-    for (const auto& [next_sector_id, portal] : s->portals) {
-      InsertObjectIntoOctree(s->octree_node, portal, 0);
-    }
-  }
-
-  GenerateOptimizedOctree();
-}
-
 AABB GetObjectAABB(const vector<Polygon>& polygons) {
   vector<vec3> vertices;
   for (auto& p : polygons) {
@@ -257,7 +80,225 @@ BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons) {
   return GetBoundingSphereFromVertices(vertices);
 }
 
-shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
+vec3 LoadVec3FromXml(const pugi::xml_node& node) {
+  vec3 v;
+  v.x = boost::lexical_cast<float>(node.attribute("x").value());
+  v.y = boost::lexical_cast<float>(node.attribute("y").value());
+  v.z = boost::lexical_cast<float>(node.attribute("z").value());
+  return v;
+}
+
+float LoadFloatFromXml(const pugi::xml_node& node) {
+  return boost::lexical_cast<float>(node.text().get());
+}
+
+Resources::Resources(const string& resources_dir, 
+  const string& shaders_dir) : directory_(resources_dir), 
+  shaders_dir_(shaders_dir),
+  height_map_(kHeightMapSize * kHeightMapSize, TerrainPoint()),
+  configs_(make_shared<Configs>()), player_(make_shared<Player>()) {
+  Init();
+}
+
+void Resources::CreateOutsideSector() {
+  outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
+    vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
+
+  shared_ptr<Sector> new_sector = make_shared<Sector>();
+  new_sector->name = "outside";
+  new_sector->octree_node = outside_octree_;
+  sectors_[new_sector->name] = new_sector;
+  new_sector->id = id_counter_++;
+  sectors_by_id_[new_sector->id] = new_sector;
+}
+
+void Resources::CreatePlayer() {
+  shared_ptr<GameAsset> player_asset = make_shared<GameAsset>();
+  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 2.0f);
+  player_asset->id = id_counter_++;
+  assets_by_id_[player_asset->id] = player_asset;
+  player_asset->name = "player";
+  player_asset->collision_type = COL_SPHERE;
+  assets_[player_asset->name] = player_asset;
+
+  player_->life = 100.0f;
+  player_->name = "player";
+  player_->asset_group = CreateAssetGroupForSingleAsset(player_asset);
+
+  player_->physics_behavior = PHYSICS_NORMAL;
+  player_->position = configs_->initial_player_pos;
+  AddGameObject(player_);
+}
+
+void Resources::CreateSkydome() {
+  Mesh m = CreateDome();
+  shared_ptr<GameAsset> asset = CreateAssetFromMesh("skydome", "sky", m);
+  CreateGameObjFromAsset("skydome", vec3(10000, 0, 10000), "skydome");
+}
+
+void Resources::Init() {
+  CreateOutsideSector();
+
+  LoadShaders(shaders_dir_);
+  LoadAssets(directory_ + "/assets");
+  LoadObjects(directory_ + "/objects");
+  LoadHeightMap(directory_ + "/height_map.dat");
+  LoadConfig(directory_ + "/config.xml");
+
+  GenerateOptimizedOctree();
+  CalculateAllClosestLightPoints();
+
+  CreatePlayer();
+  CreateSkydome();
+
+  // TODO: move to particle.
+  InitMissiles();
+}
+
+bool Resources::IsMovingObject(shared_ptr<GameObject> game_obj) {
+  return (game_obj->type == GAME_OBJ_DEFAULT
+    || game_obj->type == GAME_OBJ_PLAYER 
+    || game_obj->type == GAME_OBJ_MISSILE)
+    && game_obj->parent_bone_id == -1
+    && game_obj->GetAsset()->physics_behavior != PHYSICS_FIXED;
+}
+
+bool Resources::IsItem(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->item;
+}
+
+bool Resources::IsExtractable(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->extractable;
+}
+
+bool Resources::IsLight(shared_ptr<GameObject> game_obj) {
+  if (game_obj->type != GAME_OBJ_DEFAULT
+    && game_obj->type != GAME_OBJ_PLAYER 
+    && game_obj->type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+  shared_ptr<GameAsset> asset = game_obj->GetAsset();
+  return asset->emits_light;
+}
+
+shared_ptr<GameAssetGroup> 
+  Resources::CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset) {
+  shared_ptr<GameAssetGroup> asset_group = GetAssetGroupByName(asset->name);
+  if (asset_group) {
+    return asset_group;
+  }
+
+  asset_group = make_shared<GameAssetGroup>();
+  asset_group->assets.push_back(asset);
+
+  asset_group->name = asset->name;
+  asset_groups_[asset_group->name] = asset_group;
+  asset_group->id = id_counter_++;
+  asset_groups_by_id_[asset_group->id] = asset_group;
+  return asset_group;
+}
+
+// TODO: merge these directory iteration functions into the same function.
+void Resources::LoadShaders(const std::string& directory) {
+  boost::filesystem::path p (directory);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (boost::ends_with(current_file, ".vert") ||
+      boost::ends_with(current_file, ".frag") ||
+      boost::ends_with(current_file, ".geom")) { 
+      string prefix = current_file.substr(0, current_file.size() - 5);
+      if (shaders_.find(prefix) == shaders_.end()) {
+        cout << prefix << endl;
+        shaders_[prefix] = LoadShader(directory, prefix);
+      }
+    }
+  }
+}
+
+void Resources::LoadAssets(const std::string& directory) {
+  boost::filesystem::path p (directory);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+    LoadAssetFile(directory + "/" + current_file);
+  }
+}
+
+void Resources::LoadObjects(const std::string& directory) {
+  boost::filesystem::path p (directory);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+    LoadSectors(directory + "/" + current_file);
+  }
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+    LoadPortals(directory + "/" + current_file);
+  }
+
+  shared_ptr<OctreeNode> outside_octree = 
+    GetSectorByName("outside")->octree_node;
+  for (const auto& [name, s] : sectors_) {
+    for (const auto& [next_sector_id, portal] : s->portals) {
+      InsertObjectIntoOctree(s->octree_node, portal, 0);
+    }
+  }
+}
+
+void Resources::LoadConfig(const std::string& xml_filename) {
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
+  if (!result) {
+    ThrowError("Could not load xml file: ", xml_filename);
+  }
+
+  const pugi::xml_node& xml = doc.child("xml");
+  pugi::xml_node xml_node = xml.child("world-center");
+  if (xml_node) configs_->world_center = LoadVec3FromXml(xml_node);
+
+  xml_node = xml.child("initial-player-pos");
+  if (xml_node) configs_->initial_player_pos = LoadVec3FromXml(xml_node);
+
+  xml_node = xml.child("respawn-point");
+  if (xml_node) configs_->respawn_point = LoadVec3FromXml(xml_node);
+
+  xml_node = xml.child("sun-position");
+  if (xml_node) configs_->sun_position = LoadVec3FromXml(xml_node);
+
+  xml_node = xml.child("target-player-speed");
+  if (xml_node) configs_->target_player_speed = LoadFloatFromXml(xml_node);
+
+  xml_node = xml.child("jump-force");
+  if (xml_node) configs_->jump_force = LoadFloatFromXml(xml_node);
+}
+
+shared_ptr<GameAsset> Resources::LoadAsset(const pugi::xml_node& asset) {
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
   game_asset->name = asset.attribute("name").value();
 
@@ -377,8 +418,19 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
     texture = texture.next_sibling("texture")) {
     const string& texture_filename = texture.text().get();
     if (textures_.find(texture_filename) == textures_.end()) {
-      GLuint texture_id = LoadPng(texture_filename.c_str());
-      textures_[texture_filename] = texture_id;
+      GLuint texture_id = 0;
+      bool poor_filtering = texture.attribute("poor-filtering");
+      if (textures_.find(texture_filename) == textures_.end()) {
+        texture_id = LoadPng(texture_filename.c_str(), poor_filtering);
+        textures_[texture_filename] = texture_id;
+      } else {
+        texture_id = textures_[texture_filename];
+      }
+
+      string name = texture.attribute("name").value();
+      if (textures_.find(name) == textures_.end()) {
+        textures_[name] = texture_id;
+      }
     }
     game_asset->textures.push_back(textures_[texture_filename]);
   }
@@ -440,7 +492,7 @@ shared_ptr<GameAsset> AssetCatalog::LoadAsset(const pugi::xml_node& asset) {
   return game_asset;
 }
 
-void AssetCatalog::LoadAssetFile(const std::string& xml_filename) {
+void Resources::LoadAssetFile(const std::string& xml_filename) {
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
   if (!result) {
@@ -515,11 +567,19 @@ void AssetCatalog::LoadAssetFile(const std::string& xml_filename) {
 
   for (pugi::xml_node xml_texture = xml.child("texture"); xml_texture; 
     xml_texture = xml_texture.next_sibling("texture")) {
-    string name = xml_texture.attribute("name").value();
     const string& texture_filename = xml_texture.text().get();
+    string name = xml_texture.attribute("name").value();
+
+    GLuint texture_id = 0;
+    bool poor_filtering = xml_texture.attribute("poor-filtering");
     if (textures_.find(texture_filename) == textures_.end()) {
-      GLuint texture_id = LoadPng(texture_filename.c_str());
-      cout << "Adding texture: " << name << endl;
+      texture_id = LoadPng(texture_filename.c_str());
+      textures_[texture_filename] = texture_id;
+    } else {
+      texture_id = textures_[texture_filename];
+    }
+
+    if (textures_.find(name) == textures_.end()) {
       textures_[name] = texture_id;
     }
   }
@@ -538,7 +598,7 @@ const vector<vec3> kOctreeNodeOffsets = {
   vec3(+1, +1, +1), // 1 1 1
 };
 
-void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
+void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
   shared_ptr<GameObject> object, int depth) {
   int index = 0, straddle = 0;
 
@@ -572,6 +632,10 @@ void AssetCatalog::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     object->octree_node = octree_node;
     if (IsLight(object)) {
       octree_node->lights[object->id] = object;
+      shared_ptr<OctreeNode> n = octree_node;
+      while (n) {
+        n = n->parent;
+      }
     }
 
     if (IsMovingObject(object)) {
@@ -598,7 +662,7 @@ OBB GetObjectOBB(shared_ptr<GameObject> obj) {
   return GetOBBFromPolygons(obj->GetAsset()->lod_meshes[0].polygons, obj->position);
 }
 
-void AssetCatalog::AddGameObject(shared_ptr<GameObject> game_obj) {
+void Resources::AddGameObject(shared_ptr<GameObject> game_obj) {
   if (objects_.find(game_obj->name) != objects_.end()) {
     throw runtime_error(string("Object with name ") + game_obj->name + 
       string(" already exists."));
@@ -631,7 +695,7 @@ void AssetCatalog::AddGameObject(shared_ptr<GameObject> game_obj) {
   }
 }
 
-shared_ptr<GameObject> AssetCatalog::LoadGameObject(
+shared_ptr<GameObject> Resources::LoadGameObject(
   string name, string asset_name, vec3 position, vec3 rotation) {
   shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
   new_game_obj->name = name;
@@ -706,7 +770,7 @@ shared_ptr<GameObject> AssetCatalog::LoadGameObject(
   return new_game_obj;
 }
 
-void AssetCatalog::LoadSectors(const std::string& xml_filename) {
+void Resources::LoadSectors(const std::string& xml_filename) {
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
   if (!result) {
@@ -887,7 +951,7 @@ void AssetCatalog::LoadSectors(const std::string& xml_filename) {
   }
 }
 
-void AssetCatalog::LoadStabbingTree(const pugi::xml_node& parent_node_xml, 
+void Resources::LoadStabbingTree(const pugi::xml_node& parent_node_xml, 
   shared_ptr<StabbingTreeNode> parent_node) {
   for (pugi::xml_node st_node_xml = parent_node_xml.child("st-node"); st_node_xml; 
     st_node_xml = st_node_xml.next_sibling("st-node")) {
@@ -905,7 +969,7 @@ void AssetCatalog::LoadStabbingTree(const pugi::xml_node& parent_node_xml,
   }
 }
 
-void AssetCatalog::LoadPortals(const std::string& xml_filename) {
+void Resources::LoadPortals(const std::string& xml_filename) {
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
   if (!result) {
@@ -1011,7 +1075,7 @@ void AssetCatalog::LoadPortals(const std::string& xml_filename) {
   }
 }
 
-void AssetCatalog::LoadHeightMap(const std::string& dat_filename) {
+void Resources::LoadHeightMap(const std::string& dat_filename) {
   cout << "Started loading height map" << endl;
   int i = 0;
   FILE* f = fopen(dat_filename.c_str(), "rb");
@@ -1072,8 +1136,12 @@ void AssetCatalog::LoadHeightMap(const std::string& dat_filename) {
   cout << "Ended loading height map" << endl;
 }
 
-void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
+void Resources::SaveHeightMap() {
+  string dat_filename = "resources/height_map.dat";
   FILE* f = fopen(dat_filename.c_str(), "wb");
+  if (!f) {
+    ThrowError("File ", dat_filename, " does not exist.");
+  }
 
   float last_height = 0;
   int last_tile = 0;
@@ -1140,7 +1208,7 @@ void AssetCatalog::SaveHeightMap(const std::string& dat_filename) {
   fclose(f);
 }
 
-void AssetCatalog::InitMissiles() {
+void Resources::InitMissiles() {
   // Set a higher number of missiles. Maybe 256.
   for (int i = 0; i < 10; i++) {
     shared_ptr<GameAsset> asset0 = GetAssetByName("magic-missile-000");
@@ -1150,7 +1218,7 @@ void AssetCatalog::InitMissiles() {
   }
 }
 
-TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
+TerrainPoint Resources::GetTerrainPoint(int x, int y) {
   x -= configs_->world_center.x;
   y -= configs_->world_center.z;
   x += kHeightMapSize / 2;
@@ -1187,7 +1255,7 @@ TerrainPoint AssetCatalog::GetTerrainPoint(int x, int y) {
   // return terrain_point;
 }
 
-void AssetCatalog::SetTerrainPoint(int x, int y, 
+void Resources::SetTerrainPoint(int x, int y, 
   const TerrainPoint& terrain_point) {
   x -= configs_->world_center.x;
   y -= configs_->world_center.z;
@@ -1198,83 +1266,14 @@ void AssetCatalog::SetTerrainPoint(int x, int y,
   height_map_[i] = terrain_point;
 }
 
-void AssetCatalog::Cleanup() {
-  // Cleanup VBO and shader.
+void Resources::Cleanup() {
+  // TODO: cleanup VBOs.
   for (auto it : shaders_) {
     glDeleteProgram(it.second);
   }
 }
 
-shared_ptr<GameAsset> AssetCatalog::GetAssetByName(const string& name) {
-  if (assets_.find(name) == assets_.end()) return nullptr;
-  return assets_[name];
-}
-
-shared_ptr<GameAssetGroup> AssetCatalog::GetAssetGroupByName(const string& name) {
-  if (asset_groups_.find(name) == asset_groups_.end()) return nullptr;
-  return asset_groups_[name];
-}
-
-shared_ptr<GameObject> AssetCatalog::GetObjectByName(const string& name) {
-  if (objects_.find(name) == objects_.end()) return nullptr;
-  return objects_[name];
-}
-
-shared_ptr<Sector> AssetCatalog::GetSectorByName(const string& name) {
-  if (sectors_.find(name) == sectors_.end()) return nullptr;
-  return sectors_[name];
-}
-
-shared_ptr<Waypoint> AssetCatalog::GetWaypointByName(const string& name) {
-  if (waypoints_.find(name) == waypoints_.end()) return nullptr;
-  return waypoints_[name];
-}
-
-shared_ptr<ParticleType> AssetCatalog::GetParticleTypeByName(const string& name) {
-  if (particle_types_.find(name) == particle_types_.end()) return nullptr;
-  return particle_types_[name];
-}
-
-GLuint AssetCatalog::GetTextureByName(const string& name) {
-  if (textures_.find(name) == textures_.end()) return 0;
-  return textures_[name];
-}
-
-shared_ptr<GameAsset> AssetCatalog::GetAssetById(int id) {
-  if (assets_by_id_.find(id) == assets_by_id_.end()) return nullptr;
-  return assets_by_id_[id];
-}
-
-shared_ptr<GameAssetGroup> AssetCatalog::GetAssetGroupById(int id) {
-  if (asset_groups_by_id_.find(id) == asset_groups_by_id_.end()) return nullptr;
-  return asset_groups_by_id_[id];
-}
-
-shared_ptr<GameObject> AssetCatalog::GetObjectById(int id) {
-  if (objects_by_id_.find(id) == objects_by_id_.end()) return nullptr;
-  return objects_by_id_[id];
-}
-
-shared_ptr<Sector> AssetCatalog::GetSectorById(int id) {
-  if (sectors_by_id_.find(id) == sectors_by_id_.end()) return nullptr;
-  return sectors_by_id_[id];
-}
-
-shared_ptr<ParticleType> AssetCatalog::GetParticleTypeById(int id) {
-  if (particle_types_by_id_.find(id) == particle_types_by_id_.end()) return nullptr;
-  return particle_types_by_id_[id];
-}
-
-GLuint AssetCatalog::GetShader(const string& name) {
-  if (shaders_.find(name) == shaders_.end()) return 0;
-  return shaders_[name];
-}  
-
-shared_ptr<Configs> AssetCatalog::GetConfigs() {
-  return configs_;
-}
-
-shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
+shared_ptr<GameObject> Resources::CreateGameObjFromPolygons(
   const vector<Polygon>& polygons) {
   int count = 0; 
   vector<vec3> vertices;
@@ -1325,7 +1324,7 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromPolygons(
   return new_game_obj;
 }
 
-shared_ptr<GameObject> AssetCatalog::CreateGameObjFromMesh(const Mesh& m, 
+shared_ptr<GameObject> Resources::CreateGameObjFromMesh(const Mesh& m, 
   string shader_name, const vec3 position, 
   const vector<Polygon>& polygons) {
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
@@ -1354,7 +1353,7 @@ shared_ptr<GameObject> AssetCatalog::CreateGameObjFromMesh(const Mesh& m,
   return new_game_obj;
 }
 
-shared_ptr<Missile> AssetCatalog::CreateMissileFromAsset(
+shared_ptr<Missile> Resources::CreateMissileFromAsset(
   shared_ptr<GameAsset> game_asset) {
   shared_ptr<Missile> new_game_obj = make_shared<Missile>();
 
@@ -1369,24 +1368,28 @@ shared_ptr<Missile> AssetCatalog::CreateMissileFromAsset(
   return new_game_obj;
 }
 
-shared_ptr<GameObject> AssetCatalog::CreateGameObjFromAsset(
-  string asset_name, vec3 position) {
-  string name = "object-" + boost::lexical_cast<string>(id_counter_ + 1);
+shared_ptr<GameObject> Resources::CreateGameObjFromAsset(
+  string asset_name, vec3 position, const string obj_name) {
+
+  string name = obj_name;
+  if (name.empty()) {
+    name = "object-" + boost::lexical_cast<string>(id_counter_ + 1);
+  }
   shared_ptr<GameObject> new_game_obj = 
     LoadGameObject(name, asset_name, position, vec3(0, 0, 0));
   return new_game_obj;
 }
 
-void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
+void Resources::UpdateObjectPosition(shared_ptr<GameObject> obj) {
   // Clear position data.
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
     if (IsMovingObject(obj)) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
-    // if (IsLight(obj)) {
-    //   obj->octree_node->lights.erase(obj->id);
-    // }
+    if (IsLight(obj)) {
+      obj->octree_node->lights.erase(obj->id);
+    }
     obj->octree_node = nullptr;
   }
 
@@ -1411,7 +1414,7 @@ void AssetCatalog::UpdateObjectPosition(shared_ptr<GameObject> obj) {
   obj->updated_at = glfwGetTime();
 }
 
-float AssetCatalog::GetTerrainHeight(float x, float y) {
+float Resources::GetTerrainHeight(float x, float y) {
   ivec2 top_left = ivec2(x, y);
 
   TerrainPoint p[4];
@@ -1441,7 +1444,7 @@ float AssetCatalog::GetTerrainHeight(float x, float y) {
   return height;
 }
 
-shared_ptr<Sector> AssetCatalog::GetSectorAux(
+shared_ptr<Sector> Resources::GetSectorAux(
   shared_ptr<OctreeNode> octree_node, vec3 position) {
   if (!octree_node) return nullptr;
 
@@ -1462,7 +1465,7 @@ shared_ptr<Sector> AssetCatalog::GetSectorAux(
   return GetSectorAux(octree_node->children[index], position);
 }
 
-shared_ptr<Sector> AssetCatalog::GetSector(vec3 position) {
+shared_ptr<Sector> Resources::GetSector(vec3 position) {
   shared_ptr<Sector> outside = GetSectorByName("outside");
   shared_ptr<Sector> s = GetSectorAux(outside->octree_node, position);
   if (s) return s;
@@ -1470,7 +1473,7 @@ shared_ptr<Sector> AssetCatalog::GetSector(vec3 position) {
 }
 
 // TODO: move to particle file.
-int AssetCatalog::FindUnusedParticle(){
+int Resources::FindUnusedParticle(){
   for (int i = last_used_particle_; i < kMaxParticles; i++) {
     if (particle_container_[i].life < 0) {
       last_used_particle_ = i;
@@ -1489,7 +1492,7 @@ int AssetCatalog::FindUnusedParticle(){
 }
 
 // TODO: move to particle file.
-void AssetCatalog::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
+void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
   vec3 color, float size, float life, float spread) {
   for (int i = 0; i < num_particles; i++) {
     int particle_index = FindUnusedParticle();
@@ -1518,7 +1521,7 @@ void AssetCatalog::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal
 } 
 
 // TODO: this should definitely go elsewhere. 
-void AssetCatalog::CreateChargeMagicMissileEffect() {
+void Resources::CreateChargeMagicMissileEffect() {
   int particle_index = FindUnusedParticle();
   Particle& p = particle_container_[particle_index];
   p.frame = 0;
@@ -1539,7 +1542,7 @@ void AssetCatalog::CreateChargeMagicMissileEffect() {
 }
 
 // TODO: move to particle file. Maybe physics.
-void AssetCatalog::UpdateParticles() {
+void Resources::UpdateParticles() {
   for (int i = 0; i < kMaxParticles; i++) {
     Particle& p = particle_container_[i];
     if (--p.life < 0) {
@@ -1562,7 +1565,7 @@ void AssetCatalog::UpdateParticles() {
 }
 
 // TODO: this should probably go to main.
-void AssetCatalog::CastMagicMissile(const Camera& camera) {
+void Resources::CastMagicMissile(const Camera& camera) {
   shared_ptr<Missile> obj = missiles_.begin()->second;
   for (const auto& [string, missile]: missiles_) {
     if (missile->life <= 0) {
@@ -1596,7 +1599,7 @@ void AssetCatalog::CastMagicMissile(const Camera& camera) {
 }
 
 // TODO: this should probably go to main.
-void AssetCatalog::SpiderCastMagicMissile(ObjPtr spider, 
+void Resources::SpiderCastMagicMissile(ObjPtr spider, 
   const vec3& direction) {
   shared_ptr<Missile> obj = missiles_.begin()->second;
   for (const auto& [string, missile]: missiles_) {
@@ -1616,14 +1619,14 @@ void AssetCatalog::SpiderCastMagicMissile(ObjPtr spider,
   UpdateObjectPosition(obj);
 }
 
-void AssetCatalog::UpdateMissiles() {
+void Resources::UpdateMissiles() {
   // TODO: maybe could be part of physics.
   for (const auto& [string, missile]: missiles_) {
     missile->life -= 1;
   }
 }
 
-void AssetCatalog::UpdateFrameStart() {
+void Resources::UpdateFrameStart() {
   frame_start_ = glfwGetTime();
 }
 
@@ -1689,7 +1692,7 @@ int GetSortingAxis(vector<shared_ptr<GameObject>>& objs) {
   return sort_axis;
 }
 
-vector<shared_ptr<GameObject>> AssetCatalog::GenerateOptimizedOctreeAux(
+vector<shared_ptr<GameObject>> Resources::GenerateOptimizedOctreeAux(
   shared_ptr<OctreeNode> octree_node, vector<shared_ptr<GameObject>> top_objs) {
   if (!octree_node) return {};
 
@@ -1759,14 +1762,14 @@ void PrintOctree(shared_ptr<OctreeNode> octree_node) {
   }
 }
 
-void AssetCatalog::GenerateOptimizedOctree() {
+void Resources::GenerateOptimizedOctree() {
   // TODO: should have octree root without querying outside sector.
   shared_ptr<OctreeNode> octree = GetSectorByName("outside")->octree_node;
   GenerateOptimizedOctreeAux(octree, {});
   // PrintOctree(octree);
 }
 
-shared_ptr<OctreeNode> AssetCatalog::GetOctreeRoot() {
+shared_ptr<OctreeNode> Resources::GetOctreeRoot() {
   return GetSectorByName("outside")->octree_node;
 }
 
@@ -1792,12 +1795,12 @@ AABB GameObject::GetAABB() {
   return r;
 }
 
-void AssetCatalog::DeleteAsset(shared_ptr<GameAsset> asset) {
+void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
   assets_by_id_.erase(asset->id);
   assets_.erase(asset->name);
 }
 
-void AssetCatalog::DeleteObject(ObjPtr obj) {
+void Resources::DeleteObject(ObjPtr obj) {
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
     if (IsMovingObject(obj)) {
@@ -1818,7 +1821,7 @@ void AssetCatalog::DeleteObject(ObjPtr obj) {
   objects_.erase(obj->name);
 }
 
-void AssetCatalog::RemoveObject(ObjPtr obj) {
+void Resources::RemoveObject(ObjPtr obj) {
   // Clear position data.
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
@@ -1873,7 +1876,7 @@ void AssetCatalog::RemoveObject(ObjPtr obj) {
   }
 }
 
-void AssetCatalog::RemoveDead() {
+void Resources::RemoveDead() {
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
     if (obj->GetAsset()->name != "spider") continue;
@@ -1883,7 +1886,7 @@ void AssetCatalog::RemoveDead() {
   }
 }
 
-shared_ptr<GameAsset> AssetCatalog::CreateAssetFromMesh(const string& name, 
+shared_ptr<GameAsset> Resources::CreateAssetFromMesh(const string& name, 
   const string& shader_name, Mesh& m) {
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
   game_asset->name = name;
@@ -1906,25 +1909,7 @@ shared_ptr<GameAsset> AssetCatalog::CreateAssetFromMesh(const string& name,
   return game_asset;
 }
 
-void AssetCatalog::CreateSkydome() {
-  Mesh m = CreateDome();
-  shared_ptr<GameAsset> asset = CreateAssetFromMesh("skydome", "sky", m);
-  skydome_ = CreateGameObjFromAsset("skydome", 
-    vec3(10000, 0, 10000));
-}
-
-vector<ObjPtr> AssetCatalog::GetClosestLightPoints(const vec3& position) {
-  vector<ObjPtr> res;
-  vector<ObjPtr> lights = GetLights();
-  for (auto& l : lights) { 
-    if (l->life > 0.0f) {
-      res.push_back(l);
-    }
-  }
-  return res;
-}
-
-float AssetCatalog::GetTerrainHeight(vec2 pos, vec3* normal) {
+float Resources::GetTerrainHeight(vec2 pos, vec3* normal) {
   ivec2 top_left = ivec2(pos.x, pos.y);
 
   TerrainPoint p[4];
@@ -1952,7 +1937,7 @@ float AssetCatalog::GetTerrainHeight(vec2 pos, vec3* normal) {
   }
 }
 
-void AssetCatalog::MakeGlow(ObjPtr obj) {
+void Resources::MakeGlow(ObjPtr obj) {
   if (obj->override_light) return;
 
   obj->override_light = true;
@@ -1963,7 +1948,7 @@ void AssetCatalog::MakeGlow(ObjPtr obj) {
   lights_.push_back(obj);
 }
 
-bool AssetCatalog::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
+bool Resources::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
   vec3 ray = end - start;
 
   ivec2 start_tile = ivec2(start.x, start.z);
@@ -2017,9 +2002,9 @@ bool AssetCatalog::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
   return false;
 }
 
-void AssetCatalog::SaveNewObjects() {
+void Resources::SaveNewObjects() {
   pugi::xml_document doc;
-  string xml_filename = directory_ + "/game_objects/auto_objects.xml";
+  string xml_filename = directory_ + "/objects/auto_objects.xml";
   pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
   if (!result) {
     throw runtime_error(string("Could not load xml file: ") + xml_filename);
@@ -2067,4 +2052,246 @@ vector<vec3> GameAsset::GetVertices() {
     }
   }
   return vertices;
+}
+
+vector<ObjPtr> Resources::GetClosestLightPoints(const vec3& position) {
+  vector<ObjPtr> result;
+  vector<ObjPtr> lights = GetLights();
+  for (auto& l : lights) { 
+    if (l->life < 0.0f) continue;
+    result.push_back(l);
+  }
+  return result;
+}
+
+struct CompareLightPoints { 
+  bool operator()(const tuple<ObjPtr, float>& t1, 
+    const tuple<ObjPtr, float>& t2) { 
+    return get<1>(t1) < get<1>(t2);
+  } 
+}; 
+
+using LightMaxHeap = priority_queue<tuple<ObjPtr, float>, 
+  vector<tuple<ObjPtr, float>>, CompareLightPoints>;
+
+void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
+  LightMaxHeap& light_heap, const vec3& position, int k, float max_distance) {
+  if (!node) return;
+
+  bool debug = false;
+
+  AABB aabb = AABB(node->center - node->half_dimensions, 
+    node->half_dimensions * 2.0f);
+  vec3 closest_point = ClosestPtPointAABB(position, aabb);
+
+  float min_distance_to_node = length(position - closest_point);
+  if (debug) {
+    cout << "=============" << endl;
+    cout << "position: " << position << endl;
+    cout << "distance: " << length(position - node->center) << endl;
+    cout << "node.center: " << node->center << endl;
+    cout << "node.half_dimensions: " << node->half_dimensions << endl;
+    cout << "min_distance_to_node: " << min_distance_to_node << endl;
+  }
+
+  if (min_distance_to_node > max_distance) {
+    if (debug) {
+      cout << "skipping now: 1" << endl;
+    }
+    return;
+  }
+
+  if (light_heap.size() >= k) {
+    auto& [light, distance2] = light_heap.top();
+    if (distance2 < min_distance_to_node) {
+      if (debug) {
+        cout << "distance2: " << distance2 << endl;
+        cout << "skipping now: 2" << endl;
+      }
+      return;
+    }
+  }
+
+  for (auto& [id, light] : node->lights) {
+    float distance2 = length(position - light->position);
+    if (debug) {
+      cout << "light: " << light->name << endl;
+      cout << "distance2: " << distance2 << endl;
+    }
+    if (light_heap.size() < k) {
+      if (debug) {
+        cout << "light pushing: " << light->name << endl;
+      }
+      light_heap.push({ light, distance2 });
+      continue;
+    }
+   
+    auto& [f_light, f_distance2] = light_heap.top();
+    if (distance2 >= f_distance2) {
+      if (debug) {
+        cout << "Skipping: " << light->name << " because of " << f_light->name << endl;
+        cout << "distance: " << distance2 << " and f_distance " << f_distance2 << endl;
+      }
+      continue;
+    }
+
+    light_heap.pop();
+    light_heap.push({ light, distance2 });
+
+    if (debug) {
+      cout << "popping: " << f_light->name << endl;
+      cout << "pushing: " << light->name << endl;
+    }
+  }
+
+  for (int i = 0; i < 8; i++) {
+    GetKClosestLightPointsAux(node->children[i], light_heap, position, k, 
+      max_distance);
+  }
+}
+
+vector<ObjPtr> Resources::GetKClosestLightPoints(const vec3& position, int k, 
+  float max_distance) {
+  shared_ptr<OctreeNode> root = GetSectorByName("outside")->octree_node;
+
+  LightMaxHeap light_heap;
+  GetKClosestLightPointsAux(root, light_heap, position, k, max_distance);
+
+  vector<ObjPtr> result;
+  while (!light_heap.empty()) {
+    auto& [light, distance2] = light_heap.top();
+    result.push_back(light);
+    light_heap.pop();
+  }
+  return result;
+}
+
+void Resources::CalculateAllClosestLightPoints() {
+  for (auto& [name, obj] : objects_) {
+    obj->closest_lights = GetKClosestLightPoints(obj->position, 3, 100);
+  }
+}
+
+// ========================
+// Getters and setters
+// ========================
+double Resources::GetFrameStart() { return frame_start_; }
+
+vector<shared_ptr<GameObject>>& Resources::GetMovingObjects() { 
+  return moving_objects_; 
+}
+
+vector<shared_ptr<GameObject>>& Resources::GetLights() { return lights_; }
+
+vector<shared_ptr<GameObject>>& Resources::GetItems() { 
+  return items_; 
+}
+
+vector<shared_ptr<GameObject>>& Resources::GetExtractables() { 
+  return extractables_; 
+}
+
+Particle* Resources::GetParticleContainer() { return particle_container_; }
+
+shared_ptr<Player> Resources::GetPlayer() { return player_; }
+unordered_map<string, shared_ptr<GameObject>>& Resources::GetObjects() { 
+  return objects_; 
+}
+
+unordered_map<string, shared_ptr<ParticleType>>& Resources::GetParticleTypes() { 
+  return particle_types_; 
+}
+
+unordered_map<string, shared_ptr<Missile>>& Resources::GetMissiles() {
+  return missiles_;
+}
+
+unordered_map<string, shared_ptr<Waypoint>>& Resources::GetWaypoints() {
+  return waypoints_;
+}
+
+vector<tuple<shared_ptr<GameAsset>, int>>& Resources::GetInventory() { 
+  return inventory_; 
+}
+
+shared_ptr<GameAsset> Resources::GetAssetByName(const string& name) {
+  if (assets_.find(name) == assets_.end()) {
+    ThrowError("Asset ", name, " does not exist");
+  }
+  return assets_[name];
+}
+
+shared_ptr<GameAssetGroup> Resources::GetAssetGroupByName(const string& name) {
+  if (asset_groups_.find(name) == asset_groups_.end()) {
+    // cout << "Asset group " << name << " does not exist";
+  }
+  return asset_groups_[name];
+}
+
+shared_ptr<GameObject> Resources::GetObjectByName(const string& name) {
+  if (objects_.find(name) == objects_.end()) {
+    ThrowError("Object ", name, " does not exist");
+  }
+  return objects_[name];
+}
+
+shared_ptr<Sector> Resources::GetSectorByName(const string& name) {
+  if (sectors_.find(name) == sectors_.end()) return nullptr;
+  return sectors_[name];
+}
+
+shared_ptr<Waypoint> Resources::GetWaypointByName(const string& name) {
+  if (waypoints_.find(name) == waypoints_.end()) return nullptr;
+  return waypoints_[name];
+}
+
+shared_ptr<ParticleType> Resources::GetParticleTypeByName(const string& name) {
+  if (particle_types_.find(name) == particle_types_.end()) return nullptr;
+  return particle_types_[name];
+}
+
+GLuint Resources::GetTextureByName(const string& name) {
+  // Segfault when loading from terrain.
+  if (textures_.find(name) == textures_.end()) {
+    ThrowError("Texture ", name, " does not exist");
+  }
+  return textures_[name];
+}
+
+shared_ptr<GameAsset> Resources::GetAssetById(int id) {
+  if (assets_by_id_.find(id) == assets_by_id_.end()) return nullptr;
+  return assets_by_id_[id];
+}
+
+shared_ptr<GameAssetGroup> Resources::GetAssetGroupById(int id) {
+  if (asset_groups_by_id_.find(id) == asset_groups_by_id_.end()) return nullptr;
+  return asset_groups_by_id_[id];
+}
+
+shared_ptr<GameObject> Resources::GetObjectById(int id) {
+  if (objects_by_id_.find(id) == objects_by_id_.end()) return nullptr;
+  return objects_by_id_[id];
+}
+
+shared_ptr<Sector> Resources::GetSectorById(int id) {
+  if (sectors_by_id_.find(id) == sectors_by_id_.end()) return nullptr;
+  return sectors_by_id_[id];
+}
+
+shared_ptr<ParticleType> Resources::GetParticleTypeById(int id) {
+  if (particle_types_by_id_.find(id) == particle_types_by_id_.end()) return nullptr;
+  return particle_types_by_id_[id];
+}
+
+GLuint Resources::GetShader(const string& name) {
+  if (shaders_.find(name) == shaders_.end()) return 0;
+  return shaders_[name];
+}  
+
+shared_ptr<Configs> Resources::GetConfigs() {
+  return configs_;
+}
+
+unordered_map<string, shared_ptr<Sector>> Resources::GetSectors() { 
+  return sectors_; 
 }

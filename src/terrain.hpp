@@ -18,7 +18,7 @@
 #include <glm/gtx/rotate_vector.hpp> 
 #include "util.hpp"
 #include "collision.hpp"
-#include "asset.hpp"
+#include "resources.hpp"
 
 #define CLIPMAP_SIZE 202
 #define CLIPMAP_OFFSET ((CLIPMAP_SIZE - 2) / 2)
@@ -63,6 +63,8 @@ struct Clipmap {
   GLuint blending_texture;
   GLuint coarser_blending_texture;
 
+  vector<ObjPtr> light_points[NUM_SUBREGIONS];
+
   float min_height;
   float max_height;
 
@@ -74,7 +76,7 @@ struct Clipmap {
 // TODO: based on this
 // https://developer.nvidia.com/gpugems/gpugems2/part-i-geometric-complexity/chapter-2-terrain-rendering-using-gpu-based-geometry
 class Terrain {
-  shared_ptr<AssetCatalog> asset_catalog_;
+  shared_ptr<Resources> resources_;
 
   vector<vector<float>> height_map_;
 
@@ -90,7 +92,7 @@ class Terrain {
   GLuint texture_;
   GLuint water_texture_;
   GLuint water_normal_texture_;
-  GLuint shadow_texture_;
+  GLuint shadow_textures_[3];
 
   vec3 clipping_point_ = vec3(0, 0, 0);
   vec3 clipping_normal_ = vec3(0, 0, 0);
@@ -110,12 +112,17 @@ class Terrain {
   int InvalidateOuterBuffer(shared_ptr<Clipmap> clipmap, 
   ivec2 new_top_left, int level);
 
+  void AddPointLightsToProgram(shared_ptr<Clipmap> clipmap, 
+    int subregion, GLuint program_id);
+
+  void UpdateLights(int level, vec3 player_pos);
+
  public:
   Terrain(GLuint program_id, GLuint water_program_id);
 
   void UpdateClipmaps(vec3 player_pos);
   void Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
-    mat4 shadow_matrix, bool drawing_shadow, bool clip_against_plane = false);
+    mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, bool drawing_shadow, bool clip_against_plane = false);
   void DrawWater(Camera& camera, mat4 ViewMatrix, vec3 player_pos);
   void Invalidate();
   void SetClippingPlane(const vec3& point, const vec3& normal) {
@@ -125,11 +132,11 @@ class Terrain {
 
   mat4 GetShadowMatrix(bool bias);
 
-  void set_asset_catalog(shared_ptr<AssetCatalog> asset_catalog) { 
-    asset_catalog_ = asset_catalog; } 
+  void set_asset_catalog(shared_ptr<Resources> asset_catalog) { 
+    resources_ = asset_catalog; } 
 
-  void set_shadow_texture(GLuint shadow_texture) { 
-    shadow_texture_ = shadow_texture; } 
+  void set_shadow_texture(GLuint shadow_texture, int level) { 
+    shadow_textures_[level] = shadow_texture; } 
 
   void InvalidatePoint(ivec2 tile);
 };

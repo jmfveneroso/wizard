@@ -13,7 +13,7 @@ vector<vector<CollisionPair>> kAllowedCollisionPairs {
 };
 
 CollisionResolver::CollisionResolver(
-  shared_ptr<AssetCatalog> asset_catalog) : asset_catalog_(asset_catalog) {}
+  shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {}
 
 // TODO: this should be calculated only once per frame.
 vector<BoundingSphere> GetBoneBoundingSpheres(ObjPtr obj) {
@@ -99,7 +99,7 @@ void CollisionResolver::Collide() {
   ClearMetrics();
   UpdateObjectPositions();
 
-  FindCollisions(asset_catalog_->GetOctreeRoot(), {});
+  FindCollisions(resources_->GetOctreeRoot(), {});
   FindCollisionsWithTerrain();
   ResolveCollisions();
 
@@ -117,7 +117,7 @@ void CollisionResolver::PrintMetrics() {
 
 void CollisionResolver::UpdateObjectPositions() {
   start_time_ = glfwGetTime();
-  vector<ObjPtr>& objs = asset_catalog_->GetMovingObjects();
+  vector<ObjPtr>& objs = resources_->GetMovingObjects();
   for (ObjPtr obj : objs) {
     obj->in_contact_with = nullptr;
 
@@ -134,7 +134,7 @@ void CollisionResolver::UpdateObjectPositions() {
 
     obj->prev_position = obj->position;
     obj->position = obj->target_position;
-    asset_catalog_->UpdateObjectPosition(obj);
+    resources_->UpdateObjectPosition(obj);
   }
 }
 
@@ -511,7 +511,7 @@ vector<shared_ptr<CollisionQH>> GetCollisionsQH(ObjPtr obj1, ObjPtr obj2) {
 }
 
 // Convex Hull - Terrain.
-vector<shared_ptr<CollisionHT>> GetCollisionsHT(ObjPtr obj1, shared_ptr<AssetCatalog> asset_catalog) {
+vector<shared_ptr<CollisionHT>> GetCollisionsHT(ObjPtr obj1, shared_ptr<Resources> asset_catalog) {
   vector<shared_ptr<CollisionHT>> collisions;
   shared_ptr<GameAsset> game_asset = obj1->GetAsset();
 
@@ -564,8 +564,8 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
 // TODO: improve terrain collision.
 void CollisionResolver::FindCollisionsWithTerrain() {
   vector<ColPtr> collisions;
-  shared_ptr<Sector> outside = asset_catalog_->GetSectorByName("outside");
-  for (ObjPtr obj1 : asset_catalog_->GetMovingObjects()) {
+  shared_ptr<Sector> outside = resources_->GetSectorByName("outside");
+  for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (obj1->current_sector->id != outside->id) continue;
     if (!IsCollidable(obj1)) continue;
     if (obj1->GetAsset()->physics_behavior == PHYSICS_FIXED) continue;
@@ -574,7 +574,7 @@ void CollisionResolver::FindCollisionsWithTerrain() {
       case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1)); break;
       case COL_BONES:        Merge(collisions, GetCollisionsBT(obj1)); break;
       case COL_QUICK_SPHERE: Merge(collisions, GetCollisionsQT(obj1)); break;
-      case COL_CONVEX_HULL:  Merge(collisions, GetCollisionsHT(obj1, asset_catalog_)); break;
+      case COL_CONVEX_HULL:  Merge(collisions, GetCollisionsHT(obj1, resources_)); break;
       default: break;
     }
   }
@@ -634,10 +634,10 @@ void CollisionResolver::GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons) 
   ivec2 top_left = ivec2(pos.x, pos.y);
 
   TerrainPoint p[4];
-  p[0] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y);
-  p[1] = asset_catalog_->GetTerrainPoint(top_left.x, top_left.y + 1.1);
-  p[2] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
-  p[3] = asset_catalog_->GetTerrainPoint(top_left.x + 1.1, top_left.y);
+  p[0] = resources_->GetTerrainPoint(top_left.x, top_left.y);
+  p[1] = resources_->GetTerrainPoint(top_left.x, top_left.y + 1.1);
+  p[2] = resources_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
+  p[3] = resources_->GetTerrainPoint(top_left.x + 1.1, top_left.y);
 
   const float& h0 = p[0].height;
   const float& h1 = p[1].height;
@@ -705,13 +705,24 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
     // Moving downwards.
     const vec3 v = normalize(movement);
     float stopped = dot(v, -up) > 0.95f;
-    bool moving_downwards = dot(v, tan_upwards) < -0.1f;
+    float upward_movement = dot(v, tan_upwards);
+    if (isnan(upward_movement) || isnan(upward_movement)) {
+      return displacement_vector;
+    }
+
+    bool moving_downwards = upward_movement < -0.1f;
     if (!stopped && moving_downwards) {
       return displacement_vector;
     }
 
     vec3 h_penetration = vec3(penetration.x, 0, penetration.z);
-    vec3 projection = dot(h_penetration, tan_upwards) * tan_upwards;
+    float v_penetration = dot(h_penetration, tan_upwards);
+    if (isnan(v_penetration)) {
+      return displacement_vector;
+    }
+
+    vec3 projection = v_penetration * tan_upwards;
+
     displacement_vector += projection;
   }
 
@@ -778,7 +789,7 @@ void CollisionResolver::TestCollisionSH(shared_ptr<CollisionSH> c) {
 // Test Sphere - Terrain.
 void CollisionResolver::TestCollisionST(shared_ptr<CollisionST> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
-  float h = asset_catalog_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = resources_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
@@ -821,7 +832,7 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
   BoundingSphere s = GetBoneBoundingSphere(c->bone);
-  float h = asset_catalog_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = resources_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
@@ -880,7 +891,7 @@ void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
 // Test Quick Sphere - Terrain.
 void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
-  float h = asset_catalog_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = resources_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     vector<Polygon> polygons;
@@ -1048,7 +1059,7 @@ void CollisionResolver::ResolveCollisions() {
       obj1->position += displacement_vector;
       if (obj2 && obj2->GetAsset()->name == "spider") {
         obj2->life -= 50;
-        asset_catalog_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
+        resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
           vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
 
         // TODO: need another class to take care of units. Like HitUnit(unit);
@@ -1062,13 +1073,13 @@ void CollisionResolver::ResolveCollisions() {
         }
       } else if (obj2 && obj2->GetAsset()->name == "player") {
         obj2->life -= 10;
-        asset_catalog_->GetConfigs()->taking_hit = 30.0f;
+        resources_->GetConfigs()->taking_hit = 30.0f;
 
         // TODO: this check shouldn't be placed here. After I have an engine
         // class, it should be made there.
         if (obj2->life <= 0.0f) {
           obj2->life = 100.0f;
-          obj2->position = asset_catalog_->GetConfigs()->respawn_point;
+          obj2->position = resources_->GetConfigs()->respawn_point;
         }
         
       } else {
@@ -1086,7 +1097,7 @@ void CollisionResolver::ResolveCollisions() {
             obj2->torque += torque;
           } 
         }
-        asset_catalog_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
+        resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
           vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
       }
       obj1->life = -1;
@@ -1124,7 +1135,7 @@ void CollisionResolver::ResolveCollisions() {
 
     obj1->target_position = obj1->position;
 
-    asset_catalog_->UpdateObjectPosition(obj1);
+    resources_->UpdateObjectPosition(obj1);
 
     if (obj2) {
       // cout << "Collision " << i << endl;
@@ -1134,7 +1145,7 @@ void CollisionResolver::ResolveCollisions() {
     }
   }   
 
-  vector<ObjPtr>& objs = asset_catalog_->GetMovingObjects();
+  vector<ObjPtr>& objs = resources_->GetMovingObjects();
   for (ObjPtr obj : objs) {
     if (!obj->in_contact_with) continue;
     if (obj->in_contact_with->GetAsset()->physics_behavior == PHYSICS_FIXED) {

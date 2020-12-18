@@ -1,5 +1,8 @@
 #include "text_editor.hpp"
 
+#include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
+
 const int kWindowWidth = 1280;
 const int kWindowHeight = 800;
 const int kLineHeight = 18;

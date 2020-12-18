@@ -1,41 +1,11 @@
 #ifndef __AI_HPP__
 #define __AI_HPP__
 
-#include <stdio.h>
-#include <iostream>
-#include <exception>
-#include <memory>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/rotate_vector.hpp> 
-#include <glm/gtx/quaternion.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <exception>
-#include <tuple>
-#include <memory>
-#include <thread>
-#include <chrono>
-#include <vector>
-#include <map>
-#include <unordered_map>
-#include <unordered_set>
 #include <random>
-#include <utility>
-#include <png.h>
-#include "asset.hpp"
-#include "boost/filesystem.hpp"
-#include <boost/lexical_cast.hpp>  
-#include <boost/algorithm/string/predicate.hpp>
-
-using namespace std;
-using namespace glm;
+#include "resources.hpp"
 
 class AI {
-  shared_ptr<AssetCatalog> asset_catalog_;
+  shared_ptr<Resources> resources_;
   std::default_random_engine generator_;
 
   ObjPtr spiders_;
@@ -64,9 +34,8 @@ class AI {
   void ProcessNextAction(ObjPtr spider);
 
  public:
-  AI(shared_ptr<AssetCatalog> asset_catalog);
+  AI(shared_ptr<Resources> asset_catalog);
 
-  void InitSpider();
   void RunSpiderAI();
 };
 

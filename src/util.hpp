@@ -38,6 +38,7 @@ struct Camera {
   vec3 up; 
   vec3 direction;
   vec3 rotation;
+  vec3 right;
 
   Camera() {}
   Camera(vec3 position, vec3 direction, vec3 up) : position(position), 

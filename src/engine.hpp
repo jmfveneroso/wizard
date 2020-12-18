@@ -1,23 +1,6 @@
-#include <fbxsdk.h>
-#include <stdio.h>
-#include <iostream>
-#include <exception>
-#include <memory>
-#include <random>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/rotate_vector.hpp> 
-#include <exception>
-#include <memory>
-#include <thread>
-#include <chrono>
-#include <vector>
-#include <map>
-#include <unordered_map>
+#ifndef __ENGINE_HPP__
+#define __ENGINE_HPP__
+
 #include "renderer.hpp"
 #include "text_editor.hpp"
 #include "collision_resolver.hpp"
@@ -39,7 +22,7 @@ class Engine {
   shared_ptr<TextEditor> text_editor_ = nullptr;
   shared_ptr<Inventory> inventory_ = nullptr;
   shared_ptr<Craft> craft_ = nullptr;
-  shared_ptr<AssetCatalog> asset_catalog_ = nullptr;
+  shared_ptr<Resources> resources_ = nullptr;
   shared_ptr<CollisionResolver> collision_resolver_ = nullptr;
   shared_ptr<AI> ai_ = nullptr;
   shared_ptr<Physics> physics_ = nullptr;
@@ -48,11 +31,16 @@ class Engine {
   shared_ptr<Dialog> dialog_ = nullptr;
   shared_ptr<Npc> npc_ = nullptr;
 
-  int throttle_counter = 0;
+  float delta_time_ = 0.0f;
+  int window_width_ = WINDOW_WIDTH;
+  int window_height_ = WINDOW_HEIGHT;
+  GLFWwindow* window_;
+  int throttle_counter_ = 0;
 
   void RunCommand(string command);
   bool ProcessGameInput();
   void AfterFrame();
+  void UpdateAnimationFrames();
 
  public:
   Engine(
@@ -61,15 +49,20 @@ class Engine {
     shared_ptr<TextEditor> text_editor,
     shared_ptr<Inventory> inventory,
     shared_ptr<Craft> craft,
-    shared_ptr<AssetCatalog> asset_catalog,
+    shared_ptr<Resources> asset_catalog,
     shared_ptr<CollisionResolver> collision_resolver,
     shared_ptr<AI> ai,
     shared_ptr<Physics> physics,
     shared_ptr<PlayerInput> player_input,
     shared_ptr<Item> item,
     shared_ptr<Dialog> dialog,
-    shared_ptr<Npc> npc
+    shared_ptr<Npc> npc,
+    GLFWwindow* window,
+    int window_width,
+    int window_height
   );
 
   void Run();
 };
+
+#endif

@@ -1,11 +1,11 @@
 #include "item.hpp"
 
-Item::Item(shared_ptr<AssetCatalog> asset_catalog) 
-  : asset_catalog_(asset_catalog) {
+Item::Item(shared_ptr<Resources> asset_catalog) 
+  : resources_(asset_catalog) {
 }
 
 void Item::ProcessItems() {
-  vector<shared_ptr<GameObject>> extractables = asset_catalog_->GetExtractables();
+  vector<shared_ptr<GameObject>> extractables = resources_->GetExtractables();
   if (extractables.size() == 0 && respawn_countdown_ < 0) {
     respawn_countdown_ = 1000;
   }
@@ -13,11 +13,11 @@ void Item::ProcessItems() {
   respawn_countdown_--;
   if (respawn_countdown_ == 0) {
     vec3 pos = vec3(11500, 26, 7165);
-    shared_ptr<GameObject> item = asset_catalog_->CreateGameObjFromAsset(
+    shared_ptr<GameObject> item = resources_->CreateGameObjFromAsset(
       "rock", pos);
 
     pos = vec3(11600, 32, 7165);
-    item = asset_catalog_->CreateGameObjFromAsset(
+    item = resources_->CreateGameObjFromAsset(
       "weeds", pos);
   }
 
@@ -33,15 +33,15 @@ void Item::ProcessItems() {
     if (!asset) continue;
 
     if (asset->name == "rock") {
-      asset_catalog_->CreateParticleEffect(64, obj->position, 
+      resources_->CreateParticleEffect(64, obj->position, 
         vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
-      asset_catalog_->RemoveObject(obj);
+      resources_->RemoveObject(obj);
   
       for (int i = 0; i < 5; i++) {
         std::normal_distribution<float> distribution(0.0, 10.0);
         float x = distribution(generator_);
         float y = distribution(generator_);
-        shared_ptr<GameObject> item = asset_catalog_->CreateGameObjFromAsset(
+        shared_ptr<GameObject> item = resources_->CreateGameObjFromAsset(
           "small-rock", obj->position + vec3(x, 0, y));
 
         vec3 main_direction = vec3(0.0f, 1.0f, 0.0f);
@@ -55,15 +55,15 @@ void Item::ProcessItems() {
     }
 
     if (asset->name == "weeds") {
-      asset_catalog_->CreateParticleEffect(64, obj->position, 
+      resources_->CreateParticleEffect(64, obj->position, 
         vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
-      asset_catalog_->RemoveObject(obj);
+      resources_->RemoveObject(obj);
   
       for (int i = 0; i < 5; i++) {
         std::normal_distribution<float> distribution(0.0, 10.0);
         float x = distribution(generator_);
         float y = distribution(generator_);
-        shared_ptr<GameObject> item = asset_catalog_->CreateGameObjFromAsset(
+        shared_ptr<GameObject> item = resources_->CreateGameObjFromAsset(
           "berry", obj->position + vec3(x, 0, y));
 
         vec3 main_direction = vec3(0.0f, 1.0f, 0.0f);

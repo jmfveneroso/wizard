@@ -1,27 +1,8 @@
 #ifndef __2D_HPP__
 #define __2D_HPP__
 
-#include <algorithm>
-#include <vector>
-#include <iostream>
-#include <memory>
-#include <fstream>
-#include <unordered_map>
-#include <cstring>
-#include <sstream>
-#include <math.h>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/rotate_vector.hpp> 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
 #include <ft2build.h>
-#include "asset.hpp"
-#include "util.hpp"
+#include "resources.hpp"
 #include FT_FREETYPE_H
 
 struct Character {
@@ -32,7 +13,7 @@ struct Character {
 };
 
 class Draw2D {
-  shared_ptr<AssetCatalog> asset_catalog_;
+  shared_ptr<Resources> resources_;
   GLuint vao_;
   GLuint text_vbo_;
   GLuint vbo_;
@@ -43,12 +24,12 @@ class Draw2D {
   float window_height_;
   mat4 projection_;
   unordered_map<GLchar, Character> characters_;
-
+  string dir_;
 
   void LoadFonts();
 
  public:
-  Draw2D(shared_ptr<AssetCatalog> asset_catalog);
+  Draw2D(shared_ptr<Resources> asset_catalog, const string dir);
 
   void DrawChar(char, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0);
   void DrawText(const string&, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false);

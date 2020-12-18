@@ -1,37 +1,7 @@
 #ifndef __COLLISION_RESOLVER_HPP__
 #define __COLLISION_RESOLVER_HPP__
 
-#include <stdio.h>
-#include <iostream>
-#include <exception>
-#include <memory>
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/rotate_vector.hpp> 
-#include <glm/gtx/quaternion.hpp>
-#include <glm/gtc/quaternion.hpp>
-#include <exception>
-#include <tuple>
-#include <memory>
-#include <thread>
-#include <chrono>
-#include <vector>
-#include <map>
-#include <unordered_map>
-#include <unordered_set>
-#include <utility>
-#include <png.h>
-#include "asset.hpp"
-#include "boost/filesystem.hpp"
-#include <boost/lexical_cast.hpp>  
-#include <boost/algorithm/string/predicate.hpp>
-
-using namespace std;
-using namespace glm;
+#include "resources.hpp"
 
 // Not all collision pairs are possible.
 enum CollisionPair {
@@ -195,7 +165,7 @@ struct CollisionHT : Collision {
 };
 
 class CollisionResolver {
-  shared_ptr<AssetCatalog> asset_catalog_;
+  shared_ptr<Resources> resources_;
 
   vector<ColPtr> collisions_;
 
@@ -236,7 +206,7 @@ class CollisionResolver {
   void ResolveCollisions();
 
  public:
-  CollisionResolver(shared_ptr<AssetCatalog> asset_catalog);
+  CollisionResolver(shared_ptr<Resources> asset_catalog);
 
   void Collide();
 };

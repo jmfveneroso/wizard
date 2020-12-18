@@ -1,16 +1,16 @@
 #include "player.hpp"
 
-PlayerInput::PlayerInput(shared_ptr<AssetCatalog> asset_catalog, 
+PlayerInput::PlayerInput(shared_ptr<Resources> asset_catalog, 
     shared_ptr<Project4D> project_4d, shared_ptr<Craft> craft, 
     shared_ptr<Terrain> terrain,
     shared_ptr<Dialog> dialog)
-  : asset_catalog_(asset_catalog), project_4d_(project_4d), craft_(craft), 
+  : resources_(asset_catalog), project_4d_(project_4d), craft_(craft), 
     terrain_(terrain), dialog_(dialog) {
 }
 
 void PlayerInput::InteractWithItem(const Camera& c) {
-  vector<tuple<shared_ptr<GameAsset>, int>>& inventory = asset_catalog_->GetInventory();
-  vector<shared_ptr<GameObject>> items = asset_catalog_->GetItems();
+  vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
+  vector<shared_ptr<GameObject>> items = resources_->GetItems();
 
   bool hit = false;
   for (auto item : items) {
@@ -21,7 +21,7 @@ void PlayerInput::InteractWithItem(const Camera& c) {
     vec3 q;
     if (IntersectRaySphere(p, d, item->GetBoundingSphere(), t, q)) {
       inventory.push_back({ item->GetAsset(), 1 });
-      asset_catalog_->RemoveObject(item);
+      resources_->RemoveObject(item);
       hit = true;
       break;
     }
@@ -31,7 +31,7 @@ void PlayerInput::InteractWithItem(const Camera& c) {
     return;
   }
 
-  shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("mana-pool-001");
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("mana-pool-001");
 
   vec3 p = c.position;
   vec3 d = c.direction;
@@ -39,7 +39,7 @@ void PlayerInput::InteractWithItem(const Camera& c) {
   vec3 q;
   if (IntersectRaySphere(p, d, obj->GetBoundingSphere(), t, q)) {
     craft_->Enable();
-    asset_catalog_->SetGameState(STATE_CRAFT);
+    resources_->SetGameState(STATE_CRAFT);
     hit = true;
   }
 
@@ -47,18 +47,18 @@ void PlayerInput::InteractWithItem(const Camera& c) {
     return;
   }
 
-  ObjPtr fisherman = asset_catalog_->GetObjectByName("fisherman-001");
+  ObjPtr fisherman = resources_->GetObjectByName("fisherman-001");
   if (IntersectRaySphere(p, d, fisherman->GetBoundingSphere(), t, q)) {
     dialog_->SetDialogOptions({ "Build", "Goodbye" });
     dialog_->Enable();
-    asset_catalog_->SetGameState(STATE_DIALOG);
+    resources_->SetGameState(STATE_DIALOG);
     while (!fisherman->actions.empty()) fisherman->actions.pop();
     fisherman->actions.push(make_shared<TalkAction>());
   }
 }
 
 void PlayerInput::Extract(const Camera& c) {
-  vector<shared_ptr<GameObject>> extractables = asset_catalog_->GetExtractables();
+  vector<shared_ptr<GameObject>> extractables = resources_->GetExtractables();
   for (auto obj : extractables) {
     vec3 p = c.position;
     vec3 d = c.direction;
@@ -66,14 +66,14 @@ void PlayerInput::Extract(const Camera& c) {
     float t;
     vec3 q;
     if (IntersectRaySphere(p, d, obj->GetBoundingSphere(), t, q)) {
-      asset_catalog_->MakeGlow(obj);
+      resources_->MakeGlow(obj);
       obj->status = STATUS_BEING_EXTRACTED;
     }
   }
 }
 
 void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   if (configs->edit_terrain == "none") {
     return;
   }
@@ -86,13 +86,13 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
     vec3 start = c.position;
     vec3 end = c.position + c.direction * 200.0f;
     ivec2 tile;
-    if (asset_catalog_->CollideRayAgainstTerrain(start, end, tile)) {
+    if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
       int size = configs->brush_size;
 
       float mean_height = 0;
       for (int x = -size; x <= size; x++) {
         for (int y = -size; y <= size; y++) {
-          TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x + x, tile.y + y);
+          TerrainPoint p = resources_->GetTerrainPoint(tile.x + x, tile.y + y);
           mean_height += p.height;
         }
       }
@@ -104,7 +104,7 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
           if (distance > size) continue;
           float factor = ((size - distance) * (size - distance)) * 0.04f;
 
-          TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x + x, tile.y + y);
+          TerrainPoint p = resources_->GetTerrainPoint(tile.x + x, tile.y + y);
           if (configs->edit_terrain == "tile") {
             p.blending = vec3(0, 0, 0);
             if (configs->selected_tile > 0) {
@@ -120,7 +120,7 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
           } else if (configs->edit_terrain == "flatten") {
             p.height += 0.001f * (mean_height - p.height) * factor * configs->raise_factor;
           }
-          asset_catalog_->SetTerrainPoint(tile.x+x, tile.y+y, p);
+          resources_->SetTerrainPoint(tile.x+x, tile.y+y, p);
           terrain_->InvalidatePoint(tile + ivec2(x, y));
         }
       }
@@ -129,31 +129,31 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
 }
 
 void PlayerInput::Build(GLFWwindow* window, const Camera& c) {
-  if (asset_catalog_->GetGameState() != STATE_BUILD) {
+  if (resources_->GetGameState() != STATE_BUILD) {
     return;
   }
 
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
 
   vec3 start = c.position;
   vec3 end = c.position + c.direction * 500.0f;
   ivec2 tile;
-  if (asset_catalog_->CollideRayAgainstTerrain(start, end, tile)) {
-    TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x, tile.y);
+  if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
+    TerrainPoint p = resources_->GetTerrainPoint(tile.x, tile.y);
     configs->new_building->position = vec3(tile.x, p.height, tile.y);
 
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
     if (state == GLFW_PRESS) {
-      asset_catalog_->SetGameState(STATE_GAME);
-      ObjPtr player = asset_catalog_->GetPlayer();
-      shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+      resources_->SetGameState(STATE_GAME);
+      ObjPtr player = resources_->GetPlayer();
+      shared_ptr<Configs> configs = resources_->GetConfigs();
       player->position = configs->old_position;
     }
   }
 }
 
 void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   if (!configs->place_object) {
     return;
   }
@@ -161,20 +161,20 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
   vec3 start = c.position;
   vec3 end = c.position + c.direction * 500.0f;
   ivec2 tile;
-  if (asset_catalog_->CollideRayAgainstTerrain(start, end, tile)) {
-    TerrainPoint p = asset_catalog_->GetTerrainPoint(tile.x, tile.y);
+  if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
+    TerrainPoint p = resources_->GetTerrainPoint(tile.x, tile.y);
     configs->new_building->position = vec3(tile.x, p.height, tile.y);
 
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
     if (state == GLFW_PRESS) {
       configs->place_object = false;
-      asset_catalog_->RemoveObject(configs->new_building);  
+      resources_->RemoveObject(configs->new_building);  
       return;
     }
 
     state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
     if (state == GLFW_PRESS) {
-      asset_catalog_->SetGameState(STATE_GAME);
+      resources_->SetGameState(STATE_GAME);
       configs->place_object = false;
     }
   }
@@ -189,7 +189,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   static int animation_frame = 0;
   --animation_frame;
 
-  shared_ptr<Player> player = asset_catalog_->GetPlayer();
+  shared_ptr<Player> player = resources_->GetPlayer();
 
   vec3 direction(
     cos(player->rotation.x) * sin(player->rotation.y), 
@@ -214,11 +214,12 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   Camera c = Camera(player->position + vec3(0, 3.0, 0), direction, up);
   c.rotation.x = player->rotation.x;
   c.rotation.y = player->rotation.y;
+  c.right = right;
   
-  float player_speed = asset_catalog_->GetConfigs()->player_speed; 
-  float jump_force = asset_catalog_->GetConfigs()->jump_force; 
+  float player_speed = resources_->GetConfigs()->player_speed; 
+  float jump_force = resources_->GetConfigs()->jump_force; 
 
-  if (asset_catalog_->GetGameState() == STATE_BUILD) {
+  if (resources_->GetGameState() == STATE_BUILD) {
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
       player->position += front * 10.0f;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -280,7 +281,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   if (player->rotation.x >  1.57f) player->rotation.x = +1.57f;
   last_time = current_time;
 
-  shared_ptr<GameObject> obj = asset_catalog_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   switch (player->player_action) {
     case PLAYER_IDLE: {
       obj->active_animation = "Armature|idle";
@@ -291,7 +292,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
             player->player_action = PLAYER_CASTING;
             obj->frame = 0;
             animation_frame = 60;
-            asset_catalog_->CreateChargeMagicMissileEffect();
+            resources_->CreateChargeMagicMissileEffect();
             player->selected_spell = 0;
             player->num_spells--;
           }
@@ -304,7 +305,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
             player->player_action = PLAYER_CASTING;
             obj->frame = 0;
             animation_frame = 60;
-            asset_catalog_->CreateChargeMagicMissileEffect();
+            resources_->CreateChargeMagicMissileEffect();
             player->selected_spell = 1;
             player->num_spells_2--;
           }
@@ -331,21 +332,21 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
           obj->active_animation = "Armature|shoot";
           obj->frame = 0;
           animation_frame = 60;
-          asset_catalog_->CreateChargeMagicMissileEffect();
+          resources_->CreateChargeMagicMissileEffect();
           player->num_spells--;
         }
       } else if (animation_frame == 20) {
         if (player->selected_spell == 0) {
-          asset_catalog_->CastMagicMissile(c);
+          resources_->CastMagicMissile(c);
         } else if (player->selected_spell == 1) {
           Camera c2 = c;
           Camera c3 = c;
           c2.direction = vec3(rotate(mat4(1.0), -0.1f, vec3(0.0f, 1.0f, 0.0f)) * vec4(c.direction, 1.0f));
           c3.direction = vec3(rotate(mat4(1.0), 0.1f, vec3(0.0f, 1.0f, 0.0f)) * vec4(c.direction, 1.0f));
 
-          asset_catalog_->CastMagicMissile(c);
-          asset_catalog_->CastMagicMissile(c2);
-          asset_catalog_->CastMagicMissile(c3);
+          resources_->CastMagicMissile(c);
+          resources_->CastMagicMissile(c2);
+          resources_->CastMagicMissile(c3);
         }
       }
       break;
@@ -377,7 +378,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   Build(window, c);
   PlaceObject(window, c);
 
-  ObjPtr plank = asset_catalog_->GetObjectByName("plank-001");
+  ObjPtr plank = resources_->GetObjectByName("plank-001");
   plank->position.y = 50;
   plank->speed = vec3(0.01, 0, 0);
   plank->torque = vec3(0.0, 0.5, 0);

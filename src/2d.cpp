@@ -1,7 +1,10 @@
 #include "2d.hpp"
 
-Draw2D::Draw2D(shared_ptr<AssetCatalog> asset_catalog) 
-  : asset_catalog_(asset_catalog),
+#include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
+
+Draw2D::Draw2D(shared_ptr<Resources> asset_catalog, const string dir) 
+  : resources_(asset_catalog), dir_(dir),
   window_width_(1200), window_height_(800) {
 
   shader_id_ = asset_catalog->GetShader("text");
@@ -38,15 +41,19 @@ void Draw2D::LoadFonts() {
   glBindVertexArray(vao_);
 
   FT_Library ft;
-  if (FT_Init_FreeType(&ft))
+  if (FT_Init_FreeType(&ft)) {
     cout << "ERROR::FREETYPE: Could not init FreeType Library" << endl;
+  }
   
   FT_Face face;
-  if (FT_New_Face(ft, "assets/fonts/ubuntu_monospace.ttf", 0, &face))
+  if (FT_New_Face(ft, (dir_ + "/fonts/ubuntu_monospace.ttf").c_str(), 0, 
+    &face)) {
     cout << "ERROR::FREETYPE: Failed to load font" << endl; 
+  }
 
-  if (FT_Set_Char_Size(face, 0, 16*64, 300, 300))
+  if (FT_Set_Char_Size(face, 0, 16*64, 300, 300)) {
     cout << "ERROR::FREETYPE: Failed to set char size" << endl; 
+  }
    
   FT_Set_Pixel_Sizes(face, 0, 18);
 
@@ -244,7 +251,7 @@ void Draw2D::DrawRectangle(GLfloat x, GLfloat y, GLfloat width, GLfloat height, 
 
 void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y, 
   GLfloat width, GLfloat height, GLfloat transparency) {
-  GLuint shader_id = asset_catalog_->GetShader("2d_image");
+  GLuint shader_id = resources_->GetShader("2d_image");
 
   glBindVertexArray(vao_);
   glDisable(GL_DEPTH_TEST);
@@ -281,7 +288,7 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
   glBindBuffer(GL_ARRAY_BUFFER, uv_);
   glBufferSubData(GL_ARRAY_BUFFER, 0, uvs.size() * sizeof(glm::vec2), &uvs[0]); 
 
-  GLuint texture_id = asset_catalog_->GetTextureByName(texture);
+  GLuint texture_id = resources_->GetTextureByName(texture);
   BindTexture("texture_sampler", shader_id, texture_id);
 
   BindBuffer(vbo_, 0, 3);

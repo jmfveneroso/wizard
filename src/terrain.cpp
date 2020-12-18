@@ -150,11 +150,12 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glGenVertexArrays(1, &vao_);
   glBindVertexArray(vao_);
 
-  // TODO: take the tiles file as input.
-  texture_ = LoadPng("assets/textures_png/tiles.png", true/* poor filtering */);
-  // texture_ = LoadPng("assets/textures_png/stone_wall_diffuse.png");
-  water_texture_ = LoadPng("assets/textures_png/water_dudv.png");
-  water_normal_texture_ = LoadPng("assets/textures_png/water_normal.png");
+  texture_ = LoadPng("resources/textures_png/tiles.png", true/* poor filtering */);
+  water_texture_ = LoadPng("resources/textures_png/water_dudv.png");
+  water_normal_texture_ = LoadPng("resources/textures_png/water_normal.png");
+  // texture_ = resources_->GetTextureByName("tiles");
+  // water_texture_ = resources_->GetTextureByName("water");
+  // water_normal_texture_ = resources_->GetTextureByName("water-normal");
 
   for (int i = 0; i < CLIPMAP_LEVELS; i++) {
     clipmaps_.push_back(make_shared<Clipmap>(i));
@@ -302,7 +303,7 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   vec3 world_coords = GridToWorldCoordinates(grid_coords);
 
   const TerrainPoint& terrain_point = 
-    asset_catalog_->GetTerrainPoint(world_coords.x, world_coords.z);
+    resources_->GetTerrainPoint(world_coords.x, world_coords.z);
 
   float height = terrain_point.height / MAX_HEIGHT;
   float step = GetTileSize(level) * TILE_SIZE;
@@ -335,9 +336,9 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
 
       vec3 world_coords1 = GridToWorldCoordinates(grid_coords - offset);
       vec3 world_coords2 = GridToWorldCoordinates(grid_coords + offset);
-      vec3 blending1 = asset_catalog_->
+      vec3 blending1 = resources_->
         GetTerrainPoint(world_coords1.x, world_coords1.z).blending;
-      vec3 blending2 = asset_catalog_->
+      vec3 blending2 = resources_->
         GetTerrainPoint(world_coords2.x, world_coords2.z).blending;
 
       coarser_blending = (blending1+blending2) * 0.5f;
@@ -370,6 +371,64 @@ void Terrain::Invalidate() {
       clipmap->valid_rows[x] = 0;
     }
     clipmap->invalid = true;
+  }
+}
+
+void Terrain::AddPointLightsToProgram(shared_ptr<Clipmap> clipmap, 
+  int subregion, GLuint program_id) {
+  vector<ObjPtr> light_points = clipmap->light_points[subregion];
+
+  for (int i = 0; i < 5; i++) {
+    vec3 position = vec3(0, 0, 0);
+    vec3 light_color = vec3(0, 0, 0);
+    float quadratic = 99999999.0f;
+    if (i < light_points.size()) {
+      position = light_points[i]->position;
+      if (light_points[i]->override_light) {
+        light_color = light_points[i]->light_color;
+        quadratic = light_points[i]->quadratic;
+        position.y += 10;
+      } else {
+        shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
+        light_color = asset->light_color;
+        quadratic = asset->quadratic;
+      }
+    }
+
+    string p = string("point_lights[") + boost::lexical_cast<string>(i) + "].";
+    GLuint glsl_pos = GetUniformId(program_id, p + "position");
+    GLuint glsl_diffuse = GetUniformId(program_id, p + "diffuse");
+    GLuint glsl_quadratic = GetUniformId(program_id, p + "quadratic");
+    glUniform3fv(glsl_pos, 1, (float*) &position);
+    glUniform3fv(glsl_diffuse, 1, (float*) &light_color);
+    glUniform1f(glsl_quadratic, quadratic);
+  }
+}
+
+void Terrain::UpdateLights(int level, vec3 player_pos) {
+  int tile_size = GetTileSize(level + 1);
+
+  ivec2 offset = ivec2(0, 0);
+  ivec2 grid_coords = WorldToGridCoordinates(player_pos);
+  offset = ClampGridCoordinates(grid_coords, tile_size >> 1);
+  offset -= ClampGridCoordinates(grid_coords, tile_size);
+  offset /= tile_size;
+  int x = offset.x; int y = offset.y;
+
+  for (int region = 0 ; region < NUM_SUBREGIONS; region++) {
+    vec2 tl = vec2(subregion_top_left[region] + subregion_offsets[region] * offset);
+    vec2 s = vec2(subregion_size[region] + subregion_size_offsets[region] * offset);
+
+    vec2 start = tl * float(tile_size); 
+    vec2 end = start + s * float(tile_size);
+ 
+    vec2 middle_point = vec2(clipmaps_[level]->clipmap_top_left) + vec2(start + end) * 0.5f;
+    float h = (clipmaps_[level]->min_height + clipmaps_[level]->max_height) * MAX_HEIGHT * 0.5f;
+    vec3 subregion_center = vec3(middle_point.x, h, middle_point.y);
+
+    float max_size = length(vec2(end) - vec2(start)) * 0.5f;
+    clipmaps_[level]->light_points[region] = resources_->GetKClosestLightPoints(
+      subregion_center, 5, max_size);
   }
 }
 
@@ -471,6 +530,8 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
         clipmap->max_height = std::max(clipmap->max_height, h);
       }
     }
+
+    UpdateLights(i, player_pos);
   }
 }
 
@@ -527,7 +588,7 @@ void Terrain::DrawWater(Camera& camera, mat4 ViewMatrix,
   glUseProgram(water_program_id_);
 
   vec3 normal;
-  float h = asset_catalog_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
+  float h = resources_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
   const int kFirstIndex = 2;
   for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
@@ -548,7 +609,7 @@ void Terrain::DrawWater(Camera& camera, mat4 ViewMatrix,
   glUniform1i(GetUniformId(water_program_id_, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
   glUniformMatrix4fv(GetUniformId(water_program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
 
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   vec3 light_position_worldspace = configs->sun_position * 1000.0f;
   glUniform3fv(GetUniformId(water_program_id_, "light_position_worldspace"), 1,
     (float*) &light_position_worldspace);
@@ -631,8 +692,8 @@ void Terrain::DrawWater(Camera& camera, mat4 ViewMatrix,
 mat4 Terrain::GetShadowMatrix(bool bias) {
   mat4 projection_matrix = ortho<float>(-200, 200, -200, 200, -10, 500);
 
-  shared_ptr<Player> player = asset_catalog_->GetPlayer();
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   mat4 view_matrix = lookAt(
     player->position + normalize(configs->sun_position) * 300.0f,
     player->position,
@@ -655,7 +716,8 @@ mat4 Terrain::GetShadowMatrix(bool bias) {
 }
 
 void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
-  mat4 shadow_matrix, bool drawing_shadow, bool clip_against_plane) {
+  mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, 
+  bool drawing_shadow, bool clip_against_plane) {
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
   glDisable(GL_BLEND);
@@ -672,10 +734,10 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   glUniformMatrix4fv(GetUniformId(program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
   BindBuffer(vertex_buffer_, 0, 3);
 
-  shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   int show_grid = -1;
   if (configs->edit_terrain != "none" || 
-    asset_catalog_->GetGameState() == STATE_BUILD) {
+    resources_->GetGameState() == STATE_BUILD) {
     show_grid = 1;
   }
 
@@ -692,36 +754,8 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   glUniform3fv(GetUniformId(program_id_, "light_direction"), 1,
     (float*) &configs->sun_position);
 
-  vector<ObjPtr> light_points = asset_catalog_->GetClosestLightPoints( 
-    vec3(0, 0, 0));
-  for (int i = 0; i < 3; i++) {
-    vec3 position = vec3(0, 0, 0);
-    vec3 light_color = vec3(0, 0, 0);
-    float quadratic = 99999999.0f;
-    if (i < light_points.size()) {
-      position = light_points[i]->position;
-      if (light_points[i]->override_light) {
-        light_color = light_points[i]->light_color;
-        quadratic = light_points[i]->quadratic;
-        position.y += 10;
-      } else {
-        shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
-        light_color = asset->light_color;
-        quadratic = asset->quadratic;
-      }
-    }
-
-    string p = string("point_lights[") + boost::lexical_cast<string>(i) + "].";
-    GLuint glsl_pos = GetUniformId(program_id_, p + "position");
-    GLuint glsl_diffuse = GetUniformId(program_id_, p + "diffuse");
-    GLuint glsl_quadratic = GetUniformId(program_id_, p + "quadratic");
-    glUniform3fv(glsl_pos, 1, (float*) &position);
-    glUniform3fv(glsl_diffuse, 1, (float*) &light_color);
-    glUniform1f(glsl_quadratic, quadratic);
-  }
-
   vec3 normal;
-  float h = asset_catalog_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
+  float h = resources_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
 
   const int kFirstIndex = 2;
@@ -734,7 +768,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
 
   GLuint program_id = program_id_;
   if (drawing_shadow) {
-    program_id = asset_catalog_->GetShader("terrain_shadow");
+    program_id = resources_->GetShader("terrain_shadow");
   }
 
   float delta_h = camera.position.y - h;
@@ -766,8 +800,14 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
     glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
-    mat4 DepthMVP = shadow_matrix * ModelMatrix;
+    mat4 DepthMVP = shadow_matrix0 * ModelMatrix;
     glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
+
+    mat4 DepthMVP1 = shadow_matrix1 * ModelMatrix;
+    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP1"), 1, GL_FALSE, &DepthMVP1[0][0]);
+
+    mat4 DepthMVP2 = shadow_matrix1 * ModelMatrix;
+    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP2"), 1, GL_FALSE, &DepthMVP2[0][0]);
 
     glUniform1i(GetUniformId(program_id, "TILE_SIZE"), TILE_SIZE * GetTileSize(i + 1));
     glUniform2iv(GetUniformId(program_id, "buffer_top_left"), 1, (int*) &clipmaps_[i]->top_left);
@@ -797,8 +837,16 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glUniform1i(GetUniformId(program_id, "texture_sampler"), 5);
 
     glActiveTexture(GL_TEXTURE6);
-    glBindTexture(GL_TEXTURE_2D, shadow_texture_);
+    glBindTexture(GL_TEXTURE_2D, shadow_textures_[0]);
     glUniform1i(GetUniformId(program_id, "shadow_sampler"), 6);
+
+    glActiveTexture(GL_TEXTURE7);
+    glBindTexture(GL_TEXTURE_2D, shadow_textures_[1]);
+    glUniform1i(GetUniformId(program_id, "shadow_sampler1"), 7);
+
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_2D, shadow_textures_[2]);
+    glUniform1i(GetUniformId(program_id, "shadow_sampler2"), 8);
 
     ivec2 offset = ivec2(0, 0);
     ivec2 grid_coords = WorldToGridCoordinates(player_pos);
@@ -829,6 +877,8 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
 
       int x = offset.x; int y = offset.y;
       BindBuffer(subregion_uv_buffers_[region][x][y], 1, 2);
+
+      AddPointLightsToProgram(clipmaps_[i], region, program_id);
 
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
       glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 

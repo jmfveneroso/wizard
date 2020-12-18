@@ -1,11 +1,11 @@
 #include "physics.hpp"
 
-Physics::Physics(shared_ptr<AssetCatalog> asset_catalog) : 
-  asset_catalog_(asset_catalog) {}
+Physics::Physics(shared_ptr<Resources> asset_catalog) : 
+  resources_(asset_catalog) {}
 
 void Physics::Run() {
   unordered_map<string, shared_ptr<GameObject>>& objs = 
-    asset_catalog_->GetObjects();
+    resources_->GetObjects();
   for (auto& [name, obj] : objs) {
     switch (obj->type) {
       case GAME_OBJ_DEFAULT:
@@ -35,7 +35,7 @@ void Physics::Run() {
     }
 
     // Gravity.
-    shared_ptr<Configs> configs = asset_catalog_->GetConfigs();
+    shared_ptr<Configs> configs = resources_->GetConfigs();
     if (obj->name == "player" && configs->levitate) {
       obj->can_jump = true;
       obj->speed.y *= 0.95f;

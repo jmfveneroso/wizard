@@ -13,7 +13,7 @@ void Craft::PressKeyCallback(int key, int scancode, int action, int mods) {
 }
 
 void Craft::CraftSpell(int number) {
-  vector<tuple<shared_ptr<GameAsset>, int>>& inventory = asset_catalog_->GetInventory();
+  vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
   if (number == 0) {
     int num_items = 0;
     for (auto& [asset, count] : inventory) {
@@ -106,9 +106,9 @@ bool Craft::ProcessDefaultInput(int key, int scancode, int action,
   }
 }
 
-Craft::Craft(shared_ptr<AssetCatalog> asset_catalog, 
+Craft::Craft(shared_ptr<Resources> asset_catalog, 
   shared_ptr<Draw2D> draw_2d, shared_ptr<Project4D> project_4d) 
-  : asset_catalog_(asset_catalog), draw_2d_(draw_2d), project_4d_(project_4d) {
+  : resources_(asset_catalog), draw_2d_(draw_2d), project_4d_(project_4d) {
 }
 
 void Craft::Draw(int win_x, int win_y) {
@@ -129,7 +129,7 @@ void Craft::Draw(int win_x, int win_y) {
 }
 
 void Craft::ProcessCrafting() {
-  shared_ptr<Player> player = asset_catalog_->GetPlayer();
+  shared_ptr<Player> player = resources_->GetPlayer();
   if (creating_spell_ != -1) {
     hypercube_life_ -= 0.1f;
 
