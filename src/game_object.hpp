@@ -52,7 +52,8 @@ struct Sector;
 struct Waypoint;
 struct Action;
 
-struct GameObject {
+class GameObject {
+ public:
   GameObjectType type = GAME_OBJ_DEFAULT;
 
   int id;
@@ -135,6 +136,12 @@ struct GameObject {
   shared_ptr<GameAsset> GetAsset();
   shared_ptr<SphereTreeNode> GetSphereTree();
   shared_ptr<AABBTreeNode> GetAABBTree();
+  bool IsLight();
+  bool IsExtractable();
+  bool IsItem();
+  bool IsMovingObject();
+  mat4 GetBoneTransform();
+  shared_ptr<GameObject> GetParent();
 };
 
 struct Player : GameObject {

@@ -1,6 +1,19 @@
 #ifndef __GAME_ASSET_HPP__
 #define __GAME_ASSET_HPP__
 
+#include "util.hpp"
+#include "collision.hpp"
+
+#include <exception>
+#include <iostream>
+#include <map>
+#include <memory>
+#include <queue>
+#include <stdio.h>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
 enum CollisionType {
   COL_SPHERE = 0,
   COL_BONES,

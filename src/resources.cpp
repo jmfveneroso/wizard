@@ -34,6 +34,8 @@ PhysicsBehavior StrToPhysicsBehavior(const std::string& s) {
   return str_to_p_behavior[s];
 }
 
+// Internal functions.
+
 AABB GetObjectAABB(const vector<Polygon>& polygons) {
   vector<vec3> vertices;
   for (auto& p : polygons) {
@@ -42,16 +44,6 @@ AABB GetObjectAABB(const vector<Polygon>& polygons) {
     }
   }
   return GetAABBFromVertices(vertices);
-}
-
-BoundingSphere GetObjectBoundingSphere(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->GetAsset()->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetBoundingSphereFromVertices(vertices);
 }
 
 BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons) {
@@ -75,6 +67,21 @@ vec3 LoadVec3FromXml(const pugi::xml_node& node) {
 float LoadFloatFromXml(const pugi::xml_node& node) {
   return boost::lexical_cast<float>(node.text().get());
 }
+
+AABB GetObjectAABB(shared_ptr<GameObject> obj) {
+  vector<vec3> vertices;
+  for (auto& p : obj->GetAsset()->lod_meshes[0].polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v + obj->position);
+    }
+  }
+  return GetAABBFromVertices(vertices);
+}
+
+OBB GetObjectOBB(shared_ptr<GameObject> obj) {
+  return GetOBBFromPolygons(obj->GetAsset()->lod_meshes[0].polygons, obj->position);
+}
+
 
 Resources::Resources(const string& resources_dir, 
   const string& shaders_dir) : directory_(resources_dir), 
@@ -137,44 +144,6 @@ void Resources::Init() {
 
   // TODO: move to particle.
   InitMissiles();
-}
-
-bool Resources::IsMovingObject(shared_ptr<GameObject> game_obj) {
-  return (game_obj->type == GAME_OBJ_DEFAULT
-    || game_obj->type == GAME_OBJ_PLAYER 
-    || game_obj->type == GAME_OBJ_MISSILE)
-    && game_obj->parent_bone_id == -1
-    && game_obj->GetAsset()->physics_behavior != PHYSICS_FIXED;
-}
-
-bool Resources::IsItem(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->item;
-}
-
-bool Resources::IsExtractable(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->extractable;
-}
-
-bool Resources::IsLight(shared_ptr<GameObject> game_obj) {
-  if (game_obj->type != GAME_OBJ_DEFAULT
-    && game_obj->type != GAME_OBJ_PLAYER 
-    && game_obj->type != GAME_OBJ_MISSILE) {
-    return false;
-  }
-  shared_ptr<GameAsset> asset = game_obj->GetAsset();
-  return asset->emits_light;
 }
 
 shared_ptr<GameAssetGroup> 
@@ -614,7 +583,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     // Straddling, or no child node to descend into, so link object into list 
     // at this node.
     object->octree_node = octree_node;
-    if (IsLight(object)) {
+    if (object->IsLight()) {
       octree_node->lights[object->id] = object;
       shared_ptr<OctreeNode> n = octree_node;
       while (n) {
@@ -622,7 +591,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
       }
     }
 
-    if (IsMovingObject(object)) {
+    if (object->IsMovingObject()) {
       octree_node->moving_objs[object->id] = object;
     } else if (object->type == GAME_OBJ_SECTOR) {
       octree_node->sectors.push_back(static_pointer_cast<Sector>(object));
@@ -630,20 +599,6 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
       octree_node->objects[object->id] = object;
     }
   }
-}
-
-AABB GetObjectAABB(shared_ptr<GameObject> obj) {
-  vector<vec3> vertices;
-  for (auto& p : obj->GetAsset()->lod_meshes[0].polygons) {
-    for (auto& v : p.vertices) {
-      vertices.push_back(v + obj->position);
-    }
-  }
-  return GetAABBFromVertices(vertices);
-}
-
-OBB GetObjectOBB(shared_ptr<GameObject> obj) {
-  return GetOBBFromPolygons(obj->GetAsset()->lod_meshes[0].polygons, obj->position);
 }
 
 void Resources::AddGameObject(shared_ptr<GameObject> game_obj) {
@@ -662,19 +617,19 @@ void Resources::AddGameObject(shared_ptr<GameObject> game_obj) {
 
   objects_by_id_[game_obj->id] = game_obj;
 
-  if (IsMovingObject(game_obj)) {
+  if (game_obj->IsMovingObject()) {
     moving_objects_.push_back(game_obj);
   }
 
-  if (IsItem(game_obj)) {
+  if (game_obj->IsItem()) {
     items_.push_back(game_obj);
   }
 
-  if (IsExtractable(game_obj)) {
+  if (game_obj->IsExtractable()) {
     extractables_.push_back(game_obj);
   }
 
-  if (IsLight(game_obj)) {
+  if (game_obj->IsLight()) {
     lights_.push_back(game_obj);
   }
 }
@@ -1354,6 +1309,7 @@ shared_ptr<Missile> Resources::CreateMissileFromAsset(
 
 shared_ptr<GameObject> Resources::CreateGameObjFromAsset(
   string asset_name, vec3 position, const string obj_name) {
+  LockOctree();
 
   string name = obj_name;
   if (name.empty()) {
@@ -1361,6 +1317,7 @@ shared_ptr<GameObject> Resources::CreateGameObjFromAsset(
   }
   shared_ptr<GameObject> new_game_obj = 
     LoadGameObject(name, asset_name, position, vec3(0, 0, 0));
+  UnlockOctree();
   return new_game_obj;
 }
 
@@ -1368,10 +1325,10 @@ void Resources::UpdateObjectPosition(shared_ptr<GameObject> obj) {
   // Clear position data.
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
-    if (IsMovingObject(obj)) {
+    if (obj->IsMovingObject()) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
-    if (IsLight(obj)) {
+    if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
     }
     obj->octree_node = nullptr;
@@ -1614,47 +1571,6 @@ void Resources::UpdateFrameStart() {
   frame_start_ = glfwGetTime();
 }
 
-BoundingSphere GameObject::GetBoundingSphere() {
-  if (!asset_group) {
-    throw runtime_error("No asset group in game object.");
-  }
-
-  if (asset_group->assets.empty()) {
-    throw runtime_error("Asset group in game object is empty.");
-  }
-
-  BoundingSphere s;
-  if (bounding_sphere.radius > 0.001f) {
-    s = bounding_sphere; 
-  } else if (asset_group->bounding_sphere.radius > 0.001f) {
-    s = asset_group->bounding_sphere; 
-  } else {
-    s = GetAsset()->bounding_sphere;
-  }
-
-  s.center += position;
-  return s;
-}
-
-shared_ptr<GameAsset> GameObject::GetAsset() {
-  if (asset_group->assets.empty()) {
-    throw runtime_error(string("Asset group with no assets for object ") + name);
-  }
-  return asset_group->assets[0];
-}
-
-shared_ptr<AABBTreeNode> GameObject::GetAABBTree() {
-  if (aabb_tree) return aabb_tree;
-  shared_ptr<GameAsset> asset = GetAsset();
-  return asset->aabb_tree;
-}
-
-shared_ptr<SphereTreeNode> GameObject::GetSphereTree() {
-  if (aabb_tree) return sphere_tree;
-  shared_ptr<GameAsset> asset = GetAsset();
-  return asset->sphere_tree;
-}
-
 int GetSortingAxis(vector<shared_ptr<GameObject>>& objs) {
   float s[3] = { 0, 0, 0 };
   float s2[3] = { 0, 0, 0 };
@@ -1757,28 +1673,6 @@ shared_ptr<OctreeNode> Resources::GetOctreeRoot() {
   return GetSectorByName("outside")->octree_node;
 }
 
-AABB GameObject::GetAABB() {
-  if (!asset_group) {
-    throw runtime_error("No asset group in game object.");
-  }
-
-  if (asset_group->assets.empty()) {
-    throw runtime_error("Asset group in game object is empty.");
-  }
-
-  AABB r;
-  if (length2(aabb.dimensions) > 0.001f) {
-    r = aabb; 
-  } else if (length2(asset_group->aabb.dimensions) > 0.001f) {
-    r = asset_group->aabb; 
-  } else {
-    r = GetAsset()->aabb;
-  }
-
-  // r.point += position;
-  return r;
-}
-
 void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
   assets_by_id_.erase(asset->id);
   assets_.erase(asset->name);
@@ -1787,10 +1681,10 @@ void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
 void Resources::DeleteObject(ObjPtr obj) {
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
-    if (IsMovingObject(obj)) {
+    if (obj->IsMovingObject()) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
-    if (IsLight(obj)) {
+    if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
     }
     obj->octree_node = nullptr;
@@ -1809,10 +1703,10 @@ void Resources::RemoveObject(ObjPtr obj) {
   // Clear position data.
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
-    if (IsMovingObject(obj)) {
+    if (obj->IsMovingObject()) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
-    if (IsLight(obj)) {
+    if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
     }
     obj->octree_node = nullptr;
@@ -2278,4 +2172,10 @@ shared_ptr<Configs> Resources::GetConfigs() {
 
 unordered_map<string, shared_ptr<Sector>> Resources::GetSectors() { 
   return sectors_; 
+}
+
+void Resources::AddNewObject(ObjPtr obj) { 
+  LockOctree();
+  new_objects_.push_back(obj); 
+  UnlockOctree();
 }

@@ -164,7 +164,7 @@ class Resources {
 
   // Just right.
   void RemoveObject(ObjPtr obj);
-  void AddNewObject(ObjPtr obj) { new_objects_.push_back(obj); }
+  void AddNewObject(ObjPtr obj);
   void SaveNewObjects();
   void DeleteAsset(shared_ptr<GameAsset> asset);
   void DeleteObject(ObjPtr obj);
@@ -186,7 +186,7 @@ class Resources {
 
 
   // ====================
-  // Getters and Setters
+  // Getters
   double GetFrameStart();
   Particle* GetParticleContainer();
   shared_ptr<Player> GetPlayer();
@@ -219,10 +219,6 @@ class Resources {
   // TODO: where?
   void UpdateFrameStart();
   void MakeGlow(ObjPtr obj);
-  bool IsItem(shared_ptr<GameObject> game_obj);
-  bool IsExtractable(shared_ptr<GameObject> game_obj);
-  bool IsLight(shared_ptr<GameObject> game_obj);
-  bool IsMovingObject(shared_ptr<GameObject> game_obj);
 
   // TODO: move to height_map.
   bool CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile);

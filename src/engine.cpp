@@ -327,7 +327,7 @@ void Engine::Run() {
   vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
   // Start threads.
-  collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
+  // collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
 
   int frames = 0;
   double last_time = glfwGetTime();
@@ -354,8 +354,8 @@ void Engine::Run() {
       ai_->RunSpiderAI();
       resources_->UpdateParticles();
 
-      // physics_->Run();
-      // collision_resolver_->Collide();
+      physics_->Run();
+      collision_resolver_->Collide();
 
       configs->taking_hit -= 1.0f;
       if (configs->taking_hit < 0.0) {

@@ -20,11 +20,8 @@ CollisionResolver::CollisionResolver(
 // TODO: this should be calculated only once per frame.
 vector<BoundingSphere> GetBoneBoundingSpheres(ObjPtr obj) {
   vector<BoundingSphere> result;
-  Mesh& parent_mesh = obj->GetAsset()->lod_meshes[0];
-  const Animation& animation = parent_mesh.animations[obj->active_animation];
   for (ObjPtr c : obj->children) {
-    mat4 joint_transform = 
-      animation.keyframes[obj->frame].transforms[c->parent_bone_id];
+    mat4 joint_transform = c->GetBoneTransform();
 
     vec3 offset = c->GetAsset()->bounding_sphere.center;
     offset = vec3(obj->rotation_matrix * vec4(offset, 1.0));
@@ -648,12 +645,10 @@ void FillCollisionBlankFields(ColPtr c) {
 }
 
 BoundingSphere GetBoneBoundingSphere(ObjPtr bone) {
-  ObjPtr parent = bone->parent;
-  Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
-  const Animation& animation = parent_mesh.animations[parent->active_animation];
+  ObjPtr parent = bone->GetParent();
 
-  mat4 joint_transform = 
-    animation.keyframes[parent->frame].transforms[bone->parent_bone_id];
+  mat4 joint_transform = bone->GetBoneTransform();
+
   vec3 offset = bone->GetAsset()->bounding_sphere.center;
   offset = vec3(parent->rotation_matrix * vec4(offset, 1.0));
 
