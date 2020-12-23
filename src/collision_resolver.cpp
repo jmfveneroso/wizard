@@ -1,6 +1,8 @@
 #include "collision_resolver.hpp"
 #include "collision.hpp"
 
+#include <chrono>
+
 // TODO: do we need terrain here?
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
   // Sphere / Bones / Quick Sphere / Perfect / C. Hull / Terrain 
@@ -93,17 +95,57 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
   return true;
 }
 
+void CollisionResolver::ProcessTentativePair(ObjPtr obj1, ObjPtr obj2) {
+  vector<ColPtr> collisions = CollideObjects(obj1, obj2);
+  for (auto& c : collisions) {
+    TestCollision(c);
+    if (c->collided) {
+      collisions_.push_back(c);
+    }
+  }
+}
+
 void CollisionResolver::Collide() {
+  double start_time = glfwGetTime();
+
   collisions_.clear();
   collisions_.reserve(256);
+
   ClearMetrics();
   UpdateObjectPositions();
 
   FindCollisions(resources_->GetOctreeRoot(), {});
+
+  // double find_time = glfwGetTime();
+  // double duration = find_time - start_time;
+  // double percent_of_a_frame = 100.0 * duration / 0.0166666666;
+  // cout << "Find tentative pairs took: " << duration << " seconds " << percent_of_a_frame
+  //   << "\% of a frame" << endl;
+
   FindCollisionsWithTerrain();
+
+  for (auto& [obj1, obj2] : tentative_pairs_) {
+    ProcessTentativePair(obj1, obj2);
+  }
+
+  tentative_pairs_.clear();
+  tentative_pair_cursor_ = 0;
+
+  // find_time = glfwGetTime();
+  // duration = find_time - start_time;
+  // percent_of_a_frame = 100.0 * duration / 0.0166666666;
+  // cout << "Find collisions took: " << duration << " seconds " << percent_of_a_frame
+  //   << "\% of a frame" << endl;
+
   ResolveCollisions();
 
   // PrintMetrics();
+
+  // double end_time = glfwGetTime();
+  // duration = end_time - start_time;
+  // percent_of_a_frame = 100.0 * duration / 0.0166666666;
+  // cout << "Collision resolver took: " << duration << " seconds " << percent_of_a_frame
+  //   << "\% of a frame" << endl;
 }
 
 void CollisionResolver::ClearMetrics() {
@@ -134,6 +176,7 @@ void CollisionResolver::UpdateObjectPositions() {
 
     obj->prev_position = obj->position;
     obj->position = obj->target_position;
+
     resources_->UpdateObjectPosition(obj);
   }
 }
@@ -182,13 +225,7 @@ void CollisionResolver::CollideAlongAxis(shared_ptr<OctreeNode> octree_node,
     if (static_obj.end < start) continue;
     if (!IsCollidable(static_obj.obj)) continue;
      
-    vector<ColPtr> collisions = CollideObjects(obj, static_obj.obj);
-    for (auto& c : collisions) {
-      TestCollision(c);
-      if (c->collided) {
-        collisions_.push_back(c);
-      }
-    }
+    tentative_pairs_.push_back({ obj, static_obj.obj });
   }
 }
 
@@ -209,13 +246,7 @@ void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node,
       if (obj1->id == obj2->id) continue;
       if (!IsCollidable(obj2)) continue;
        
-      vector<ColPtr> collisions = CollideObjects(obj1, obj2);
-      for (auto& c : collisions) {
-        TestCollision(c);
-        if (c->collided) {
-          collisions_.push_back(c);
-        }
-      }
+      tentative_pairs_.push_back({ obj1, obj2 });
     }
     objs.push_back(obj1);
   }
@@ -582,7 +613,9 @@ void CollisionResolver::FindCollisionsWithTerrain() {
   for (auto& c : collisions) {
     TestCollision(c);
     if (c->collided) {
+      find_mutex_.lock();
       collisions_.push_back(c);
+      find_mutex_.unlock();
     }
   }
 }

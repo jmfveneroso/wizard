@@ -3,6 +3,9 @@
 
 #include "resources.hpp"
 
+#include <thread>
+#include <mutex>
+
 // Not all collision pairs are possible.
 enum CollisionPair {
   CP_SS = 0, // SPHERE -> SPHERE
@@ -173,6 +176,14 @@ class CollisionResolver {
   double start_time_ = 0;
   int num_objects_tested_ = 0;
   int perfect_collision_tests_ = 0;
+
+  // Threads.
+  const int kMaxFindThreads = 16;
+  vector<thread> find_threads_;
+  mutex find_mutex_;
+  vector<tuple<ObjPtr, ObjPtr>> tentative_pairs_;
+  int tentative_pair_cursor_ = 0;
+
   void ClearMetrics();
   void PrintMetrics();
 
@@ -200,10 +211,14 @@ class CollisionResolver {
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);
 
   void UpdateObjectPositions();
-  void FindCollisions(shared_ptr<OctreeNode> octree_node, vector<ObjPtr> objs);
+  void FindCollisions(shared_ptr<OctreeNode> octree_node, 
+    vector<ObjPtr> objs);
+
   // TODO: this should be improved for terrain with high steepness.
   void FindCollisionsWithTerrain();
   void ResolveCollisions();
+
+  void ProcessTentativePair(ObjPtr obj1, ObjPtr obj2);
 
  public:
   CollisionResolver(shared_ptr<Resources> asset_catalog);

@@ -4,6 +4,8 @@ project (Fbx)
 set (CMAKE_CXX_STANDARD 17)
 set(CMAKE_BUILD_TYPE Debug)
 
+include(CTest)
+
 find_package(OpenGL REQUIRED)
 
 set(ALL_LIBS
@@ -76,12 +78,13 @@ include_directories(${INCLUDE_DIRS})
 link_directories(${LINK_DIRS})
 
 # Create sybil library.
-add_library(test ${SRC})
-target_link_libraries(test ${ALL_LIBS})
+add_library(wizard_lib ${SRC})
+target_link_libraries(wizard_lib ${ALL_LIBS})
 
 # Create executables.
 add_executable(main src/main.cpp)
-target_link_libraries(main test)
+target_link_libraries(main wizard_lib)
 
-# add_executable(convert_assets src/convert_assets.cpp)
-# target_link_libraries(convert_assets test)
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

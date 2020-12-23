@@ -13,6 +13,10 @@
 #include "dialog.hpp"
 #include "npc.hpp"
 
+#include <thread>
+#include <mutex>
+#include <chrono>
+
 using namespace std;
 using namespace glm;
 
@@ -37,10 +41,14 @@ class Engine {
   GLFWwindow* window_;
   int throttle_counter_ = 0;
 
+  bool terminate_ = false;
+  thread collision_thread_;
+
   void RunCommand(string command);
   bool ProcessGameInput();
   void AfterFrame();
   void UpdateAnimationFrames();
+  void ProcessCollisionsAsync();
 
  public:
   Engine(

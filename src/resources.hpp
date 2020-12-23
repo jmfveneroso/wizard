@@ -112,6 +112,9 @@ class Resources {
   vector<tuple<shared_ptr<GameAsset>, int>> inventory_;
   shared_ptr<OctreeNode> outside_octree_;
 
+  // Mutexes.
+  mutex octree_mutex_;
+
   // Aux loading functions.
   void AddGameObject(shared_ptr<GameObject> game_obj);
   shared_ptr<GameAsset> LoadAsset(const pugi::xml_node& asset);
@@ -250,6 +253,9 @@ class Resources {
     vec3 position);
   shared_ptr<Sector> GetSector(vec3 position);
   void CalculateAllClosestLightPoints();
+
+  void LockOctree() { octree_mutex_.lock(); }
+  void UnlockOctree() { octree_mutex_.unlock(); }
 };
 
 #endif // __RESOURCES_HPP__

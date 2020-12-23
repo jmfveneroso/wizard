@@ -1,21 +1,5 @@
 #include "resources.hpp"
-
-void DoInOrder() {};
-template<typename Lambda0, typename ...Lambdas>
-void DoInOrder(Lambda0&& lambda0, Lambdas&&... lambdas) {
-  forward<Lambda0>(lambda0)();
-  DoInOrder(std::forward<Lambdas>(lambdas)...);
-}
-
-template<typename First, typename ...Args>
-void ThrowError(First first, Args&& ...args) {
-  std::stringstream ss;
-  ss << first;
-  DoInOrder( [&](){
-    ss << std::forward<Args>(args);
-  }...);
-  throw runtime_error(ss.str());
-}
+#include "debug.hpp"
 
 CollisionType StrToCollisionType(const std::string& s) {
   static unordered_map<string, CollisionType> str_to_col_type ({

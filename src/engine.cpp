@@ -108,6 +108,27 @@ void Engine::RunCommand(string command) {
   }
 }
 
+void Engine::ProcessCollisionsAsync() {
+  double min_time_elapsed = 1.0f / 60.0f;
+
+  double last_update = 0;
+  while (!terminate_) {
+    double cur_time = glfwGetTime();
+
+    double time_elapsed = cur_time - last_update;
+    if (time_elapsed < min_time_elapsed) {
+      int ms = (min_time_elapsed - time_elapsed) * 1000;
+      this_thread::sleep_for(chrono::milliseconds(ms));
+    }
+    last_update = cur_time;
+
+    resources_->LockOctree();
+    physics_->Run();
+    collision_resolver_->Collide();
+    resources_->UnlockOctree();
+  }
+}
+
 bool Engine::ProcessGameInput() {
   resources_->UpdateFrameStart();
   resources_->UpdateMissiles();
@@ -187,31 +208,6 @@ bool Engine::ProcessGameInput() {
         }
         throttle_counter_ = 20;
       }
-
-      Camera c = player_input_->ProcessInput(window);
-      item_->ProcessItems();
-      craft_->ProcessCrafting();
-      npc_->ProcessNpcs();
-
-      renderer_->SetCamera(c);
-
-      ai_->RunSpiderAI();
-      physics_->Run();
-      resources_->UpdateParticles();
-
-      collision_resolver_->Collide();
-
-      configs->taking_hit -= 1.0f;
-      if (configs->taking_hit < 0.0) {
-        configs->player_speed = configs->target_player_speed;
-      } else {
-        configs->player_speed = configs->target_player_speed / 6.0f;
-      }
-
-      resources_->RemoveDead();
-      configs->sun_position = vec3(rotate(mat4(1.0f), 0.001f, vec3(0.0, 0, 1.0)) 
-        * vec4(configs->sun_position, 1.0f));
-
       return false;
     }
     case STATE_EDITOR: {
@@ -330,6 +326,9 @@ void Engine::Run() {
 
   vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
+  // Start threads.
+  collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
+
   int frames = 0;
   double last_time = glfwGetTime();
   do {
@@ -343,14 +342,44 @@ void Engine::Run() {
     }
 
     UpdateAnimationFrames();
+
     ProcessGameInput();
 
-    renderer_->Draw();
+    shared_ptr<Configs> configs = resources_->GetConfigs();
+    {
+      item_->ProcessItems();
+      craft_->ProcessCrafting();
+      npc_->ProcessNpcs();
 
+      ai_->RunSpiderAI();
+      resources_->UpdateParticles();
+
+      // physics_->Run();
+      // collision_resolver_->Collide();
+
+      configs->taking_hit -= 1.0f;
+      if (configs->taking_hit < 0.0) {
+        configs->player_speed = configs->target_player_speed;
+      } else {
+        configs->player_speed = configs->target_player_speed / 6.0f;
+      }
+    }
+
+    resources_->LockOctree();
+    Camera c = player_input_->ProcessInput(window_);
+    renderer_->SetCamera(c);
+    renderer_->Draw();
+    resources_->UnlockOctree();
+
+    {
+      resources_->RemoveDead();
+      configs->sun_position = vec3(rotate(mat4(1.0f), 0.0002f, vec3(0.0, 0, 1.0)) 
+        * vec4(configs->sun_position, 1.0f));
+    }
     AfterFrame();
 
-    project_4d_->CreateHypercube(vec3(11623, 177, 7550), hypercube_rotation);
-    hypercube_rotation[2] += 0.02;
+    // project_4d_->CreateHypercube(vec3(11623, 177, 7550), hypercube_rotation);
+    // hypercube_rotation[2] += 0.02;
 
     glfwSwapBuffers(window_);
     glfwPollEvents();
@@ -359,4 +388,9 @@ void Engine::Run() {
   // Cleanup VBO and shader.
   resources_->Cleanup();
   glfwTerminate();
+
+  terminate_ = true;
+
+  // Join threads.
+  collision_thread_.join();
 }

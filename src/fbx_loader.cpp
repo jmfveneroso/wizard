@@ -276,7 +276,9 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
 
     string name = (char*) cluster->GetLink()->GetName();
     if (joint_map.find(name) == joint_map.end()) {
-      throw runtime_error("Joint not found.");
+      // throw runtime_error(string("Joint ") + name + " not found.");
+      cout << "Joint " << name << " not found" << endl;
+      continue;
     }
 
     shared_ptr<SkeletonJoint> joint = joint_map[name];

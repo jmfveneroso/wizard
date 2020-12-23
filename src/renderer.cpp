@@ -2,6 +2,28 @@
 #include "boost/filesystem.hpp"
 #include <boost/algorithm/string/predicate.hpp>
 
+namespace {
+
+void DoInOrder() {}
+
+template<typename Lambda0, typename ...Lambdas>
+void DoInOrder(Lambda0&& lambda0, Lambdas&&... lambdas) {
+  forward<Lambda0>(lambda0)();
+  DoInOrder(std::forward<Lambdas>(lambdas)...);
+}
+
+template<typename First, typename ...Args>
+void ThrowError(First first, Args&& ...args) {
+  std::stringstream ss;
+  ss << first;
+  DoInOrder( [&](){
+    ss << std::forward<Args>(args);
+  }...);
+  throw runtime_error(ss.str());
+}
+
+} // End of namespace.
+
 Renderer::Renderer(shared_ptr<Resources> asset_catalog, 
   shared_ptr<Draw2D> draw_2d, shared_ptr<Project4D> project_4d, 
   GLFWwindow* window, int window_width, int window_height) : 
@@ -129,6 +151,7 @@ Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
   std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
     return lhs->distance < rhs->distance;
   });
+
   return objs;
 }
 
@@ -384,6 +407,8 @@ void Renderer::DrawOutside() {
 
 // TODO: split into functions for each shader.
 void Renderer::DrawObject(shared_ptr<GameObject> obj) {
+  if (obj == nullptr) return;
+
   for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
     int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
     for (; lod >= 0; lod--) {
@@ -492,6 +517,12 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       vector<mat4> joint_transforms;
       if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
         const Animation& animation = mesh.animations[obj->active_animation];
+        if (obj->frame > animation.keyframes.size()) {
+          ThrowError("Frame ", obj->frame, " outside the scope of animation ",
+          obj->active_animation, " for object ", obj->name, " which has ",
+          animation.keyframes.size(), " frames");
+        }
+
         for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
           joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
         }
@@ -557,21 +588,52 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
           player_pos.x, player_pos.y, player_pos.z);
       }
 
-      // Is bone.
-      shared_ptr<GameObject> parent = obj->parent;
-      if (parent) {
-        int bone_id = obj->parent_bone_id;
-        Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
-        const Animation& animation = parent_mesh.animations[parent->active_animation];
-        mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
-        ModelMatrix = translate(mat4(1.0), obj->position);
-        ModelMatrix = ModelMatrix * obj->rotation_matrix * joint_transform;
-        ModelViewMatrix = view_matrix_ * ModelMatrix;
-        MVP = projection_matrix_ * ModelViewMatrix;
-        glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-        glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-        glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
-      }
+      // // Is bone.
+      // shared_ptr<GameObject> parent = obj->parent;
+      // if (parent) {
+      //   int bone_id = obj->parent_bone_id;
+      //   Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
+
+      //   if (parent_mesh.animations.find(parent->active_animation) == 
+      //     parent_mesh.animations.end()) {
+      //     throw runtime_error(string("Animation ") + parent->active_animation + 
+      //       " doesn't exist");
+      //   }
+
+      //   const Animation& animation = parent_mesh.animations[parent->active_animation];
+
+      //   if (parent->frame > animation.keyframes.size()) {
+      //     throw runtime_error(string("Frame ") + 
+      //       boost::lexical_cast<string>(parent->frame) + 
+      //       " overshoots animation " + 
+      //       boost::lexical_cast<string>(parent->active_animation) +
+      //       " that has " + 
+      //       boost::lexical_cast<string>(animation.keyframes.size()) +
+      //       " frames.");
+      //   }
+
+      //   if (bone_id > animation.keyframes[parent->frame].transforms.size()) {
+      //     throw runtime_error(string("Transform for bone ") + 
+      //       boost::lexical_cast<string>(bone_id) + 
+      //       " outside the score of animation " + 
+      //       boost::lexical_cast<string>(parent->active_animation));
+      //   }
+
+      //   mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
+      //   cout << "joint_transform" << endl;
+      //   cout << joint_transform << endl;
+      //   cout << "frame: " << parent->frame << endl;
+      //   cout << "bone_id: " << bone_id << endl;
+      //   cout << "frame: " << parent->frame << endl;
+
+      //   ModelMatrix = translate(mat4(1.0), obj->position);
+      //   ModelMatrix = ModelMatrix * obj->rotation_matrix * joint_transform;
+      //   ModelViewMatrix = view_matrix_ * ModelMatrix;
+      //   MVP = projection_matrix_ * ModelViewMatrix;
+      //   glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+      //   glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
+      //   glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+      // }
 
       glDisable(GL_CULL_FACE);
       glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
