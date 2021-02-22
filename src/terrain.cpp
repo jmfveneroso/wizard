@@ -1,7 +1,5 @@
 #include "terrain.hpp"
 
-const vec2 kWorldCenter = vec2(10000, 10000);
-
 // TODO: change to kTilePatterns and the others accordingly.
 // TODO: move all this hard coded data to another file.
 const vector<vector<vector<ivec2>>> tile_patterns = {
@@ -150,12 +148,15 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glGenVertexArrays(1, &vao_);
   glBindVertexArray(vao_);
 
-  texture_ = LoadPng("resources/textures_png/tiles.png", true/* poor filtering */);
+  texture_ = LoadPng("resources/textures_png/grass.png");
+  texture1_ = LoadPng("resources/textures_png/dirt.png");
+  texture2_ = LoadPng("resources/textures_png/leaves.png");
+  texture3_ = LoadPng("resources/textures_png/mossy_stone.png");
   water_texture_ = LoadPng("resources/textures_png/water_dudv.png");
   water_normal_texture_ = LoadPng("resources/textures_png/water_normal.png");
   // texture_ = resources_->GetTextureByName("tiles");
-  // water_texture_ = resources_->GetTextureByName("water");
-  // water_normal_texture_ = resources_->GetTextureByName("water-normal");
+  // water_texture_ = resources_->GetTextureByName("water_dudv");
+  // water_normal_texture_ = resources_->GetTextureByName("water_normal");
 
   for (int i = 0; i < CLIPMAP_LEVELS; i++) {
     clipmaps_.push_back(make_shared<Clipmap>(i));
@@ -303,7 +304,7 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   vec3 world_coords = GridToWorldCoordinates(grid_coords);
 
   const TerrainPoint& terrain_point = 
-    resources_->GetTerrainPoint(world_coords.x, world_coords.z);
+    resources_->GetHeightMap().GetTerrainPoint(world_coords.x, world_coords.z);
 
   float height = terrain_point.height / MAX_HEIGHT;
   float step = GetTileSize(level) * TILE_SIZE;
@@ -337,9 +338,9 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
       vec3 world_coords1 = GridToWorldCoordinates(grid_coords - offset);
       vec3 world_coords2 = GridToWorldCoordinates(grid_coords + offset);
       vec3 blending1 = resources_->
-        GetTerrainPoint(world_coords1.x, world_coords1.z).blending;
+        GetHeightMap().GetTerrainPoint(world_coords1.x, world_coords1.z).blending;
       vec3 blending2 = resources_->
-        GetTerrainPoint(world_coords2.x, world_coords2.z).blending;
+        GetHeightMap().GetTerrainPoint(world_coords2.x, world_coords2.z).blending;
 
       coarser_blending = (blending1+blending2) * 0.5f;
     }
@@ -531,7 +532,7 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
       }
     }
 
-    UpdateLights(i, player_pos);
+    // UpdateLights(i, player_pos);
   }
 }
 
@@ -588,7 +589,7 @@ void Terrain::DrawWater(Camera& camera, mat4 ViewMatrix,
   glUseProgram(water_program_id_);
 
   vec3 normal;
-  float h = resources_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
   const int kFirstIndex = 2;
   for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
@@ -755,7 +756,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     (float*) &configs->sun_position);
 
   vec3 normal;
-  float h = resources_->GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
 
   const int kFirstIndex = 2;
@@ -847,6 +848,19 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glActiveTexture(GL_TEXTURE8);
     glBindTexture(GL_TEXTURE_2D, shadow_textures_[2]);
     glUniform1i(GetUniformId(program_id, "shadow_sampler2"), 8);
+
+    glActiveTexture(GL_TEXTURE9);
+    glBindTexture(GL_TEXTURE_2D, texture1_);
+    glUniform1i(GetUniformId(program_id, "texture1_sampler"), 9);
+
+    glActiveTexture(GL_TEXTURE10);
+    glBindTexture(GL_TEXTURE_2D, texture2_);
+    glUniform1i(GetUniformId(program_id, "texture2_sampler"), 10);
+
+    glActiveTexture(GL_TEXTURE11);
+    glBindTexture(GL_TEXTURE_2D, texture3_);
+    glUniform1i(GetUniformId(program_id, "texture3_sampler"), 11);
+
 
     ivec2 offset = ivec2(0, 0);
     ivec2 grid_coords = WorldToGridCoordinates(player_pos);

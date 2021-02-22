@@ -218,6 +218,13 @@ ostream& operator<<(ostream& os, const BoundingSphere& bs) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const OBB& obb) {
+  os << "center: " << obb.center << ", axis[0]: " << obb.axis[0]
+     << ", axis[1]: " << obb.axis[1] << ", axis[2]" << obb.axis[2]
+     << "half_widths: " << obb.half_widths << ")";
+  return os;
+}
+
 ostream& operator<<(ostream& os, const Edge& e) {
   os << "a: " << e.a << endl;
   os << "b: " << e.b << endl;
@@ -768,4 +775,125 @@ float clamp(float v, float low, float high) {
     v = high;
   }
   return v;
+}
+
+CollisionType StrToCollisionType(const std::string& s) {
+  static unordered_map<string, CollisionType> str_to_col_type ({
+    { "sphere", COL_SPHERE },
+    { "bones", COL_BONES },
+    { "perfect", COL_PERFECT },
+    { "quick-sphere", COL_QUICK_SPHERE },
+    { "convex-hull", COL_CONVEX_HULL},
+    { "obb", COL_OBB},
+    { "none", COL_NONE },
+    { "undefined", COL_UNDEFINED }
+  });
+  return str_to_col_type[s];
+}
+
+ParticleBehavior StrToParticleBehavior(const std::string& s) {
+  static unordered_map<string, ParticleBehavior> str_to_p_type ({
+    { "fixed", PARTICLE_FIXED },
+    { "fall", PARTICLE_FALL }
+  });
+  return str_to_p_type[s];
+}
+
+PhysicsBehavior StrToPhysicsBehavior(const std::string& s) {
+  static unordered_map<string, PhysicsBehavior> str_to_p_behavior ({
+    { "undefined", PHYSICS_UNDEFINED },
+    { "none", PHYSICS_NONE },
+    { "normal", PHYSICS_NORMAL },
+    { "low-gravity", PHYSICS_LOW_GRAVITY },
+    { "no-friction", PHYSICS_NO_FRICTION },
+    { "fixed", PHYSICS_FIXED },
+    { "fly", PHYSICS_FLY },
+    { "swim", PHYSICS_SWIM }
+  });
+  return str_to_p_behavior[s];
+}
+
+AiState StrToAiState(const std::string& s) {
+  static unordered_map<string, AiState> str_to_ai_state ({
+    { "idle", IDLE },
+    { "move", MOVE },
+    { "ai-attack", AI_ATTACK },
+    { "die", DIE },
+    { "turn-toward-target", TURN_TOWARD_TARGET },
+    { "wander", WANDER },
+    { "chase", CHASE },
+    { "script", SCRIPT }
+  });
+  return str_to_ai_state[s];
+}
+
+BoundingSphere GetBoundingSphereFromVertices(
+  const vector<vec3>& vertices) {
+  BoundingSphere bounding_sphere;
+  bounding_sphere.center = vec3(0, 0, 0);
+
+  float num_vertices = vertices.size();
+  for (const vec3& v : vertices) {
+    bounding_sphere.center += v;
+  }
+  bounding_sphere.center *= 1.0f / num_vertices;
+  
+  bounding_sphere.radius = 0.0f;
+  for (const vec3& v : vertices) {
+    bounding_sphere.radius = std::max(bounding_sphere.radius, 
+      length(v - bounding_sphere.center));
+  }
+  return bounding_sphere;
+}
+
+
+BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons) {
+  vector<vec3> vertices;
+  for (auto& p : polygons) {
+    for (auto& v : p.vertices) {
+      vertices.push_back(v);
+    }
+  }
+  return GetBoundingSphereFromVertices(vertices);
+}
+
+vec3 LoadVec3FromXml(const pugi::xml_node& node) {
+  vec3 v;
+  v.x = boost::lexical_cast<float>(node.attribute("x").value());
+  v.y = boost::lexical_cast<float>(node.attribute("y").value());
+  v.z = boost::lexical_cast<float>(node.attribute("z").value());
+  return v;
+}
+
+float LoadFloatFromXml(const pugi::xml_node& node) {
+  return boost::lexical_cast<float>(node.text().get());
+}
+
+mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
+  int bone_id, int frame) {
+  if (mesh.animations.find(animation_name) == mesh.animations.end()) {
+    throw runtime_error(string("Animation ") + animation_name + 
+      " does not exist in Util:868");
+  }
+
+  const Animation& animation = mesh.animations[animation_name];
+  if (frame >= animation.keyframes.size()) {
+    throw runtime_error(string("Frame outside scope") + 
+      " does not exist in Util:875");
+  }
+
+  if (bone_id >= animation.keyframes[frame].transforms.size()) {
+    throw runtime_error(string("Bone id does not exist") + " in Util:879");
+  }
+
+  return animation.keyframes[frame].transforms[bone_id];
+}
+
+int GetNumFramesInAnimation(Mesh& mesh, const string& animation_name) {
+  const Animation& animation = mesh.animations[animation_name];
+  return animation.keyframes.size();
+}
+
+bool MeshHasAnimation(Mesh& mesh, const string& animation_name) {
+  return (mesh.animations.find(animation_name) != mesh.animations.end());
 }

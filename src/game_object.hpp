@@ -3,49 +3,6 @@
 
 #include "game_asset.hpp"
 
-enum GameObjectType {
-  GAME_OBJ_DEFAULT = 0,
-  GAME_OBJ_PLAYER,
-  GAME_OBJ_SECTOR,
-  GAME_OBJ_PORTAL,
-  GAME_OBJ_MISSILE,
-  GAME_OBJ_PARTICLE_GROUP
-};
-
-enum Status {
-  STATUS_NONE = 0,
-  STATUS_TAKING_HIT,
-  STATUS_DYING,
-  STATUS_DEAD,
-  STATUS_BEING_EXTRACTED
-};
-
-enum AiState {
-  IDLE = 0, 
-  MOVE = 1, 
-  AI_ATTACK = 2,
-  DIE = 3,
-  TURN_TOWARD_TARGET = 4,
-  WANDER = 5,
-  CHASE = 6
-};
-
-enum PlayerAction {
-  PLAYER_IDLE,
-  PLAYER_CASTING,
-  PLAYER_EXTRACTING,
-};
-
-enum ActionType {
-  ACTION_MOVE = 0,
-  ACTION_IDLE,
-  ACTION_RANGED_ATTACK,
-  ACTION_CHANGE_STATE,
-  ACTION_TAKE_AIM,
-  ACTION_STAND,
-  ACTION_TALK
-};
-
 struct OctreeNode;
 struct StabbingTreeNode;
 struct Sector;
@@ -113,16 +70,24 @@ class GameObject {
 
   // Override asset properties.
   ConvexHull collision_hull;
-  shared_ptr<SphereTreeNode> sphere_tree = nullptr;
   shared_ptr<AABBTreeNode> aabb_tree = nullptr;
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
+
+  // Only useful if collision type is OBB.
+  OBB obb;
 
   bool override_light = false;
   bool emits_light = false;
   float quadratic;  
   vec3 light_color;
   vector<int> active_textures { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+  int cooldown = 0;
+
+  // TODO: maybe would be better to attach a status.
+  int paralysis_cooldown = 0;
+  bool being_placed = false;
 
   vector<shared_ptr<GameObject>> closest_lights;
 
@@ -134,14 +99,16 @@ class GameObject {
   BoundingSphere GetBoundingSphere();
   AABB GetAABB();
   shared_ptr<GameAsset> GetAsset();
-  shared_ptr<SphereTreeNode> GetSphereTree();
   shared_ptr<AABBTreeNode> GetAABBTree();
   bool IsLight();
   bool IsExtractable();
   bool IsItem();
   bool IsMovingObject();
-  mat4 GetBoneTransform();
+  // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
+  // int GetNumFramesInCurrentAnimation();
+  // bool HasAnimation(const string& animation_name);
+  // bool ChangeAnimation(const string& animation_name);
 };
 
 struct Player : GameObject {
@@ -167,6 +134,11 @@ struct Portal : GameObject {
   Portal() : GameObject(GAME_OBJ_PORTAL) {}
 };
 
+struct Region : GameObject {
+  AABB aabb;
+  Region() : GameObject(GAME_OBJ_REGION) {}
+};
+
 struct Sector : GameObject {
   // Portals inside the sector indexed by the outgoing sector id.
   unordered_map<int, shared_ptr<Portal>> portals;
@@ -177,6 +149,11 @@ struct Sector : GameObject {
   vec3 lighting_color = vec3(0.7);
 
   Sector() : GameObject(GAME_OBJ_SECTOR) {}
+};
+
+struct Door : GameObject {
+  int state = 0; // 0: closed, 1: opening, 2: open, 3: closing
+  Door() : GameObject(GAME_OBJ_DOOR) {}
 };
 
 // ============================================================================
@@ -210,6 +187,10 @@ struct RangedAttackAction : Action {
   RangedAttackAction() : Action(ACTION_RANGED_ATTACK) {}
 };
 
+struct MeeleeAttackAction : Action {
+  MeeleeAttackAction() : Action(ACTION_MEELEE_ATTACK) {}
+};
+
 struct ChangeStateAction : Action {
   AiState new_state;
   ChangeStateAction(AiState new_state) 
@@ -231,13 +212,15 @@ struct TalkAction : Action {
     : Action(ACTION_TALK) {}
 };
 
-struct Waypoint {
-  int id;
-  string name;
+struct CastSpellAction : Action {
+  string spell_name;
+  CastSpellAction(string spell_name) 
+    : Action(ACTION_CAST_SPELL), spell_name(spell_name) {}
+};
 
-  int group;
-  vec3 position;
+struct Waypoint : GameObject {
   vector<shared_ptr<Waypoint>> next_waypoints;
+  Waypoint() : GameObject(GAME_OBJ_WAYPOINT) {}
 };
 
 using ObjPtr = shared_ptr<GameObject>;

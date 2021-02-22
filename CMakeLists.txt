@@ -7,6 +7,8 @@ set(CMAKE_BUILD_TYPE Debug)
 include(CTest)
 
 find_package(OpenGL REQUIRED)
+find_package(PythonInterp REQUIRED)
+find_package(PythonLibs REQUIRED)
 
 set(ALL_LIBS
   ${OPENGL_LIBRARY}
@@ -18,6 +20,7 @@ set(ALL_LIBS
   fbxsdk
   png
   pugixml
+  python3.8
 )
 
 set(INCLUDE_DIRS
@@ -29,6 +32,7 @@ set(INCLUDE_DIRS
   /usr/local/Cellar/boost/1.70.0/include
   /usr/local/opt/freetype/include/freetype2
   /Applications/Autodesk/FBX\ SDK/2020.0.1/include
+  /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/include/python3.8
   ${ZLIB_INCLUDE_DIR}
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
 )
@@ -39,12 +43,17 @@ set(LINK_DIRS
   /usr/local/Cellar/glm/0.9.9.4/lib
   /usr/local/Cellar/boost/1.70.0/lib
   /usr/local/opt/freetype/lib
+  /Library/Developer/CommandLineTools/Library/Frameworks
+  /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib
   "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/"
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
 )
 add_definitions(-DAPPLE)
 
 file(COPY "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/libfbxsdk.dylib"
+     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
+file(COPY /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/Python3
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # Include external libs
@@ -72,7 +81,10 @@ set(
   src/dialog.cpp 
   src/npc.cpp 
   src/engine.cpp 
+  src/game_asset.cpp 
   src/game_object.cpp 
+  src/scripts.cpp 
+  src/height_map.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

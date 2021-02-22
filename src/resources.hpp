@@ -19,6 +19,7 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <unordered_set>
 
 #include <fbxsdk.h>
 #include <GL/glew.h>
@@ -28,7 +29,6 @@
 #include <glm/gtx/transform.hpp>
 #include <glm/gtx/norm.hpp>
 #include <glm/gtx/rotate_vector.hpp>
-#include "pugixml.hpp"
 
 #define APP_NAME "test"
 #define NEAR_CLIPPING 1.00f
@@ -39,7 +39,6 @@
 #define LOD_DISTANCE 100.0f
 #define GRAVITY 0.016
 
-const int kHeightMapSize = 8000;
 const int kMaxParticles = 1000;
 
 enum GameState {
@@ -54,11 +53,12 @@ enum GameState {
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
-  vec3 initial_player_pos = vec3(11508, 33, 7065);
+  vec3 initial_player_pos = vec3(11067, 227, 7667);
   vec3 respawn_point = vec3(10045, 500, 10015);
-  float target_player_speed = 0.03f; 
+  float target_player_speed = 0.04f; 
   float player_speed = 0.03f; 
   float taking_hit = 0.0f; 
+  float time_of_day = 5.0f;
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
   bool disable_attacks = true;
   string edit_terrain = "none";
@@ -69,7 +69,23 @@ struct Configs {
   float raise_factor = 1;
   vec3 old_position;
   ObjPtr new_building;
+  ObjPtr interacting_item = nullptr;
   bool place_object = false;
+  int place_axis = -1;
+  bool stop_time = false;
+  bool scale_object = false;
+  vec3 scale_pivot = vec3(0);
+  vec3 scale_dimensions = vec3(10, 10, 10);
+  int item_matrix[8][7] = {
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 1, 0, 0, 0 },
+    { 0, 0, 0, 1, 1, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 }
+  };
 };
 
 class Resources {
@@ -81,25 +97,23 @@ class Resources {
   shared_ptr<Configs> configs_;
   GameState game_state_ = STATE_EDITOR;
 
+  // Sub-classes.
+  HeightMap height_map_;
+
   // Indices by name.
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;
+  unordered_map<string, shared_ptr<Mesh>> meshes_;
   unordered_map<string, shared_ptr<GameAsset>> assets_;
   unordered_map<string, shared_ptr<GameAssetGroup>> asset_groups_;
   unordered_map<string, shared_ptr<Sector>> sectors_;
   unordered_map<string, shared_ptr<GameObject>> objects_;
   unordered_map<string, shared_ptr<Waypoint>> waypoints_;
+  unordered_map<string, shared_ptr<Region>> regions_;
   unordered_map<string, shared_ptr<ParticleType>> particle_types_;
-  unordered_map<string, shared_ptr<Missile>> missiles_;
-
-  // Indices by id.
-  unordered_map<int, shared_ptr<GameAsset>> assets_by_id_;
-  unordered_map<int, shared_ptr<GameAssetGroup>> asset_groups_by_id_;
-  unordered_map<int, shared_ptr<Sector>> sectors_by_id_;
-  unordered_map<int, shared_ptr<GameObject>> objects_by_id_;
-  unordered_map<int, shared_ptr<Waypoint>> waypoints_by_id_;
-  unordered_map<int, shared_ptr<ParticleType>> particle_types_by_id_;
-  unordered_map<int, shared_ptr<Missile>> missiles_by_id_;
+  unordered_map<string, string> strings_;
+  vector<shared_ptr<Missile>> missiles_;
+  unordered_map<string, string> scripts_;
 
   // GameObject indices.
   vector<shared_ptr<GameObject>> new_objects_;
@@ -128,14 +142,15 @@ class Resources {
 
   // XML loading functions.
   void LoadShaders(const string& directory);
-  void LoadAssets(const string& directory);
-  void LoadAssetFile(const string& xml_filename);
+  void LoadMeshes(const string& directory);
   void LoadAsset(const string& xml_filename);
-  void LoadObjects(const string& directory);
-  void LoadSectors(const string& xml_filename);
-  void LoadPortals(const string& xml_filename);
-  void LoadHeightMap(const string& dat_filename);
+  void LoadAssetFile(const string& xml_filename);
+  void LoadAssets(const string& directory);
   void LoadConfig(const string& xml_filename);
+  void LoadObjects(const string& directory);
+  void LoadPortals(const string& xml_filename);
+  void LoadSectors(const string& xml_filename);
+  void LoadScripts(const string& directory);
 
   void CreateOutsideSector();
   void CreatePlayer();
@@ -147,7 +162,7 @@ class Resources {
   Particle particle_container_[kMaxParticles];
 
   // TODO: move to height map.
-  vector<TerrainPoint> height_map_;
+  unsigned char compressed_height_map_[192000000]; // 192 MB.
 
   // TODO: move to space partition.
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
@@ -169,17 +184,14 @@ class Resources {
   void DeleteAsset(shared_ptr<GameAsset> asset);
   void DeleteObject(ObjPtr obj);
   void RemoveDead();
-  shared_ptr<GameAsset> CreateAssetFromMesh(const string& name,
-    const string& shader_name, Mesh& m);
   void UpdateObjectPosition(shared_ptr<GameObject> object);
   shared_ptr<GameObject> CreateGameObjFromPolygons(const Mesh& m);
-  shared_ptr<GameObject> CreateGameObjFromMesh(const Mesh& m, 
-    string shader_name, const vec3 position,
-    const vector<Polygon>& polygons);
   shared_ptr<GameObject> CreateGameObjFromAsset(
     string asset_name, vec3 position, const string obj_name = "");
   shared_ptr<GameObject> CreateGameObjFromPolygons(
     const vector<Polygon>& polygons);
+  shared_ptr<GameObject> CreateGameObjFromMesh(const Mesh& m, 
+    string shader_name, const vec3 position, const vector<Polygon>& polygons);
   GameState GetGameState() { return game_state_; }
   void SetGameState(GameState new_state) { game_state_ = new_state; }
   void Cleanup();
@@ -190,13 +202,15 @@ class Resources {
   double GetFrameStart();
   Particle* GetParticleContainer();
   shared_ptr<Player> GetPlayer();
+  shared_ptr<Mesh> GetMesh(ObjPtr obj);
   vector<shared_ptr<GameObject>>& GetMovingObjects();
   vector<shared_ptr<GameObject>>& GetLights();
   vector<shared_ptr<GameObject>>& GetItems();
   vector<shared_ptr<GameObject>>& GetExtractables();
   unordered_map<string, shared_ptr<GameObject>>& GetObjects();
   unordered_map<string, shared_ptr<ParticleType>>& GetParticleTypes();
-  unordered_map<string, shared_ptr<Missile>>& GetMissiles();
+  vector<shared_ptr<Missile>>& GetMissiles();
+  unordered_map<string, string>& GetScripts();
   unordered_map<string, shared_ptr<Waypoint>>& GetWaypoints();
   unordered_map<string, shared_ptr<Sector>> GetSectors();
   vector<tuple<shared_ptr<GameAsset>, int>>& GetInventory();
@@ -204,34 +218,30 @@ class Resources {
   shared_ptr<GameAssetGroup> GetAssetGroupByName(const string& name);
   shared_ptr<GameObject> GetObjectByName(const string& name);
   shared_ptr<Sector> GetSectorByName(const string& name);
+  shared_ptr<Region> GetRegionByName(const string& name);
   shared_ptr<Waypoint> GetWaypointByName(const string& name);
   shared_ptr<ParticleType> GetParticleTypeByName(const string& name);
-  shared_ptr<GameAsset> GetAssetById(int id);
-  shared_ptr<GameAssetGroup> GetAssetGroupById(int id);
-  shared_ptr<GameObject> GetObjectById(int id);
-  shared_ptr<Sector> GetSectorById(int id);
-  shared_ptr<ParticleType> GetParticleTypeById(int id);
+  shared_ptr<Mesh> GetMeshByName(const string& name);
   GLuint GetTextureByName(const string& name);
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
+  string GetString(string name);
   // ====================
 
   // TODO: where?
+  void UpdateCooldowns();
   void UpdateFrameStart();
   void MakeGlow(ObjPtr obj);
 
   // TODO: move to height_map.
   bool CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile);
-  TerrainPoint GetTerrainPoint(int x, int y);
-  void SetTerrainPoint(int x, int y, const TerrainPoint& terrain_point);
+  ObjPtr CollideRayAgainstObjects(vec3 position, vec3 direction);
   shared_ptr<OctreeNode> GetOctreeRoot();
-  float GetTerrainHeight(vec2 pos, vec3* normal);
-  float GetTerrainHeight(float x, float y);
-  void SaveHeightMap();
 
-  // TODO: move to particle.
+  // TODO: move to particle / missiles.
   void CastMagicMissile(const Camera& camera);
-  void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction);
+  void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction, bool paralysis = false);
+  bool SpiderCastPowerMagicMissile(ObjPtr spider, const vec3& direction);
   void UpdateMissiles();
   void UpdateParticles();
   void CreateParticleEffect(int num_particles, vec3 pos, 
@@ -242,9 +252,10 @@ class Resources {
   shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
 
   // TODO: move to space partition.
+  ObjPtr IntersectRayObjects(const vec3& position, 
+    const vec3& direction, float max_distance=50.0f);
   vector<ObjPtr> GetKClosestLightPoints(const vec3& position, int k, 
     float max_distance=50);
-  vector<ObjPtr> GetClosestLightPoints(const vec3& position);
   shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 
     vec3 position);
   shared_ptr<Sector> GetSector(vec3 position);
@@ -252,6 +263,21 @@ class Resources {
 
   void LockOctree() { octree_mutex_.lock(); }
   void UnlockOctree() { octree_mutex_.unlock(); }
+
+  void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
+    vector<unsigned int>& indices, vector<Polygon>& polygons,
+    vec3 dimensions);
+  ObjPtr CreateRegion(vec3 pos, vec3 dimensions, string name = "");
+  shared_ptr<Waypoint> CreateWaypoint(vec3 position, string name = "");
+
+  // TODO: script functions. Move somewhere.
+  bool IsPlayerInsideRegion(const string& name);
+  void IssueMoveOrder(const string& unit_name, const string& waypoint_name);
+
+  HeightMap& GetHeightMap() { return height_map_; }
+  bool ChangeObjectAnimation(ObjPtr obj, const string& animation_name);
 };
+
+AABB GetObjectAABB(const vector<Polygon>& polygons);
 
 #endif // __RESOURCES_HPP__

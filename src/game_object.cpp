@@ -35,12 +35,6 @@ shared_ptr<AABBTreeNode> GameObject::GetAABBTree() {
   return asset->aabb_tree;
 }
 
-shared_ptr<SphereTreeNode> GameObject::GetSphereTree() {
-  if (aabb_tree) return sphere_tree;
-  shared_ptr<GameAsset> asset = GetAsset();
-  return asset->sphere_tree;
-}
-
 AABB GameObject::GetAABB() {
   if (!asset_group) {
     throw runtime_error("No asset group in game object.");
@@ -74,7 +68,8 @@ bool GameObject::IsMovingObject() {
 bool GameObject::IsItem() {
   if (type != GAME_OBJ_DEFAULT
     && type != GAME_OBJ_PLAYER 
-    && type != GAME_OBJ_MISSILE) {
+    && type != GAME_OBJ_MISSILE
+    && type != GAME_OBJ_DOOR) {
     return false;
   }
   shared_ptr<GameAsset> asset = GetAsset();
@@ -101,31 +96,31 @@ bool GameObject::IsLight() {
   return asset->emits_light;
 }
 
-mat4 GameObject::GetBoneTransform() {
-  Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
-  if (parent_mesh.animations.find(parent->active_animation) == 
-    parent_mesh.animations.end()) {
-    throw runtime_error(string("Animation ") + parent->active_animation + 
-      " does not exist in CollisionResolver - GetBoneBoundingSphere:650");
-  }
-
-  const Animation& animation = parent_mesh.animations[parent->active_animation];
-
-  if (parent->frame >= animation.keyframes.size()) {
-    throw runtime_error(string("Frame outside scope") + 
-      " does not exist in CollisionResolver - GetBoneBoundingSphere:663");
-  }
-
-  if (parent_bone_id >= 
-    animation.keyframes[parent->frame].transforms.size()) {
-    throw runtime_error(string("Bone id does not exist") + 
-      " in CollisionResolver - GetBoneBoundingSphere:650");
-  }
-
-  mat4 joint_transform = 
-    animation.keyframes[parent->frame].transforms[parent_bone_id];
-  return joint_transform;
-}
+// mat4 GameObject::GetBoneTransform() {
+//   Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
+//   if (parent_mesh.animations.find(parent->active_animation) == 
+//     parent_mesh.animations.end()) {
+//     throw runtime_error(string("Animation ") + parent->active_animation + 
+//       " does not exist in CollisionResolver - GetBoneBoundingSphere:650");
+//   }
+// 
+//   const Animation& animation = parent_mesh.animations[parent->active_animation];
+// 
+//   if (parent->frame >= animation.keyframes.size()) {
+//     throw runtime_error(string("Frame outside scope") + 
+//       " does not exist in CollisionResolver - GetBoneBoundingSphere:663");
+//   }
+// 
+//   if (parent_bone_id >= 
+//     animation.keyframes[parent->frame].transforms.size()) {
+//     throw runtime_error(string("Bone id does not exist") + 
+//       " in CollisionResolver - GetBoneBoundingSphere:650");
+//   }
+// 
+//   mat4 joint_transform = 
+//     animation.keyframes[parent->frame].transforms[parent_bone_id];
+//   return joint_transform;
+// }
 
 ObjPtr GameObject::GetParent() {
   if (parent == nullptr) {
@@ -133,3 +128,27 @@ ObjPtr GameObject::GetParent() {
   }
   return parent;
 }
+
+// int GameObject::GetNumFramesInCurrentAnimation() {
+//   Mesh& mesh = GetAsset()->lod_meshes[0];
+//   const Animation& animation = mesh.animations[active_animation];
+//   return animation.keyframes.size();
+// }
+// 
+// bool GameObject::HasAnimation(const string& animation_name) {
+//   Mesh& mesh = GetAsset()->lod_meshes[0];
+//   return (mesh.animations.find(animation_name) != mesh.animations.end());
+// }
+
+// bool GameObject::ChangeAnimation(const string& animation_name) {
+//   if (active_animation == animation_name) return true;
+//   // if (!HasAnimation(animation_name)) {
+//   //   // cout << "Failed to change animation to " << animation_name << " for " <<
+//   //   //   name << endl;
+//   //   return false;
+//   // }
+//   active_animation = animation_name;
+//   frame = 0;
+//   return true;
+// }
+

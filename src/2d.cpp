@@ -37,7 +37,7 @@ vec3 GetColor(const string& color_name) {
   return colors[color_name];
 }
 
-void Draw2D::LoadFonts() {
+void Draw2D::LoadFont(const string& font_name, const string& filename) {
   glBindVertexArray(vao_);
 
   FT_Library ft;
@@ -46,7 +46,7 @@ void Draw2D::LoadFonts() {
   }
   
   FT_Face face;
-  if (FT_New_Face(ft, (dir_ + "/fonts/ubuntu_monospace.ttf").c_str(), 0, 
+  if (FT_New_Face(ft, filename.c_str(), 0, 
     &face)) {
     cout << "ERROR::FREETYPE: Failed to load font" << endl; 
   }
@@ -56,6 +56,8 @@ void Draw2D::LoadFonts() {
   }
    
   FT_Set_Pixel_Sizes(face, 0, 18);
+
+  characters_[font_name] = {};
 
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   for (GLubyte c = 0; c < 255; c++) {
@@ -109,7 +111,7 @@ void Draw2D::LoadFonts() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Now store character for later use
-    characters_[c] = {
+    characters_[font_name][c] = {
       texture, 
       glm::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
       glm::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
@@ -129,7 +131,21 @@ void Draw2D::LoadFonts() {
   glBindVertexArray(0);
 }
 
-void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale) {
+// TODO: move this to resources.
+void Draw2D::LoadFonts() {
+  boost::filesystem::path p (dir_ + "/fonts");
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".ttf")) continue;
+
+    string prefix = current_file.substr(0, current_file.size() - 4);
+    LoadFont(prefix, dir_ + "/fonts/" + current_file);
+  }
+}
+
+void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale, const string& font_name) {
   glBindVertexArray(vao_);
 
   glEnable(GL_BLEND);
@@ -143,7 +159,7 @@ void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale) {
   glUniformMatrix4fv(GetUniformId(shader_id_, "projection"), 1, GL_FALSE, &projection_[0][0]);
 
   glActiveTexture(GL_TEXTURE0);
-  Character& ch = characters_[c];
+  Character& ch = characters_[font_name][c];
 
   GLfloat xpos = x + ch.Bearing.x * scale;
   GLfloat ypos = y - (ch.Size.y - ch.Bearing.y) * scale;
@@ -179,19 +195,19 @@ void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale) {
 
 void Draw2D::DrawText(
   const string& text, float x, float y, vec3 color, GLfloat scale,
-  bool center
+  bool center, const string& font_name
 ) {
-  int step = (characters_['a'].Advance >> 6);
+  int step = (characters_[font_name]['a'].Advance >> 6);
   if (center) {
     x -= (text.size() * step) / 2 + 1;
   }
 
   // Iterate through all characters
   for (const auto& c : text) {
-    DrawChar(c, x, y, color, scale);
+    DrawChar(c, x, y, color, scale, font_name);
 
     // Now advance cursors for next glyph (note that advance is number of 1/64 pixels)
-    x += (characters_[c].Advance >> 6) * scale;
+    x += (characters_[font_name][c].Advance >> 6) * scale;
   }
 }
 
@@ -261,11 +277,11 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
 
   vector<vec3> vertices = {
     { x        , y         , 0.0 },
-    { x        , y - height, 0.0 },
+    { x        , y + height, 0.0 },
     { x + width, y         , 0.0 },
     { x + width, y         , 0.0 },
-    { x        , y - height, 0.0 },
-    { x + width, y - height, 0.0 }
+    { x        , y + height, 0.0 },
+    { x + width, y + height, 0.0 }
   };
 
   vector<vec2> uvs = {

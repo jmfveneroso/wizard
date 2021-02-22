@@ -29,9 +29,93 @@
 #include "boost/filesystem.hpp"
 #include <boost/lexical_cast.hpp>  
 #include <boost/algorithm/string/predicate.hpp>
+#include "pugixml.hpp"
 
 using namespace std;
 using namespace glm;
+
+enum AssetType {
+  ASSET_STATIC = 0,
+  ASSET_CREATURE
+};
+
+enum CollisionType {
+  COL_SPHERE = 0,
+  COL_BONES,
+  COL_QUICK_SPHERE,
+  COL_PERFECT,
+  COL_CONVEX_HULL,
+  COL_OBB,
+  COL_NONE ,
+  COL_UNDEFINED
+};
+
+enum PhysicsBehavior {
+  PHYSICS_UNDEFINED = 0,
+  PHYSICS_NONE,
+  PHYSICS_NORMAL,
+  PHYSICS_LOW_GRAVITY,
+  PHYSICS_NO_FRICTION,
+  PHYSICS_FIXED,
+  PHYSICS_FLY,
+  PHYSICS_SWIM
+};
+
+enum GameObjectType {
+  GAME_OBJ_DEFAULT = 0,
+  GAME_OBJ_PLAYER,
+  GAME_OBJ_SECTOR,
+  GAME_OBJ_PORTAL,
+  GAME_OBJ_MISSILE,
+  GAME_OBJ_PARTICLE_GROUP,
+  GAME_OBJ_REGION,
+  GAME_OBJ_WAYPOINT,
+  GAME_OBJ_DOOR
+};
+
+enum Status {
+  STATUS_NONE = 0,
+  STATUS_TAKING_HIT,
+  STATUS_DYING,
+  STATUS_DEAD,
+  STATUS_BEING_EXTRACTED,
+  STATUS_PARALYZED,
+  STATUS_BURROWED
+};
+
+enum AiState {
+  IDLE = 0, 
+  MOVE = 1, 
+  AI_ATTACK = 2,
+  DIE = 3,
+  TURN_TOWARD_TARGET = 4,
+  WANDER = 5,
+  CHASE = 6,
+  SCRIPT = 7
+};
+
+enum PlayerAction {
+  PLAYER_IDLE,
+  PLAYER_CASTING,
+  PLAYER_EXTRACTING,
+};
+
+enum ActionType {
+  ACTION_MOVE = 0,
+  ACTION_IDLE,
+  ACTION_MEELEE_ATTACK,
+  ACTION_RANGED_ATTACK,
+  ACTION_CHANGE_STATE,
+  ACTION_TAKE_AIM,
+  ACTION_STAND,
+  ACTION_TALK,
+  ACTION_CAST_SPELL
+};
+
+enum ParticleBehavior {
+  PARTICLE_FIXED = 0,
+  PARTICLE_FALL = 1
+};
 
 struct Camera {
   vec3 position; 
@@ -69,6 +153,8 @@ struct OBB {
   vec3 center;
   vec3 axis[3];
   vec3 half_widths;
+  mat3 from_world_space;
+  mat3 to_world_space;
 };
 
 struct Edge {
@@ -137,6 +223,7 @@ struct Mesh {
   Mesh() {}
 };
 
+using MeshPtr = shared_ptr<Mesh>;
 using ConvexHull = vector<Polygon>;
 
 GLuint GetUniformId(GLuint program_id, string name);
@@ -172,6 +259,7 @@ ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
 ostream& operator<<(ostream& os, const BoundingSphere& bs);
+ostream& operator<<(ostream& os, const OBB& obb);
 ostream& operator<<(ostream& os, const shared_ptr<SphereTreeNode>& 
   sphere_tree_node);
 
@@ -203,5 +291,29 @@ Mesh CreateDome();
 
 float clamp(float v, float low, float high);
 vec3 clamp(vec3 v, float low, float high);
+
+CollisionType StrToCollisionType(const std::string& s);
+
+ParticleBehavior StrToParticleBehavior(const std::string& s);
+
+PhysicsBehavior StrToPhysicsBehavior(const std::string& s);
+
+AiState StrToAiState(const std::string& s);
+
+BoundingSphere GetBoundingSphereFromVertices(
+  const vector<vec3>& vertices);
+
+BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons);
+
+vec3 LoadVec3FromXml(const pugi::xml_node& node);
+
+float LoadFloatFromXml(const pugi::xml_node& node);
+
+mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
+  int bone_id, int frame);
+
+int GetNumFramesInAnimation(Mesh& mesh, const string& animation_name);
+
+bool MeshHasAnimation(Mesh& mesh, const string& animation_name);
 
 #endif // __UTIL_HPP__

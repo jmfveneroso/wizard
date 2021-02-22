@@ -21,16 +21,18 @@ class PlayerInput {
   bool creating_spell_ = false;
 
   void Extract(const Camera& c);
-  void InteractWithItem(const Camera& c);
+  void InteractWithItem(const Camera& c, bool interact = false);
   void EditTerrain(GLFWwindow* window, const Camera& c);
   void Build(GLFWwindow* window, const Camera& c);
   void PlaceObject(GLFWwindow* window, const Camera& c);
+  void EditObject(GLFWwindow* window, const Camera& c);
 
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 
     shared_ptr<Project4D> project_4d, shared_ptr<Craft> craft, 
     shared_ptr<Terrain> terrain, shared_ptr<Dialog> dialog);
 
+  Camera GetCamera();
   Camera ProcessInput(GLFWwindow* window);
   Camera ProcessBuildInput(GLFWwindow* window);
 };

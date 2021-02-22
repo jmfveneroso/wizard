@@ -1,4 +1,5 @@
 #include "collision.hpp"
+#include <limits>
 
 ostream& operator<<(ostream& os, const AABB& aabb) {
   os << "Point: " << aabb.point << endl;
@@ -259,70 +260,44 @@ OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
   }
   obb.center *= 1.0f / num_vertices;
 
-  vec3 pivot_point = polygons[0].vertices[0];
-  vector<vec3> edges;
+  vector<vec3> normals;
+
+  // Find all the unique edges that touch the pivot point.
   for (auto& poly : polygons) {
-    bool found_pivot_point  = false;
-    for (int i = 0; i < poly.vertices.size() /* 3 */; i++) {
-      if (length(pivot_point - poly.vertices[i]) < 0.01f) {
-        found_pivot_point = true;
+    vec3 new_edge = poly.normals[0];
+    bool unique = true;
+    for (int j = 0; j < normals.size(); j++) {
+      if (abs(dot(normals[j], new_edge)) > 0.99f) {
+        unique = false;
         break;
       }
     }
-    if (!found_pivot_point) continue;
-
-    for (int i = 0; i < poly.vertices.size(); i++) {
-      // Is pivot point.
-      if (length(pivot_point - poly.vertices[i]) < 0.01f) continue;
-
-      vec3 new_edge = poly.vertices[i] - pivot_point;
-      edges.push_back(new_edge);
+    if (unique) {
+      normals.push_back(new_edge);
     }
   }
 
-  if (edges.size() != 8) {
-    throw runtime_error("Number of edges is not 7");
-  }
-
-  vector<vec3> selected_edges;
-  for (int i = 0; i < edges.size(); i++) {
-    const vec3& edge1 = edges[i];
-
-    bool add = true;
-    for (int j = 0; j < selected_edges.size(); j++) {
-      const vec3& edge2 = edges[j];
-      if (dot(edge1, edge2) > 0.99f) {
-        edges.erase(edges.begin() + j);
-        add = false;
-        break;
-      }
-    }
- 
-    if (add) {
-      selected_edges.push_back(edge1);
-    }
-  }
- 
-  if (selected_edges.size() != 2) {
-    throw runtime_error("Number of partial selected edges is not 2");
-  }
-
-  vec3 normal = cross(selected_edges[0], selected_edges[1]);
-  for (int i = 0; i < edges.size(); i++) {
-    if (dot(edges[i], normal) < 0.01f) {
-      selected_edges.push_back(edges[i]);
-      break;
-    }
-  }
-
-  if (selected_edges.size() != 3) {
-    throw runtime_error("Number of selected edges is not 3");
+  if (normals.size() != 3) {
+    cout << normals.size() << endl;
+    throw runtime_error("Number of normals is not 3");
   }
 
   for (int i = 0; i < 3; i++) {
-    obb.half_widths[i] = length(selected_edges[i]);
-    obb.axis[i] = normalize(selected_edges[i]);
+    obb.axis[i] = normalize(normals[i]);
+    obb.half_widths[i] = 0;
+    for (const vec3& v : vertices) {
+      float length_i = abs(dot(v - obb.center, obb.axis[i]));
+      obb.half_widths[i] = std::max(length_i, obb.half_widths[i]);
+    }
   }
+
+  obb.center = obb.center - position;
+
+  // Transforms from obb space to world space.
+  obb.to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
+
+  // Transforms from world space to obb space.
+  obb.from_world_space = inverse(obb.to_world_space);
 
   return obb;
 }
@@ -365,25 +340,6 @@ vector<Polygon> GetPolygonsFromOBB(const OBB& obb) {
     polygons.push_back(poly);
   }
   return polygons;
-}
-
-BoundingSphere GetBoundingSphereFromVertices(
-  const vector<vec3>& vertices) {
-  BoundingSphere bounding_sphere;
-  bounding_sphere.center = vec3(0, 0, 0);
-
-  float num_vertices = vertices.size();
-  for (const vec3& v : vertices) {
-    bounding_sphere.center += v;
-  }
-  bounding_sphere.center *= 1.0f / num_vertices;
-  
-  bounding_sphere.radius = 0.0f;
-  for (const vec3& v : vertices) {
-    bounding_sphere.radius = std::max(bounding_sphere.radius, 
-      length(v - bounding_sphere.center));
-  }
-  return bounding_sphere;
 }
 
 Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
@@ -532,6 +488,48 @@ bool IntersectRaySphere(vec3 p, vec3 d, BoundingSphere s, float &t, vec3 &q) {
   return true;
 }
 
+bool IntersectRayAABB(vec3 p, vec3 d, AABB a, float &tmin, vec3 &q) {
+  tmin = 0.0f;
+  float tmax = numeric_limits<float>::max();
+
+  vec3 aabb_min = a.point;
+  vec3 aabb_max = a.point + a.dimensions;
+ 
+  // For all three slabs
+  for (int i = 0; i < 3; i++) {
+    if (abs(d[i]) < 0.00001f) {
+      // Ray is parallel to slab. No hit if origin not within slab
+      if (p[i] < aabb_min[i] || p[i] > aabb_max[i]) {
+        return false;
+      }
+    } else {
+      // Compute intersection t value of ray with near and far plane of slab
+      float ood = 1.0f / d[i];
+      float t1 = (aabb_min[i] - p[i]) * ood;
+      float t2 = (aabb_max[i] - p[i]) * ood;
+
+      // Make t1 be intersection with near plane, t2 with far plane
+      if (t1 > t2) {
+        // Swap(t1, t2);
+        float aux = t1;
+        t1 = t2;
+        t2 = aux;
+      }
+
+      // Compute the intersection of slab intersection intervals
+      if (t1 > tmin) tmin = t1;
+      if (t2 > tmax) tmax = t2;
+
+      // Exit with no collision as soon as slab intersection becomes empty
+      if (tmin > tmax) return false;
+    }
+  }
+
+  // Ray intersects all 3 slabs. Return point (q) and intersection t value (tmin)
+  q = p + d * tmin;
+  return true;
+}
+
 bool TestMovingSphereSphere(BoundingSphere s0, BoundingSphere s1, vec3 v0, 
   vec3 v1, float& t, vec3& q) {
   // Expand sphere s1 by the radius of s0
@@ -605,6 +603,18 @@ bool IntersectMovingSphereTriangle(BoundingSphere s, vec3 v,
 bool TestSphereAABB(const BoundingSphere& s, const AABB& aabb) {
   vec3 closest_point = ClosestPtPointAABB(s.center, aabb);
   return length2(closest_point - s.center) < s.radius * s.radius;
+}
+
+bool IntersectSphereAABB(const BoundingSphere& s, const AABB& aabb, 
+  vec3& displacement_vector, vec3& point_of_contact) {
+  point_of_contact = ClosestPtPointAABB(s.center, aabb);
+
+  float t = length(point_of_contact - s.center);
+  if (t < s.radius) {
+    displacement_vector = normalize(s.center - point_of_contact) * (s.radius - t);
+    return true;
+  }
+  return false;
 }
 
 BoundingSphere GetBoundingSphereFromPolygons(const vector<Polygon>& polygons) {
@@ -860,4 +870,19 @@ bool IntersectLineQuad(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, vec3 d,
     r = u*a + v*d + w*c;
   }
   return true;
+}
+
+bool IntersectSegmentPlane(vec3 a, vec3 b, Plane p, float &t, vec3 &q) {
+  // Compute the t value for the directed line ab intersecting the plane
+  vec3 ab = b - a;
+  t = (p.d - dot(p.normal, a)) / dot(p.normal, ab);
+
+  // If t in [0..1] compute and return intersection point
+  if (t >= 0.0f && t <= 1.0f) {
+    q = a + t * ab;
+    return true;
+  }
+
+  // Else no intersection
+  return false;
 }

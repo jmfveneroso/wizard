@@ -14,36 +14,49 @@ enum CollisionPair {
   CP_SP,     // SPHERE -> PERFECT
   CP_ST,     // SPHERE -> TERRAIN
   CP_SH,     // SPHERE -> C. HULL (Not implemented)
+  CP_SO,     // SPHERE -> OBB (Not implemented)
   CP_BS,     // BONES -> SPHERE
   CP_BB,     // BONES -> BONES
   CP_BQ,     // BONES -> QUICK_SPHERE 
   CP_BP,     // BONES -> PERFECT
   CP_BT,     // BONES -> TERRAIN
   CP_BH,     // BONES -> C. HULL (Not implemented)
+  CP_BO,     // BONES -> OBB (Not implemented)
   CP_QS,     // QUICK_SPHERE -> SPHERE
   CP_QB,     // QUICK_SPHERE -> BONES
   CP_QQ,     // QUICK_SPHERE -> QUICK_SPHERE (Not implemented)
   CP_QP,     // QUICK_SPHERE -> PERFECT
   CP_QT,     // QUICK_SPHERE -> TERRAIN
   CP_QH,     // QUICK_SPHERE -> C. HULL
+  CP_QO,     // QUICK_SPHERE -> OBB (Not implemented)
   CP_PS,     // PERFECT -> SPHERE
   CP_PB,     // PERFECT -> BONES
   CP_PQ,     // PERFECT -> QUICK_SPHERE
   CP_PP,     // PERFECT -> PERFECT (Not implemented)             
   CP_PT,     // PERFECT -> TERRAIN (Not implemented)             
   CP_PH,     // PERFECT -> C. HULL (Not implemented)
+  CP_PO,     // PERFECT -> OBB (Not implemented)
   CP_TS,     // TERRAIN -> SPHERE
   CP_TB,     // TERRAIN -> BONES
   CP_TQ,     // TERRAIN -> QUICK_SPHERE
   CP_TP,     // TERRAIN -> PERFECT (Not implemented)             
   CP_TT,     // TERRAIN -> TERRAIN (Not implemented)             
   CP_TH,     // TERRAIN -> C. HULL (Not implemented)             
+  CP_TO,     // TERRAIN -> OBB (Not implemented)             
   CP_HS,     // C. HULL -> SPHERE (Not implemented)
   CP_HB,     // C. HULL -> BONES (Not implemented)
   CP_HQ,     // C. HULL -> QUICK_SPHERE
   CP_HP,     // C. HULL -> PERFECT (Not implemented)             
   CP_HT,     // C. HULL -> TERRAIN
   CP_HH,     // C. HULL -> C. HULL (Not implemented)             
+  CP_HO,     // C. HULL -> OBB (Not implemented)             
+  CP_OS,     // OBB -> SPHERE (Not implemented)
+  CP_OB,     // OBB -> BONES (Not implemented)
+  CP_OQ,     // OBB -> QUICK_SPHERE
+  CP_OP,     // OBB -> PERFECT (Not implemented)             
+  CP_OT,     // OBB -> TERRAIN
+  CP_OH,     // OBB -> C. HULL (Not implemented)             
+  CP_OO,     // OBB -> OBB (Not implemented)             
   CP_UNDEFINED 
 };
 
@@ -99,6 +112,12 @@ struct CollisionSH : Collision {
   CollisionSH() {}
   CollisionSH(ObjPtr o1, ObjPtr o2, Polygon polygon)
     : Collision(CP_SH, o1, o2), polygon(polygon) {}
+};
+
+struct CollisionSO : Collision {
+  CollisionSO() {}
+  CollisionSO(ObjPtr o1, ObjPtr o2)
+    : Collision(CP_SO, o1, o2) {}
 };
 
 struct CollisionST : Collision {
@@ -188,6 +207,8 @@ class CollisionResolver {
   void PrintMetrics();
 
   // Aux methods.
+  vector<BoundingSphere> GetBoneBoundingSpheres(ObjPtr obj);
+  BoundingSphere GetBoneBoundingSphere(ObjPtr bone);
   void GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons);
   bool IsPairCollidable(ObjPtr obj1, ObjPtr obj2);
   void CollideAlongAxis(shared_ptr<OctreeNode> octree_node, ObjPtr obj);
@@ -196,6 +217,7 @@ class CollisionResolver {
   void TestCollisionSB(shared_ptr<CollisionSB> c);
   void TestCollisionSP(shared_ptr<CollisionSP> c);
   void TestCollisionSH(shared_ptr<CollisionSH> c);
+  void TestCollisionSO(shared_ptr<CollisionSO> c);
   void TestCollisionST(shared_ptr<CollisionST> c);
   void TestCollisionBB(shared_ptr<CollisionBB> c);
   void TestCollisionBP(shared_ptr<CollisionBP> c);

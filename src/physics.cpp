@@ -39,7 +39,15 @@ void Physics::Run() {
     if (obj->name == "player" && configs->levitate) {
       obj->can_jump = true;
       obj->speed.y *= 0.95f;
-    } else { 
+    } else if (physics_behavior == PHYSICS_FLY) { 
+      obj->speed.y *= 0.95f;
+    } else if (physics_behavior == PHYSICS_SWIM) { 
+      if (obj->position.y > 0.0f) {
+        obj->speed += vec3(0, -GRAVITY, 0);
+      } else {
+        obj->speed.y *= 0.6f;
+      }
+    } else {
       obj->speed += vec3(0, -GRAVITY, 0);
     }
 

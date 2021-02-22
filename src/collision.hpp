@@ -55,6 +55,9 @@ bool IsPointInAABB(const vec3& p, const AABB& aabb);
 
 bool TestSphereAABB(const BoundingSphere& s, const AABB& aabb);
 
+bool IntersectSphereAABB(const BoundingSphere& s, const AABB& aabb, 
+  vec3& displacement_vector, vec3& point_of_contact);
+
 bool IsAABBIntersectingAABB(const AABB& aabb1, const AABB& aabb2);
 
 bool TestSphereAABBIntersection(const BoundingSphere& s, const AABB& aabb);
@@ -101,6 +104,10 @@ bool TestSphereSphere(const BoundingSphere& s1, const BoundingSphere& s2,
 
 bool IntersectLineQuad(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, vec3 d,
   vec3 &r);
+
+bool IntersectRayAABB(vec3 p, vec3 d, AABB a, float &tmin, vec3 &q);
+
+bool IntersectSegmentPlane(vec3 a, vec3 b, Plane p, float &t, vec3 &q);
 
 // bool IntersectMovingSphereAABB(Sphere s, Vector d, AABB b, float &t);
 // https://github.com/vancegroup-mirrors/hapi/blob/master/src/CollisionObjects.cpp

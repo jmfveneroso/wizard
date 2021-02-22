@@ -5,39 +5,24 @@
 
 // TODO: do we need terrain here?
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
-  // Sphere / Bones / Quick Sphere / Perfect / C. Hull / Terrain 
-  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SH,    CP_ST }, // Sphere 
-  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BH,    CP_BT }, // Bones
-  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QH,    CP_QT }, // Quick Sphere 
-  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PH,    CP_PT }, // Perfect
-  { CP_HS,    CP_HB,  CP_HQ,         CP_HP,    CP_HH,    CP_HT }, // C. Hull
-  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TH,    CP_TT }  // Terrain
+  // Sphere / Bones / Quick Sphere / Perfect / C. Hull / OBB /  Terrain 
+  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SH,    CP_SO, CP_ST }, // Sphere 
+  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BH,    CP_BO, CP_BT }, // Bones
+  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QH,    CP_QO, CP_QT }, // Quick Sphere 
+  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PH,    CP_PO, CP_PT }, // Perfect
+  { CP_HS,    CP_HB,  CP_HQ,         CP_HP,    CP_HH,    CP_HO, CP_HT }, // C. Hull
+  { CP_OS,    CP_OB,  CP_OQ,         CP_OP,    CP_OH,    CP_OO, CP_OT }, // OBB
+  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TH,    CP_TO, CP_TT }  // Terrain
 };
 
 CollisionResolver::CollisionResolver(
   shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {}
 
-// TODO: this should be calculated only once per frame.
-vector<BoundingSphere> GetBoneBoundingSpheres(ObjPtr obj) {
-  vector<BoundingSphere> result;
-  for (ObjPtr c : obj->children) {
-    mat4 joint_transform = c->GetBoneTransform();
-
-    vec3 offset = c->GetAsset()->bounding_sphere.center;
-    offset = vec3(obj->rotation_matrix * vec4(offset, 1.0));
-
-    BoundingSphere bone_bounding_sphere;
-    bone_bounding_sphere.center = obj->position + joint_transform * offset;
-    bone_bounding_sphere.radius = c->GetAsset()->bounding_sphere.radius;
-    result.push_back(bone_bounding_sphere);
-  }
-  return result;
-}
-
 bool IsCollidable(shared_ptr<GameObject> obj) {
   switch (obj->type) {
     case GAME_OBJ_DEFAULT:
     case GAME_OBJ_PLAYER:
+    case GAME_OBJ_DOOR:
       break;
     case GAME_OBJ_MISSILE:
       return (obj->life > 0);
@@ -76,6 +61,28 @@ bool IsMissileCollidingAgainstItsOwner(shared_ptr<GameObject> obj1,
     }
   }
   return false;
+}
+
+// TODO: this should be calculated only once per frame.
+vector<BoundingSphere> CollisionResolver::GetBoneBoundingSpheres(ObjPtr obj) {
+  vector<BoundingSphere> result;
+  for (ObjPtr c : obj->children) {
+    shared_ptr<Mesh> mesh = 
+      resources_->GetMeshByName(c->parent->GetAsset()->lod_meshes[0]);
+    mat4 joint_transform = GetBoneTransform(*mesh, 
+      c->parent->active_animation, c->parent_bone_id, c->parent->frame);
+
+    // mat4 joint_transform = c->GetBoneTransform();
+
+    vec3 offset = c->GetAsset()->bounding_sphere.center;
+    offset = vec3(obj->rotation_matrix * vec4(offset, 1.0));
+
+    BoundingSphere bone_bounding_sphere;
+    bone_bounding_sphere.center = obj->position + joint_transform * offset;
+    bone_bounding_sphere.radius = c->GetAsset()->bounding_sphere.radius;
+    result.push_back(bone_bounding_sphere);
+  }
+  return result;
 }
 
 bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
@@ -349,6 +356,17 @@ vector<shared_ptr<CollisionSH>> GetCollisionsSH(ObjPtr obj1, ObjPtr obj2) {
   return cols;
 }
 
+vector<shared_ptr<CollisionSO>> GetCollisionsSO(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1 = obj1->GetBoundingSphere();
+  BoundingSphere s2 = obj2->GetBoundingSphere();
+
+  vec3 point_of_contact;
+  if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
+    return {};
+  }
+  return { make_shared<CollisionSO>(obj1, obj2) };
+}
+
 // Bones - Bones.
 vector<shared_ptr<CollisionBB>> GetCollisionsBB(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetBoundingSphere();
@@ -545,7 +563,7 @@ vector<shared_ptr<CollisionHT>> GetCollisionsHT(ObjPtr obj1, shared_ptr<Resource
 
   BoundingSphere s = obj1->GetBoundingSphere();
   vec3 normal;
-  float h = asset_catalog->GetTerrainHeight(vec2(s.center.x, s.center.z), &normal);
+  float h = asset_catalog->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &normal);
   if (s.center.y - s.radius > h) {
     return {};
   }
@@ -569,6 +587,7 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_SQ: Merge(collisions, GetCollisionsQS(obj2, obj1)); break;
     case CP_SP: Merge(collisions, GetCollisionsSP(obj1, obj2)); break;
     case CP_SH: Merge(collisions, GetCollisionsSH(obj1, obj2)); break;
+    case CP_SO: Merge(collisions, GetCollisionsSO(obj1, obj2)); break;
     case CP_BS: Merge(collisions, GetCollisionsSB(obj2, obj1)); break;
     case CP_BB: Merge(collisions, GetCollisionsBB(obj1, obj2)); break;
     case CP_BQ: Merge(collisions, GetCollisionsQB(obj2, obj1)); break;
@@ -584,6 +603,7 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_PP: break;
     case CP_HS: Merge(collisions, GetCollisionsSH(obj2, obj1)); break;
     case CP_HQ: Merge(collisions, GetCollisionsQH(obj2, obj1)); break;
+    case CP_OS: Merge(collisions, GetCollisionsSO(obj2, obj1)); break;
     default: break;  
   }
   return collisions;
@@ -644,10 +664,14 @@ void FillCollisionBlankFields(ColPtr c) {
   }
 }
 
-BoundingSphere GetBoneBoundingSphere(ObjPtr bone) {
+BoundingSphere CollisionResolver::GetBoneBoundingSphere(ObjPtr bone) {
   ObjPtr parent = bone->GetParent();
 
-  mat4 joint_transform = bone->GetBoneTransform();
+  // mat4 joint_transform = bone->GetBoneTransform();
+  shared_ptr<Mesh> mesh = 
+    resources_->GetMeshByName(parent->GetAsset()->lod_meshes[0]);
+  mat4 joint_transform = GetBoneTransform(*mesh, 
+    parent->active_animation, bone->parent_bone_id, parent->frame);
 
   vec3 offset = bone->GetAsset()->bounding_sphere.center;
   offset = vec3(parent->rotation_matrix * vec4(offset, 1.0));
@@ -662,10 +686,10 @@ void CollisionResolver::GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons) 
   ivec2 top_left = ivec2(pos.x, pos.y);
 
   TerrainPoint p[4];
-  p[0] = resources_->GetTerrainPoint(top_left.x, top_left.y);
-  p[1] = resources_->GetTerrainPoint(top_left.x, top_left.y + 1.1);
-  p[2] = resources_->GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
-  p[3] = resources_->GetTerrainPoint(top_left.x + 1.1, top_left.y);
+  p[0] = resources_->GetHeightMap().GetTerrainPoint(top_left.x, top_left.y);
+  p[1] = resources_->GetHeightMap().GetTerrainPoint(top_left.x, top_left.y + 1.1);
+  p[2] = resources_->GetHeightMap().GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
+  p[3] = resources_->GetHeightMap().GetTerrainPoint(top_left.x + 1.1, top_left.y);
 
   const float& h0 = p[0].height;
   const float& h1 = p[1].height;
@@ -814,10 +838,66 @@ void CollisionResolver::TestCollisionSH(shared_ptr<CollisionSH> c) {
   }
 }
 
+// Test Sphere - OBB.
+void CollisionResolver::TestCollisionSO(shared_ptr<CollisionSO> c) {
+  BoundingSphere s = c->obj1->GetBoundingSphere();
+
+  OBB obb = c->obj2->obb;
+
+  mat4 joint_transform;
+  shared_ptr<Mesh> mesh = 
+    resources_->GetMeshByName(c->obj2->GetAsset()->lod_meshes[0]);
+  if (!mesh->animations.empty()) {
+    string animation_name = c->obj2->active_animation;
+    if (mesh->animations.find(animation_name) == mesh->animations.end()) {
+      throw runtime_error(string("Animation ") + animation_name + 
+        " does not exist in CollisionResolver:853");
+    }
+
+    const Animation& animation = mesh->animations[animation_name];
+    int frame = c->obj2->frame;
+    if (frame >= animation.keyframes.size()) {
+      throw runtime_error(string("Frame outside scope") + 
+        " does not exist in CollisionResolver:860");
+    }
+
+    int bone_id = 0;
+    joint_transform = animation.keyframes[frame].transforms[bone_id];
+  }
+
+  vec3 rotated_center = vec3(joint_transform * vec4(obb.center, 1.0));
+  vec3 obb_center = c->obj2->position + rotated_center;
+
+  BoundingSphere s_in_obb_space;
+  for (int i = 0; i < 3; i++) {
+    obb.axis[i] = vec3(joint_transform * vec4(obb.axis[i], 1.0));
+    obb.axis[i] -= rotated_center;
+    obb.axis[i] = vec3(c->obj2->rotation_matrix * vec4(obb.axis[i], 1.0));
+  }
+
+  mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
+  mat3 from_world_space = inverse(to_world_space);
+
+  s_in_obb_space.center = from_world_space * s.center;
+  s_in_obb_space.radius = s.radius;
+
+  AABB aabb_in_obb_space;
+  aabb_in_obb_space.point = from_world_space * obb_center - obb.half_widths;
+  aabb_in_obb_space.dimensions = obb.half_widths * 2.0f;
+
+  c->collided = IntersectSphereAABB(s_in_obb_space, aabb_in_obb_space, 
+    c->displacement_vector, c->point_of_contact);
+  if (c->collided) {
+    c->displacement_vector = to_world_space * c->displacement_vector;
+    c->normal = normalize(c->displacement_vector);
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Sphere - Terrain.
 void CollisionResolver::TestCollisionST(shared_ptr<CollisionST> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
-  float h = resources_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
@@ -860,7 +940,7 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
   BoundingSphere s = GetBoneBoundingSphere(c->bone);
-  float h = resources_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
@@ -919,7 +999,7 @@ void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
 // Test Quick Sphere - Terrain.
 void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
-  float h = resources_->GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     vector<Polygon> polygons;
@@ -1002,6 +1082,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionSP(static_pointer_cast<CollisionSP>(c)); break;
     case CP_SH:
       TestCollisionSH(static_pointer_cast<CollisionSH>(c)); break;
+    case CP_SO:
+      TestCollisionSO(static_pointer_cast<CollisionSO>(c)); break;
     case CP_ST:
       TestCollisionST(static_pointer_cast<CollisionST>(c)); break;
     case CP_BB:
@@ -1085,7 +1167,9 @@ void CollisionResolver::ResolveCollisions() {
       normal = -(d - 2 * dot(d, n) * n);
 
       obj1->position += displacement_vector;
-      if (obj2 && obj2->GetAsset()->name == "spider") {
+      if (obj2 && obj2->GetAsset()->type == ASSET_CREATURE) {
+        // (obj2->GetAsset()->name == "spider" 
+        // || obj2->GetAsset()->name == "cephalid")) {
         obj2->life -= 50;
         resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
           vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
@@ -1100,16 +1184,17 @@ void CollisionResolver::ResolveCollisions() {
           obj2->frame = 0;
         }
       } else if (obj2 && obj2->GetAsset()->name == "player") {
-        obj2->life -= 10;
-        resources_->GetConfigs()->taking_hit = 30.0f;
-
         // TODO: this check shouldn't be placed here. After I have an engine
         // class, it should be made there.
+
+        obj2->life -= 10;
+        resources_->GetConfigs()->taking_hit = 30.0f;
+        obj2->paralysis_cooldown = 100;
+
         if (obj2->life <= 0.0f) {
           obj2->life = 100.0f;
           obj2->position = resources_->GetConfigs()->respawn_point;
         }
-        
       } else {
         if (obj2) {
           if (obj2->GetAsset()->collision_type == COL_CONVEX_HULL && 
@@ -1131,6 +1216,13 @@ void CollisionResolver::ResolveCollisions() {
       obj1->life = -1;
       continue;
     }
+
+    // if (obj2 && obj2->type == GAME_OBJ_DOOR) {
+    //   shared_ptr<Door> door = static_pointer_cast<Door>(obj2);
+    //   if (door->state == 2) {
+    //     continue;
+    //   }
+    // }
 
     if (length2(displacement_vector) < 0.0001f) {
       continue;
@@ -1158,7 +1250,9 @@ void CollisionResolver::ResolveCollisions() {
     }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.6) {
-      obj1->up = normal;
+      if (obj1->GetAsset()->name == "spider") {
+        obj1->up = normal;
+      }
     }
 
     obj1->target_position = obj1->position;

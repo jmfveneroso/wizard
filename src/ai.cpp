@@ -90,19 +90,31 @@ void AI::Chase(ObjPtr spider) {
     return;
   }
 
-  int dice = rand() % 3; 
   ObjPtr player = resources_->GetObjectByName("player");
   vec3 dir = player->position - spider->position;
-  if (length(dir) > 100 && dice < 2) {
-    vec3 next_pos = spider->position + normalize(dir) * 50.0f;
+
+  if (spider->GetAsset()->name == "spider" || spider->GetAsset()->name == "demon-vine") {
+    int dice = rand() % 3; 
+    if (length(dir) > 100 && dice < 2) {
+      vec3 next_pos = spider->position + normalize(dir) * 50.0f;
+      spider->actions.push(make_shared<MoveAction>(next_pos));
+    } else {
+      spider->actions.push(make_shared<TakeAimAction>());
+      spider->actions.push(make_shared<RangedAttackAction>());
+      spider->actions.push(make_shared<IdleAction>(2));
+    }
+  } else if (spider->GetAsset()->name == "beetle") {
+    dir.y = 0;
+    vec3 next_pos = spider->position + normalize(dir) * 2.0f;
     spider->actions.push(make_shared<MoveAction>(next_pos));
-  } else {
-    spider->actions.push(make_shared<TakeAimAction>());
-    spider->actions.push(make_shared<RangedAttackAction>());
-    spider->actions.push(make_shared<IdleAction>(2));
+
+    if (length(dir) < 10.0f) { 
+      spider->actions = {};
+      spider->actions.push(make_shared<MeeleeAttackAction>());
+    }
   }
 
-  if (glfwGetTime() > spider->state_changed_at + 30) {
+  if (glfwGetTime() > spider->state_changed_at + 20) {
     spider->actions = {};
     spider->actions.push(make_shared<ChangeStateAction>(WANDER));
   }
@@ -112,27 +124,6 @@ void AI::Wander(ObjPtr spider) {
   if (!spider->actions.empty()) {
     // Complete the actions before choosing other actions.
     return;
-  }
-
-  shared_ptr<Waypoint> closest_wp = GetClosestWaypoint(spider->position);
-  if (closest_wp->name == "waypoint-009" || closest_wp->name == "waypoint-014") {
-    vec3 destination = closest_wp->next_waypoints[0]->position;
-    spider->actions.push(make_shared<MoveAction>(destination));
-    return;
-  }
-
-  if (glfwGetTime() > spider->state_changed_at + 20) {
-    ObjPtr player = resources_->GetObjectByName("player");
-    vec3 dir = player->position - spider->position;
-    ObjPtr closest_unit = GetClosestUnit(spider);
-    if (length(spider->position - closest_unit->position) < 50) {
-      spider->actions = {};
-      spider->actions.push(make_shared<MoveAction>(closest_wp->position));
-      shared_ptr<Waypoint> next_wp = closest_wp->next_waypoints[0];
-      spider->actions.push(make_shared<MoveAction>(next_wp->position));
-      spider->actions.push(make_shared<IdleAction>(5));
-      return;
-    }
   }
 
   ObjPtr player = resources_->GetObjectByName("player");
@@ -147,6 +138,7 @@ void AI::Wander(ObjPtr spider) {
   float x = distribution(generator_);
   float y = distribution(generator_);
 
+  shared_ptr<Waypoint> closest_wp = GetClosestWaypoint(spider->position);
   vec3 destination = closest_wp->position + vec3(x, 0, y);
   spider->actions.push(make_shared<MoveAction>(destination));
   spider->actions.push(make_shared<IdleAction>(5));
@@ -156,7 +148,8 @@ bool AI::ProcessStatus(ObjPtr spider) {
   // Check status. If taking hit, or dying.
   switch (spider->status) {
     case STATUS_TAKING_HIT: {
-      spider->active_animation = "Armature|hit";
+      resources_->ChangeObjectAnimation(spider, "Armature|hit");
+
       if (spider->frame >= 39) {
         spider->actions = {};
         spider->actions.push(make_shared<ChangeStateAction>(CHASE));
@@ -165,8 +158,22 @@ bool AI::ProcessStatus(ObjPtr spider) {
       return false;
     }
     case STATUS_DYING: {
-      spider->active_animation = "Armature|death";
-      if (spider->frame >= 78) {
+      bool is_dead = false;
+
+      shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+      if (!MeshHasAnimation(*mesh, "Armature|death")) {
+        is_dead = true;
+      } else {
+        resources_->ChangeObjectAnimation(spider, "Armature|death");
+
+        int num_frames = GetNumFramesInAnimation(*mesh, 
+          spider->active_animation);
+        if (spider->frame >= num_frames - 1) {
+          is_dead = true;
+        }
+      }
+
+      if (is_dead) {
         resources_->CreateParticleEffect(64, spider->position, 
           vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
         spider->status = STATUS_DEAD;
@@ -184,7 +191,13 @@ bool AI::ProcessStatus(ObjPtr spider) {
 // Given the environment and the queued actions, what should be the next 
 // actions? 
 void AI::ProcessMentalState(ObjPtr spider) {
-  if (spider->GetAsset()->name != "spider") return;
+  if (spider->GetAsset()->type != ASSET_CREATURE) return;
+  // if (spider->GetAsset()->name != "spider" &&
+  //     spider->GetAsset()->name != "cephalid") return;
+
+  // IDLE
+  // WANDER
+  // AGGRESSIVE
 
   // TODO: mental states should be Attack, Flee, Patrol (search), Hunt, Wander.
   switch (spider->ai_state) {
@@ -197,7 +210,7 @@ void AI::ProcessMentalState(ObjPtr spider) {
 
 bool AI::ProcessRangedAttackAction(ObjPtr spider, 
   shared_ptr<RangedAttackAction> action) {
-  spider->active_animation = "Armature|attack";
+  resources_->ChangeObjectAnimation(spider, "Armature|attack");
 
   if (spider->frame >= 79) {
     return true;
@@ -228,7 +241,80 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
       spider->position + dir * 5.0f + vec3(0, 2.0, 0), 
       dir * 5.0f, vec3(0.0, 1.0, 0.0), -1.0, 40.0f, 3.0f);
 
-    resources_->SpiderCastMagicMissile(spider, dir);
+    // TODO: change this to make the creature choose the best attack.
+    if (spider->GetAsset()->name == "cephalid") {
+      if (!resources_->SpiderCastPowerMagicMissile(spider, dir)) {
+        resources_->SpiderCastMagicMissile(spider, dir);
+      }
+    } else {
+      resources_->SpiderCastMagicMissile(spider, dir);
+    }
+
+  }
+  return false;
+}
+
+bool AI::ProcessMeeleeAttackAction(ObjPtr spider, 
+  shared_ptr<MeeleeAttackAction> action) {
+  resources_->ChangeObjectAnimation(spider, "Armature|attack");
+
+  if (spider->frame >= 31) {
+    return true;
+  }
+
+  if (spider->frame == 30) {
+    ObjPtr player = resources_->GetObjectByName("player");
+    vec3 dir = player->position - spider->position;
+
+    if (length(dir) < 10.0f) {
+      player->life -= 10;
+      resources_->GetConfigs()->taking_hit = 30.0f;
+      if (player->life <= 0.0f) {
+        player->life = 100.0f;
+        player->position = resources_->GetConfigs()->respawn_point;
+      }
+    }
+    spider->actions.push(make_shared<CastSpellAction>("burrow"));
+
+    std::normal_distribution<float> distribution(0.0, 40.0);
+    float x = distribution(generator_);
+    float y = distribution(generator_);
+
+    vec3 destination = spider->position + vec3(x, 0, y);
+    spider->actions.push(make_shared<MoveAction>(destination));
+    spider->actions.push(make_shared<IdleAction>(2));
+    spider->actions.push(make_shared<CastSpellAction>("unburrow"));
+  }
+  return false;
+}
+
+bool AI::ProcessCastSpellAction(ObjPtr spider, 
+    shared_ptr<CastSpellAction> action) {
+  string spell_name = action->spell_name;
+  if (spell_name == "burrow") {
+    resources_->ChangeObjectAnimation(spider, "Armature|dig");
+    if (spider->frame % 5 == 0) {
+      resources_->CreateParticleEffect(40, 
+        spider->position, 
+        vec3(0, 2, 0), vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+    }
+
+    if (spider->frame == 30) {
+      spider->status = STATUS_BURROWED;
+      return true;
+    }
+  } else if (spell_name == "unburrow") {
+    resources_->ChangeObjectAnimation(spider, "Armature|dig");
+    if (spider->frame % 5 == 0) {
+      resources_->CreateParticleEffect(40, 
+        spider->position, 
+        vec3(0, 2, 0), vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+    }
+
+    if (spider->frame == 30) {
+      spider->status = STATUS_NONE;
+      return true;
+    }
   }
   return false;
 }
@@ -240,7 +326,7 @@ bool AI::ProcessChangeStateAction(ObjPtr spider,
 }
 
 bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
-  spider->active_animation = "Armature|walking";
+  resources_->ChangeObjectAnimation(spider, "Armature|walking");
 
   ObjPtr player = resources_->GetObjectByName("player");
   bool is_rotating = RotateSpider(spider, player->position, 0.99f);
@@ -252,63 +338,61 @@ bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
 
 bool AI::ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action) {
   spider->active_textures[1] = 1;
-  spider->active_animation = "Armature|talk";
-
-  // vec3 to_next_location = action->target - spider->position;
-  // to_next_location.y = 0;
-
-  // // Check how much time happened since the order was issued.
-  // if (glfwGetTime() > action->issued_at + 5) {
-  //   return true;
-  // }
-
-  // float dist_next_location = length(to_next_location);
-  // if (dist_next_location < 7.0f) {
-  //   return true;
-  // }
-
-  // float speed = spider->GetAsset()->base_speed;
-  // bool is_rotating = RotateSpider(spider, action->destination);
-  // if (!is_rotating) {
-  //   spider->speed += spider->forward * speed;
-  // }
+  if (!resources_->ChangeObjectAnimation(spider, "Armature|talk")) {
+    resources_->ChangeObjectAnimation(spider, "talking");
+  }
   return false;
-
 }
 
 bool AI::ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action) {
   spider->active_textures[1] = 0;
-  spider->active_animation = "Armature|idle";
+  if (!resources_->ChangeObjectAnimation(spider, "Armature|idle")) {
+    resources_->ChangeObjectAnimation(spider, "idle");
+  }
   return false;
 }
 
 bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
   spider->active_textures[1] = 0;
-  spider->active_animation = "Armature|walking";
+  resources_->ChangeObjectAnimation(spider, "Armature|walking");
 
   vec3 to_next_location = action->destination - spider->position;
-  to_next_location.y = 0;
 
-  // Check how much time happened since the order was issued.
-  // if (glfwGetTime() > action->issued_at + 5) {
-  //   return true;
-  // }
+  // TODO: create function GetPhysicsBehavior.
+  PhysicsBehavior physics_behavior = spider->physics_behavior;
+  if (physics_behavior == PHYSICS_UNDEFINED) {
+    if (spider->GetAsset()) {
+      physics_behavior = spider->GetAsset()->physics_behavior;
+    }
+  }
+
+  if (physics_behavior == PHYSICS_FLY || physics_behavior == PHYSICS_SWIM) {
+
+  } else {
+    to_next_location.y = 0;
+  }
 
   float dist_next_location = length(to_next_location);
-  if (dist_next_location < 7.0f) {
+  if (dist_next_location < 2.0f) {
     return true;
   }
 
   float speed = spider->GetAsset()->base_speed;
   bool is_rotating = RotateSpider(spider, action->destination);
-  if (!is_rotating) {
+  if (is_rotating) {
+    return false;
+  }
+
+  if (physics_behavior == PHYSICS_FLY) {
+    spider->speed += normalize(to_next_location) * speed;
+  } else {
     spider->speed += spider->forward * speed;
   }
   return false;
 }
 
 bool AI::ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action) {
-  spider->active_animation = "Armature|idle";
+  resources_->ChangeObjectAnimation(spider, "Armature|idle");
   float time_to_end = action->issued_at + action->duration;
   double current_time = glfwGetTime();
   if (current_time > time_to_end) {
@@ -329,7 +413,13 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<MoveAction>(action);
       if (ProcessMoveAction(spider, move_action)) {
         spider->actions.pop();
-        spider->frame = 0;
+
+        shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+          int num_frames = GetNumFramesInAnimation(*mesh, 
+            spider->active_animation);
+        if (spider->frame >= num_frames) {
+          spider->frame = 0;
+        }
       }
       break;
     }
@@ -351,10 +441,28 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_MEELEE_ATTACK: {
+      shared_ptr<MeeleeAttackAction> meelee_attack_action =  
+        static_pointer_cast<MeeleeAttackAction>(action);
+      if (ProcessMeeleeAttackAction(spider, meelee_attack_action)) {
+        spider->actions.pop();
+        spider->frame = 0;
+      }
+      break;
+    }
     case ACTION_RANGED_ATTACK: {
       shared_ptr<RangedAttackAction> ranged_attack_action =  
         static_pointer_cast<RangedAttackAction>(action);
       if (ProcessRangedAttackAction(spider, ranged_attack_action)) {
+        spider->actions.pop();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_CAST_SPELL: {
+      shared_ptr<CastSpellAction> cast_spell_action =  
+        static_pointer_cast<CastSpellAction>(action);
+      if (ProcessCastSpellAction(spider, cast_spell_action)) {
         spider->actions.pop();
         spider->frame = 0;
       }
@@ -392,17 +500,17 @@ void AI::ProcessNextAction(ObjPtr spider) {
   }
 }
 
-// TODO: Split AI into actions and intention. If the intention is to hunt, the
-// spider may need to take many actions. For example: to wander, a spider
-// needs to select a new location, move there, check if it is close to it,
-// take another action, check if the player is nearby. Actions also must take 
-// the object status into consideration.
 void AI::RunSpiderAI() {
   int num_spiders = 0;
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
-    if (obj1->GetAsset()->name != "spider" && 
-      obj1->GetAsset()->name != "fisherman-body") continue;
+    if (obj1->GetAsset()->type != ASSET_CREATURE) continue;
+    if (obj1->being_placed) continue;
+    // if (obj1->GetAsset()->name != "spider" && 
+    //   obj1->GetAsset()->name != "fisherman-body" &&
+    //   obj1->GetAsset()->name != "cephalid") continue;
 
+    // TODO: replace this by script that checks the number of spiders and 
+    // creates more if necessary.
     if (obj1->GetAsset()->name == "spider") {
       num_spiders++;
     }
@@ -429,7 +537,7 @@ void AI::RunSpiderAI() {
     vec3 position = vec3(9649, 134, 10230);
     if (dice < 500) {
       position = vec3(9610, 132, 9885);
-    } 
+    }
 
     shared_ptr<GameObject> obj = resources_->CreateGameObjFromAsset(
       "spider", position);
@@ -437,8 +545,4 @@ void AI::RunSpiderAI() {
     ChangeState(obj, WANDER);
   }
 }
-
-// Objetivo da aranha é se espalhar.
-
-// Só ataca quando está perto do player.
 

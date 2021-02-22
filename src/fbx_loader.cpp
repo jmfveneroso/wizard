@@ -277,7 +277,7 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     string name = (char*) cluster->GetLink()->GetName();
     if (joint_map.find(name) == joint_map.end()) {
       // throw runtime_error(string("Joint ") + name + " not found.");
-      cout << "Joint " << name << " not found" << endl;
+      // cout << "Joint " << name << " not found" << endl;
       continue;
     }
 
@@ -328,7 +328,10 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
 
   for (int i = 0; i < scene->GetSrcObjectCount<FbxAnimStack>(); i++) {
     FbxAnimStack* anim_stack = scene->GetSrcObject<FbxAnimStack>(i);
-    if (!anim_stack) continue;
+    if (!anim_stack) {
+      cout << "Anim stack does not exist" << endl;
+      continue;
+    }
 
     Animation animation;
     FbxString anim_stack_name = anim_stack->GetName(); 
@@ -361,6 +364,7 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
       }
       animation.keyframes.push_back(keyframe);
     }
+    // cout << "Extracted animation " << animation.name << endl;
     data->animations.push_back(animation);
   }
 }
@@ -371,6 +375,7 @@ FbxData FbxLoad(const std::string& filename) {
   FbxData data;
 
   // TODO: for each mesh, extract the data.
+  cout << "Extracting FBX: " << filename << endl;
   ExtractMesh(scene, &data);
 
   // Animation.
@@ -455,6 +460,7 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
 
   for (const Animation& animation : data.animations) {
     m.animations[animation.name] = animation;
+    // cout << "Extracted animation 2: " << animation.name << endl;
   }
 
   for (int i = 0; i < data.joints.size(); i++) {

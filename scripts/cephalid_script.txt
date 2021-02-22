@@ -1,0 +1,5 @@
+ON_ENTER region-001
+  ADD_ACTION cephalid-001 MOVE_TO point-001
+  ADD_ACTION cephalid-001 CHANGE_MENTAL_STATE aggressive
+
+

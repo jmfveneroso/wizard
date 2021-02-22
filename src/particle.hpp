@@ -3,10 +3,8 @@
 
 #include "game_object.hpp"
 
-enum ParticleBehavior {
-  PARTICLE_FIXED = 0,
-  PARTICLE_FALL = 1
-};
+struct Particle;
+struct GameObject;
 
 struct ParticleType {
   int id;
@@ -18,9 +16,6 @@ struct ParticleType {
   int keep_frame = 1;
   GLuint texture_id = 0;
 };
-
-struct Particle;
-struct GameObject;
 
 struct ParticleGroup : GameObject {
   vector<Particle> particles;

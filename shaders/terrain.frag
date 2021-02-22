@@ -22,6 +22,9 @@ layout(location = 0) out vec3 color;
 
 // Values that stay constant for the whole mesh.
 uniform sampler2D texture_sampler;
+uniform sampler2D texture1_sampler;
+uniform sampler2D texture2_sampler;
+uniform sampler2D texture3_sampler;
 uniform sampler2DShadow shadow_sampler;
 uniform sampler2DShadow shadow_sampler1;
 uniform sampler2DShadow shadow_sampler2;
@@ -126,10 +129,14 @@ void main() {
   vec3 diffuse_color;
   diffuse_color = vec3(0.8, 0.8, 0.8);
 
-  vec3 t1 = texture(texture_sampler, vec2(0.0, 0.0) + uv / 2.1).rgb;
-  vec3 t2 = texture(texture_sampler, vec2(0.5, 0.0) + uv / 2.1).rgb;
-  vec3 t3 = texture(texture_sampler, vec2(0.0, 0.5) + uv / 2.1).rgb;
-  vec3 t4 = texture(texture_sampler, vec2(0.5, 0.5) + uv / 2.1).rgb;
+  // vec3 t1 = texture(texture_sampler, vec2(0.0, 0.0) + uv / 2.1).rgb;
+  // vec3 t2 = texture(texture_sampler, vec2(0.5, 0.0) + uv / 2.1).rgb;
+  // vec3 t3 = texture(texture_sampler, vec2(0.0, 0.5) + uv / 2.1).rgb;
+  // vec3 t4 = texture(texture_sampler, vec2(0.5, 0.5) + uv / 2.1).rgb;
+  vec3 t1 = texture(texture_sampler,  uv).rgb;
+  vec3 t2 = texture(texture1_sampler, uv).rgb;
+  vec3 t3 = texture(texture2_sampler, uv).rgb;
+  vec3 t4 = texture(texture3_sampler, uv).rgb;
 
   vec3 blending = mix(in_data.blending, in_data.coarser_blending, in_data.alpha);
 
