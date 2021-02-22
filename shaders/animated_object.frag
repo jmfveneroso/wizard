@@ -75,8 +75,8 @@ void main(){
   float brightness = clamp(dot(n, l), 0, 1);
 
   // Cel shading.
-  float level = floor(brightness * 2);
-  brightness = level / 2;
+  float level = floor(brightness * 3);
+  brightness = level / 3;
   out_color += sun_intensity * (diffuse_color * light_color * light_power * brightness);
 
   // Point lights.

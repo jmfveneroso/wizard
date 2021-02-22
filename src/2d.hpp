@@ -23,16 +23,17 @@ class Draw2D {
   float window_width_;
   float window_height_;
   mat4 projection_;
-  unordered_map<GLchar, Character> characters_;
+  unordered_map<string, unordered_map<GLchar, Character>> characters_;
   string dir_;
 
+  void LoadFont(const string& font_name, const string& filename);
   void LoadFonts();
 
  public:
   Draw2D(shared_ptr<Resources> asset_catalog, const string dir);
 
-  void DrawChar(char, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0);
-  void DrawText(const string&, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false);
+  void DrawChar(char, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, const string& font_name = "ubuntu_monospace");
+  void DrawText(const string&, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false, const string& font_name = "ubuntu_monospace");
   void DrawLine(vec2, vec2, GLfloat, vec3);
   void DrawRectangle(GLfloat, GLfloat, GLfloat, GLfloat, vec3);
   void DrawImage(const string& texture, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);

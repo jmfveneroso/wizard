@@ -22,10 +22,9 @@
 
 #define CLIPMAP_SIZE 202
 #define CLIPMAP_OFFSET ((CLIPMAP_SIZE - 2) / 2)
-#define CLIPMAP_LEVELS 8
+#define CLIPMAP_LEVELS 7
 #define MAX_HEIGHT 400.0f
 #define TILES_PER_TEXTURE 8
-#define HEIGHT_MAP_SIZE 5000
 #define NUM_SUBREGIONS 13
 
 // TODO: TILE SIZE should always be one.
@@ -90,6 +89,9 @@ class Terrain {
 
   GLuint vertex_buffer_;
   GLuint texture_;
+  GLuint texture1_;
+  GLuint texture2_;
+  GLuint texture3_;
   GLuint water_texture_;
   GLuint water_normal_texture_;
   GLuint shadow_textures_[3];

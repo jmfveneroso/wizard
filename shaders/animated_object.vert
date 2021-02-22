@@ -19,7 +19,7 @@ uniform mat4 M;
 uniform mat4 V;
 
 // Animation.
-uniform mat4 joint_transforms[30];
+uniform mat4 joint_transforms[200];
 
 void main(){
   out_data.UV = vertexUV;

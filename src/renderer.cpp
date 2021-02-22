@@ -101,6 +101,9 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
   for (auto& [id, obj] : octree_node->objects) {
     switch (obj->type) {
       case GAME_OBJ_DEFAULT:
+      case GAME_OBJ_REGION:
+      case GAME_OBJ_WAYPOINT:
+      case GAME_OBJ_DOOR:
         break;
       case GAME_OBJ_MISSILE: {
         if (obj->life > 0.0f) {
@@ -121,6 +124,9 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
   for (auto& [id, obj] : octree_node->moving_objs) {
     switch (obj->type) {
       case GAME_OBJ_DEFAULT:
+      case GAME_OBJ_REGION:
+      case GAME_OBJ_WAYPOINT:
+      case GAME_OBJ_DOOR:
         break;
       case GAME_OBJ_MISSILE: {
         if (obj->life > 0.0f) {
@@ -242,6 +248,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
   vector<shared_ptr<GameObject>> transparent_objs;
   GLuint transparent_shader = resources_->GetShader("transparent_object");
   GLuint lake_shader = resources_->GetShader("mana_pool");
+  GLuint region_shader = resources_->GetShader("region");
 
   // Occlusion culling
   // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
@@ -252,7 +259,8 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
     }
 
     if (obj->GetAsset()->shader == transparent_shader || 
-        obj->GetAsset()->shader == lake_shader) {
+        obj->GetAsset()->shader == lake_shader || 
+        obj->GetAsset()->shader == region_shader) {
       transparent_objs.push_back(obj);
     } else {
       visible_objects.push_back(obj);
@@ -290,7 +298,14 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
 
   BoundingSphere sphere = BoundingSphere(camera_.position, 2.5f);
   bool in_frustum = false; 
-  for (auto& poly : p->GetAsset()->lod_meshes[0].polygons) {
+
+  const string mesh_name = p->GetAsset()->lod_meshes[0];
+  shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+  if (!mesh) {
+    throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+  }
+
+  for (auto& poly : mesh->polygons) {
     vec3 portal_point = p->position + poly.vertices[0];
     vec3 normal = poly.normals[0];
 
@@ -317,7 +332,14 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
 
   if (node->sector->name == "outside") {
     clip_terrain_ = true;
-    Polygon& poly = p->GetAsset()->lod_meshes[0].polygons[0];
+
+    const string mesh_name = p->GetAsset()->lod_meshes[0];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    }
+
+    Polygon& poly = mesh->polygons[0];
     terrain_clipping_point_ = poly.vertices[0] + p->position;
     terrain_clipping_normal_ = poly.normals[0];
   }
@@ -409,21 +431,31 @@ void Renderer::DrawOutside() {
 void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   if (obj == nullptr) return;
 
+  if (obj->GetAsset()->type == ASSET_CREATURE) {
+    if (obj->status == STATUS_BURROWED) {
+      return;
+    }
+  }
+
   for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
     int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
     for (; lod >= 0; lod--) {
-      if (asset->lod_meshes[lod].vao_ > 0) {
+      if (!asset->lod_meshes[lod].empty()) {
         break;
       }
     }
 
-    Mesh& mesh = asset->lod_meshes[lod];
+    const string mesh_name = asset->lod_meshes[lod];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    }
 
     GLuint program_id = asset->shader;
 
     glUseProgram(program_id);
 
-    glBindVertexArray(mesh.vao_);
+    glBindVertexArray(mesh->vao_);
     mat4 ModelMatrix = translate(mat4(1.0), obj->position);
     ModelMatrix = ModelMatrix * obj->rotation_matrix;
 
@@ -499,24 +531,27 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
     if (program_id == resources_->GetShader("animated_object")) {
       vector<mat4> joint_transforms;
-      if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
-        const Animation& animation = mesh.animations[obj->active_animation];
+      if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+        const Animation& animation = mesh->animations[obj->active_animation];
         for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
           joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
         }
+      } else {
+        ThrowError("Animation ", obj->active_animation, " for object ",
+          obj->name, " and asset ", asset->name, " does not exist");
       }
 
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
       BindTexture("texture_sampler", program_id, texture_id);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("animated_transparent_object")) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       vector<mat4> joint_transforms;
-      if (mesh.animations.find(obj->active_animation) != mesh.animations.end()) {
-        const Animation& animation = mesh.animations[obj->active_animation];
+      if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+        const Animation& animation = mesh->animations[obj->active_animation];
         if (obj->frame > animation.keyframes.size()) {
           ThrowError("Frame ", obj->frame, " outside the scope of animation ",
           obj->active_animation, " for object ", obj->name, " which has ",
@@ -526,13 +561,16 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
         for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
           joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
         }
+      } else {
+        ThrowError("Animation ", obj->active_animation, " for object ",
+          obj->name, " and asset ", asset->name, " does not exist");
       }
 
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
       BindTexture("texture_sampler", program_id, texture_id);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == resources_->GetShader("object")) {
       BindTexture("texture_sampler", program_id, texture_id);
@@ -543,21 +581,27 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
         BindTexture("bump_map_sampler", program_id, asset->bump_map_id, 1);
         glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
       }
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("transparent_object")) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       BindTexture("texture_sampler", program_id, texture_id);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == resources_->GetShader("noshadow_object")) {
       BindTexture("texture_sampler", program_id, texture_id);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("hypercube")) {
       glDisable(GL_CULL_FACE);
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
+      glDisable(GL_BLEND);
+    } else if (program_id == resources_->GetShader("region")) {
+      glDisable(GL_CULL_FACE);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == resources_->GetShader("mana_pool")) {
       glEnable(GL_BLEND);
@@ -574,7 +618,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       const vec3 player_pos = resources_->GetPlayer()->position;
       glUniform3fv(GetUniformId(program_id, "camera_position"), 1, (float*) &player_pos);
       glUniform1f(GetUniformId(program_id, "move_factor"), move_factor);
-      glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND); 
     } else {
       if (program_id == resources_->GetShader("sky")) {
@@ -636,7 +680,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       // }
 
       glDisable(GL_CULL_FACE);
-      glDrawElements(GL_TRIANGLES, mesh.num_indices, GL_UNSIGNED_INT, nullptr);
+      glDrawElements(GL_TRIANGLES, mesh->num_indices, GL_UNSIGNED_INT, nullptr);
     }
 
     glBindVertexArray(0);
@@ -664,7 +708,7 @@ void Renderer::DrawObjects(vector<ObjPtr> objs) {
 
 void Renderer::Draw() {
   vec3 normal;
-  float h = resources_->GetTerrainHeight(vec2(camera_.position.x, camera_.position.z), &normal);
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(camera_.position.x, camera_.position.z), &normal);
   float delta_h = camera_.position.y - h;
   if (delta_h < 500.0f) {
     delta_h = 0.0f;
@@ -734,16 +778,20 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
   for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
     int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
     for (; lod >= 0; lod--) {
-      if (asset->lod_meshes[lod].vao_ > 0) {
+      if (!asset->lod_meshes[lod].empty()) {
         break;
       }
     }
 
-    Mesh& mesh = asset->lod_meshes[lod];
+    const string mesh_name = asset->lod_meshes[lod];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    }
 
     GLuint program_id = resources_->GetShader("shadow");
     glUseProgram(program_id);
-    glBindVertexArray(mesh.vao_);
+    glBindVertexArray(mesh->vao_);
 
     // Check if animated object.
     mat4 projection_view_matrix = GetShadowMatrix(false, level);
@@ -752,7 +800,7 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
     mat4 MVP = projection_view_matrix * model_matrix;
 
     glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-    glDrawArrays(GL_TRIANGLES, 0, mesh.num_indices);
+    glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
   }
 }
 
@@ -867,7 +915,7 @@ void Renderer::DrawScreenEffects() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   float taking_hit = configs->taking_hit;
   if (taking_hit > 0.0) {
-    draw_2d_->DrawImage("hit-effect", 0, kWindowHeight, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
+    draw_2d_->DrawImage("hit-effect", 0, 0, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
   }
 
   draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
@@ -890,6 +938,20 @@ void Renderer::DrawScreenEffects() {
 
     draw_2d_->DrawText("Raise Factor:", 750, 22, vec3(1, 0.3, 0.3));
     draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 870, 22, vec3(1, 0.3, 0.3));
+  }
+
+  if (configs->interacting_item) {
+    ObjPtr item = configs->interacting_item;
+    if (item->type == GAME_OBJ_DOOR) {
+      shared_ptr<Door> door = static_pointer_cast<Door>(item);
+      if (door->state == 0) {
+        draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+        draw_2d_->DrawText("Open door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+      } else if (door->state == 2) {
+        draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+        draw_2d_->DrawText("Close door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+      }
+    }
   }
 }
 

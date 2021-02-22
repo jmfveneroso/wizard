@@ -24,6 +24,10 @@ class AI {
   bool ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action);
   bool ProcessChangeStateAction(ObjPtr spider, 
     shared_ptr<ChangeStateAction> action);
+  bool ProcessMeeleeAttackAction(ObjPtr spider, 
+    shared_ptr<MeeleeAttackAction> action);
+  bool ProcessCastSpellAction(ObjPtr spider, 
+    shared_ptr<CastSpellAction> action);
   bool ProcessRangedAttackAction(ObjPtr spider, 
     shared_ptr<RangedAttackAction> action);
   bool ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action);

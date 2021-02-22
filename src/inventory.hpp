@@ -16,7 +16,7 @@ class Inventory {
 
   Inventory(shared_ptr<Resources> asset_catalog, shared_ptr<Draw2D> draw_2d);
 
-  void Draw(int win_x = 200, int win_y = 100);
+  void Draw(int win_x = 200, int win_y = 100, GLFWwindow* window = nullptr);
 
   void Enable() { enabled = true; }
   void Disable() { enabled = false; }

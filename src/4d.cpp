@@ -135,8 +135,11 @@ void Project4D::BuildCube(int i, const vector<vec3>& v, const vec3& pos) {
   }
 
   if (cubes_[i]) {
-    UpdateMesh(cubes_[i]->GetAsset()->lod_meshes[0], 0, vertices, uvs, indices);
-    cubes_[i]->GetAsset()->lod_meshes[0].polygons = polygons;
+    const string mesh_name = cubes_[i]->GetAsset()->lod_meshes[0];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+  
+    UpdateMesh(*mesh, 0, vertices, uvs, indices);
+    mesh->polygons = polygons;
   } else {
     Mesh m = CreateMesh(0, vertices, uvs, indices);
     cubes_[i] = resources_->CreateGameObjFromMesh(m, "hypercube", 

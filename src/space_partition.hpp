@@ -30,7 +30,7 @@ struct OctreeNode {
 
   vec3 center;
   vec3 half_dimensions;
-  shared_ptr<OctreeNode> children[8] { 
+  shared_ptr<OctreeNode> children[8] {
     nullptr, nullptr, nullptr, nullptr, 
     nullptr, nullptr, nullptr, nullptr };
 
@@ -50,8 +50,10 @@ struct OctreeNode {
   vector<SortedStaticObj> static_objects;
   unordered_map<int, shared_ptr<GameObject>> moving_objs;
   unordered_map<int, shared_ptr<GameObject>> lights;
+  unordered_map<int, shared_ptr<GameObject>> items;
 
   vector<shared_ptr<Sector>> sectors;
+  vector<shared_ptr<Region>> regions;
 
   OctreeNode() {}
   OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 

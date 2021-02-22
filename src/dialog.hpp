@@ -4,6 +4,8 @@
 #include "resources.hpp"
 #include "2d.hpp"
 
+// TODO: create functions to set the dialog options and a callback to determine
+// the result.
 class Dialog {
   shared_ptr<Resources> resources_;
   shared_ptr<Draw2D> draw_2d_;
@@ -12,6 +14,7 @@ class Dialog {
 
   bool ProcessDefaultInput(int key, int scancode, int action, int mods);
 
+  string main_text_;
   vector<string> dialog_options_;
 
  public:
@@ -27,6 +30,7 @@ class Dialog {
   void PressKeyCallback(int, int, int, int);
   void ProcessCrafting();
 
+  void SetMainText(string main_text);
   void SetDialogOptions(vector<string> dialog_options);
 };
 

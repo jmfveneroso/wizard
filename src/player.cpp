@@ -8,33 +8,41 @@ PlayerInput::PlayerInput(shared_ptr<Resources> asset_catalog,
     terrain_(terrain), dialog_(dialog) {
 }
 
-void PlayerInput::InteractWithItem(const Camera& c) {
+void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
   vector<shared_ptr<GameObject>> items = resources_->GetItems();
 
-  bool hit = false;
-  for (auto item : items) {
-    vec3 p = c.position;
-    vec3 d = c.direction;
+  vec3 p = c.position;
+  vec3 d = normalize(c.direction);
 
-    float t;
-    vec3 q;
-    if (IntersectRaySphere(p, d, item->GetBoundingSphere(), t, q)) {
-      inventory.push_back({ item->GetAsset(), 1 });
-      resources_->RemoveObject(item);
-      hit = true;
-      break;
+  configs->interacting_item = nullptr;
+  ObjPtr item = resources_->IntersectRayObjects(p, d, 10.0f);
+  bool hit = false;
+  if (item) {
+    if (interact) {
+      if (item->type == GAME_OBJ_DOOR) {
+        shared_ptr<Door> door = static_pointer_cast<Door>(item);
+        if (door->state == 0) {
+          door->state = 1;
+        } else if (door->state == 2) {
+          door->state = 3;
+        }
+      } else {
+        inventory.push_back({ item->GetAsset(), 1 });
+        resources_->RemoveObject(item);
+      }
     }
+    configs->interacting_item = item;
+    hit = true;
   }
 
-  if (hit) {
+  if (hit || !interact) {
     return;
   }
 
   shared_ptr<GameObject> obj = resources_->GetObjectByName("mana-pool-001");
 
-  vec3 p = c.position;
-  vec3 d = c.direction;
   float t;
   vec3 q;
   if (IntersectRaySphere(p, d, obj->GetBoundingSphere(), t, q)) {
@@ -47,13 +55,29 @@ void PlayerInput::InteractWithItem(const Camera& c) {
     return;
   }
 
-  ObjPtr fisherman = resources_->GetObjectByName("fisherman-001");
-  if (IntersectRaySphere(p, d, fisherman->GetBoundingSphere(), t, q)) {
-    dialog_->SetDialogOptions({ "Build", "Goodbye" });
-    dialog_->Enable();
-    resources_->SetGameState(STATE_DIALOG);
-    while (!fisherman->actions.empty()) fisherman->actions.pop();
-    fisherman->actions.push(make_shared<TalkAction>());
+  // TODO: move this to other location. Should be NPC but how?
+  vector<pair<string, string>> npc_values {
+    { "fisherman-001", "fisherman-speech" },
+    { "leader", "leader-speech" },
+    { "bird-tamer", "bird-tamer-speech" },
+    { "farmer", "farmer-speech" },
+    { "huntress", "huntress-speech" },
+    { "innkeep", "innkeep-speech" },
+    { "blacksmith-man", "blacksmith-speech" },
+    { "librarian", "librarian-speech" },
+    { "alchemist", "alchemist-speech" }
+  };
+
+  for (const auto& [name, speech] : npc_values) {
+    ObjPtr npc = resources_->GetObjectByName(name);
+    if (IntersectRaySphere(p, d, npc->GetBoundingSphere(), t, q)) {
+      dialog_->SetMainText(resources_->GetString(speech));
+      dialog_->SetDialogOptions({ "Build", "Goodbye" });
+      dialog_->Enable();
+      resources_->SetGameState(STATE_DIALOG);
+      while (!npc->actions.empty()) npc->actions.pop();
+      npc->actions.push(make_shared<TalkAction>());
+    }
   }
 }
 
@@ -84,7 +108,7 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
   left_or_right = (state2 == GLFW_PRESS) ? -1 : left_or_right;
   if (left_or_right != 0) {
     vec3 start = c.position;
-    vec3 end = c.position + c.direction * 200.0f;
+    vec3 end = c.position + c.direction * 500.0f;
     ivec2 tile;
     if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
       int size = configs->brush_size;
@@ -92,7 +116,7 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
       float mean_height = 0;
       for (int x = -size; x <= size; x++) {
         for (int y = -size; y <= size; y++) {
-          TerrainPoint p = resources_->GetTerrainPoint(tile.x + x, tile.y + y);
+          TerrainPoint p = resources_->GetHeightMap().GetTerrainPoint(tile.x + x, tile.y + y);
           mean_height += p.height;
         }
       }
@@ -104,8 +128,10 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
           if (distance > size) continue;
           float factor = ((size - distance) * (size - distance)) * 0.04f;
 
-          TerrainPoint p = resources_->GetTerrainPoint(tile.x + x, tile.y + y);
+          TerrainPoint p = resources_->GetHeightMap().GetTerrainPoint(tile.x + x, tile.y + y);
           if (configs->edit_terrain == "tile") {
+            p.tile = configs->selected_tile;
+
             p.blending = vec3(0, 0, 0);
             if (configs->selected_tile > 0) {
               p.blending[configs->selected_tile-1] = 1;
@@ -120,12 +146,24 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
           } else if (configs->edit_terrain == "flatten") {
             p.height += 0.001f * (mean_height - p.height) * factor * configs->raise_factor;
           }
-          resources_->SetTerrainPoint(tile.x+x, tile.y+y, p);
+          resources_->GetHeightMap().SetTerrainPoint(tile.x+x, tile.y+y, p);
           terrain_->InvalidatePoint(tile + ivec2(x, y));
         }
       }
     }
   }
+}
+
+void PlayerInput::EditObject(GLFWwindow* window, const Camera& c) {
+  ObjPtr obj = resources_->CollideRayAgainstObjects(c.position, c.direction);
+  if (!obj) {
+    return;
+  }
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  configs->new_building = obj;
+  configs->place_object = true;
+  configs->place_axis = 0;
 }
 
 void PlayerInput::Build(GLFWwindow* window, const Camera& c) {
@@ -139,7 +177,7 @@ void PlayerInput::Build(GLFWwindow* window, const Camera& c) {
   vec3 end = c.position + c.direction * 500.0f;
   ivec2 tile;
   if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
-    TerrainPoint p = resources_->GetTerrainPoint(tile.x, tile.y);
+    TerrainPoint p = resources_->GetHeightMap().GetTerrainPoint(tile.x, tile.y);
     configs->new_building->position = vec3(tile.x, p.height, tile.y);
 
     int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
@@ -158,45 +196,94 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
     return;
   }
 
+  ObjPtr obj = configs->new_building;
+
   vec3 start = c.position;
   vec3 end = c.position + c.direction * 500.0f;
-  ivec2 tile;
-  if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
-    TerrainPoint p = resources_->GetTerrainPoint(tile.x, tile.y);
-    configs->new_building->position = vec3(tile.x, p.height, tile.y);
-
-    int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
-    if (state == GLFW_PRESS) {
-      configs->place_object = false;
-      resources_->RemoveObject(configs->new_building);  
-      return;
+  if (configs->place_axis == -1) {
+    ivec2 tile;
+    if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
+      TerrainPoint p = resources_->GetHeightMap().GetTerrainPoint(tile.x, tile.y);
+      obj->position = vec3(tile.x, p.height, tile.y);
+      resources_->UpdateObjectPosition(obj);
+    }
+  } else {
+    vec3 plane_point = configs->new_building->position;
+    vec3 plane_normal = vec3(0, 0, 0);
+    if (configs->place_axis == 0) {
+      plane_normal = vec3(0, 0, 1);
+    } else if (configs->place_axis == 1) {
+      plane_normal = vec3(0, 1, 0);
+    } else if (configs->place_axis == 2) {
+      plane_normal = vec3(1, 0, 0);
     }
 
-    state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
-    if (state == GLFW_PRESS) {
-      resources_->SetGameState(STATE_GAME);
-      configs->place_object = false;
+    float d = dot(plane_point, plane_normal);
+    Plane p = Plane(plane_normal, d);
+
+    float t;
+    vec3 q;
+    if (IntersectSegmentPlane(start, end, p, t, q)) {
+      if (configs->scale_object) {
+        float scaling_factor = 0.0f;
+        if (configs->place_axis == 0) {
+          scaling_factor = abs(q.y - configs->scale_pivot.y);
+          configs->scale_dimensions.y = scaling_factor;
+        } else if (configs->place_axis == 1) {
+          scaling_factor = abs(q.x - configs->scale_pivot.x);
+          configs->scale_dimensions.x = scaling_factor;
+        } else if (configs->place_axis == 2) {
+          scaling_factor = abs(q.z - configs->scale_pivot.z);
+          configs->scale_dimensions.z = scaling_factor;
+        }
+       
+        vector<vec3> vertices;
+        vector<vec2> uvs;
+        vector<unsigned int> indices;
+        vector<Polygon> polygons;
+        resources_->CreateCube(vertices, uvs, indices, polygons, configs->scale_dimensions);
+
+        const string mesh_name = obj->GetAsset()->lod_meshes[0];
+        shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+        if (!mesh) {
+          throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+        }
+
+        UpdateMesh(*mesh, 0, vertices, uvs, indices);
+        obj->GetAsset()->aabb = GetAABBFromPolygons(polygons);
+        resources_->UpdateObjectPosition(obj);
+      } else {
+        configs->new_building->position = q;
+        resources_->UpdateObjectPosition(obj);
+      }
     }
+  }
+
+  int state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
+  if (state == GLFW_PRESS) {
+    configs->place_object = false;
+    configs->scale_object = false;
+    resources_->RemoveObject(configs->new_building);  
+    return;
+  }
+
+  state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+  if (state == GLFW_PRESS) {
+    resources_->SetGameState(STATE_GAME);
+    configs->place_object = false;
+    configs->scale_object = false;
+    configs->scale_pivot = configs->new_building->position;
   }
 }
 
-Camera PlayerInput::ProcessInput(GLFWwindow* window) {
-  static double last_time = glfwGetTime();
-  double current_time = glfwGetTime();
-
-  static int debounce = 0;
-  --debounce;
-  static int animation_frame = 0;
-  --animation_frame;
-
+Camera PlayerInput::GetCamera() {
   shared_ptr<Player> player = resources_->GetPlayer();
-
   vec3 direction(
     cos(player->rotation.x) * sin(player->rotation.y), 
     sin(player->rotation.x),
     cos(player->rotation.x) * cos(player->rotation.y)
   );
-  
+
   vec3 right = glm::vec3(
     sin(player->rotation.y - 3.14f/2.0f), 
     0,
@@ -209,13 +296,42 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     cos(player->rotation.x) * cos(player->rotation.y)
   );
   
-  glm::vec3 up = glm::cross(right, direction);
-
+  vec3 up = glm::cross(right, direction);
   Camera c = Camera(player->position + vec3(0, 3.0, 0), direction, up);
   c.rotation.x = player->rotation.x;
   c.rotation.y = player->rotation.y;
   c.right = right;
+  return c;
+}
+
+Camera PlayerInput::ProcessInput(GLFWwindow* window) {
+  static double last_time = glfwGetTime();
+  double current_time = glfwGetTime();
+
+  static int debounce = 0;
+  --debounce;
+  static int animation_frame = 0;
+  --animation_frame;
+
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
+  vec3 right = glm::vec3(
+    sin(player->rotation.y - 3.14f/2.0f), 
+    0,
+    cos(player->rotation.y - 3.14f/2.0f)
+  );
+
+  vec3 front = glm::vec3(
+    cos(player->rotation.x) * sin(player->rotation.y), 
+    0,
+    cos(player->rotation.x) * cos(player->rotation.y)
+  );
+
+  Camera c = GetCamera();
   
+  if (resources_->GetGameState() == STATE_EDITOR) return c;
+
   float player_speed = resources_->GetConfigs()->player_speed; 
   float jump_force = resources_->GetConfigs()->jump_force; 
 
@@ -239,33 +355,35 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->position.z = 7900;
 
   } else {
-    // Move forward.
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-      player->speed += front * player_speed;
+    if (player->paralysis_cooldown == 0) {
+      // Move forward.
+      if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        player->speed += front * player_speed;
 
-    // Move backward.
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-      player->speed -= front * player_speed;
+      // Move backward.
+      if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        player->speed -= front * player_speed;
 
-    // Strafe right.
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-      player->speed += right * player_speed;
+      // Strafe right.
+      if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        player->speed += right * player_speed;
 
-    // Strafe left.
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-      player->speed -= right * player_speed;
+      // Strafe left.
+      if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        player->speed -= right * player_speed;
 
-    // Move up.
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-      if (player->can_jump) {
-        player->can_jump = false;
-        player->speed.y += jump_force;
+      // Move up.
+      if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        if (player->can_jump) {
+          player->can_jump = false;
+          player->speed.y += jump_force;
+        }
       }
-    }
 
-    // Move down.
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-      player->speed.y -= jump_force;
+      // Move down.
+      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+        player->speed.y -= jump_force;
+      }
     }
   }
 
@@ -318,6 +436,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
           animation_frame = 90;
           obj->frame = 0;
         }
+        debounce = 20;
       }
       break;
     }
@@ -367,11 +486,62 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   }
 
   throttle_counter_--;
+  bool interacted_with_item = false;
   if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
     if (throttle_counter_ < 0) {
-      InteractWithItem(c);
+      InteractWithItem(c, true);
+      interacted_with_item = true;
     }
     throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      EditObject(window, c);
+    }
+    throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->place_axis = 0;
+    }
+    throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->place_axis = 1;
+    }
+    throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->place_axis = 2;
+    }
+    throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->place_axis = -1;
+    }
+    throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
+    if (configs->new_building) {
+      if (throttle_counter_ < 0) {
+        if (configs->scale_object) {
+          configs->scale_object = false;
+        } else {
+          configs->scale_object = true;
+          configs->scale_pivot = configs->new_building->position;
+        }
+      }
+      throttle_counter_ = 20;
+    }
+  } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
+    if (configs->place_object) {
+      configs->new_building->rotation_matrix *= rotate(mat4(1.0), -0.005f, vec3(0, 1, 0));
+    }
+  } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
+    if (configs->place_object) {
+      configs->new_building->rotation_matrix *= rotate(mat4(1.0), 0.005f, vec3(0, 1, 0));
+    }
+  }
+
+  if (!interacted_with_item) {
+    InteractWithItem(c, false);
   }
 
   EditTerrain(window, c);

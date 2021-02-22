@@ -17,6 +17,7 @@ Engine::Engine(
   shared_ptr<Item> item,
   shared_ptr<Dialog> dialog,
   shared_ptr<Npc> npc,
+  shared_ptr<ScriptManager> script_manager,
   GLFWwindow* window,
   int window_width,
   int window_height
@@ -24,8 +25,8 @@ Engine::Engine(
     inventory_(inventory), craft_(craft), resources_(asset_catalog),
     collision_resolver_(collision_resolver), ai_(ai), physics_(physics),
     player_input_(player_input), item_(item), dialog_(dialog), npc_(npc),
-    window_(window), window_width_(window_width), 
-    window_height_(window_height) {
+    script_manager_(script_manager), window_(window), 
+    window_width_(window_width), window_height_(window_height) {
 }
 
 // TODO: move this elsewhere.
@@ -56,30 +57,16 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "raise-factor") {
     float raise_factor = boost::lexical_cast<float>(result[1]);
     configs->raise_factor = raise_factor;
-  } else if (result[0] == "sun") {
-    float x = boost::lexical_cast<float>(result[1]);
-    float y = boost::lexical_cast<float>(result[2]);
-    float z = boost::lexical_cast<float>(result[3]);
-    configs->sun_position = vec3(x, y, z);
+  } else if (result[0] == "time") {
+    configs->time_of_day = boost::lexical_cast<float>(result[1]);
   } else if (result[0] == "levitate") {
     configs->levitate = true;
   } else if (result[0] == "nolevitate") {
     configs->levitate = false;
-  } else if (result[0] == "raise") {
-    ivec2 top_left = ivec2(player->position.x, player->position.z) - 40;
-    for (int x = 0; x < 80; x++) {
-      for (int y = 0; y < 80; y++) {
-        float x_ = x / 10.0f - 4.0f;
-        float y_ = y / 10.0f - 4.0f;
-        float h = (50.0f / (2.0f * 3.14f)) * exp(-0.5 * (x_*x_ + y_*y_));
-
-        TerrainPoint p = resources_->GetTerrainPoint(top_left.x + x, top_left.y + y);
-        p.height += h;
-        resources_->SetTerrainPoint(top_left.x + x, top_left.y + y, p);
-      }
-    }
-    renderer_->terrain()->Invalidate();
-    cout << "Raised terrain" << endl; 
+  } else if (result[0] == "time") {
+    configs->stop_time = false;
+  } else if (result[0] == "notime") {
+    configs->stop_time = true;
   } else if (result[0] == "disable-attacks") {
     configs->disable_attacks = true;
   } else if (result[0] == "allow-attacks") {
@@ -92,17 +79,35 @@ void Engine::RunCommand(string command) {
     configs->edit_terrain = "flatten";
   } else if (result[0] == "noedit") {
     configs->edit_terrain = "none";
+  } else if (result[0] == "s") {
+    configs->target_player_speed = 0.2;
+    configs->levitate = true;
+  } else if (result[0] == "nos") {
+    configs->target_player_speed = 0.04;
+    configs->levitate = false;
   } else if (result[0] == "create") {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
+      cout << "Creating asset: " << asset_name << endl;
+      configs->place_axis = -1;
       configs->new_building = resources_->CreateGameObjFromAsset(
         asset_name, vec3(0));
+      configs->new_building->being_placed = true;
       configs->place_object = true;
-      configs->new_building->torque = vec3(0, 0.02f, 0);
       resources_->AddNewObject(configs->new_building);
     }
+  } else if (result[0] == "create-region") {
+    configs->new_building = resources_->CreateRegion(vec3(0), vec3(10));
+    configs->place_object = true;
+    configs->place_axis = -1;
+    resources_->AddNewObject(configs->new_building);
+  } else if (result[0] == "create-waypoint") {
+    configs->new_building = resources_->CreateWaypoint(vec3(0));
+    configs->place_axis = -1;
+    configs->place_object = true;
+    resources_->AddNewObject(configs->new_building);
   } else if (result[0] == "save") {
-    resources_->SaveHeightMap();
+    resources_->GetHeightMap().Save();
   } else if (result[0] == "save-objs") {
     resources_->SaveNewObjects();
   }
@@ -154,11 +159,10 @@ bool Engine::ProcessGameInput() {
 
           ss << "Life: " << player->life << endl;
 
-          if (configs->edit_terrain != "none") {
-            ss << "Brush size: " << configs->brush_size << endl;
-            ss << "Mode: " << configs->edit_terrain << endl;
-            ss << "Selected tile: " << configs->selected_tile << endl;
-            ss << "Raise factor: " << configs->raise_factor << endl;
+          ss << "Time of day: " << configs->time_of_day << endl;
+
+          if (configs->place_object) {
+            ss << "Name: " << configs->new_building->name << endl;
           }
 
           text_editor_->SetContent(ss.str());
@@ -167,13 +171,14 @@ bool Engine::ProcessGameInput() {
         throttle_counter_ = 20;
       } else if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
+          glfwSetCursorPos(window, 0, 0);
           inventory_->Enable();
           resources_->SetGameState(STATE_INVENTORY);
         }
         throttle_counter_ = 20;
       } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          configs->brush_size--;
+          configs->brush_size-=10;
           if (configs->brush_size < 0) {
             configs->brush_size = 0;
           }
@@ -181,7 +186,7 @@ bool Engine::ProcessGameInput() {
         throttle_counter_ = 4;
       } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          configs->brush_size++;
+          configs->brush_size += 10;
           if (configs->brush_size > 1000) {
             configs->brush_size = 1000;
           }
@@ -208,6 +213,7 @@ bool Engine::ProcessGameInput() {
         }
         throttle_counter_ = 20;
       }
+      player_input_->ProcessInput(window_);
       return false;
     }
     case STATE_EDITOR: {
@@ -281,7 +287,7 @@ void Engine::AfterFrame() {
       break;
     }
     case STATE_INVENTORY: {
-      inventory_->Draw();
+      inventory_->Draw(200, 100, window_);
       break;
     }
     case STATE_CRAFT: {
@@ -301,12 +307,51 @@ void Engine::UpdateAnimationFrames() {
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
   for (auto& [name, obj] : objs) {
+    if (obj->type == GAME_OBJ_DOOR) {
+      shared_ptr<Door> door = static_pointer_cast<Door>(obj);
+      switch (door->state) {
+        case 0: // closed.
+          door->frame = 0;
+          resources_->ChangeObjectAnimation(door, "Armature|open");
+          break;
+        case 1: // opening.
+          resources_->ChangeObjectAnimation(door, "Armature|open");
+          door->frame++;
+          if (door->frame >= 59) {
+            door->state = 2;
+            door->frame = 0;
+            resources_->ChangeObjectAnimation(door, "Armature|close");
+          }
+          break;
+        case 2: // open.
+          door->frame = 0;
+          resources_->ChangeObjectAnimation(door, "Armature|close");
+          break;
+        case 3: // closing.
+          resources_->ChangeObjectAnimation(door, "Armature|close");
+          door->frame++;
+          if (door->frame >= 59) {
+            door->state = 0;
+            door->frame = 0;
+            resources_->ChangeObjectAnimation(door, "Armature|open");
+          }
+          break;
+      }
+      continue; 
+    }
+
     if (obj->type != GAME_OBJ_DEFAULT) {
       continue;
     }
 
-    Mesh& mesh = obj->GetAsset()->lod_meshes[0];
-    const Animation& animation = mesh.animations[obj->active_animation];
+    shared_ptr<GameAsset> asset = obj->GetAsset();
+    const string mesh_name = asset->lod_meshes[0];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    }
+
+    const Animation& animation = mesh->animations[obj->active_animation];
     obj->frame++;
     if (obj->frame >= animation.keyframes.size()) {
       obj->frame = 0;
@@ -352,6 +397,8 @@ void Engine::Run() {
       npc_->ProcessNpcs();
 
       ai_->RunSpiderAI();
+      script_manager_->ProcessScripts();
+
       resources_->UpdateParticles();
 
       physics_->Run();
@@ -366,15 +413,29 @@ void Engine::Run() {
     }
 
     resources_->LockOctree();
-    Camera c = player_input_->ProcessInput(window_);
+    Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
     renderer_->Draw();
     resources_->UnlockOctree();
 
     {
+      // TODO: periodic events: update frame, cooldown.
+      resources_->UpdateCooldowns();
+
       resources_->RemoveDead();
-      configs->sun_position = vec3(rotate(mat4(1.0f), 0.0002f, vec3(0.0, 0, 1.0)) 
-        * vec4(configs->sun_position, 1.0f));
+
+      if (!configs->stop_time) {
+        // 1 minute per second.
+        configs->time_of_day += (1.0f / (60.0f * 60.0f));
+        if (configs->time_of_day > 24.0f) {
+          configs->time_of_day -= 24.0f;
+        }
+
+        float radians = configs->time_of_day * ((2.0f * 3.141592f) / 24.0f);
+        configs->sun_position = 
+          vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
+          vec4(0.0f, -1.0f, 0.0f, 1.0f));
+      }
     }
     AfterFrame();
 
@@ -392,5 +453,5 @@ void Engine::Run() {
   terminate_ = true;
 
   // Join threads.
-  collision_thread_.join();
+  // collision_thread_.join();
 }

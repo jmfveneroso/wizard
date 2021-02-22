@@ -10,6 +10,7 @@
 #include "dialog.hpp"
 #include "npc.hpp"
 #include "engine.hpp"
+#include "scripts.hpp"
 
 shared_ptr<Resources> asset_catalog = nullptr;
 shared_ptr<Renderer> renderer = nullptr;
@@ -26,6 +27,7 @@ shared_ptr<Npc> npc = nullptr;
 shared_ptr<PlayerInput> player_input = nullptr;
 shared_ptr<Item> item = nullptr;
 shared_ptr<Engine> engine = nullptr;
+shared_ptr<ScriptManager> script_manager = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -79,7 +81,7 @@ void InitOpenGl() {
   // Hide the mouse and enable unlimited movement.
   glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
   glfwPollEvents();
-  glfwSetCursorPos(window_, 0, 0);
+  // glfwSetCursorPos(window_, 0, 0);
 }
 
 int main() {
@@ -104,9 +106,10 @@ int main() {
   player_input = make_shared<PlayerInput>(asset_catalog, project_4d, craft, 
     renderer->terrain(), dialog);
   item = make_shared<Item>(asset_catalog);
+  script_manager = make_shared<ScriptManager>(asset_catalog);
   engine = make_shared<Engine>(project_4d, renderer, text_editor, inventory, 
     craft, asset_catalog, collision_resolver, ai, physics, player_input, item, 
-    dialog, npc, window_, window_width_, window_height_);
+    dialog, npc, script_manager, window_, window_width_, window_height_);
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);
   glfwSetKeyCallback(renderer->window(), PressKeyCallback);

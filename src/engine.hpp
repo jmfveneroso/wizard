@@ -12,6 +12,7 @@
 #include "craft.hpp"
 #include "dialog.hpp"
 #include "npc.hpp"
+#include "scripts.hpp"
 
 #include <thread>
 #include <mutex>
@@ -34,6 +35,7 @@ class Engine {
   shared_ptr<Item> item_ = nullptr;
   shared_ptr<Dialog> dialog_ = nullptr;
   shared_ptr<Npc> npc_ = nullptr;
+  shared_ptr<ScriptManager> script_manager_ = nullptr;
 
   float delta_time_ = 0.0f;
   int window_width_ = WINDOW_WIDTH;
@@ -65,6 +67,7 @@ class Engine {
     shared_ptr<Item> item,
     shared_ptr<Dialog> dialog,
     shared_ptr<Npc> npc,
+    shared_ptr<ScriptManager> script_manager,
     GLFWwindow* window,
     int window_width,
     int window_height
