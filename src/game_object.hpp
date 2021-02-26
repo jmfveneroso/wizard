@@ -109,6 +109,7 @@ class GameObject {
   // int GetNumFramesInCurrentAnimation();
   // bool HasAnimation(const string& animation_name);
   // bool ChangeAnimation(const string& animation_name);
+  string GetDisplayName();
 };
 
 struct Player : GameObject {

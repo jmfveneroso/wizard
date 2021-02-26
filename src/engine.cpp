@@ -91,7 +91,7 @@ void Engine::RunCommand(string command) {
       cout << "Creating asset: " << asset_name << endl;
       configs->place_axis = 1;
 
-      Camera c = player_input_->ProcessInput(window_);
+      Camera c = player_input_->GetCamera();
       vec3 position = c.position + c.direction * 10.0f;
       configs->new_building = resources_->CreateGameObjFromAsset(
         asset_name, position);
@@ -100,14 +100,14 @@ void Engine::RunCommand(string command) {
       resources_->AddNewObject(configs->new_building);
     }
   } else if (result[0] == "create-region") {
-    Camera c = player_input_->ProcessInput(window_);
+    Camera c = player_input_->GetCamera();
     vec3 position = c.position + c.direction * 10.0f;
     configs->new_building = resources_->CreateRegion(position, vec3(10));
     configs->place_object = true;
     configs->place_axis = 1;
     resources_->AddNewObject(configs->new_building);
   } else if (result[0] == "create-waypoint") {
-    Camera c = player_input_->ProcessInput(window_);
+    Camera c = player_input_->GetCamera();
     vec3 position = c.position + c.direction * 10.0f;
     configs->new_building = resources_->CreateWaypoint(position);
     configs->place_axis = 1;
@@ -295,7 +295,8 @@ void Engine::AfterFrame() {
       break;
     }
     case STATE_INVENTORY: {
-      inventory_->Draw(200, 100, window_);
+      Camera c = player_input_->GetCamera();
+      inventory_->Draw(c, 200, 100, window_);
       break;
     }
     case STATE_CRAFT: {

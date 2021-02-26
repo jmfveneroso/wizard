@@ -11,12 +11,23 @@ class Inventory {
   shared_ptr<Draw2D> draw_2d_;
   shared_ptr<Resources> resources_;
 
+  int selected_item = 0;
+  int old_pos_x = 0;
+  int old_pos_y = 0;
+  int hold_offset_x = 0;
+  int hold_offset_y = 0;
+
+  vector<string> icons {
+    "",
+    "magic_missile_icon"
+  };
+
  public:
   bool enabled;
 
   Inventory(shared_ptr<Resources> asset_catalog, shared_ptr<Draw2D> draw_2d);
 
-  void Draw(int win_x = 200, int win_y = 100, GLFWwindow* window = nullptr);
+  void Draw(const Camera& camera, int win_x = 200, int win_y = 100, GLFWwindow* window = nullptr);
 
   void Enable() { enabled = true; }
   void Disable() { enabled = false; }

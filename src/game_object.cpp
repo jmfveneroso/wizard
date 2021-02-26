@@ -152,3 +152,6 @@ ObjPtr GameObject::GetParent() {
 //   return true;
 // }
 
+string GameObject::GetDisplayName() {
+  return "";
+}

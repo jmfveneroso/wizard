@@ -928,6 +928,7 @@ void Renderer::DrawScreenEffects() {
   }
 
   draw_2d_->DrawImage("crosshair", 640-4, 400-4, 8, 8, 0.5);
+  draw_2d_->DrawImage("spell_bar", 400, -530, 600, 600, 1.0);
 
   draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
   draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
@@ -957,15 +958,28 @@ void Renderer::DrawScreenEffects() {
     ObjPtr item = configs->interacting_item;
 
     // TODO: event. On hover item.
-    if (item->type == GAME_OBJ_DOOR) {
-      shared_ptr<Door> door = static_pointer_cast<Door>(item);
-      if (door->state == 0) {
+    switch (item->type) {
+      case GAME_OBJ_DEFAULT: {
         draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
-        draw_2d_->DrawText("Open door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
-      } else if (door->state == 2) {
-        draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
-        draw_2d_->DrawText("Close door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+        const string item_name = item->GetAsset()->GetDisplayName();
+        draw_2d_->DrawText(string("Pick ") + item_name, 384 + 70, 
+          kWindowHeight - 588 - 40, vec3(1), 1.0, false, 
+          "avenir_light_oblique");
+        break;
       }
+      case GAME_OBJ_DOOR: {
+        shared_ptr<Door> door = static_pointer_cast<Door>(item);
+        if (door->state == 0) {
+          draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+          draw_2d_->DrawText("Open door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+        } else if (door->state == 2) {
+          draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+          draw_2d_->DrawText("Close door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+        }
+        break;
+      }
+      default:
+        break;
     }
   }
 }

@@ -1679,6 +1679,9 @@ void Resources::RemoveObject(ObjPtr obj) {
     if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
     }
+    if (obj->IsItem()) {
+      obj->octree_node->items.erase(obj->id);
+    }
     obj->octree_node = nullptr;
   }
 
@@ -2523,5 +2526,14 @@ void Resources::TurnOffActionable(const string& name) {
   }
 }
 
-// void Resources::GetTransformsForOBB(const string& name) {
-// }
+bool Resources::InsertItemInInvetory(int item_id) {
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 7; j++) {
+      if (configs_->item_matrix[j][6-i] == 0) {
+        configs_->item_matrix[j][6-i] = item_id;
+        return true;
+      }
+    }
+  }
+  return false;
+}

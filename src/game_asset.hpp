@@ -19,6 +19,9 @@ class GameAsset {
   int id;
   int index = 0;
   string name;
+  string display_name;
+  int item_id = -1;
+  string item_icon;
   AssetType type = ASSET_STATIC;
 
   // Mesh.
@@ -75,6 +78,7 @@ class GameAsset {
   GameAsset();
   void Load(const pugi::xml_node&);
   vector<vec3> GetVertices();
+  string GetDisplayName();
 };
 
 class GameAssetGroup {
