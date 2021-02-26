@@ -155,11 +155,16 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
 }
 
 void PlayerInput::EditObject(GLFWwindow* window, const Camera& c) {
-  ObjPtr obj = resources_->CollideRayAgainstObjects(c.position, c.direction);
+  vec3 p = c.position;
+  vec3 d = normalize(c.direction);
+  ObjPtr obj = resources_->IntersectRayObjects(p, d, 50.0f, false);
+  // ObjPtr obj = resources_->CollideRayAgainstObjects(c.position, c.direction);
   if (!obj) {
+    cout << "No object" << endl;
     return;
   }
 
+  cout << "There is object" << obj->name << endl;
   shared_ptr<Configs> configs = resources_->GetConfigs();
   configs->new_building = obj;
   configs->place_object = true;

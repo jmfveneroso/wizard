@@ -636,9 +636,13 @@ void Resources::AddGameObject(shared_ptr<GameObject> game_obj) {
 shared_ptr<GameObject> Resources::LoadGameObject(
   string name, string asset_name, vec3 position, vec3 rotation) {
   shared_ptr<GameObject> new_game_obj = nullptr;
+
+  // TODO: create attribute to determine type, like unit.
   if (asset_name == "door") {
     new_game_obj = make_shared<Door>();
-  } else{
+  } else if (asset_name == "crystal") {
+    new_game_obj = make_shared<Actionable>();
+  } else {
     new_game_obj = make_shared<GameObject>();
   }
 
@@ -743,6 +747,14 @@ void Resources::LoadSectors(const std::string& xml_filename) {
 
     shared_ptr<Sector> new_sector = make_shared<Sector>();
     new_sector->name = sector.attribute("name").value();
+
+    pugi::xml_attribute occlude = sector.attribute("occlude");
+    if (occlude) {
+       if (string(occlude.value()) == "false") {
+         new_sector->occlude = false;
+       }
+    }
+
     if (new_sector->name != "outside") {
       const pugi::xml_node& position = sector.child("position");
       if (!position) {
@@ -1265,6 +1277,24 @@ void Resources::UpdateObjectPosition(shared_ptr<GameObject> obj) {
 
   // Update sector.
   shared_ptr<Sector> sector = GetSector(obj->position);
+
+  // Check region events.
+  if (obj->current_sector) {
+    if (sector->name != obj->current_sector->name) {
+      for (shared_ptr<Event> e : sector->on_enter_events) {
+        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        if (obj->name != region_event->unit) continue;
+        events_.push_back(e);
+      }
+
+      for (shared_ptr<Event> e : obj->current_sector->on_leave_events) {
+        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        if (obj->name != region_event->unit) continue;
+        events_.push_back(e);
+      }
+    }
+  }
+
   obj->current_sector = sector;
 
   // Update position into octree.
@@ -1963,19 +1993,14 @@ void Resources::SaveNewObjects() {
 }
 
 ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
-  const vec3& position, const vec3& direction, float max_distance=1.0f) {
+  const vec3& position, const vec3& direction, float max_distance=1.0f, 
+  bool only_items=true) {
   if (!node) return nullptr;
 
   AABB aabb = AABB(node->center - node->half_dimensions, 
     node->half_dimensions * 2.0f);
 
-  // Checks if node AABB is over the max distance.
-  // for (int i = 0; i < 3; i++) {
-  //   float delta = abs(position[i] - node->center[i]);
-  //   if (delta > node->half_dimensions[i] + max_distance) return nullptr;
-  // }
-
-  // Checks if the ray intersect the current node.
+  // // Checks if the ray intersect the current node.
   float tmin;
   vec3 q;
   if (!IntersectRayAABB(position, direction, aabb, tmin, q)) {
@@ -1987,7 +2012,16 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
   // TODO: maybe items should be called interactables instead.
   ObjPtr closest_item = nullptr;
   float closest_distance = 9999999.9f;
-  for (auto& [id, item] : node->items) {
+
+  unordered_map<int, shared_ptr<GameObject>>* objs;
+  if (only_items) objs = &node->items;
+  else objs = &node->objects;
+
+  for (auto& [id, item] : *objs) {
+    // if (item->type != GAME_OBJ_DEFAULT && item->type != GAME_OBJ_WAYPOINT) continue;
+    if (item->status == STATUS_DEAD) continue;
+    if (item->name == "hand-001") continue;
+
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
     if (!IntersectRaySphere(position, direction, 
@@ -2001,17 +2035,31 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     }
   }
 
+  if (!only_items) {
+    for (const auto& sorted_obj : node->static_objects) {
+      ObjPtr item = sorted_obj.obj;
+      if (item->status == STATUS_DEAD) continue;
+      if (item->name == "hand-001") continue;
+      float distance = length(position - item->position);
+      if (distance > max_distance) continue;
+      if (!IntersectRaySphere(position, direction, 
+        item->GetBoundingSphere(), tmin, q)) {
+        continue;
+      }
+
+      if (!closest_item || distance < closest_distance) { 
+        closest_item = item;
+        closest_distance = distance;
+      }
+    }
+  }
+
   for (int i = 0; i < 8; i++) {
     ObjPtr new_item = IntersectRayObjectsAux(node->children[i], position, 
       direction, max_distance);
     if (!new_item) continue;
-    if (!IntersectRaySphere(position, direction, 
-      new_item->GetBoundingSphere(), tmin, q)) {
-      continue;
-    }
 
     float distance = length(position - new_item->position);
-    if (distance > max_distance) continue;
     if (!closest_item || distance < closest_distance) { 
       closest_item = new_item;
       closest_distance = distance;
@@ -2022,10 +2070,10 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
 }
 
 ObjPtr Resources::IntersectRayObjects(const vec3& position, 
-  const vec3& direction, float max_distance) {
+  const vec3& direction, float max_distance, bool only_items) {
   shared_ptr<OctreeNode> root = GetSectorByName("outside")->octree_node;
   return IntersectRayObjectsAux(root, position, direction, 
-    max_distance);
+    max_distance, only_items);
 }
 
 struct CompareLightPoints { 
@@ -2388,7 +2436,9 @@ void Resources::IssueMoveOrder(const string& unit_name,
 }
 
 bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) {
-  if (obj->active_animation == animation_name) return true;
+  if (obj->active_animation == animation_name) {
+    return true;
+  }
 
   shared_ptr<Mesh> mesh = GetMesh(obj);
   if (!MeshHasAnimation(*mesh, animation_name)) {
@@ -2396,6 +2446,82 @@ bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) 
   }
 
   obj->active_animation = animation_name;
-  obj->frame = 0;
+  int num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
+  if (obj->frame >= num_frames) obj->frame = 0;
   return true;
 }
+
+void Resources::RegisterOnEnterEvent(const string& region_name, 
+  const string& unit_name, const string& callback) {
+  shared_ptr<Sector> sector = GetSectorByName(region_name);
+  if (!sector) return;
+
+  sector->on_enter_events.push_back(
+    make_shared<RegionEvent>("enter", region_name, unit_name, callback)
+  );
+}
+
+void Resources::RegisterOnLeaveEvent(const string& region_name, 
+  const string& unit_name, const string& callback) {
+  shared_ptr<Sector> sector = GetSectorByName(region_name);
+  if (!sector) return;
+
+  sector->on_leave_events.push_back(
+    make_shared<RegionEvent>("leave", region_name, unit_name, callback)
+  );
+}
+
+vector<shared_ptr<Event>>& Resources::GetEvents() {
+  return events_;
+}
+
+void Resources::TurnOnActionable(const string& name) {
+  ObjPtr obj = GetObjectByName(name);
+  if (!obj) return;
+  shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
+  shared_ptr<Mesh> mesh = GetMesh(actionable);
+  int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
+
+  switch (actionable->state) {
+    case 0: // idle.
+      actionable->frame = 0;
+      actionable->state = 1;
+      break;
+    case 3: // shutdown.
+      actionable->state = 1;
+      ChangeObjectAnimation(actionable, "Armature|start");
+      actionable->frame = num_frames - actionable->frame - 1;
+      break;
+    case 1: // start.
+    case 2: // on.
+    default:
+      break;
+  }
+}
+
+void Resources::TurnOffActionable(const string& name) {
+  ObjPtr obj = GetObjectByName(name);
+  if (!obj) return;
+  shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
+  shared_ptr<Mesh> mesh = GetMesh(actionable);
+  int num_frames = GetNumFramesInAnimation(*mesh, "Armature|shutdown");
+
+  switch (actionable->state) {
+    case 1: // start.
+      actionable->state = 3;
+      ChangeObjectAnimation(actionable, "Armature|shutdown");
+      actionable->frame = num_frames - actionable->frame - 1;
+      break;
+    case 2: // on.
+      actionable->frame = 0;
+      actionable->state = 3;
+      break;
+    case 0: // idle.
+    case 3: // shutdown.
+    default:
+      break;
+  }
+}
+
+// void Resources::GetTransformsForOBB(const string& name) {
+// }

@@ -70,7 +70,8 @@ enum GameObjectType {
   GAME_OBJ_PARTICLE_GROUP,
   GAME_OBJ_REGION,
   GAME_OBJ_WAYPOINT,
-  GAME_OBJ_DOOR
+  GAME_OBJ_DOOR,
+  GAME_OBJ_ACTIONABLE
 };
 
 enum Status {
@@ -117,6 +118,11 @@ enum ParticleBehavior {
   PARTICLE_FALL = 1
 };
 
+enum EventType {
+  EVENT_ON_INTERACT_WITH_SECTOR = 0,
+  EVENT_NONE 
+};
+
 struct Camera {
   vec3 position; 
   vec3 up; 
@@ -132,6 +138,7 @@ struct Camera {
 struct Plane {
   vec3 normal;
   float d;
+  Plane() {}
   Plane(vec3 normal, float d) : normal(normal), d(d) {}
 };
 
@@ -153,8 +160,13 @@ struct OBB {
   vec3 center;
   vec3 axis[3];
   vec3 half_widths;
-  mat3 from_world_space;
-  mat3 to_world_space;
+
+  OBB() {}
+  OBB(const OBB &obb) {
+    center = obb.center; 
+    half_widths = obb.half_widths;
+    for (int i = 0; i < 3; i++) { axis[i] = obb.axis[i]; }
+  }
 };
 
 struct Edge {
@@ -221,6 +233,23 @@ struct Mesh {
   unordered_map<string, Animation> animations;
   unordered_map<string, int> bones_to_ids;
   Mesh() {}
+};
+
+struct Event {
+  EventType type;
+  Event(EventType type) : type(type) {}
+};
+
+struct RegionEvent : Event {
+  string interaction = "enter"; // enter, leave.
+  string region;
+  string unit;
+  string callback;
+
+  RegionEvent() : Event(EVENT_ON_INTERACT_WITH_SECTOR) {}
+  RegionEvent(string interaction, string region, string unit, string callback)
+    : Event(EVENT_ON_INTERACT_WITH_SECTOR), interaction(interaction),
+      region(region), unit(unit), callback(callback) {}
 };
 
 using MeshPtr = shared_ptr<Mesh>;

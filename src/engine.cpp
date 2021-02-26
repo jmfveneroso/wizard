@@ -89,21 +89,28 @@ void Engine::RunCommand(string command) {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
       cout << "Creating asset: " << asset_name << endl;
-      configs->place_axis = -1;
+      configs->place_axis = 1;
+
+      Camera c = player_input_->ProcessInput(window_);
+      vec3 position = c.position + c.direction * 10.0f;
       configs->new_building = resources_->CreateGameObjFromAsset(
-        asset_name, vec3(0));
+        asset_name, position);
       configs->new_building->being_placed = true;
       configs->place_object = true;
       resources_->AddNewObject(configs->new_building);
     }
   } else if (result[0] == "create-region") {
-    configs->new_building = resources_->CreateRegion(vec3(0), vec3(10));
+    Camera c = player_input_->ProcessInput(window_);
+    vec3 position = c.position + c.direction * 10.0f;
+    configs->new_building = resources_->CreateRegion(position, vec3(10));
     configs->place_object = true;
-    configs->place_axis = -1;
+    configs->place_axis = 1;
     resources_->AddNewObject(configs->new_building);
   } else if (result[0] == "create-waypoint") {
-    configs->new_building = resources_->CreateWaypoint(vec3(0));
-    configs->place_axis = -1;
+    Camera c = player_input_->ProcessInput(window_);
+    vec3 position = c.position + c.direction * 10.0f;
+    configs->new_building = resources_->CreateWaypoint(position);
+    configs->place_axis = 1;
     configs->place_object = true;
     resources_->AddNewObject(configs->new_building);
   } else if (result[0] == "save") {
@@ -280,6 +287,7 @@ bool Engine::ProcessGameInput() {
 void Engine::AfterFrame() {
   switch (resources_->GetGameState()) {
     case STATE_GAME: {
+      renderer_->DrawScreenEffects();
       break;
     }
     case STATE_EDITOR: {
@@ -336,6 +344,50 @@ void Engine::UpdateAnimationFrames() {
             resources_->ChangeObjectAnimation(door, "Armature|open");
           }
           break;
+      }
+      continue; 
+    }
+
+    if (obj->type == GAME_OBJ_ACTIONABLE) {
+      shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
+      shared_ptr<Mesh> mesh = resources_->GetMesh(actionable);
+
+      switch (actionable->state) {
+        case 0: // idle.
+          resources_->ChangeObjectAnimation(actionable, "Armature|idle");
+          actionable->frame++;
+          break;
+        case 1: { // start.
+          resources_->ChangeObjectAnimation(actionable, "Armature|start");
+          actionable->frame++;
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
+          if (actionable->frame >= num_frames - 1) {
+            actionable->state = 2;
+            actionable->frame = 0;
+            resources_->ChangeObjectAnimation(actionable, "Armature|on");
+          }
+          break;
+        }
+        case 2: // on.
+          resources_->ChangeObjectAnimation(actionable, "Armature|on");
+          actionable->frame++;
+          break;
+        case 3: { // shutdown.
+          resources_->ChangeObjectAnimation(actionable, "Armature|shutdown");
+          actionable->frame++;
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|shutdown");
+          if (actionable->frame >= num_frames - 1) {
+            actionable->state = 0;
+            actionable->frame = 0;
+            resources_->ChangeObjectAnimation(actionable, "Armature|idle");
+          }
+          break;
+        }
+      }
+
+      int num_frames = GetNumFramesInAnimation(*mesh, actionable->active_animation);
+      if (actionable->frame >= num_frames) {
+        actionable->frame = 0;
       }
       continue; 
     }

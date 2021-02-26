@@ -364,7 +364,7 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
       }
       animation.keyframes.push_back(keyframe);
     }
-    // cout << "Extracted animation " << animation.name << endl;
+    cout << "Extracted animation " << animation.name << endl;
     data->animations.push_back(animation);
   }
 }

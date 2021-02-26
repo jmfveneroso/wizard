@@ -148,12 +148,22 @@ struct Sector : GameObject {
 
   vec3 lighting_color = vec3(0.7);
 
+  vector<shared_ptr<Event>> on_enter_events;
+  vector<shared_ptr<Event>> on_leave_events;
+
+  bool occlude = true;
+
   Sector() : GameObject(GAME_OBJ_SECTOR) {}
 };
 
 struct Door : GameObject {
   int state = 0; // 0: closed, 1: opening, 2: open, 3: closing
   Door() : GameObject(GAME_OBJ_DOOR) {}
+};
+
+struct Actionable : GameObject {
+  int state = 0; // 0: off, 1: turning_on, 2: on, 3: turning_off
+  Actionable() : GameObject(GAME_OBJ_ACTIONABLE) {}
 };
 
 // ============================================================================

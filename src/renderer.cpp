@@ -29,6 +29,8 @@ Renderer::Renderer(shared_ptr<Resources> asset_catalog,
   GLFWwindow* window, int window_width, int window_height) : 
   resources_(asset_catalog), draw_2d_(draw_2d), project_4d_(project_4d),
   window_(window), window_width_(window_width), window_height_(window_height) {
+  cout << "Window width: " << window_width_ << endl;
+  cout << "Window height: " << window_height_ << endl;
   Init();
 }
 
@@ -104,6 +106,7 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
       case GAME_OBJ_REGION:
       case GAME_OBJ_WAYPOINT:
       case GAME_OBJ_DOOR:
+      case GAME_OBJ_ACTIONABLE:
         break;
       case GAME_OBJ_MISSILE: {
         if (obj->life > 0.0f) {
@@ -127,6 +130,7 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
       case GAME_OBJ_REGION:
       case GAME_OBJ_WAYPOINT:
       case GAME_OBJ_DOOR:
+      case GAME_OBJ_ACTIONABLE:
         break;
       case GAME_OBJ_MISSILE: {
         if (obj->life > 0.0f) {
@@ -400,6 +404,11 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInStabbingTreeNode(
 vector<ObjPtr> Renderer::GetVisibleObjects(vec4 frustum_planes[6]) {
   shared_ptr<Sector> sector = 
     resources_->GetSector(camera_.position);
+
+  if (!sector->occlude) {
+    sector = resources_->GetSectorByName("outside");
+  }
+
   return GetVisibleObjectsInStabbingTreeNode(sector->stabbing_tree, 
     frustum_planes);
 }
@@ -918,14 +927,18 @@ void Renderer::DrawScreenEffects() {
     draw_2d_->DrawImage("hit-effect", 0, 0, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
   }
 
+  draw_2d_->DrawImage("crosshair", 640-4, 400-4, 8, 8, 0.5);
+
   draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
   draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
 
+  // HP.
   shared_ptr<Player> player = resources_->GetPlayer();
   int hp_bar_width = (player->life / 100.0f) * 200;
   hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
   draw_2d_->DrawRectangle(20, 50, hp_bar_width, 20, vec3(0.3, 0.8, 0.3));
 
+  // Spells.
   draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells), 250, 22, vec3(1, 0.69, 0.23));
   draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells_2), 300, 22, vec3(1, 0.69, 0.23));
 
@@ -942,6 +955,8 @@ void Renderer::DrawScreenEffects() {
 
   if (configs->interacting_item) {
     ObjPtr item = configs->interacting_item;
+
+    // TODO: event. On hover item.
     if (item->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(item);
       if (door->state == 0) {

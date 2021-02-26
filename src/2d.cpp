@@ -5,7 +5,7 @@
 
 Draw2D::Draw2D(shared_ptr<Resources> asset_catalog, const string dir) 
   : resources_(asset_catalog), dir_(dir),
-  window_width_(1200), window_height_(800) {
+  window_width_(1280), window_height_(800) {
 
   shader_id_ = asset_catalog->GetShader("text");
   polygon_shader_id_ = asset_catalog->GetShader("polygon");
