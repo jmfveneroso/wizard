@@ -95,7 +95,6 @@ class Renderer {
     vector<shared_ptr<GameObject>>& objects);
 
   // TODO: probably should go somewhere else.
-  void DrawScreenEffects();
   void InitShadowFramebuffer();
   void DrawShadows();
   mat4 GetShadowMatrix(bool bias, int level);
@@ -131,6 +130,7 @@ class Renderer {
 
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }
+  void DrawScreenEffects();
 };
 
 #endif

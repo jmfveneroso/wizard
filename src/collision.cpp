@@ -292,13 +292,6 @@ OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
   }
 
   obb.center = obb.center - position;
-
-  // Transforms from obb space to world space.
-  obb.to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
-
-  // Transforms from world space to obb space.
-  obb.from_world_space = inverse(obb.to_world_space);
-
   return obb;
 }
 
@@ -379,62 +372,6 @@ bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere,
 
   float magnitude = r - length(v);
   displacement_vector = magnitude * -normalize(v);
-  return true;
-}
-
-bool IntersectWithTriangle(const Polygon& polygon, 
-  vec3* player_pos, vec3 old_player_pos, float* magnitude, 
-  const vec3& object_pos, float radius) {
-  const vec3& normal = polygon.normals[0];
-
-  vec3 a = polygon.vertices[0] + object_pos;
-  vec3 b = polygon.vertices[1] + object_pos;
-  vec3 c = polygon.vertices[2] + object_pos;
-
-  bool inside;
-  vec3 closest_point = ClosestPtPointTriangle(*player_pos, a, b, c, &inside);
-  
-  float r = radius;
-
-  const vec3& v = closest_point - *player_pos;
-  if (length(v) > r || dot(*player_pos - a, normal) < 0) {
-    return false;
-  }
-
-  // Collide with edge.
-  if (!inside) {
-    vec3 closest_ab = ClosestPtPointSegment(*player_pos, a, b);
-    vec3 closest_bc = ClosestPtPointSegment(*player_pos, b, c);
-    vec3 closest_ca = ClosestPtPointSegment(*player_pos, c, a);
-    vector<vec3> segments { a-b, b-c, c-a } ;
-    vector<vec3> points { closest_ab, closest_bc, closest_ca } ;
-
-    float min_distance = 9999.0f;
-    float min_index = -1;
-    for (int i = 0; i < 3; i++) {
-      float distance = length(points[i] - *player_pos);
-      if (distance < min_distance) {
-        min_index = i;
-        min_distance = distance;
-      }
-    }
-
-    if (min_distance < r) {
-      vec3 player_to_p = points[min_index] - *player_pos;
-      vec3 tangent = normalize(cross(segments[min_index], normal));
-      float proj_tan = abs(dot(player_to_p, tangent));
-      float proj_normal = abs(dot(player_to_p, normal));
-      float mag = sqrt(r * r - proj_tan * proj_tan) - proj_normal + 0.001f;
-      *magnitude = mag;
-      *player_pos = *player_pos + mag * normal;
-      return true; 
-    }
-  }
-
-  float mag = dot(v, normal);
-  *magnitude = r + mag + 0.001f;
-  *player_pos = *player_pos + *magnitude * normal;
-
   return true;
 }
 
@@ -885,4 +822,97 @@ bool IntersectSegmentPlane(vec3 a, vec3 b, Plane p, float &t, vec3 &q) {
 
   // Else no intersection
   return false;
+}
+
+bool TestOBBPlane(const OBB obb, Plane p) {
+  // Compute the projection interval radius of b onto L(t) = b.c + t * p.n
+  float r = obb.center[0] * abs(dot(p.normal, obb.axis[0])) +
+    obb.center[1] * abs(dot(p.normal, obb.axis[1])) +
+    obb.center[2] * abs(dot(p.normal, obb.axis[2]));
+
+  // Compute distance of box center from plane.
+  float s = dot(p.normal, obb.center) - p.d;
+
+  // Intersection occurs when distance s falls within [-r,+r] interval
+  return abs(s) <= r;
+}
+
+bool TestAABBPlane(const AABB& aabb, const Plane& p,
+  vec3& displacement_vector, vec3& point_of_contact) {
+  vec3 aabb_max = aabb.point + aabb.dimensions;
+
+  // These two lines not necessary with a (center, extents) AABB representation
+  vec3 c = (aabb_max + aabb.point) * 0.5f; // Compute AABB center
+
+  vec3 e = aabb_max - c; // Compute positive extents
+
+  // Compute the projection interval radius of b onto L(t) = b.c + t * p.n
+  float r = e[0] * abs(p.normal[0]) + e[1] * abs(p.normal[1]) + 
+    e[2] * abs(p.normal[2]);
+
+  // Compute distance of box center from plane
+  float s = abs(dot(p.normal, c) - p.d);
+
+  if (s <= r) {
+    // TODO: determine point of contact for AABB.
+    displacement_vector = p.normal * (r - s);
+    return true;
+  }
+  return false;
+}
+
+bool TestTriangleAABB(const Polygon& polygon, const AABB& aabb,
+  vec3& displacement_vector, vec3& point_of_contact) {
+  vec3 v0_ = polygon.vertices[0];
+  vec3 v1_ = polygon.vertices[1];
+  vec3 v2_ = polygon.vertices[2];
+  vec3 aabb_max = aabb.point + aabb.dimensions;
+
+  // Compute box center and extents (if not already given in that format)
+  vec3 c = (aabb.point + aabb_max) * 0.5f;
+  float e0 = (aabb_max.x - aabb.point.x) * 0.5f;
+  float e1 = (aabb_max.y - aabb.point.y) * 0.5f;
+  float e2 = (aabb_max.z - aabb.point.z) * 0.5f;
+
+  // Translate triangle as conceptually moving AABB to origin
+  vec3 v0 = v0_ - c;
+  vec3 v1 = v1_ - c;
+  vec3 v2 = v2_ - c;
+
+  // Compute edge vectors for triangle
+  vec3 f0 = v1 - v0;
+  vec3 f1 = v2 - v1;
+  vec3 f2 = v0 - v2;
+
+  // Test axes a00..a22 (category 3)
+  vector<vec3> axes {
+    vec3(0,     -f0.z, f0.y ), // a00
+    vec3(0,     -f1.z, f1.y ), // a01
+    vec3(0,     -f2.z, f2.y ), // a02
+    vec3(f0.z,  0,     -f0.x), // a10
+    vec3(f1.z,  0,     -f1.x), // a11
+    vec3(f2.z,  0,     -f2.x), // a12
+    vec3(-f0.y, f0.x,  0    ), // a20
+    vec3(-f1.y, f1.x,  0    ), // a21
+    vec3(-f2.y, f2.x,  0    )  // a22
+  };
+
+  for (const vec3& axis : axes) {
+    float r = e0 * abs(axis.x) + e1 * abs(axis.y) + e2 * abs(axis.z);
+    float p0 = dot(v0, axis);
+    float p1 = dot(v1, axis);
+    float p2 = dot(v2, axis);
+    if (std::max(-std::max({p0, p1, p2}), std::min({p0, p1, p2})) > r) return false; 
+  }
+
+  // Test the three axes corresponding to the face normals of AABB b (category 1).
+  if (std::max({v0.x, v1.x, v2.x}) < -e0 || std::min({v0.x, v1.x, v2.x}) > e0) return false;
+  if (std::max({v0.y, v1.y, v2.y}) < -e1 || std::min({v0.y, v1.y, v2.y}) > e1) return false;
+  if (std::max({v0.z, v1.z, v2.z}) < -e2 || std::min({v0.z, v1.z, v2.z}) > e2) return false;
+
+  // Test separating axis corresponding to triangle face normal (category 2)
+  Plane p;
+  p.normal = polygon.normals[0];
+  p.d = dot(p.normal, v0_);
+  return TestAABBPlane(aabb, p, displacement_vector, point_of_contact);
 }

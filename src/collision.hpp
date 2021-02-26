@@ -68,9 +68,6 @@ Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction);
 
 BoundingSphere GetBoundingSphereFromVertices(const vector<vec3>& vertices);
 
-bool IntersectWithTriangle(const Polygon& polygon, vec3* player_pos, 
-  vec3 old_player_pos, float* magnitude, const vec3& object_pos, float radius = 1.5f);
-
 bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere, 
   const Polygon& polygon, vec3& displacement_vector, vec3& point_of_contact);
 
@@ -108,6 +105,14 @@ bool IntersectLineQuad(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, vec3 d,
 bool IntersectRayAABB(vec3 p, vec3 d, AABB a, float &tmin, vec3 &q);
 
 bool IntersectSegmentPlane(vec3 a, vec3 b, Plane p, float &t, vec3 &q);
+
+bool TestOBBPlane(const OBB obb, Plane p);
+
+bool TestAABBPlane(const AABB& aabb, const Plane& p,
+  vec3& displacement_vector, vec3& point_of_contact);
+
+bool TestTriangleAABB(const Polygon& polygon, const AABB& aabb,
+  vec3& displacement_vector, vec3& point_of_contact);
 
 // bool IntersectMovingSphereAABB(Sphere s, Vector d, AABB b, float &t);
 // https://github.com/vancegroup-mirrors/hapi/blob/master/src/CollisionObjects.cpp

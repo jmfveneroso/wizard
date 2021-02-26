@@ -14,7 +14,7 @@ enum CollisionPair {
   CP_SP,     // SPHERE -> PERFECT
   CP_ST,     // SPHERE -> TERRAIN
   CP_SH,     // SPHERE -> C. HULL (Not implemented)
-  CP_SO,     // SPHERE -> OBB (Not implemented)
+  CP_SO,     // SPHERE -> OBB
   CP_BS,     // BONES -> SPHERE
   CP_BB,     // BONES -> BONES
   CP_BQ,     // BONES -> QUICK_SPHERE 
@@ -52,9 +52,9 @@ enum CollisionPair {
   CP_HO,     // C. HULL -> OBB (Not implemented)             
   CP_OS,     // OBB -> SPHERE (Not implemented)
   CP_OB,     // OBB -> BONES (Not implemented)
-  CP_OQ,     // OBB -> QUICK_SPHERE
-  CP_OP,     // OBB -> PERFECT (Not implemented)             
-  CP_OT,     // OBB -> TERRAIN
+  CP_OQ,     // OBB -> QUICK_SPHERE (Not implemented)
+  CP_OP,     // OBB -> PERFECT
+  CP_OT,     // OBB -> TERRAIN (Not implemented)
   CP_OH,     // OBB -> C. HULL (Not implemented)             
   CP_OO,     // OBB -> OBB (Not implemented)             
   CP_UNDEFINED 
@@ -186,6 +186,13 @@ struct CollisionHT : Collision {
     : Collision(CP_HT, o1, nullptr), polygon(p) {}
 };
 
+struct CollisionOP : Collision {
+  Polygon polygon;
+  CollisionOP() {}
+  CollisionOP(ObjPtr o1, ObjPtr o2, Polygon polygon)
+    : Collision(CP_OP, o1, o2), polygon(polygon) {}
+};
+
 class CollisionResolver {
   shared_ptr<Resources> resources_;
 
@@ -228,6 +235,7 @@ class CollisionResolver {
   void TestCollisionQT(shared_ptr<CollisionQT> c);
   void TestCollisionQH(shared_ptr<CollisionQH> c);
   void TestCollisionHT(shared_ptr<CollisionHT> c);
+  void TestCollisionOP(shared_ptr<CollisionOP> c);
   void TestCollision(ColPtr c);
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

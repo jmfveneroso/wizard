@@ -19,6 +19,7 @@ class PlayerInput {
   vector<float> hypercube_rotation_ { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
   float hypercube_life_ = 0;
   bool creating_spell_ = false;
+  shared_ptr<Sector> old_sector = nullptr;
 
   void Extract(const Camera& c);
   void InteractWithItem(const Camera& c, bool interact = false);

@@ -126,6 +126,9 @@ class Resources {
   vector<tuple<shared_ptr<GameAsset>, int>> inventory_;
   shared_ptr<OctreeNode> outside_octree_;
 
+  // Events.
+  vector<shared_ptr<Event>> events_;
+
   // Mutexes.
   mutex octree_mutex_;
 
@@ -253,7 +256,7 @@ class Resources {
 
   // TODO: move to space partition.
   ObjPtr IntersectRayObjects(const vec3& position, 
-    const vec3& direction, float max_distance=50.0f);
+    const vec3& direction, float max_distance=50.0f, bool only_items=true);
   vector<ObjPtr> GetKClosestLightPoints(const vec3& position, int k, 
     float max_distance=50);
   shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 
@@ -276,6 +279,16 @@ class Resources {
 
   HeightMap& GetHeightMap() { return height_map_; }
   bool ChangeObjectAnimation(ObjPtr obj, const string& animation_name);
+
+  // Events.
+  void RegisterOnEnterEvent(const string& region_name, const string& unit_name, 
+    const string& callback);
+  void RegisterOnLeaveEvent(const string& region_name, const string& unit_name, 
+    const string& callback);
+  vector<shared_ptr<Event>>& GetEvents();
+
+  void TurnOnActionable(const string& name);
+  void TurnOffActionable(const string& name);
 };
 
 AABB GetObjectAABB(const vector<Polygon>& polygons);

@@ -23,6 +23,7 @@ bool IsCollidable(shared_ptr<GameObject> obj) {
     case GAME_OBJ_DEFAULT:
     case GAME_OBJ_PLAYER:
     case GAME_OBJ_DOOR:
+    case GAME_OBJ_ACTIONABLE:
       break;
     case GAME_OBJ_MISSILE:
       return (obj->life > 0);
@@ -571,6 +572,44 @@ vector<shared_ptr<CollisionHT>> GetCollisionsHT(ObjPtr obj1, shared_ptr<Resource
   return { make_shared<CollisionHT>(obj1, Polygon()) };
 }
 
+// OBB - Perfect.
+vector<shared_ptr<CollisionOP>> GetCollisionsOPAux(shared_ptr<AABBTreeNode> node, ObjPtr obj1, 
+  ObjPtr obj2) {
+  if (!node) {
+    return {};
+  }
+
+  BoundingSphere s = obj1->GetBoundingSphere();
+  if (!TestSphereAABB(s, node->aabb + obj2->position)) return {};
+
+  if (!node->has_polygon) {
+    vector<shared_ptr<CollisionOP>> cols = GetCollisionsOPAux(node->lft, obj1, obj2);
+    vector<shared_ptr<CollisionOP>> rgt_cols = GetCollisionsOPAux(node->rgt, obj1, obj2);
+    cols.insert(cols.end(), rgt_cols.begin(), rgt_cols.end());
+    return cols;
+  }
+
+  return { make_shared<CollisionOP>(obj1, obj2, node->polygon) };
+}
+
+vector<shared_ptr<CollisionOP>> GetCollisionsOP(ObjPtr obj1, ObjPtr obj2) {
+  vector<shared_ptr<CollisionOP>> cols;
+
+  if (obj2->aabb_tree) {
+    cols = GetCollisionsOPAux(obj2->aabb_tree, obj1, obj2);
+  } else {
+    if (!obj2->asset_group) return {};
+    for (int i = 0; i < obj2->asset_group->assets.size(); i++) {
+      shared_ptr<GameAsset> asset = obj2->asset_group->assets[i];
+      if (!asset) continue;
+      vector<shared_ptr<CollisionOP>> aux = 
+        GetCollisionsOPAux(asset->aabb_tree, obj1, obj2);
+      cols.insert(cols.end(), aux.begin(), aux.end());
+    }
+  }
+  return cols;
+}
+
 vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
   if (!IsPairCollidable(obj1, obj2)) return {};
 
@@ -600,10 +639,12 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_PS: Merge(collisions, GetCollisionsSP(obj2, obj1)); break;
     case CP_PB: Merge(collisions, GetCollisionsBP(obj2, obj1)); break;
     case CP_PQ: Merge(collisions, GetCollisionsQP(obj2, obj1)); break;
+    case CP_PO: Merge(collisions, GetCollisionsOP(obj2, obj1)); break;
     case CP_PP: break;
     case CP_HS: Merge(collisions, GetCollisionsSH(obj2, obj1)); break;
     case CP_HQ: Merge(collisions, GetCollisionsQH(obj2, obj1)); break;
     case CP_OS: Merge(collisions, GetCollisionsSO(obj2, obj1)); break;
+    case CP_OP: Merge(collisions, GetCollisionsOP(obj1, obj2)); break;
     default: break;  
   }
   return collisions;
@@ -844,9 +885,11 @@ void CollisionResolver::TestCollisionSO(shared_ptr<CollisionSO> c) {
 
   OBB obb = c->obj2->obb;
 
-  mat4 joint_transform;
+  mat4 joint_transform = mat4(1.0);
+  bool apply_joint_transform = false;
+  const string mesh_name = c->obj2->GetAsset()->lod_meshes[0];
   shared_ptr<Mesh> mesh = 
-    resources_->GetMeshByName(c->obj2->GetAsset()->lod_meshes[0]);
+    resources_->GetMeshByName(mesh_name);
   if (!mesh->animations.empty()) {
     string animation_name = c->obj2->active_animation;
     if (mesh->animations.find(animation_name) == mesh->animations.end()) {
@@ -855,14 +898,18 @@ void CollisionResolver::TestCollisionSO(shared_ptr<CollisionSO> c) {
     }
 
     const Animation& animation = mesh->animations[animation_name];
-    int frame = c->obj2->frame;
-    if (frame >= animation.keyframes.size()) {
-      throw runtime_error(string("Frame outside scope") + 
-        " does not exist in CollisionResolver:860");
-    }
+    if (animation.keyframes.size() > 0) {
+      int frame = c->obj2->frame;
+      if (frame >= animation.keyframes.size()) {
+        throw runtime_error(string("Frame outside scope") + 
+          " does not exist in CollisionResolver:860 for mesh " + mesh_name +
+          " and animation " + animation_name);
+      }
 
-    int bone_id = 0;
-    joint_transform = animation.keyframes[frame].transforms[bone_id];
+      int bone_id = 0;
+      joint_transform = animation.keyframes[frame].transforms[bone_id];
+      apply_joint_transform = true;
+    }
   }
 
   vec3 rotated_center = vec3(joint_transform * vec4(obb.center, 1.0));
@@ -870,8 +917,10 @@ void CollisionResolver::TestCollisionSO(shared_ptr<CollisionSO> c) {
 
   BoundingSphere s_in_obb_space;
   for (int i = 0; i < 3; i++) {
-    obb.axis[i] = vec3(joint_transform * vec4(obb.axis[i], 1.0));
-    obb.axis[i] -= rotated_center;
+    if (apply_joint_transform) {
+      obb.axis[i] = vec3(joint_transform * vec4(obb.axis[i], 1.0));
+      obb.axis[i] -= rotated_center;
+    }
     obb.axis[i] = vec3(c->obj2->rotation_matrix * vec4(obb.axis[i], 1.0));
   }
 
@@ -1036,7 +1085,7 @@ void CollisionResolver::TestCollisionQH(shared_ptr<CollisionQH> c) {
   }
 }
 
-// Test Perfect - Terrain.
+// Test Convex Hull - Terrain.
 void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
   c->collided = false;
   float max_magnitude = 0;
@@ -1072,6 +1121,94 @@ void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
   FillCollisionBlankFields(c);
 }
 
+// Test OBB - Perfect.
+void CollisionResolver::TestCollisionOP(shared_ptr<CollisionOP> c) {
+  OBB obb = c->obj1->obb;
+
+  mat4 joint_transform = mat4(1.0);
+  const string mesh_name = c->obj1->GetAsset()->lod_meshes[0];
+  shared_ptr<Mesh> mesh = 
+    resources_->GetMeshByName(mesh_name);
+
+  bool apply_joint_transform = false;
+  if (!mesh->animations.empty()) {
+    string animation_name = c->obj2->active_animation;
+    if (mesh->animations.find(animation_name) == mesh->animations.end()) {
+      throw runtime_error(string("Animation ") + animation_name + 
+        " does not exist in CollisionResolver:1132");
+    }
+
+    const Animation& animation = mesh->animations[animation_name];
+    if (animation.keyframes.size() > 0) {
+      int frame = c->obj2->frame;
+      if (frame >= animation.keyframes.size()) {
+        throw runtime_error(string("Frame outside scope") + 
+          " does not exist in CollisionResolver:1140 for mesh " + mesh_name +
+          " and animation " + animation_name);
+      }
+
+      int bone_id = 0;
+      joint_transform = animation.keyframes[frame].transforms[bone_id];
+      apply_joint_transform = true;
+    }
+  }
+
+  vec3 rotated_center = vec3(joint_transform * vec4(obb.center, 1.0));
+  vec3 obb_center = c->obj1->position + rotated_center;
+
+  for (int i = 0; i < 3; i++) {
+    if (apply_joint_transform) {
+      obb.axis[i] = vec3(joint_transform * vec4(obb.axis[i], 1.0));
+      obb.axis[i] -= rotated_center;
+    }
+    obb.axis[i] = vec3(c->obj1->rotation_matrix * vec4(obb.axis[i], 1.0));
+  }
+
+  mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
+  mat3 from_world_space = inverse(to_world_space);
+
+  Polygon polygon_in_obb_space = from_world_space * (c->polygon + c->obj2->position);
+
+  AABB aabb_in_obb_space;
+  aabb_in_obb_space.point = from_world_space * obb_center - obb.half_widths;
+  aabb_in_obb_space.dimensions = obb.half_widths * 2.0f;
+
+  c->collided = TestTriangleAABB(polygon_in_obb_space, aabb_in_obb_space,
+      c->displacement_vector, c->point_of_contact);
+
+  if (c->collided) {
+    c->displacement_vector = to_world_space * c->displacement_vector;
+    c->normal = normalize(c->displacement_vector);
+    FillCollisionBlankFields(c);
+  }
+
+  // TODO: May be useful if I want to do AABB collision.
+  // AABB aabb = c->obj1->GetAABB() + c->obj1->position;
+  // c->collided = TestTriangleAABB(c->polygon + c->obj2->position, aabb,
+  //     c->displacement_vector, c->point_of_contact);
+
+  // string obj1_name = c->obj1->GetAsset()->name;
+  // string obj2_name = c->obj2->GetAsset()->name;
+
+  // if (c->collided) {
+  //   const vec3& surface_normal = c->polygon.normals[0];
+  //   const vec3 v = c->obj1->position - c->obj1->prev_position;
+  //   const vec3 v2 = c->obj2->position - c->obj2->prev_position;
+
+  //   bool in_contact;
+  //   c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+  //     c->displacement_vector, surface_normal, v, in_contact);
+
+  //   c->normal = normalize(c->displacement_vector);
+
+  //   if (in_contact) {
+  //     c->obj1->in_contact_with = c->obj2;
+  //   }
+
+  //   FillCollisionBlankFields(c);
+  // }
+}
+
 void CollisionResolver::TestCollision(ColPtr c) {
   switch (c->collision_pair) {
     case CP_SS: 
@@ -1105,6 +1242,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
     case CP_HT:
       // TODO: perform many until converge.
       TestCollisionHT(static_pointer_cast<CollisionHT>(c)); break;
+    case CP_OP:
+      TestCollisionOP(static_pointer_cast<CollisionOP>(c)); break;
     default: break;
   }
 }

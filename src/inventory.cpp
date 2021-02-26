@@ -15,7 +15,6 @@ void Inventory::Draw(int win_x, int win_y, GLFWwindow* window) {
   vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
   draw_2d_->DrawImage("inventory", win_x, - win_y, 800, 800, 1.0);
 
-
   double x_pos, y_pos;
   glfwGetCursorPos(window, &x_pos, &y_pos);
 
