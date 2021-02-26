@@ -29,8 +29,11 @@ void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
           door->state = 3;
         }
       } else {
-        inventory.push_back({ item->GetAsset(), 1 });
-        resources_->RemoveObject(item);
+        int item_id = item->GetAsset()->item_id;
+        if (resources_->InsertItemInInvetory(item_id)) {
+          inventory.push_back({ item->GetAsset(), 1 });
+          resources_->RemoveObject(item);
+        }
       }
     }
     configs->interacting_item = item;

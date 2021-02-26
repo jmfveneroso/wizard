@@ -3,9 +3,6 @@
 
 GameAsset::GameAsset() {}
 
-// TODO: load mesh from other XML. Then load the assets.
-// Meshes should be loaded automatically from the models folder.
-// It should contain all blender models and fbx files.
 void GameAsset::Load(const pugi::xml_node& asset) {
   name = asset.attribute("name").value();
 
@@ -20,6 +17,22 @@ void GameAsset::Load(const pugi::xml_node& asset) {
 
   if (asset.attribute("item")) {
     item = true;
+  }
+
+  const pugi::xml_node& display_name_xml = asset.child("display-name");
+  if (display_name_xml) {
+    display_name = display_name_xml.text().get();
+  }
+
+  const pugi::xml_node& item_id_xml = asset.child("item-id");
+  if (item_id_xml) {
+    const string str_item_id = item_id_xml.text().get();
+    item_id = boost::lexical_cast<int>(str_item_id);
+  }
+
+  const pugi::xml_node& item_icon_xml = asset.child("item-icon");
+  if (item_icon_xml) {
+    item_icon = item_icon_xml.text().get();
   }
 }
 
@@ -44,3 +57,7 @@ vector<vec3> GameAsset::GetVertices() {
   return vertices;
 }
 
+string GameAsset::GetDisplayName() {
+  if (display_name.empty()) return name;
+  return display_name;
+}

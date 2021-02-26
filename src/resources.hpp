@@ -287,8 +287,10 @@ class Resources {
     const string& callback);
   vector<shared_ptr<Event>>& GetEvents();
 
+  // Item and actionables.
   void TurnOnActionable(const string& name);
   void TurnOffActionable(const string& name);
+  bool InsertItemInInvetory(int item_id);
 };
 
 AABB GetObjectAABB(const vector<Polygon>& polygons);
