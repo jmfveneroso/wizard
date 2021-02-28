@@ -1650,6 +1650,8 @@ void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
   assets_.erase(asset->name);
 }
 
+vector<string>& Resources::GetIcons() { return icons_; }
+
 void Resources::DeleteObject(ObjPtr obj) {
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);

@@ -86,6 +86,8 @@ struct Configs {
     { 0, 0, 0, 0, 0, 0, 0 },
     { 0, 0, 0, 0, 0, 0, 0 }
   };
+
+  int spellbar[8] = { 0, 0, 0, 1, 0, 0, 0, 0 };
 };
 
 class Resources {
@@ -131,6 +133,11 @@ class Resources {
 
   // Mutexes.
   mutex octree_mutex_;
+
+  vector<string> icons_ {
+    "",
+    "magic_missile_icon"
+  };
 
   // Aux loading functions.
   void AddGameObject(shared_ptr<GameObject> game_obj);
@@ -229,6 +236,7 @@ class Resources {
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
   string GetString(string name);
+  vector<string>& GetIcons();
   // ====================
 
   // TODO: where?

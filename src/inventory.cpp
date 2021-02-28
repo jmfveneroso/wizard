@@ -27,15 +27,17 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y, GLFWwindow* win
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   int (&item_matrix)[8][7] = configs->item_matrix;
+  int (&spellbar)[8] = configs->spellbar;
+  vector<string>& icons = resources_->GetIcons();
 
   int mouse_x = x_pos;
   int mouse_y = y_pos;
   bool mouse_lft_click = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
   bool mouse_rgt_click = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
-  if (mouse_x < 0) glfwSetCursorPos(window, 0, mouse_y);
-  if (mouse_x > kWindowWidth) glfwSetCursorPos(window, kWindowWidth - 64, mouse_y);
-  if (mouse_y < 0) glfwSetCursorPos(window, mouse_x, 0);
-  if (mouse_y > kWindowHeight) glfwSetCursorPos(window, mouse_x, kWindowHeight - 64);
+  if (mouse_x < 0) { glfwSetCursorPos(window, 0, mouse_y); mouse_x = 0; }
+  if (mouse_x > kWindowWidth) { glfwSetCursorPos(window, kWindowWidth, mouse_y); mouse_x = kWindowWidth; }
+  if (mouse_y < 64) { glfwSetCursorPos(window, mouse_x, 64); mouse_y = 64; }
+  if (mouse_y > kWindowHeight + 64) { glfwSetCursorPos(window, mouse_x, kWindowHeight + 64); mouse_y = kWindowHeight + 64; }
    
   const int tile_size = 52;
   for (int x = 0; x < 8; x++) {
@@ -45,7 +47,7 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y, GLFWwindow* win
       int left = win_x + 52 + tile_size * x;
       int right = left + 46;
 
-      if (IsMouseInRectangle(x_pos, y_pos, left, right, bottom, top)) {
+      if (IsMouseInRectangle(mouse_x, mouse_y, left, right, bottom, top)) {
         if (mouse_rgt_click) {
           draw_2d_->DrawImage("context-panel", win_x + 52 + tile_size * x, kWindowHeight - win_y - 154 - 312 + tile_size * y, 400, 400, 1.0); 
         } else if (mouse_lft_click && selected_item == 0) {
@@ -53,7 +55,7 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y, GLFWwindow* win
           item_matrix[x][y] = 0;
           old_pos_x = x;
           old_pos_y = y;
-          hold_offset_x = x_pos - left;
+          hold_offset_x = mouse_x - left;
           hold_offset_y = top - (y_pos - 64);
         } else if (!mouse_lft_click && selected_item != 0) {
           if (item_matrix[x][y] == 0) {
@@ -73,13 +75,48 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y, GLFWwindow* win
     }
   }
 
+  for (int x = 0; x < 8; x++) {
+    int top = 804 + 46 - 64;
+    int bottom = 804 - 64;
+    int left = 427 + tile_size * x;
+    int right = 427 + 46 + tile_size * x;
+
+    if (IsMouseInRectangle(mouse_x, mouse_y, left, right, bottom, top)) {
+      if (mouse_lft_click && selected_item == 0) {
+        selected_item = spellbar[x];
+        spellbar[x] = 0;
+        old_pos_x = x;
+        old_pos_y = -1;
+        hold_offset_x = mouse_x - left;
+        hold_offset_y = top - (y_pos - 64);
+      } else if (!mouse_lft_click && selected_item != 0) {
+        if (spellbar[x] == 0) {
+          spellbar[x] = selected_item;
+        } else {
+          item_matrix[old_pos_x][old_pos_y] = selected_item;
+        }
+        selected_item = 0;
+        old_pos_x = 0;
+        old_pos_y = 0;
+      }
+    }
+
+    if (spellbar[x] == 0) continue;
+    int item_id = spellbar[x];
+    draw_2d_->DrawImage(icons[item_id], 433 + tile_size * x, -6, 64, 64, 1.0); 
+  }
+
   if (!mouse_lft_click && selected_item != 0) {
     int top = kWindowHeight - win_y;
     int bottom = kWindowHeight - win_y;
     int left = win_x;
     int right = left + 800;
     if (IsMouseInRectangle(x_pos, y_pos, left, right, bottom, top)) {
-      item_matrix[old_pos_x][old_pos_y] = selected_item;
+      if (old_pos_y == -1) {
+        spellbar[old_pos_x] = selected_item;
+      } else {
+        item_matrix[old_pos_x][old_pos_y] = selected_item;
+      }
     } else {
       vec3 position = camera.position + camera.direction * 10.0f;
 

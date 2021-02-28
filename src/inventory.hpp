@@ -17,11 +17,6 @@ class Inventory {
   int hold_offset_x = 0;
   int hold_offset_y = 0;
 
-  vector<string> icons {
-    "",
-    "magic_missile_icon"
-  };
-
  public:
   bool enabled;
 

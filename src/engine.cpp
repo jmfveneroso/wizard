@@ -178,11 +178,12 @@ bool Engine::ProcessGameInput() {
         throttle_counter_ = 20;
       } else if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          glfwSetCursorPos(window, 0, 0);
+          glfwSetCursorPos(window, 640 - 32, 400 + 32);
           inventory_->Enable();
           resources_->SetGameState(STATE_INVENTORY);
         }
         throttle_counter_ = 20;
+        return false;
       } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           configs->brush_size-=10;
@@ -233,6 +234,7 @@ bool Engine::ProcessGameInput() {
       if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           inventory_->Disable();
+          glfwSetCursorPos(window, 0, 0);
         }
         throttle_counter_ = 20;
       }
