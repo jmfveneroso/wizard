@@ -928,7 +928,15 @@ void Renderer::DrawScreenEffects() {
   }
 
   draw_2d_->DrawImage("crosshair", 640-4, 400-4, 8, 8, 0.5);
+
+  const int tile_size = 52;
   draw_2d_->DrawImage("spell_bar", 400, -530, 600, 600, 1.0);
+  vector<string>& icons = resources_->GetIcons();
+  for (int x = 0; x < 8; x++) {
+    if (configs->spellbar[x] == 0) continue;
+    int item_id = configs->spellbar[x];
+    draw_2d_->DrawImage(icons[item_id], 433 + tile_size * x, -6, 64, 64, 1.0); 
+  }
 
   draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
   draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
