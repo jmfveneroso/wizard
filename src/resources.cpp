@@ -5,7 +5,7 @@ Resources::Resources(const string& resources_dir,
   const string& shaders_dir) : directory_(resources_dir), 
   shaders_dir_(shaders_dir),
   height_map_(resources_dir + "/height_map.dat"),
-  configs_(make_shared<Configs>()), player_(make_shared<Player>()) {
+  configs_(make_shared<Configs>()), player_(make_shared<Player>(this)) {
   Init();
 }
 
@@ -13,7 +13,7 @@ void Resources::CreateOutsideSector() {
   outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
     vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
 
-  shared_ptr<Sector> new_sector = make_shared<Sector>();
+  shared_ptr<Sector> new_sector = make_shared<Sector>(this);
   new_sector->name = "outside";
   new_sector->octree_node = outside_octree_;
   sectors_[new_sector->name] = new_sector;
@@ -22,7 +22,7 @@ void Resources::CreateOutsideSector() {
 
 void Resources::CreatePlayer() {
   shared_ptr<GameAsset> player_asset = make_shared<GameAsset>();
-  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 2.0f);
+  player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 1.5f);
   player_asset->id = id_counter_++;
   player_asset->name = "player";
   player_asset->collision_type = COL_SPHERE;
@@ -554,7 +554,7 @@ const vector<vec3> kOctreeNodeOffsets = {
 };
 
 void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
-  shared_ptr<GameObject> object, int depth) {
+  ObjPtr object, int depth) {
   int index = 0, straddle = 0;
 
   BoundingSphere bounding_sphere = object->GetBoundingSphere();
@@ -607,7 +607,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
   }
 }
 
-void Resources::AddGameObject(shared_ptr<GameObject> game_obj) {
+void Resources::AddGameObject(ObjPtr game_obj) {
   if (objects_.find(game_obj->name) != objects_.end()) {
     throw runtime_error(string("Object with name ") + game_obj->name + 
       string(" already exists."));
@@ -633,17 +633,17 @@ void Resources::AddGameObject(shared_ptr<GameObject> game_obj) {
   }
 }
 
-shared_ptr<GameObject> Resources::LoadGameObject(
+ObjPtr Resources::LoadGameObject(
   string name, string asset_name, vec3 position, vec3 rotation) {
-  shared_ptr<GameObject> new_game_obj = nullptr;
+  ObjPtr new_game_obj = nullptr;
 
   // TODO: create attribute to determine type, like unit.
   if (asset_name == "door") {
-    new_game_obj = make_shared<Door>();
+    new_game_obj = make_shared<Door>(this);
   } else if (asset_name == "crystal") {
-    new_game_obj = make_shared<Actionable>();
+    new_game_obj = make_shared<Actionable>(this);
   } else {
-    new_game_obj = make_shared<GameObject>();
+    new_game_obj = make_shared<GameObject>(this);
   }
 
   new_game_obj->name = name;
@@ -660,7 +660,7 @@ shared_ptr<GameObject> Resources::LoadGameObject(
     new_game_obj->GetAsset()->bone_hit_boxes;
   for (int i = 0; i < bone_hit_boxes.size(); i++) {
     if (!bone_hit_boxes[i]) continue;
-    shared_ptr<GameObject> child = make_shared<GameObject>();
+    ObjPtr child = make_shared<GameObject>(this);
     child->name = new_game_obj->name + "-child-" + 
       boost::lexical_cast<string>(i);
     child->position = new_game_obj->position;
@@ -681,9 +681,9 @@ shared_ptr<GameObject> Resources::LoadGameObject(
     new_game_obj->obb = GetOBBFromPolygons(new_game_obj->collision_hull, new_game_obj->position);
     cout << new_game_obj->obb << endl;
 
-    if (rotation.y > 0.0001f) {
-      new_game_obj->rotation_matrix = rotate(mat4(1.0), -rotation.y, vec3(0, 1, 0));
-    }
+    float largest = new_game_obj->GetBoundingSphere().radius * 3.0f;
+    new_game_obj->aabb = AABB(new_game_obj->obb.center - vec3(largest) * 0.5f, vec3(largest));
+    new_game_obj->bounding_sphere = BoundingSphere(new_game_obj->obb.center, largest);
   }
 
   if (rotation.y > 0.0001f) {
@@ -745,7 +745,7 @@ void Resources::LoadSectors(const std::string& xml_filename) {
   for (pugi::xml_node sector = xml.child("sector"); sector; 
     sector = sector.next_sibling("sector")) {
 
-    shared_ptr<Sector> new_sector = make_shared<Sector>();
+    shared_ptr<Sector> new_sector = make_shared<Sector>(this);
     new_sector->name = sector.attribute("name").value();
 
     pugi::xml_attribute occlude = sector.attribute("occlude");
@@ -852,7 +852,7 @@ void Resources::LoadSectors(const std::string& xml_filename) {
         rotation = vec3(x, y, z);
       }
 
-      shared_ptr<GameObject> new_game_obj = LoadGameObject(name, asset_name, 
+      ObjPtr new_game_obj = LoadGameObject(name, asset_name, 
         position, rotation);
 
       const pugi::xml_node& animation = game_obj.child("animation");
@@ -1010,7 +1010,7 @@ void Resources::LoadPortals(const std::string& xml_filename) {
         ThrowError("Sector ", sector_name, " does not exist.");
       }
 
-      shared_ptr<Portal> portal = make_shared<Portal>();
+      shared_ptr<Portal> portal = make_shared<Portal>(this);
       portal->from_sector = sector;
       portal->to_sector = to_sector;
 
@@ -1110,8 +1110,9 @@ void Resources::Cleanup() {
   }
 }
 
-shared_ptr<GameObject> Resources::CreateGameObjFromPolygons(
-  const vector<Polygon>& polygons) {
+ObjPtr Resources::CreateGameObjFromPolygons(
+  const vector<Polygon>& polygons, const string& name, const vec3& position) {
+  LockOctree();
   int count = 0; 
   vector<vec3> vertices;
   vector<vec2> uvs;
@@ -1134,40 +1135,48 @@ shared_ptr<GameObject> Resources::CreateGameObjFromPolygons(
     }
   }
 
-  // Create asset.
+
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
   game_asset->id = id_counter_++;
   game_asset->name = "polygon-asset-" + boost::lexical_cast<string>(game_asset->id);
   assets_[game_asset->name] = game_asset;
 
   Mesh m = CreateMesh(GetShader("solid"), vertices, uvs, indices);
-  shared_ptr<Mesh> mesh = make_shared<Mesh>();
-  if (meshes_.find(game_asset->name) != meshes_.end()) {
-    ThrowError("Mesh with name ", game_asset->name, " already exists. Resources::1134");
+  const string mesh_name = game_asset->name;
+  shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
+  if (mesh) {
+    ThrowError("Mesh ", mesh_name, " already exists.");
+  }
+  meshes_[mesh_name] = make_shared<Mesh>();
+  *meshes_[mesh_name] = m;
+
+  game_asset->lod_meshes[0] = mesh_name;
+  meshes_[mesh_name]->polygons = polygons;
+
+  game_asset->shader = shaders_["region"];
+  game_asset->aabb = GetAABBFromPolygons(m.polygons);
+  game_asset->bounding_sphere = GetAssetBoundingSphere(polygons);
+  game_asset->collision_type = COL_NONE;
+  game_asset->physics_behavior = PHYSICS_NONE;
+
+  ObjPtr new_game_obj = make_shared<GameObject>(this);
+  new_game_obj->id = id_counter_++;
+  if (name.empty()) {
+    new_game_obj->name = "obj-" + boost::lexical_cast<string>(id_counter_);
+  } else {
+    new_game_obj->name = name;
   }
 
-  meshes_[game_asset->name] = make_shared<Mesh>();
-  *meshes_[game_asset->name] = m;
-
-  string shader_name = "solid";
-  m.shader = shaders_[shader_name];
-  game_asset->lod_meshes[0] = game_asset->name;
-  game_asset->shader = shaders_[shader_name];
-  game_asset->aabb = GetAABBFromPolygons(m.polygons);
-  game_asset->bounding_sphere = GetAssetBoundingSphere(m.polygons);
-  game_asset->collision_type = COL_NONE;
-
-  // Create object.
-  shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
-  new_game_obj->id = id_counter_++;
-  new_game_obj->name = "polygon-obj-" + boost::lexical_cast<string>(new_game_obj->id);
-  new_game_obj->position = vec3(0, 0, 0);
+  new_game_obj->position = position;
   new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
   AddGameObject(new_game_obj);
+  UpdateObjectPosition(new_game_obj);
+
+  UnlockOctree();
   return new_game_obj;
 }
 
-shared_ptr<GameObject> Resources::CreateGameObjFromMesh(const Mesh& m, 
+ObjPtr Resources::CreateGameObjFromMesh(const Mesh& m, 
   string shader_name, const vec3 position, 
   const vector<Polygon>& polygons) {
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
@@ -1193,7 +1202,7 @@ shared_ptr<GameObject> Resources::CreateGameObjFromMesh(const Mesh& m,
   game_asset->physics_behavior = PHYSICS_NONE;
 
   // Create object.
-  shared_ptr<GameObject> new_game_obj = make_shared<GameObject>();
+  ObjPtr new_game_obj = make_shared<GameObject>(this);
   new_game_obj->id = id_counter_++;
   new_game_obj->name = "mesh-obj-" + boost::lexical_cast<string>(new_game_obj->id);
   new_game_obj->position = position;
@@ -1206,7 +1215,7 @@ shared_ptr<GameObject> Resources::CreateGameObjFromMesh(const Mesh& m,
 
 shared_ptr<Missile> Resources::CreateMissileFromAsset(
   shared_ptr<GameAsset> game_asset) {
-  shared_ptr<Missile> new_game_obj = make_shared<Missile>();
+  shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
 
   new_game_obj->position = vec3(0, 0, 0);
   new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
@@ -1219,7 +1228,7 @@ shared_ptr<Missile> Resources::CreateMissileFromAsset(
   return new_game_obj;
 }
 
-shared_ptr<GameObject> Resources::CreateGameObjFromAsset(
+ObjPtr Resources::CreateGameObjFromAsset(
   string asset_name, vec3 position, const string obj_name) {
   LockOctree();
 
@@ -1227,7 +1236,7 @@ shared_ptr<GameObject> Resources::CreateGameObjFromAsset(
   if (name.empty()) {
     name = "object-" + boost::lexical_cast<string>(id_counter_ + 1);
   }
-  shared_ptr<GameObject> new_game_obj = 
+  ObjPtr new_game_obj = 
     LoadGameObject(name, asset_name, position, vec3(0, 0, 0));
   UnlockOctree();
   return new_game_obj;
@@ -1235,7 +1244,7 @@ shared_ptr<GameObject> Resources::CreateGameObjFromAsset(
 
 shared_ptr<Waypoint> Resources::CreateWaypoint(vec3 position, string name) {
   LockOctree();
-  shared_ptr<Waypoint> new_game_obj = make_shared<Waypoint>();
+  shared_ptr<Waypoint> new_game_obj = make_shared<Waypoint>(this);
 
   if (name.empty()) {
     new_game_obj->name = "waypoint-" + boost::lexical_cast<string>(id_counter_ + 1);
@@ -1255,7 +1264,7 @@ shared_ptr<Waypoint> Resources::CreateWaypoint(vec3 position, string name) {
   return new_game_obj;
 }
 
-void Resources::UpdateObjectPosition(shared_ptr<GameObject> obj) {
+void Resources::UpdateObjectPosition(ObjPtr obj) {
   // Clear position data.
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
@@ -1271,7 +1280,7 @@ void Resources::UpdateObjectPosition(shared_ptr<GameObject> obj) {
     obj->octree_node = nullptr;
   }
 
-  for (shared_ptr<GameObject> c : obj->children) {
+  for (ObjPtr c : obj->children) {
     c->position = obj->position;
   }
 
@@ -1406,7 +1415,8 @@ void Resources::CreateChargeMagicMissileEffect() {
   p.size = 0.5;
 
   // Create object.
-  shared_ptr<ParticleGroup> new_particle_group = make_shared<ParticleGroup>();
+  shared_ptr<ParticleGroup> new_particle_group = make_shared<ParticleGroup>(
+    this);
 
   new_particle_group->name = "particle-group-obj-" + 
     boost::lexical_cast<string>(id_counter_ + 1);
@@ -1544,10 +1554,10 @@ void Resources::UpdateCooldowns() {
   }
 }
 
-int GetSortingAxis(vector<shared_ptr<GameObject>>& objs) {
+int GetSortingAxis(vector<ObjPtr>& objs) {
   float s[3] = { 0, 0, 0 };
   float s2[3] = { 0, 0, 0 };
-  for (shared_ptr<GameObject> obj : objs) {
+  for (ObjPtr obj : objs) {
     for (int axis = 0; axis < 3; axis++) {
       s[axis] += obj->position[axis];
       s2[axis] += obj->position[axis] * obj->position[axis];
@@ -1565,12 +1575,12 @@ int GetSortingAxis(vector<shared_ptr<GameObject>>& objs) {
   return sort_axis;
 }
 
-vector<shared_ptr<GameObject>> Resources::GenerateOptimizedOctreeAux(
-  shared_ptr<OctreeNode> octree_node, vector<shared_ptr<GameObject>> top_objs) {
+vector<ObjPtr> Resources::GenerateOptimizedOctreeAux(
+  shared_ptr<OctreeNode> octree_node, vector<ObjPtr> top_objs) {
   if (!octree_node) return {};
 
-  vector<shared_ptr<GameObject>> all_objs = top_objs;
-  vector<shared_ptr<GameObject>> bot_objs;
+  vector<ObjPtr> all_objs = top_objs;
+  vector<ObjPtr> bot_objs;
   for (auto [id, obj] : octree_node->objects) {
     if ((obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_DOOR) || 
       obj->GetAsset()->physics_behavior != PHYSICS_FIXED) {
@@ -1581,7 +1591,7 @@ vector<shared_ptr<GameObject>> Resources::GenerateOptimizedOctreeAux(
   }
 
   for (int i = 0; i < 8; i++) {
-    vector<shared_ptr<GameObject>> objs = GenerateOptimizedOctreeAux(
+    vector<ObjPtr> objs = GenerateOptimizedOctreeAux(
       octree_node->children[i], top_objs);
     bot_objs.insert(bot_objs.end(), objs.begin(), objs.end());
   }
@@ -1590,7 +1600,7 @@ vector<shared_ptr<GameObject>> Resources::GenerateOptimizedOctreeAux(
   int axis = GetSortingAxis(all_objs);
   octree_node->axis = axis;
 
-  for (shared_ptr<GameObject> obj : all_objs) {
+  for (ObjPtr obj : all_objs) {
     const AABB& aabb = obj->GetAABB();
     float start = obj->position[axis] + aabb.point[axis];
     float end = obj->position[axis] + aabb.point[axis] + aabb.dimensions[axis];
@@ -1650,7 +1660,7 @@ void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
   assets_.erase(asset->name);
 }
 
-vector<string>& Resources::GetIcons() { return icons_; }
+vector<ItemData>& Resources::GetItemData() { return item_data_; }
 
 void Resources::DeleteObject(ObjPtr obj) {
   if (obj->octree_node) {
@@ -1998,8 +2008,8 @@ void Resources::SaveNewObjects() {
 }
 
 ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
-  const vec3& position, const vec3& direction, float max_distance=1.0f, 
-  bool only_items=true) {
+  const vec3& position, const vec3& direction, float max_distance, 
+  bool only_items) {
   if (!node) return nullptr;
 
   AABB aabb = AABB(node->center - node->half_dimensions, 
@@ -2018,7 +2028,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
   ObjPtr closest_item = nullptr;
   float closest_distance = 9999999.9f;
 
-  unordered_map<int, shared_ptr<GameObject>>* objs;
+  unordered_map<int, ObjPtr>* objs;
   if (only_items) objs = &node->items;
   else objs = &node->objects;
 
@@ -2026,11 +2036,11 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     // if (item->type != GAME_OBJ_DEFAULT && item->type != GAME_OBJ_WAYPOINT) continue;
     if (item->status == STATUS_DEAD) continue;
     if (item->name == "hand-001") continue;
-
+ 
+    const BoundingSphere& s = item->GetBoundingSphere();
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
-    if (!IntersectRaySphere(position, direction, 
-      item->GetBoundingSphere(), tmin, q)) {
+    if (!IntersectRaySphere(position, direction, s, tmin, q)) {
       continue;
     }
 
@@ -2045,10 +2055,11 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
       ObjPtr item = sorted_obj.obj;
       if (item->status == STATUS_DEAD) continue;
       if (item->name == "hand-001") continue;
+
+      const BoundingSphere& s = item->GetBoundingSphere();
       float distance = length(position - item->position);
       if (distance > max_distance) continue;
-      if (!IntersectRaySphere(position, direction, 
-        item->GetBoundingSphere(), tmin, q)) {
+      if (!IntersectRaySphere(position, direction, s, tmin, q)) {
         continue;
       }
 
@@ -2061,7 +2072,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
 
   for (int i = 0; i < 8; i++) {
     ObjPtr new_item = IntersectRayObjectsAux(node->children[i], position, 
-      direction, max_distance);
+      direction, max_distance, only_items);
     if (!new_item) continue;
 
     float distance = length(position - new_item->position);
@@ -2194,24 +2205,24 @@ void Resources::CalculateAllClosestLightPoints() {
 // ========================
 double Resources::GetFrameStart() { return frame_start_; }
 
-vector<shared_ptr<GameObject>>& Resources::GetMovingObjects() { 
+vector<ObjPtr>& Resources::GetMovingObjects() { 
   return moving_objects_; 
 }
 
-vector<shared_ptr<GameObject>>& Resources::GetLights() { return lights_; }
+vector<ObjPtr>& Resources::GetLights() { return lights_; }
 
-vector<shared_ptr<GameObject>>& Resources::GetItems() { 
+vector<ObjPtr>& Resources::GetItems() { 
   return items_; 
 }
 
-vector<shared_ptr<GameObject>>& Resources::GetExtractables() { 
+vector<ObjPtr>& Resources::GetExtractables() { 
   return extractables_; 
 }
 
 Particle* Resources::GetParticleContainer() { return particle_container_; }
 
 shared_ptr<Player> Resources::GetPlayer() { return player_; }
-unordered_map<string, shared_ptr<GameObject>>& Resources::GetObjects() { 
+unordered_map<string, ObjPtr>& Resources::GetObjects() { 
   return objects_; 
 }
 
@@ -2249,7 +2260,7 @@ shared_ptr<GameAssetGroup> Resources::GetAssetGroupByName(const string& name) {
   return asset_groups_[name];
 }
 
-shared_ptr<GameObject> Resources::GetObjectByName(const string& name) {
+ObjPtr Resources::GetObjectByName(const string& name) {
   if (objects_.find(name) == objects_.end()) {
     // ThrowError("Object ", name, " does not exist");
     cout << "Object " << name << " does not exist" << endl;
@@ -2392,7 +2403,7 @@ ObjPtr Resources::CreateRegion(vec3 pos, vec3 dimensions, string name) {
   game_asset->collision_type = COL_NONE;
   game_asset->physics_behavior = PHYSICS_NONE;
 
-  shared_ptr<Region> new_game_obj = make_shared<Region>();
+  shared_ptr<Region> new_game_obj = make_shared<Region>(this);
   new_game_obj->id = id_counter_++;
   if (name.empty()) {
     new_game_obj->name = "region-" + boost::lexical_cast<string>(id_counter_);

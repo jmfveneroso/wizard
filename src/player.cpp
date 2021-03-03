@@ -257,7 +257,7 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
           throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
         }
 
-        UpdateMesh(*mesh, 0, vertices, uvs, indices);
+        UpdateMesh(*mesh, vertices, uvs, indices);
         obj->GetAsset()->aabb = GetAABBFromPolygons(polygons);
         resources_->UpdateObjectPosition(obj);
       } else {
@@ -281,6 +281,7 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
     configs->place_object = false;
     configs->scale_object = false;
     configs->scale_pivot = configs->new_building->position;
+    configs->new_building = nullptr;
   }
 }
 
@@ -413,7 +414,10 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       obj->active_animation = "Armature|idle";
       if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
         if (debounce < 0) {
-          if (player->num_spells > 0) {
+    
+          // TODO: check which spell here.
+          if (configs->spellbar[configs->selected_spell] == 1) {
+          // if (player->num_spells > 0) {
             obj->active_animation = "Armature|shoot";
             player->player_action = PLAYER_CASTING;
             obj->frame = 0;
@@ -421,6 +425,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
             resources_->CreateChargeMagicMissileEffect();
             player->selected_spell = 0;
             player->num_spells--;
+            configs->spellbar[configs->selected_spell] = 0;
           }
         }
         debounce = 20;
@@ -455,12 +460,16 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         obj->frame = 0;
         player->player_action = PLAYER_IDLE;
       } else if (animation_frame <= 0 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
-        if (player->num_spells > 0) {
+        if (configs->spellbar[configs->selected_spell] == 1) {
           obj->active_animation = "Armature|shoot";
           obj->frame = 0;
           animation_frame = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->num_spells--;
+          configs->spellbar[configs->selected_spell] = 0;
+        } else {
+          obj->active_animation = "Armature|idle";
+          obj->frame = 0;
         }
       } else if (animation_frame == 20) {
         if (player->selected_spell == 0) {

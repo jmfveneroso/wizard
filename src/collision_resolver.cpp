@@ -883,52 +883,17 @@ void CollisionResolver::TestCollisionSH(shared_ptr<CollisionSH> c) {
 void CollisionResolver::TestCollisionSO(shared_ptr<CollisionSO> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere();
 
-  OBB obb = c->obj2->obb;
+  OBB obb = c->obj2->GetTransformedOBB();
 
-  mat4 joint_transform = mat4(1.0);
-  bool apply_joint_transform = false;
-  const string mesh_name = c->obj2->GetAsset()->lod_meshes[0];
-  shared_ptr<Mesh> mesh = 
-    resources_->GetMeshByName(mesh_name);
-  if (!mesh->animations.empty()) {
-    string animation_name = c->obj2->active_animation;
-    if (mesh->animations.find(animation_name) == mesh->animations.end()) {
-      throw runtime_error(string("Animation ") + animation_name + 
-        " does not exist in CollisionResolver:853");
-    }
-
-    const Animation& animation = mesh->animations[animation_name];
-    if (animation.keyframes.size() > 0) {
-      int frame = c->obj2->frame;
-      if (frame >= animation.keyframes.size()) {
-        throw runtime_error(string("Frame outside scope") + 
-          " does not exist in CollisionResolver:860 for mesh " + mesh_name +
-          " and animation " + animation_name);
-      }
-
-      int bone_id = 0;
-      joint_transform = animation.keyframes[frame].transforms[bone_id];
-      apply_joint_transform = true;
-    }
-  }
-
-  vec3 rotated_center = vec3(joint_transform * vec4(obb.center, 1.0));
-  vec3 obb_center = c->obj2->position + rotated_center;
-
-  BoundingSphere s_in_obb_space;
-  for (int i = 0; i < 3; i++) {
-    if (apply_joint_transform) {
-      obb.axis[i] = vec3(joint_transform * vec4(obb.axis[i], 1.0));
-      obb.axis[i] -= rotated_center;
-    }
-    obb.axis[i] = vec3(c->obj2->rotation_matrix * vec4(obb.axis[i], 1.0));
-  }
-
+  // Transforms.
   mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
   mat3 from_world_space = inverse(to_world_space);
 
+  BoundingSphere s_in_obb_space;
   s_in_obb_space.center = from_world_space * s.center;
   s_in_obb_space.radius = s.radius;
+
+  vec3 obb_center = c->obj2->position + obb.center;
 
   AABB aabb_in_obb_space;
   aabb_in_obb_space.point = from_world_space * obb_center - obb.half_widths;
@@ -1123,46 +1088,8 @@ void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
 
 // Test OBB - Perfect.
 void CollisionResolver::TestCollisionOP(shared_ptr<CollisionOP> c) {
-  OBB obb = c->obj1->obb;
-
-  mat4 joint_transform = mat4(1.0);
-  const string mesh_name = c->obj1->GetAsset()->lod_meshes[0];
-  shared_ptr<Mesh> mesh = 
-    resources_->GetMeshByName(mesh_name);
-
-  bool apply_joint_transform = false;
-  if (!mesh->animations.empty()) {
-    string animation_name = c->obj2->active_animation;
-    if (mesh->animations.find(animation_name) == mesh->animations.end()) {
-      throw runtime_error(string("Animation ") + animation_name + 
-        " does not exist in CollisionResolver:1132");
-    }
-
-    const Animation& animation = mesh->animations[animation_name];
-    if (animation.keyframes.size() > 0) {
-      int frame = c->obj2->frame;
-      if (frame >= animation.keyframes.size()) {
-        throw runtime_error(string("Frame outside scope") + 
-          " does not exist in CollisionResolver:1140 for mesh " + mesh_name +
-          " and animation " + animation_name);
-      }
-
-      int bone_id = 0;
-      joint_transform = animation.keyframes[frame].transforms[bone_id];
-      apply_joint_transform = true;
-    }
-  }
-
-  vec3 rotated_center = vec3(joint_transform * vec4(obb.center, 1.0));
-  vec3 obb_center = c->obj1->position + rotated_center;
-
-  for (int i = 0; i < 3; i++) {
-    if (apply_joint_transform) {
-      obb.axis[i] = vec3(joint_transform * vec4(obb.axis[i], 1.0));
-      obb.axis[i] -= rotated_center;
-    }
-    obb.axis[i] = vec3(c->obj1->rotation_matrix * vec4(obb.axis[i], 1.0));
-  }
+  OBB obb = c->obj1->GetTransformedOBB();
+  vec3 obb_center = c->obj1->position + obb.center;
 
   mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
   mat3 from_world_space = inverse(to_world_space);

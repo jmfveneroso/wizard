@@ -8,8 +8,11 @@ struct StabbingTreeNode;
 struct Sector;
 struct Waypoint;
 struct Action;
+class Resources;
 
 class GameObject {
+  Resources* resources_;
+ 
  public:
   GameObjectType type = GAME_OBJ_DEFAULT;
 
@@ -91,9 +94,9 @@ class GameObject {
 
   vector<shared_ptr<GameObject>> closest_lights;
 
-  GameObject() {}
-  GameObject(GameObjectType type) : type(type) {
-    state_changed_at = glfwGetTime();
+  GameObject(Resources* resources) : resources_(resources) {}
+  GameObject(Resources* resources, GameObjectType type) 
+    : resources_(resources), type(type) {
   }
 
   BoundingSphere GetBoundingSphere();
@@ -109,7 +112,9 @@ class GameObject {
   // int GetNumFramesInCurrentAnimation();
   // bool HasAnimation(const string& animation_name);
   // bool ChangeAnimation(const string& animation_name);
+
   string GetDisplayName();
+  OBB GetTransformedOBB();
 };
 
 struct Player : GameObject {
@@ -119,25 +124,29 @@ struct Player : GameObject {
   int selected_spell = 0;
   vec3 rotation = vec3(0, 0, 0);
 
-  Player() : GameObject(GAME_OBJ_PLAYER) {}
+  Player(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_PLAYER) {}
 };
 
 struct Missile : GameObject {
   shared_ptr<GameObject> owner = nullptr;
 
-  Missile() : GameObject(GAME_OBJ_MISSILE) {}
+  Missile(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_MISSILE) {}
 };
 
 struct Portal : GameObject {
   bool cave = false;
   shared_ptr<Sector> from_sector;
   shared_ptr<Sector> to_sector;
-  Portal() : GameObject(GAME_OBJ_PORTAL) {}
+  Portal(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_PORTAL) {}
 };
 
 struct Region : GameObject {
   AABB aabb;
-  Region() : GameObject(GAME_OBJ_REGION) {}
+  Region(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_REGION) {}
 };
 
 struct Sector : GameObject {
@@ -154,18 +163,28 @@ struct Sector : GameObject {
 
   bool occlude = true;
 
-  Sector() : GameObject(GAME_OBJ_SECTOR) {}
+  Sector(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_SECTOR) {}
 };
 
 struct Door : GameObject {
   int state = 0; // 0: closed, 1: opening, 2: open, 3: closing
-  Door() : GameObject(GAME_OBJ_DOOR) {}
+  Door(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_DOOR) {}
 };
 
 struct Actionable : GameObject {
   int state = 0; // 0: off, 1: turning_on, 2: on, 3: turning_off
-  Actionable() : GameObject(GAME_OBJ_ACTIONABLE) {}
+  Actionable(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_ACTIONABLE) {}
 };
+
+struct Waypoint : GameObject {
+  vector<shared_ptr<Waypoint>> next_waypoints;
+  Waypoint(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_WAYPOINT) {}
+};
+
 
 // ============================================================================
 // AI
@@ -227,11 +246,6 @@ struct CastSpellAction : Action {
   string spell_name;
   CastSpellAction(string spell_name) 
     : Action(ACTION_CAST_SPELL), spell_name(spell_name) {}
-};
-
-struct Waypoint : GameObject {
-  vector<shared_ptr<Waypoint>> next_waypoints;
-  Waypoint() : GameObject(GAME_OBJ_WAYPOINT) {}
 };
 
 using ObjPtr = shared_ptr<GameObject>;

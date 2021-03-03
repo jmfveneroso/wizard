@@ -278,7 +278,6 @@ OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
   }
 
   if (normals.size() != 3) {
-    cout << normals.size() << endl;
     throw runtime_error("Number of normals is not 3");
   }
 

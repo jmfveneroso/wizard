@@ -4,6 +4,7 @@ Physics::Physics(shared_ptr<Resources> asset_catalog) :
   resources_(asset_catalog) {}
 
 void Physics::Run() {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
   for (auto& [name, obj] : objs) {
@@ -17,6 +18,10 @@ void Physics::Run() {
     }
 
     if (obj->life <= 0 || obj->freeze) {
+      continue;
+    }
+
+    if (configs->new_building && configs->new_building->id == obj->id) {
       continue;
     }
 
@@ -35,7 +40,6 @@ void Physics::Run() {
     }
 
     // Gravity.
-    shared_ptr<Configs> configs = resources_->GetConfigs();
     if (obj->name == "player" && configs->levitate) {
       obj->can_jump = true;
       obj->speed.y *= 0.95f;

@@ -266,10 +266,13 @@ vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);
 vector<Edge> GetPolygonEdges(const Polygon& polygon);
 Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices);
-void UpdateMesh(Mesh& m, GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
-  vector<unsigned int>& indices);
+void UpdateMesh(Mesh& m, vector<vec3>& vertices, 
+  vector<vec2>& uvs, vector<unsigned int>& indices);
 Mesh CreateMeshFromConvexHull(const ConvexHull& ch);
-Mesh CreateCube(vec3 dimensions, vec3 position);
+Mesh CreateCube(const vector<vec3>& v);
+Mesh CreateCube(const vec3& dimensions);
+Mesh CreateCube(const vector<vec3>& v, vector<vec3>& vertices, 
+  vector<vec2>& uvs, vector<unsigned int>& indices);
 Mesh CreateMeshFromAABB(const AABB& aabb);
 Mesh CreatePlane(vec3 p1, vec3 p2, vec3 normal);
 Mesh CreateJoint(vec3 start, vec3 end);

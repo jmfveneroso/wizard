@@ -103,6 +103,7 @@ class Renderer {
   void GetFrustumPlanes(vec4 frustum_planes[6]);
 
   void Init();
+  void DrawSpellbar();
 
   // Get visible objects.
   vector<ObjPtr> GetVisibleObjectsInCaves(

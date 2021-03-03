@@ -52,6 +52,10 @@ class Engine {
   void UpdateAnimationFrames();
   void ProcessCollisionsAsync();
 
+  // Debug.
+  unordered_map<string, ObjPtr> door_obbs_;
+  void RunBeforeFrameDebugFunctions();
+
  public:
   Engine(
     shared_ptr<Project4D> project_4d,
