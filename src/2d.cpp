@@ -3,6 +3,9 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
+const int kWindowWidth = 1280;
+const int kWindowHeight = 800;
+
 Draw2D::Draw2D(shared_ptr<Resources> asset_catalog, const string dir) 
   : resources_(asset_catalog), dir_(dir),
   window_width_(1280), window_height_(800) {
@@ -276,21 +279,16 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
   glUseProgram(shader_id);
 
   vector<vec3> vertices = {
-    { x        , y         , 0.0 },
-    { x        , y + height, 0.0 },
-    { x + width, y         , 0.0 },
-    { x + width, y         , 0.0 },
-    { x        , y + height, 0.0 },
-    { x + width, y + height, 0.0 }
+    { x        , kWindowHeight - y         , 0.0 },
+    { x        , kWindowHeight - y - height, 0.0 },
+    { x + width, kWindowHeight - y         , 0.0 },
+    { x + width, kWindowHeight - y         , 0.0 },
+    { x        , kWindowHeight - y - height, 0.0 },
+    { x + width, kWindowHeight - y - height, 0.0 }
   };
 
   vector<vec2> uvs = {
-    { 0, 0 },
-    { 0, 1 },
-    { 1, 0 },
-    { 1, 0 },
-    { 0, 1 },
-    { 1, 1 }
+    { 0, 1 }, { 0, 0 }, { 1, 1 }, { 1, 1 }, { 0, 0 }, { 1, 0 }
   };
 
   vec3 color = vec3(1.0, 0, 0);

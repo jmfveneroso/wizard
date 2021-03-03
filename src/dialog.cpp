@@ -66,9 +66,6 @@ void Dialog::Draw(int win_x, int win_y) {
 
   int pos_y = 400;
 
-  // draw_2d_->DrawRectangle(win_x-1, kWindowHeight - pos_y, win_x + 602, 102, vec3(1, 0.69, 0.23));
-  // draw_2d_->DrawRectangle(win_x, kWindowHeight - pos_y+1, win_x + 600, 100, vec3(0.3));
-
   draw_2d_->DrawImage("dialog", 220, -pos_y, 800, 800, 1.0);
 
   pos_y += 100;

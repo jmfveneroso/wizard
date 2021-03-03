@@ -4,6 +4,8 @@
 
 namespace {
 
+const int kTileSize = 52;
+
 void DoInOrder() {}
 
 template<typename Lambda0, typename ...Lambdas>
@@ -918,6 +920,27 @@ void Renderer::DrawShadows() {
 // Static draw
 // ==================
 
+void Renderer::DrawSpellbar() {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  vector<ItemData>& item_data = resources_->GetItemData();
+  int (&item_matrix)[8][7] = configs->item_matrix;
+  int (&spellbar)[8] = configs->spellbar;
+
+  draw_2d_->DrawImage("spell_bar", 400, 730, 600, 600, 1.0);
+  for (int x = 0; x < 8; x++) {
+    int top = 742;
+    int left = 433 + kTileSize * x;
+    int item_id = configs->spellbar[x];
+    if (item_id != 0) {
+      draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
+    }
+
+    if (configs->selected_spell == x) {
+      draw_2d_->DrawImage("selected_item", left, top, 64, 64, 1.0); 
+    }
+  }
+}
+
 void Renderer::DrawScreenEffects() {
   const int kWindowWidth = 1280;
   const int kWindowHeight = 800;
@@ -929,14 +952,7 @@ void Renderer::DrawScreenEffects() {
 
   draw_2d_->DrawImage("crosshair", 640-4, 400-4, 8, 8, 0.5);
 
-  const int tile_size = 52;
-  draw_2d_->DrawImage("spell_bar", 400, -530, 600, 600, 1.0);
-  vector<string>& icons = resources_->GetIcons();
-  for (int x = 0; x < 8; x++) {
-    if (configs->spellbar[x] == 0) continue;
-    int item_id = configs->spellbar[x];
-    draw_2d_->DrawImage(icons[item_id], 433 + tile_size * x, -6, 64, 64, 1.0); 
-  }
+  DrawSpellbar();
 
   draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
   draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
@@ -968,7 +984,7 @@ void Renderer::DrawScreenEffects() {
     // TODO: event. On hover item.
     switch (item->type) {
       case GAME_OBJ_DEFAULT: {
-        draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+        draw_2d_->DrawImage("interact_item", 384, 588, 512, 512, 1.0);
         const string item_name = item->GetAsset()->GetDisplayName();
         draw_2d_->DrawText(string("Pick ") + item_name, 384 + 70, 
           kWindowHeight - 588 - 40, vec3(1), 1.0, false, 
@@ -978,10 +994,10 @@ void Renderer::DrawScreenEffects() {
       case GAME_OBJ_DOOR: {
         shared_ptr<Door> door = static_pointer_cast<Door>(item);
         if (door->state == 0) {
-          draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+          draw_2d_->DrawImage("interact_item", 384, 588, 512, 512, 1.0);
           draw_2d_->DrawText("Open door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
         } else if (door->state == 2) {
-          draw_2d_->DrawImage("interact_item", 384, -300, 512, 512, 1.0);
+          draw_2d_->DrawImage("interact_item", 384, 588, 512, 512, 1.0);
           draw_2d_->DrawText("Close door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
         }
         break;

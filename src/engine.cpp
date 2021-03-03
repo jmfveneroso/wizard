@@ -200,26 +200,46 @@ bool Engine::ProcessGameInput() {
           }
         }
         throttle_counter_ = 4;
-      } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_tile = 0;
-        }
-        throttle_counter_ = 20;
       } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          configs->selected_tile = 1;
+          configs->selected_spell = 0;
         }
-        throttle_counter_ = 20;
+        throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          configs->selected_tile = 2;
+          configs->selected_spell = 1;
         }
-        throttle_counter_ = 20;
+        throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          configs->selected_tile = 3;
+          configs->selected_spell = 2;
         }
-        throttle_counter_ = 20;
+        throttle_counter_ = 5;
+      } else if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_spell = 3;
+        }
+        throttle_counter_ = 5;
+      } else if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_spell = 4;
+        }
+        throttle_counter_ = 5;
+      } else if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_spell = 5;
+        }
+        throttle_counter_ = 5;
+      } else if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_spell = 6;
+        }
+        throttle_counter_ = 5;
+      } else if (glfwGetKey(window, GLFW_KEY_8) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_spell = 7;
+        }
+        throttle_counter_ = 5;
       }
       player_input_->ProcessInput(window_);
       return false;
@@ -414,6 +434,55 @@ void Engine::UpdateAnimationFrames() {
   }
 }
 
+void Engine::RunBeforeFrameDebugFunctions() {
+  unordered_map<string, shared_ptr<GameObject>>& objs = 
+    resources_->GetObjects();
+  for (auto& [name, obj] : objs) {
+    if (obj->type != GAME_OBJ_DOOR) continue;
+
+    string obb_name = obj->name + "-obb";
+    OBB obb = obj->GetTransformedOBB();
+
+    vec3 w = obb.axis[0] * obb.half_widths[0];
+    vec3 h = obb.axis[1] * obb.half_widths[1];
+    vec3 d = obb.axis[2] * obb.half_widths[2];
+
+    const vector<vec3> offsets {
+      // Back face.
+      vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
+      // Front face.
+      vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
+    };
+
+    vector<vec3> v;
+    const vec3& c = obb.center;
+    for (const auto& o : offsets) {
+      v.push_back(c + w * o.x + h * o.y + d * o.z);
+    }
+
+    vector<vec3> vertices;
+    vector<vec2> uvs;
+    vector<unsigned int> indices(36);
+    Mesh mesh = CreateCube(v, vertices, uvs, indices);
+
+    if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+      shared_ptr<GameObject> obb_obj = 
+        resources_->CreateGameObjFromPolygons(mesh.polygons, obb_name,
+          obj->position);
+      door_obbs_[obb_name] = obb_obj;
+    } else {
+      ObjPtr obb_obj = door_obbs_[obb_name];
+      MeshPtr mesh = resources_->GetMesh(obb_obj);
+      if (mesh == nullptr) {
+        cout << "xxx---xxx" << endl;
+        continue;
+      }
+
+      UpdateMesh(*mesh, vertices, uvs, indices);
+    }
+  }
+}
+
 void Engine::Run() {
   text_editor_->set_run_command_fn(std::bind(&Engine::RunCommand, this, 
     std::placeholders::_1));
@@ -444,6 +513,8 @@ void Engine::Run() {
     UpdateAnimationFrames();
 
     ProcessGameInput();
+
+    RunBeforeFrameDebugFunctions();
 
     shared_ptr<Configs> configs = resources_->GetConfigs();
     {

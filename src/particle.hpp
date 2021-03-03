@@ -19,7 +19,8 @@ struct ParticleType {
 
 struct ParticleGroup : GameObject {
   vector<Particle> particles;
-  ParticleGroup() : GameObject(GAME_OBJ_PARTICLE_GROUP) {}
+  ParticleGroup(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_PARTICLE_GROUP) {}
 };
 
 struct Particle {

@@ -1,4 +1,5 @@
 #include "game_object.hpp"
+#include "resources.hpp"
 
 BoundingSphere GameObject::GetBoundingSphere() {
   if (!asset_group) {
@@ -154,4 +155,48 @@ ObjPtr GameObject::GetParent() {
 
 string GameObject::GetDisplayName() {
   return "";
+}
+
+OBB GameObject::GetTransformedOBB() {
+  if (GetAsset()->collision_type != COL_OBB) {
+    throw runtime_error(string("Object ") + name + " has no OBB.");
+  }
+
+  mat4 joint_transform = mat4(1.0);
+  const string mesh_name = GetAsset()->lod_meshes[0];
+  MeshPtr mesh_ptr = resources_->GetMeshByName(mesh_name);
+  if (mesh_ptr) {
+    if (!mesh_ptr->animations.empty()) {
+      string animation_name = active_animation;
+      if (mesh_ptr->animations.find(animation_name) == mesh_ptr->animations.end()) {
+        throw runtime_error(string("Animation ") + animation_name + 
+          " does not exist in GameObject:172");
+      }
+
+      const Animation& animation = mesh_ptr->animations[animation_name];
+      if (animation.keyframes.size() > 0) {
+        if (frame >= animation.keyframes.size()) {
+          throw runtime_error(string("Frame ") + 
+            boost::lexical_cast<string>(frame) + " outside scope" + 
+            " in GameObject:181 for mesh " + mesh_name +
+            " and animation " + animation_name);
+        }
+
+        int bone_id = 0;
+        joint_transform = animation.keyframes[frame].transforms[bone_id];
+      }
+    }
+  }
+
+  OBB result = obb;
+  mat4 transform_matrix = rotation_matrix * joint_transform;
+  vec3 rotated_center = vec3(transform_matrix * vec4(result.center, 1.0));
+
+  for (int i = 0; i < 3; i++) {
+    vec3 p = result.center + result.axis[i];
+    vec3 rotated_p = vec3(transform_matrix * vec4(p, 1.0));
+    result.axis[i] = normalize(rotated_p - rotated_center);
+  }
+  result.center = rotated_center;
+  return result;
 }

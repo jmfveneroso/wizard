@@ -400,7 +400,7 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
   return m;
 }
 
-void UpdateMesh(Mesh& m, GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
+void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices) {
   glBindVertexArray(m.vao_);
   glEnable(GL_BLEND);
@@ -409,6 +409,7 @@ void UpdateMesh(Mesh& m, GLuint shader_id, vector<vec3>& vertices, vector<vec2>&
   glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
     &vertices[0], GL_STATIC_DRAW);
+
   glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
   glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
     GL_STATIC_DRAW);
@@ -440,14 +441,16 @@ void UpdateMesh(Mesh& m, GLuint shader_id, vector<vec3>& vertices, vector<vec2>&
   glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
     &bitangents[0], GL_STATIC_DRAW);
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
-  glBufferData(
-    GL_ELEMENT_ARRAY_BUFFER, 
-    indices.size() * sizeof(unsigned int), 
-    &indices[0], 
-    GL_STATIC_DRAW
-  );
-  m.num_indices = indices.size();
+  if (!indices.empty()) {
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
+    glBufferData(
+      GL_ELEMENT_ARRAY_BUFFER, 
+      indices.size() * sizeof(unsigned int), 
+      &indices[0], 
+      GL_STATIC_DRAW
+    );
+    m.num_indices = indices.size();
+  }
 
   BindBuffer(m.vertex_buffer_, 0, 3);
   BindBuffer(m.uv_buffer_, 1, 2);
@@ -487,17 +490,9 @@ Mesh CreateMeshFromConvexHull(const ConvexHull& ch) {
   return CreateMesh(0, vertices, uvs, indices);
 }
 
-Mesh CreateCube(vec3 dimensions, vec3 position) {
-  float w = dimensions.x;
-  float h = dimensions.y;
-  float l = dimensions.z;
- 
-  vector<vec3> v {
-    vec3(0, h, 0), vec3(w, h, 0), vec3(0, 0, 0), vec3(w, 0, 0), // Back face.
-    vec3(0, h, l), vec3(w, h, l), vec3(0, 0, l), vec3(w, 0, l), // Front face.
-  };
-
-  vector<vec3> vertices = {
+Mesh CreateCube(const vector<vec3>& v, vector<vec3>& vertices, 
+  vector<vec2>& uvs, vector<unsigned int>& indices) {
+  vertices = {
     v[0], v[4], v[1], v[1], v[4], v[5], // Top.
     v[1], v[3], v[0], v[0], v[3], v[2], // Back.
     v[0], v[2], v[4], v[4], v[2], v[6], // Left.
@@ -507,12 +502,12 @@ Mesh CreateCube(vec3 dimensions, vec3 position) {
   };
 
   vector<vec2> u = {
-    vec2(0, 0), vec2(0, l), vec2(w, 0), vec2(w, l), // Top.
-    vec2(0, 0), vec2(0, h), vec2(w, 0), vec2(w, h), // Back.
-    vec2(0, 0), vec2(0, h), vec2(l, 0), vec2(l, h)  // Left.
+    vec2(0, 0), vec2(0, 1), vec2(1, 0), vec2(1, 1), // Top.
+    vec2(0, 0), vec2(0, 1), vec2(1, 0), vec2(1, 1), // Back.
+    vec2(0, 0), vec2(0, 1), vec2(1, 0), vec2(1, 1)  // Left.
   };
 
-  vector<glm::vec2> uvs {
+  uvs = {
     u[0], u[1], u[2],  u[2],  u[1], u[3],  // Top.
     u[4], u[5], u[6],  u[6],  u[5], u[7],  // Back.
     u[8], u[9], u[10], u[10], u[9], u[11], // Left.
@@ -521,7 +516,7 @@ Mesh CreateCube(vec3 dimensions, vec3 position) {
     u[0], u[1], u[2],  u[2],  u[1], u[3]   // Bottom.
   };
 
-  vector<unsigned int> indices(36);
+  indices = vector<unsigned int>(36);
   for (int i = 0; i < 36; i++) { indices[i] = i; }
 
   Mesh mesh = CreateMesh(0, vertices, uvs, indices);
@@ -535,8 +530,27 @@ Mesh CreateCube(vec3 dimensions, vec3 position) {
   return mesh;
 }
 
+Mesh CreateCube(const vector<vec3>& v) {
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<unsigned int> indices(36);
+  return CreateCube(v, vertices, uvs, indices);
+}
+
+Mesh CreateCube(const vec3& dimensions) {
+  float w = dimensions.x;
+  float h = dimensions.y;
+  float l = dimensions.z;
+ 
+  vector<vec3> v {
+    vec3(0, h, 0), vec3(w, h, 0), vec3(0, 0, 0), vec3(w, 0, 0), // Back face.
+    vec3(0, h, l), vec3(w, h, l), vec3(0, 0, l), vec3(w, 0, l), // Front face.
+  };
+  return CreateCube(v);
+}
+
 Mesh CreateMeshFromAABB(const AABB& aabb) {
-  return CreateCube(aabb.dimensions, aabb.point);
+  return CreateCube(aabb.dimensions);
 }
 
 Mesh CreatePlane(vec3 p1, vec3 p2, vec3 normal) {

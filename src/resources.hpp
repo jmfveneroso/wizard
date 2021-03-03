@@ -41,6 +41,8 @@
 
 const int kMaxParticles = 1000;
 
+class GameObject;
+
 enum GameState {
   STATE_GAME = 0,
   STATE_EDITOR,
@@ -86,8 +88,16 @@ struct Configs {
     { 0, 0, 0, 0, 0, 0, 0 },
     { 0, 0, 0, 0, 0, 0, 0 }
   };
-
+  int selected_spell = 0;
   int spellbar[8] = { 0, 0, 0, 1, 0, 0, 0, 0 };
+};
+
+struct ItemData {
+  string name;
+  string description;
+  string icon;
+  ItemData(string name, string description, string icon) 
+    : name(name), description(description), icon(icon) {}
 };
 
 class Resources {
@@ -134,9 +144,9 @@ class Resources {
   // Mutexes.
   mutex octree_mutex_;
 
-  vector<string> icons_ {
-    "",
-    "magic_missile_icon"
+  vector<ItemData> item_data_ {
+    { "", "", "" },
+    { "Magic Missile", "magic-missile-description", "magic_missile_icon" }
   };
 
   // Aux loading functions.
@@ -195,11 +205,10 @@ class Resources {
   void DeleteObject(ObjPtr obj);
   void RemoveDead();
   void UpdateObjectPosition(shared_ptr<GameObject> object);
-  shared_ptr<GameObject> CreateGameObjFromPolygons(const Mesh& m);
+  shared_ptr<GameObject> CreateGameObjFromPolygons(
+    const vector<Polygon>& polygons, const string& name, const vec3& position);
   shared_ptr<GameObject> CreateGameObjFromAsset(
     string asset_name, vec3 position, const string obj_name = "");
-  shared_ptr<GameObject> CreateGameObjFromPolygons(
-    const vector<Polygon>& polygons);
   shared_ptr<GameObject> CreateGameObjFromMesh(const Mesh& m, 
     string shader_name, const vec3 position, const vector<Polygon>& polygons);
   GameState GetGameState() { return game_state_; }
@@ -236,7 +245,7 @@ class Resources {
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
   string GetString(string name);
-  vector<string>& GetIcons();
+  vector<ItemData>& GetItemData();
   // ====================
 
   // TODO: where?
