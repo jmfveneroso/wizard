@@ -44,19 +44,21 @@ void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
     return;
   }
 
-  shared_ptr<GameObject> obj = resources_->GetObjectByName("mana-pool-001");
-
   float t;
   vec3 q;
-  if (IntersectRaySphere(p, d, obj->GetBoundingSphere(), t, q)) {
-    craft_->Enable();
-    resources_->SetGameState(STATE_CRAFT);
-    hit = true;
-  }
 
-  if (hit) {
-    return;
-  }
+  // CRAFT.  
+  // shared_ptr<GameObject> obj = resources_->GetObjectByName("mana-pool-001");
+
+  // if (IntersectRaySphere(p, d, obj->GetTransformedBoundingSphere(), t, q)) {
+  //   craft_->Enable();
+  //   resources_->SetGameState(STATE_CRAFT);
+  //   hit = true;
+  // }
+
+  // if (hit) {
+  //   return;
+  // }
 
   // TODO: move this to other location. Should be NPC but how?
   vector<pair<string, string>> npc_values {
@@ -73,7 +75,7 @@ void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
 
   for (const auto& [name, speech] : npc_values) {
     ObjPtr npc = resources_->GetObjectByName(name);
-    if (IntersectRaySphere(p, d, npc->GetBoundingSphere(), t, q)) {
+    if (IntersectRaySphere(p, d, npc->GetTransformedBoundingSphere(), t, q)) {
       dialog_->SetMainText(resources_->GetString(speech));
       dialog_->SetDialogOptions({ "Build", "Goodbye" });
       dialog_->Enable();
@@ -92,7 +94,7 @@ void PlayerInput::Extract(const Camera& c) {
  
     float t;
     vec3 q;
-    if (IntersectRaySphere(p, d, obj->GetBoundingSphere(), t, q)) {
+    if (IntersectRaySphere(p, d, obj->GetTransformedBoundingSphere(), t, q)) {
       resources_->MakeGlow(obj);
       obj->status = STATUS_BEING_EXTRACTED;
     }
@@ -249,7 +251,7 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
         vector<vec2> uvs;
         vector<unsigned int> indices;
         vector<Polygon> polygons;
-        resources_->CreateCube(vertices, uvs, indices, polygons, configs->scale_dimensions);
+        CreateCube(vertices, uvs, indices, polygons, configs->scale_dimensions);
 
         const string mesh_name = obj->GetAsset()->lod_meshes[0];
         shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
@@ -344,15 +346,16 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   float player_speed = resources_->GetConfigs()->player_speed; 
   float jump_force = resources_->GetConfigs()->jump_force; 
 
+  float d = resources_->GetDeltaTime() / 0.016666f;
   if (resources_->GetGameState() == STATE_BUILD) {
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-      player->position += front * 10.0f;
+      player->position += front * 10.0f * d;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-      player->position -= front * 10.0f;
+      player->position -= front * 10.0f * d;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-      player->position += right * 10.0f;
+      player->position += right * 10.0f * d;
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-      player->position -= right * 10.0f;
+      player->position -= right * 10.0f * d;
 
     if (player->position.x < 11200)
       player->position.x = 11200;
@@ -367,19 +370,19 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     if (player->paralysis_cooldown == 0) {
       // Move forward.
       if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        player->speed += front * player_speed;
+        player->speed += front * player_speed * d;
 
       // Move backward.
       if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        player->speed -= front * player_speed;
+        player->speed -= front * player_speed * d;
 
       // Strafe right.
       if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        player->speed += right * player_speed;
+        player->speed += right * player_speed * d;
 
       // Strafe left.
       if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        player->speed -= right * player_speed;
+        player->speed -= right * player_speed * d;
 
       // Move up.
       if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
@@ -564,11 +567,6 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   EditTerrain(window, c);
   Build(window, c);
   PlaceObject(window, c);
-
-  ObjPtr plank = resources_->GetObjectByName("plank-001");
-  plank->position.y = 50;
-  plank->speed = vec3(0.01, 0, 0);
-  plank->torque = vec3(0.0, 0.5, 0);
 
   return c;
 }

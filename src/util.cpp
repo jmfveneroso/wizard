@@ -10,13 +10,6 @@ void BindBuffer(const GLuint& buffer_id, int slot, int dimension) {
   glVertexAttribPointer(slot, dimension, GL_FLOAT, GL_FALSE, 0, (void*) 0);
 }
 
-void BindTexture(const std::string& sampler, 
-  const GLuint& program_id, const GLuint& texture_id, int num) {
-  glActiveTexture(GL_TEXTURE0 + num);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-  glUniform1i(glGetUniformLocation(program_id, sampler.c_str()), num);
-}
-
 GLuint LoadPng(const char* file_name, bool poor_filtering) {
   FILE* fp = fopen(file_name, "rb");
   if (!fp) {
@@ -911,3 +904,134 @@ int GetNumFramesInAnimation(Mesh& mesh, const string& animation_name) {
 bool MeshHasAnimation(Mesh& mesh, const string& animation_name) {
   return (mesh.animations.find(animation_name) != mesh.animations.end());
 }
+
+void AppendXmlAttr(pugi::xml_node& node, const string& attr, const string& s) {
+  node.append_attribute(attr.c_str()) = s.c_str();
+}
+
+void AppendXmlAttr(pugi::xml_node& node, const vec3& v) {
+  node.append_attribute("x") = v.x;
+  node.append_attribute("y") = v.y;
+  node.append_attribute("z") = v.z;
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, const vec3& v) {
+  pugi::xml_node new_node = node.append_child(name.c_str());
+  AppendXmlAttr(new_node, v);
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, 
+  const Polygon& polygon) {
+  pugi::xml_node new_node = node.append_child(name.c_str());
+  for (int i = 0; i < polygon.vertices.size(); i++) {
+    AppendXmlNode(new_node, "vertex", polygon.vertices[i]);
+  }
+  AppendXmlNode(new_node, "normal", polygon.normals[0]);
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, 
+  const BoundingSphere& bs) {
+  pugi::xml_node bs_node = node.append_child("bounding-sphere");
+  AppendXmlNode(bs_node, "center", bs.center);
+  AppendXmlTextNode(bs_node, "radius", bs.radius);
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, const AABB& aabb) {
+  pugi::xml_node aabb_node = node.append_child("aabb");
+  AppendXmlNode(aabb_node, "point", aabb.point);
+  AppendXmlNode(aabb_node, "dimensions", aabb.dimensions);
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, const OBB& obb) {
+  pugi::xml_node obb_node = node.append_child("obb");
+  AppendXmlNode(obb_node, "center", obb.center);
+  AppendXmlNode(obb_node, "axis-x", obb.axis[0]);
+  AppendXmlNode(obb_node, "axis-y", obb.axis[1]);
+  AppendXmlNode(obb_node, "axis-z", obb.axis[2]);
+  AppendXmlNode(obb_node, "half_widths", obb.half_widths);
+}
+
+void AppendXmlNodeAux(pugi::xml_node& node, 
+  shared_ptr<AABBTreeNode> aabb_tree_node) {
+  if (!aabb_tree_node) return;
+
+  pugi::xml_node new_node = node.append_child("node");
+  AppendXmlNode(new_node, "aabb", aabb_tree_node->aabb);
+  if (aabb_tree_node->has_polygon) {
+    AppendXmlNode(new_node, "polygon", aabb_tree_node->polygon);
+  } else {
+    AppendXmlNodeAux(new_node, aabb_tree_node->lft);
+    AppendXmlNodeAux(new_node, aabb_tree_node->rgt);
+  }
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, 
+  shared_ptr<AABBTreeNode> aabb_tree_node) {
+  pugi::xml_node new_node = node.append_child(name.c_str());
+  AppendXmlNodeAux(new_node, aabb_tree_node);
+}
+
+void AppendXmlTextNode(pugi::xml_node& node, const string& name, 
+  const float f) {
+  pugi::xml_node new_node = node.append_child(name.c_str());
+  string s = boost::lexical_cast<string>(f);
+  new_node.append_child(pugi::node_pcdata).set_value(s.c_str());
+}
+
+void AppendXmlTextNode(pugi::xml_node& node, const string& name, 
+  const string& s) {
+  pugi::xml_node new_node = node.append_child(name.c_str());
+  new_node.append_child(pugi::node_pcdata).set_value(s.c_str());
+}
+
+void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices, vector<Polygon>& polygons,
+  vec3 dimensions) {
+  float w = dimensions.x;
+  float h = dimensions.y;
+  float l = dimensions.z;
+ 
+  vector<vec3> v {
+    vec3(0, h, 0), vec3(w, h, 0), vec3(0, 0, 0), vec3(w, 0, 0), // Back face.
+    vec3(0, h, l), vec3(w, h, l), vec3(0, 0, l), vec3(w, 0, l), // Front face.
+  };
+
+  vertices = {
+    v[0], v[4], v[1], v[1], v[4], v[5], // Top.
+    v[1], v[3], v[0], v[0], v[3], v[2], // Back.
+    v[0], v[2], v[4], v[4], v[2], v[6], // Left.
+    v[5], v[7], v[1], v[1], v[7], v[3], // Right.
+    v[4], v[6], v[5], v[5], v[6], v[7], // Front.
+    v[6], v[2], v[7], v[7], v[2], v[3]  // Bottom.
+  };
+
+  vector<vec2> u = {
+    vec2(0, 0), vec2(0, l), vec2(w, 0), vec2(w, l), // Top.
+    vec2(0, 0), vec2(0, h), vec2(w, 0), vec2(w, h), // Back.
+    vec2(0, 0), vec2(0, h), vec2(l, 0), vec2(l, h)  // Left.
+  };
+
+  uvs = {
+    u[0], u[1], u[2],  u[2],  u[1], u[3],  // Top.
+    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Back.
+    u[8], u[9], u[10], u[10], u[9], u[11], // Left.
+    u[8], u[9], u[10], u[10], u[9], u[11], // Right.
+    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Front.
+    u[0], u[1], u[2],  u[2],  u[1], u[3]   // Bottom.
+  };
+
+  for (int i = 0; i < 12; i++) {
+    Polygon p;
+    p.vertices.push_back(vertices[i]);
+    p.vertices.push_back(vertices[i+1]);
+    p.vertices.push_back(vertices[i+2]);
+    p.indices.push_back(i);
+    p.indices.push_back(i+1);
+    p.indices.push_back(i+2);
+    polygons.push_back(p);
+  }
+
+  indices = vector<unsigned int>(36);
+  for (int i = 0; i < 36; i++) { indices[i] = i; }
+}
+

@@ -303,7 +303,10 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
   glBufferSubData(GL_ARRAY_BUFFER, 0, uvs.size() * sizeof(glm::vec2), &uvs[0]); 
 
   GLuint texture_id = resources_->GetTextureByName(texture);
-  BindTexture("texture_sampler", shader_id, texture_id);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+  glUniform1i(GetUniformId(shader_id, "texture_sampler"), 0);
 
   BindBuffer(vbo_, 0, 3);
   BindBuffer(uv_, 1, 2);

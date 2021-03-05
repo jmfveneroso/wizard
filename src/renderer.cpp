@@ -178,7 +178,7 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   }
 
   // Frustum cull.
-  BoundingSphere bounding_sphere = obj->GetBoundingSphere();
+  BoundingSphere bounding_sphere = obj->GetTransformedBoundingSphere();
   if (!CollideSphereFrustum(bounding_sphere, frustum_planes_, camera_.position)) {
     return true;
   }
@@ -360,7 +360,8 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInCaves(
   shared_ptr<Sector> s = stabbing_tree_node->sector;
   for (auto& node : stabbing_tree_node->children) {
     if (s->portals.find(node->sector->id) == s->portals.end()) {
-      throw runtime_error("Sector should have portal.");
+      throw runtime_error(string("Sector ") + s->name + 
+        " should have portal to " + node->sector->name);
     }
 
     // TODO: cull portal.
@@ -529,15 +530,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform1f(glsl_quadratic, quadratic);
     }
 
+    // TODO: implement multiple textures.
     GLuint texture_id = 0;
-    if (asset->index > obj->active_textures.size()) {
-      cout << "Asset name: " << asset->name << endl;
-      throw runtime_error("Asset index bigger than active textures.");
-    } else {
-      int texture_num = obj->active_textures[asset->index];
-      if (texture_num < asset->textures.size()) {
-        texture_id = asset->textures[texture_num];
-      }
+    if (!asset->textures.empty()) {
+      texture_id = asset->textures[0];
     }
 
     if (program_id == resources_->GetShader("animated_object")) {
@@ -555,7 +551,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
-      BindTexture("texture_sampler", program_id, texture_id);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("animated_transparent_object")) {
       glEnable(GL_BLEND);
@@ -580,27 +579,46 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
-      BindTexture("texture_sampler", program_id, texture_id);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == resources_->GetShader("object")) {
-      BindTexture("texture_sampler", program_id, texture_id);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
       if (asset->bump_map_id == 0) {
-        BindTexture("bump_map_sampler", program_id, texture_id, 1);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
+
         glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
       } else {
-        BindTexture("bump_map_sampler", program_id, asset->bump_map_id, 1);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, asset->bump_map_id);
+        glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
+
         glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
       }
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("transparent_object")) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      BindTexture("texture_sampler", program_id, texture_id);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
     } else if (program_id == resources_->GetShader("noshadow_object")) {
-      BindTexture("texture_sampler", program_id, texture_id);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("hypercube")) {
       glDisable(GL_CULL_FACE);
@@ -617,8 +635,14 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     } else if (program_id == resources_->GetShader("mana_pool")) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      BindTexture("dudv_map", program_id, texture_id);
-      BindTexture("normal_map", program_id, texture_id, 1);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "dudv_map"), 0);
+
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "normal_map"), 1);
 
       vec3 light_position_worldspace = vec3(0, 1, 0);
       glUniform3fv(GetUniformId(program_id, "light_position_worldspace"), 1,
@@ -642,53 +666,6 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
         glUniform3f(GetUniformId(program_id, "player_position"), 
           player_pos.x, player_pos.y, player_pos.z);
       }
-
-      // // Is bone.
-      // shared_ptr<GameObject> parent = obj->parent;
-      // if (parent) {
-      //   int bone_id = obj->parent_bone_id;
-      //   Mesh& parent_mesh = parent->GetAsset()->lod_meshes[0];
-
-      //   if (parent_mesh.animations.find(parent->active_animation) == 
-      //     parent_mesh.animations.end()) {
-      //     throw runtime_error(string("Animation ") + parent->active_animation + 
-      //       " doesn't exist");
-      //   }
-
-      //   const Animation& animation = parent_mesh.animations[parent->active_animation];
-
-      //   if (parent->frame > animation.keyframes.size()) {
-      //     throw runtime_error(string("Frame ") + 
-      //       boost::lexical_cast<string>(parent->frame) + 
-      //       " overshoots animation " + 
-      //       boost::lexical_cast<string>(parent->active_animation) +
-      //       " that has " + 
-      //       boost::lexical_cast<string>(animation.keyframes.size()) +
-      //       " frames.");
-      //   }
-
-      //   if (bone_id > animation.keyframes[parent->frame].transforms.size()) {
-      //     throw runtime_error(string("Transform for bone ") + 
-      //       boost::lexical_cast<string>(bone_id) + 
-      //       " outside the score of animation " + 
-      //       boost::lexical_cast<string>(parent->active_animation));
-      //   }
-
-      //   mat4 joint_transform = animation.keyframes[parent->frame].transforms[bone_id];
-      //   cout << "joint_transform" << endl;
-      //   cout << joint_transform << endl;
-      //   cout << "frame: " << parent->frame << endl;
-      //   cout << "bone_id: " << bone_id << endl;
-      //   cout << "frame: " << parent->frame << endl;
-
-      //   ModelMatrix = translate(mat4(1.0), obj->position);
-      //   ModelMatrix = ModelMatrix * obj->rotation_matrix * joint_transform;
-      //   ModelViewMatrix = view_matrix_ * ModelMatrix;
-      //   MVP = projection_matrix_ * ModelViewMatrix;
-      //   glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-      //   glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-      //   glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
-      // }
 
       glDisable(GL_CULL_FACE);
       glDrawElements(GL_TRIANGLES, mesh->num_indices, GL_UNSIGNED_INT, nullptr);

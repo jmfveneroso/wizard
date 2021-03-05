@@ -94,9 +94,9 @@ struct CollisionSS : Collision {
 };
 
 struct CollisionSB : Collision {
-  ObjPtr bone;
+  int bone;
   CollisionSB() {}
-  CollisionSB(ObjPtr o1, ObjPtr o2, ObjPtr bone)
+  CollisionSB(ObjPtr o1, ObjPtr o2, int bone)
     : Collision(CP_SB, o1, o2), bone(bone) {}
 };
 
@@ -126,25 +126,25 @@ struct CollisionST : Collision {
 };
 
 struct CollisionBB : Collision {
-  ObjPtr bone1;
-  ObjPtr bone2;
+  int bone1;
+  int bone2;
   CollisionBB() {}
-  CollisionBB(ObjPtr o1, ObjPtr o2, ObjPtr b1, ObjPtr b2) 
+  CollisionBB(ObjPtr o1, ObjPtr o2, int b1, int b2) 
     : Collision(CP_BB, o1, o2), bone1(b1), bone2(b2) {}
 };
 
 struct CollisionBP : Collision {
-  ObjPtr bone;
+  int bone;
   Polygon polygon;
   CollisionBP() {}
-  CollisionBP(ObjPtr o1, ObjPtr o2, ObjPtr bone, Polygon polygon)
+  CollisionBP(ObjPtr o1, ObjPtr o2, int bone, Polygon polygon)
     : Collision(CP_BP, o1, o2), bone(bone), polygon(polygon) {}
 };
 
 struct CollisionBT : Collision {
-  ObjPtr bone;
+  int bone;
   CollisionBT() {}
-  CollisionBT(ObjPtr o1, ObjPtr bone) 
+  CollisionBT(ObjPtr o1, int bone) 
     : Collision(CP_BT, o1, nullptr), bone(bone) {}
 };
 
@@ -161,9 +161,9 @@ struct CollisionQP : Collision {
 };
 
 struct CollisionQB : Collision {
-  ObjPtr bone;
+  int bone;
   CollisionQB() {}
-  CollisionQB(ObjPtr o1, ObjPtr o2, ObjPtr bone)
+  CollisionQB(ObjPtr o1, ObjPtr o2, int bone)
     : Collision(CP_QB, o1, o2), bone(bone) {}
 };
 
@@ -208,14 +208,11 @@ class CollisionResolver {
   vector<thread> find_threads_;
   mutex find_mutex_;
   vector<tuple<ObjPtr, ObjPtr>> tentative_pairs_;
-  int tentative_pair_cursor_ = 0;
 
   void ClearMetrics();
   void PrintMetrics();
 
   // Aux methods.
-  vector<BoundingSphere> GetBoneBoundingSpheres(ObjPtr obj);
-  BoundingSphere GetBoneBoundingSphere(ObjPtr bone);
   void GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons);
   bool IsPairCollidable(ObjPtr obj1, ObjPtr obj2);
   void CollideAlongAxis(shared_ptr<OctreeNode> octree_node, ObjPtr obj);

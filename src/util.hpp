@@ -232,7 +232,19 @@ struct Mesh {
   vector<Polygon> polygons;
   unordered_map<string, Animation> animations;
   unordered_map<string, int> bones_to_ids;
+
   Mesh() {}
+  // Mesh(const Mesh& mesh) {
+  //   shader            = mesh.shader;
+  //   vertex_buffer_    = mesh.vertex_buffer_;
+  //   uv_buffer_        = mesh.uv_buffer_;
+  //   normal_buffer_    = mesh.normal_buffer_;
+  //   tangent_buffer_   = mesh.tangent_buffer_;
+  //   bitangent_buffer_ = mesh.bitangent_buffer_;
+  //   element_buffer_   = mesh.element_buffer_;
+  //   vao_              = mesh.vao_;          
+  //   num_indices       = mesh.num_indices;          
+  // }
 };
 
 struct Event {
@@ -257,8 +269,6 @@ using ConvexHull = vector<Polygon>;
 
 GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
-void BindTexture(const std::string& sampler, 
-  const GLuint& program_id, const GLuint& texture_id, int num = 0);
 GLuint LoadPng(const char* file_name, bool poor_filtering=false);
 GLuint LoadShader(const std::string& directory, const std::string& name);
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
@@ -347,5 +357,24 @@ mat4 GetBoneTransform(Mesh& mesh, const string& animation_name,
 int GetNumFramesInAnimation(Mesh& mesh, const string& animation_name);
 
 bool MeshHasAnimation(Mesh& mesh, const string& animation_name);
+
+void AppendXmlAttr(pugi::xml_node& node, const string& attr, const string& s);
+void AppendXmlAttr(pugi::xml_node& node, const vec3* v);
+void AppendXmlNode(pugi::xml_node& node, const string& name, const vec3& v);
+void AppendXmlNode(pugi::xml_node& node, const string& name, 
+  const Polygon& polygon);
+void AppendXmlNode(pugi::xml_node& node, const string& name, 
+  const BoundingSphere& bs);
+void AppendXmlNode(pugi::xml_node& node, const string& name, const AABB& aabb);
+void AppendXmlNode(pugi::xml_node& node, const string& name, const OBB& obb);
+void AppendXmlTextNode(pugi::xml_node& node, const string& name, const float f);
+void AppendXmlNode(pugi::xml_node& node, const string& name, 
+  shared_ptr<AABBTreeNode> aabb_tree_node);
+void AppendXmlTextNode(pugi::xml_node& node, const string& name, 
+  const string& s);
+
+void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices, vector<Polygon>& polygons,
+  vec3 dimensions);
 
 #endif // __UTIL_HPP__
