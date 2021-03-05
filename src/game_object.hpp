@@ -10,7 +10,8 @@ struct Waypoint;
 struct Action;
 class Resources;
 
-class GameObject {
+class GameObject : public enable_shared_from_this<GameObject> {
+ protected:
   Resources* resources_;
  
  public:
@@ -46,19 +47,21 @@ class GameObject {
   bool freeze = false;
 
   string active_animation = "";
-  int frame = 0;
+  double frame = 0;
 
   shared_ptr<Sector> current_sector;
   shared_ptr<OctreeNode> octree_node;
 
   // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
   shared_ptr<GameObject> parent;
-  vector<shared_ptr<GameObject>> children;
+
+  unordered_map<int, BoundingSphere> bones;
+
   int parent_bone_id = -1;
 
   // TODO: Stuff that should polymorph to something that depends on GameObject.
   float life = 100.0f;
-  vec3 speed = vec3(0, 0, 0);
+  vec3 speed = vec3(0);
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   double updated_at = 0;
@@ -70,15 +73,6 @@ class GameObject {
 
   // TODO: move to polymorphed class.   
   double extraction_completion = 0.0;
-
-  // Override asset properties.
-  ConvexHull collision_hull;
-  shared_ptr<AABBTreeNode> aabb_tree = nullptr;
-  BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
-  AABB aabb = AABB(vec3(0.0), vec3(0.0));
-
-  // Only useful if collision type is OBB.
-  OBB obb;
 
   bool override_light = false;
   bool emits_light = false;
@@ -99,10 +93,8 @@ class GameObject {
     : resources_(resources), type(type) {
   }
 
-  BoundingSphere GetBoundingSphere();
-  AABB GetAABB();
   shared_ptr<GameAsset> GetAsset();
-  shared_ptr<AABBTreeNode> GetAABBTree();
+  string GetDisplayName();
   bool IsLight();
   bool IsExtractable();
   bool IsItem();
@@ -113,11 +105,31 @@ class GameObject {
   // bool HasAnimation(const string& animation_name);
   // bool ChangeAnimation(const string& animation_name);
 
-  string GetDisplayName();
+  void Load(const string& in_name, const string& asset_name, 
+    const vec3& in_position);
+  void Load(pugi::xml_node& xml);
+  void ToXml(pugi::xml_node& parent);
+
+  // Collision.
+
+  // Override asset properties.
+  BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
+  AABB aabb = AABB(vec3(0.0), vec3(0.0));
+  shared_ptr<AABBTreeNode> aabb_tree = nullptr;
+  OBB obb;
+  ConvexHull collision_hull; // TODO: should be removed.
+
+  BoundingSphere GetBoundingSphere();
+  AABB GetAABB();
+  OBB GetOBB();
+  shared_ptr<AABBTreeNode> GetAABBTree();
+
+  BoundingSphere GetTransformedBoundingSphere();
   OBB GetTransformedOBB();
+  BoundingSphere GetBoneBoundingSphere(int bone_id);
 };
 
-struct Player : GameObject {
+struct Player : public GameObject {
   PlayerAction player_action = PLAYER_IDLE;
   int num_spells = 10;
   int num_spells_2 = 2;
@@ -128,14 +140,14 @@ struct Player : GameObject {
     : GameObject(resources, GAME_OBJ_PLAYER) {}
 };
 
-struct Missile : GameObject {
+struct Missile : public GameObject {
   shared_ptr<GameObject> owner = nullptr;
 
   Missile(Resources* resources) 
     : GameObject(resources, GAME_OBJ_MISSILE) {}
 };
 
-struct Portal : GameObject {
+struct Portal : public GameObject {
   bool cave = false;
   shared_ptr<Sector> from_sector;
   shared_ptr<Sector> to_sector;
@@ -143,13 +155,15 @@ struct Portal : GameObject {
     : GameObject(resources, GAME_OBJ_PORTAL) {}
 };
 
-struct Region : GameObject {
-  AABB aabb;
+struct Region : public GameObject {
   Region(Resources* resources) 
     : GameObject(resources, GAME_OBJ_REGION) {}
+
+  void Load(const string& name, const vec3& position, const vec3& dimensions);
+  void Load(pugi::xml_node& xml);
 };
 
-struct Sector : GameObject {
+struct Sector : public GameObject {
   // Portals inside the sector indexed by the outgoing sector id.
   unordered_map<int, shared_ptr<Portal>> portals;
 
@@ -162,28 +176,37 @@ struct Sector : GameObject {
   vector<shared_ptr<Event>> on_leave_events;
 
   bool occlude = true;
+  string mesh_name;
 
   Sector(Resources* resources) 
     : GameObject(resources, GAME_OBJ_SECTOR) {}
+ 
+  shared_ptr<Mesh> GetMesh();
+
+  void Load(pugi::xml_node& xml);
 };
 
-struct Door : GameObject {
+struct Door : public GameObject {
   int state = 0; // 0: closed, 1: opening, 2: open, 3: closing
   Door(Resources* resources) 
     : GameObject(resources, GAME_OBJ_DOOR) {}
 };
 
-struct Actionable : GameObject {
+struct Actionable : public GameObject {
   int state = 0; // 0: off, 1: turning_on, 2: on, 3: turning_off
   Actionable(Resources* resources) 
     : GameObject(resources, GAME_OBJ_ACTIONABLE) {}
 };
 
-struct Waypoint : GameObject {
+struct Waypoint : public GameObject {
   vector<shared_ptr<Waypoint>> next_waypoints;
   Waypoint(Resources* resources) 
     : GameObject(resources, GAME_OBJ_WAYPOINT) {}
 };
+
+using ObjPtr = shared_ptr<GameObject>;
+
+ObjPtr CreateGameObj(Resources* resources, const string& asset_name);
 
 
 // ============================================================================
@@ -247,8 +270,6 @@ struct CastSpellAction : Action {
   CastSpellAction(string spell_name) 
     : Action(ACTION_CAST_SPELL), spell_name(spell_name) {}
 };
-
-using ObjPtr = shared_ptr<GameObject>;
 
 #endif // __GAME_OBJECT_HPP__
 

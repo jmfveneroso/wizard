@@ -293,25 +293,25 @@ bool AI::ProcessCastSpellAction(ObjPtr spider,
   string spell_name = action->spell_name;
   if (spell_name == "burrow") {
     resources_->ChangeObjectAnimation(spider, "Armature|dig");
-    if (spider->frame % 5 == 0) {
+    if (spider->frame > 4 && spider->frame > 5) {
       resources_->CreateParticleEffect(40, 
         spider->position, 
         vec3(0, 2, 0), vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
     }
 
-    if (spider->frame == 30) {
+    if (spider->frame > 29 && spider->frame > 30) {
       spider->status = STATUS_BURROWED;
       return true;
     }
   } else if (spell_name == "unburrow") {
     resources_->ChangeObjectAnimation(spider, "Armature|dig");
-    if (spider->frame % 5 == 0) {
+    if (spider->frame > 4 && spider->frame > 5) {
       resources_->CreateParticleEffect(40, 
         spider->position, 
         vec3(0, 2, 0), vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
     }
 
-    if (spider->frame == 30) {
+    if (spider->frame > 29 && spider->frame > 30) {
       spider->status = STATUS_NONE;
       return true;
     }
@@ -543,6 +543,7 @@ void AI::RunSpiderAI() {
       "spider", position);
     obj->position = position;
     ChangeState(obj, WANDER);
+    cout << "Created spider" << endl; 
   }
 }
 

@@ -68,7 +68,12 @@ void Physics::Run() {
       obj->torque *= 0.96;
     }
 
-    obj->target_position = obj->position + obj->speed;
+    float d = resources_->GetDeltaTime() / 0.016666f;
+    if (d > 0.0001 && d < 1.1 && length(obj->speed) > 0.001) {
+      obj->target_position = obj->position + obj->speed * d;
+    } else {
+      obj->target_position = obj->position + obj->speed;
+    }
 
     if (length(obj->torque) > 0.0001f) {
       // float rotation_angle = length(obj->torque) * obj->inertia;

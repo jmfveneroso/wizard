@@ -21,7 +21,7 @@ void Resources::CreateOutsideSector() {
 }
 
 void Resources::CreatePlayer() {
-  shared_ptr<GameAsset> player_asset = make_shared<GameAsset>();
+  shared_ptr<GameAsset> player_asset = make_shared<GameAsset>(this);
   player_asset->bounding_sphere = BoundingSphere(vec3(0, 0, 0), 1.5f);
   player_asset->id = id_counter_++;
   player_asset->name = "player";
@@ -35,6 +35,9 @@ void Resources::CreatePlayer() {
   player_->physics_behavior = PHYSICS_NORMAL;
   player_->position = configs_->initial_player_pos;
   AddGameObject(player_);
+
+  ObjPtr hand_obj = CreateGameObj(this, "hand");
+  hand_obj->Load("hand-001", "hand", player_->position);
 }
 
 void Resources::CreateSkydome() {
@@ -42,7 +45,7 @@ void Resources::CreateSkydome() {
   meshes_["skydome"] = make_shared<Mesh>();
   *meshes_["skydome"] = m;
 
-  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(this);
   game_asset->name = "skydome";
   game_asset->shader = shaders_["sky"];
   game_asset->lod_meshes[0] = "skydome";
@@ -194,248 +197,6 @@ void Resources::LoadScripts(const std::string& directory) {
   }
 }
 
-void Resources::LoadAssets(const std::string& directory) {
-  boost::filesystem::path p (directory);
-  boost::filesystem::directory_iterator end_itr;
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".xml")) {
-      continue;
-    }
-    LoadAssetFile(directory + "/" + current_file);
-  }
-}
-
-void Resources::LoadObjects(const std::string& directory) {
-  boost::filesystem::path p (directory);
-  boost::filesystem::directory_iterator end_itr;
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".xml")) {
-      continue;
-    }
-    LoadSectors(directory + "/" + current_file);
-  }
-  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".xml")) {
-      continue;
-    }
-    LoadPortals(directory + "/" + current_file);
-  }
-
-  shared_ptr<OctreeNode> outside_octree = 
-    GetSectorByName("outside")->octree_node;
-  for (const auto& [name, s] : sectors_) {
-    for (const auto& [next_sector_id, portal] : s->portals) {
-      InsertObjectIntoOctree(s->octree_node, portal, 0);
-    }
-  }
-}
-
-shared_ptr<GameAsset> Resources::LoadAsset(const pugi::xml_node& asset) {
-  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
-  game_asset->Load(asset);
-
-  const string& shader_name = asset.child("shader").text().get();
-  if (shader_name.size() > 0) {
-    game_asset->shader = shaders_[shader_name];
-  }
-
-  // LOD meshes.
-  const pugi::xml_node& mesh = asset.child("mesh");
-  for (int lod_level = 0; lod_level < 5; lod_level++) {
-    string s = string("lod-") + boost::lexical_cast<string>(lod_level);
-    pugi::xml_node lod = mesh.child(s.c_str());
-    if (!lod) {
-      break;
-    }
-
-    const string mesh_name = lod.text().get();
-    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-    if (!mesh) {
-      ThrowError("Mesh ", mesh_name, " does not exist.");
-    }
-
-    game_asset->lod_meshes[lod_level] = mesh_name;
-
-    // Skeleton.
-    if (!mesh->animations.empty()) {
-      int num_bones = mesh->bones_to_ids.size();
-      game_asset->bone_hit_boxes.resize(num_bones);
-
-      const pugi::xml_node& skeleton = asset.child("skeleton");
-      for (pugi::xml_node bone = skeleton.child("bone"); bone; 
-        bone = bone.next_sibling("bone")) {
-        string bone_name = bone.attribute("name").value();
-
-        if (mesh->bones_to_ids.find(bone_name) == mesh->bones_to_ids.end()) {
-          ThrowError("Bone with name ", bone_name, " doesn't exist.");
-        }
-        int bone_id = mesh->bones_to_ids[bone_name];
-
-        const string bone_mesh_name = bone.text().get();
-        shared_ptr<Mesh> bone_hit_box = GetMeshByName(bone_mesh_name);
-        if (!bone_hit_box) {
-          ThrowError("Bone mesh ", mesh_name, " does not exist.");
-        }
-
-        // Create asset for bone hit box.
-        shared_ptr<GameAsset> bone_asset = make_shared<GameAsset>();
-        bone_asset->id = id_counter_++;
-        bone_asset->name = game_asset->name + "-bone-" + 
-          boost::lexical_cast<string>(bone_id);
-        assets_[bone_asset->name] = bone_asset;
-
-        string shader_name = "solid";
-        bone_asset->lod_meshes[0] = bone_mesh_name;
-        bone_asset->shader = shaders_[shader_name];
-        bone_asset->aabb = GetAABBFromPolygons(bone_hit_box->polygons);
-        bone_asset->bounding_sphere = GetAssetBoundingSphere(bone_hit_box->polygons);
-        bone_asset->collision_type = COL_NONE;
-
-        game_asset->bone_hit_boxes[bone_id] = bone_asset;
-      }
-    }
-  }
-
-  // Occluding hull.
-  const pugi::xml_node& occluder = asset.child("occluder");
-  if (occluder) {
-    const string mesh_name = occluder.text().get();
-    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-    if (!mesh) {
-      ThrowError("Occluder ", mesh_name, " does not exist.");
-    }
-
-    game_asset->occluder = mesh->polygons;
-  }
-
-  // Collision hull.
-  const pugi::xml_node& collision_hull_xml = asset.child("collision-hull");
-  if (collision_hull_xml) {
-    const string mesh_name = collision_hull_xml.text().get();
-    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-    if (!mesh) {
-      ThrowError("Collision hull ", mesh_name, " does not exist.");
-    }
-    game_asset->collision_hull = mesh->polygons;
-  } else {
-    const string mesh_name = game_asset->lod_meshes[0];
-    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-    if (!mesh) {
-      ThrowError("Collision hull ", mesh_name, " does not exist.");
-    }
-    game_asset->collision_hull = mesh->polygons;
-  }
-
-  // Collision type.
-  const pugi::xml_node& col_type = asset.child("collision-type");
-  if (col_type) {
-    game_asset->collision_type = StrToCollisionType(col_type.text().get());
-
-    const string mesh_name = game_asset->lod_meshes[0];
-    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-    if (!mesh) {
-      ThrowError("Collision hull ", mesh_name, " does not exist.");
-    }
-
-    game_asset->aabb = GetAABBFromPolygons(mesh->polygons);
-    game_asset->bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
-
-    if (game_asset->collision_type == COL_PERFECT) {
-      game_asset->aabb_tree = ConstructAABBTreeFromPolygons(
-        game_asset->collision_hull);
-    }
-  }
-
-  // Physics.
-  const pugi::xml_node& xml_physics = asset.child("physics");
-  if (xml_physics) {
-    game_asset->physics_behavior = StrToPhysicsBehavior(xml_physics.text().get());
-  }
-
-  // Texture.
-  for (pugi::xml_node texture = asset.child("texture"); texture; 
-    texture = texture.next_sibling("texture")) {
-    const string& texture_filename = texture.text().get();
-    if (textures_.find(texture_filename) == textures_.end()) {
-      GLuint texture_id = 0;
-      bool poor_filtering = texture.attribute("poor-filtering");
-      if (textures_.find(texture_filename) == textures_.end()) {
-        texture_id = LoadPng(texture_filename.c_str(), poor_filtering);
-        textures_[texture_filename] = texture_id;
-      } else {
-        texture_id = textures_[texture_filename];
-      }
-
-      string name = texture.attribute("name").value();
-      if (textures_.find(name) == textures_.end()) {
-        textures_[name] = texture_id;
-      }
-    }
-    game_asset->textures.push_back(textures_[texture_filename]);
-  }
-
-  const pugi::xml_node& xml_bump_map = asset.child("bump-map");
-  if (xml_bump_map) {
-    const string& texture_filename = xml_bump_map.text().get();
-    if (textures_.find(texture_filename) == textures_.end()) {
-      GLuint texture_id = LoadPng(texture_filename.c_str());
-      textures_[texture_filename] = texture_id;
-    }
-    game_asset->bump_map_id = textures_[texture_filename];
-  }
-
-  const pugi::xml_node& light_xml = asset.child("light");
-  if (light_xml) {
-    float r = boost::lexical_cast<float>(light_xml.attribute("r").value());
-    float g = boost::lexical_cast<float>(light_xml.attribute("g").value());
-    float b = boost::lexical_cast<float>(light_xml.attribute("b").value());
-    float quadratic = boost::lexical_cast<float>(light_xml.attribute("quadratic").value());
-
-    game_asset->emits_light = true;
-    game_asset->light_color = vec3(r, g, b);
-    game_asset->quadratic = quadratic;
-  }
-
-  const pugi::xml_node& parent = asset.child("parent");
-  if (parent) {
-    const string& parent_name = parent.text().get();
-    shared_ptr<GameAsset> parent_asset = GetAssetByName(parent_name);
-    if (!parent_asset) {
-      ThrowError("Parent asset with name ", parent_asset, " does no exist.");
-    }
-    game_asset->parent = parent_asset;
-  }
-
-  // Speed - Turn Rate.
-  const pugi::xml_node& xml_base_speed = asset.child("base-speed");
-  if (xml_base_speed) {
-    game_asset->base_speed = boost::lexical_cast<float>(xml_base_speed.text().get());
-  }
-
-  const pugi::xml_node& xml_turn_rate = asset.child("base-turn-rate");
-  if (xml_turn_rate) {
-    game_asset->base_turn_rate = boost::lexical_cast<float>(xml_turn_rate.text().get());
-  }
-
-  const pugi::xml_node& mass = asset.child("mass");
-  if (mass) {
-    game_asset->mass = boost::lexical_cast<float>(mass.text().get());
-  }
-
-  if (assets_.find(game_asset->name) != assets_.end()) {
-    ThrowError("Asset with name ", game_asset->name, " already exists.");
-  }
-  assets_[game_asset->name] = game_asset;
-  game_asset->id = id_counter_++;
-  return game_asset;
-}
-
 void Resources::LoadAssetFile(const std::string& xml_filename) {
   pugi::xml_document doc;
   pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
@@ -447,7 +208,8 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
   const pugi::xml_node& xml = doc.child("xml");
   for (pugi::xml_node asset_xml = xml.child("asset"); asset_xml; 
     asset_xml = asset_xml.next_sibling("asset")) {
-    shared_ptr<GameAsset> asset = LoadAsset(asset_xml);
+    shared_ptr<GameAsset> asset = make_shared<GameAsset>(this);
+    asset->Load(asset_xml);
     CreateAssetGroupForSingleAsset(asset);
   }
 
@@ -459,7 +221,8 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
     int i = 0;
     for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
       asset_xml = asset_xml.next_sibling("asset")) {
-      shared_ptr<GameAsset> asset = LoadAsset(asset_xml);
+      shared_ptr<GameAsset> asset = make_shared<GameAsset>(this);
+      asset->Load(asset_xml);
       asset->index = i;
       asset_group->assets.push_back(asset);
 
@@ -541,6 +304,48 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
 
 }
 
+void Resources::LoadAssets(const std::string& directory) {
+  boost::filesystem::path p (directory);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+    LoadAssetFile(directory + "/" + current_file);
+  }
+}
+
+void Resources::LoadObjects(const std::string& directory) {
+  boost::filesystem::path p (directory);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+    LoadSectors(directory + "/" + current_file);
+  }
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) continue;
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+    LoadPortals(directory + "/" + current_file);
+  }
+
+  shared_ptr<OctreeNode> outside_octree = 
+    GetSectorByName("outside")->octree_node;
+  for (const auto& [name, s] : sectors_) {
+    for (const auto& [next_sector_id, portal] : s->portals) {
+      InsertObjectIntoOctree(s->octree_node, portal, 0);
+    }
+  }
+}
+
 const vector<vec3> kOctreeNodeOffsets = {
   //    X   Y   Z      Z Y X
   vec3(-1, -1, -1), // 0 0 0
@@ -557,7 +362,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
   ObjPtr object, int depth) {
   int index = 0, straddle = 0;
 
-  BoundingSphere bounding_sphere = object->GetBoundingSphere();
+  BoundingSphere bounding_sphere = object->GetTransformedBoundingSphere();
 
   // Compute the octant number [0..7] the object sphere center is in
   // If straddling any of the dividing x, y, or z planes, exit directly
@@ -633,465 +438,6 @@ void Resources::AddGameObject(ObjPtr game_obj) {
   }
 }
 
-ObjPtr Resources::LoadGameObject(
-  string name, string asset_name, vec3 position, vec3 rotation) {
-  ObjPtr new_game_obj = nullptr;
-
-  // TODO: create attribute to determine type, like unit.
-  if (asset_name == "door") {
-    new_game_obj = make_shared<Door>(this);
-  } else if (asset_name == "crystal") {
-    new_game_obj = make_shared<Actionable>(this);
-  } else {
-    new_game_obj = make_shared<GameObject>(this);
-  }
-
-  new_game_obj->name = name;
-  new_game_obj->position = position;
-  if (asset_groups_.find(asset_name) == asset_groups_.end()) {
-    throw runtime_error(string("Asset ") + asset_name + 
-      string(" does not exist. Resources::660."));
-  }
-  new_game_obj->asset_group = asset_groups_[asset_name];
-
-
-  // If the object has bone hit boxes.
-  const vector<shared_ptr<GameAsset>>& bone_hit_boxes = 
-    new_game_obj->GetAsset()->bone_hit_boxes;
-  for (int i = 0; i < bone_hit_boxes.size(); i++) {
-    if (!bone_hit_boxes[i]) continue;
-    ObjPtr child = make_shared<GameObject>(this);
-    child->name = new_game_obj->name + "-child-" + 
-      boost::lexical_cast<string>(i);
-    child->position = new_game_obj->position;
-    child->asset_group = CreateAssetGroupForSingleAsset(bone_hit_boxes[i]);
-
-    cout << "Creating child " << child->name << endl;
-    new_game_obj->children.push_back(child);
-    child->parent = new_game_obj;
-    child->parent_bone_id = i;
-
-    AddGameObject(child);
-  }
-
-  shared_ptr<GameAsset> game_asset = new_game_obj->GetAsset();
-  if (game_asset->collision_type == COL_OBB) {
-    new_game_obj->collision_hull = game_asset->collision_hull;
-    cout << new_game_obj->collision_hull << endl;
-    new_game_obj->obb = GetOBBFromPolygons(new_game_obj->collision_hull, new_game_obj->position);
-    cout << new_game_obj->obb << endl;
-
-    float largest = new_game_obj->GetBoundingSphere().radius * 3.0f;
-    new_game_obj->aabb = AABB(new_game_obj->obb.center - vec3(largest) * 0.5f, vec3(largest));
-    new_game_obj->bounding_sphere = BoundingSphere(new_game_obj->obb.center, largest);
-  }
-
-  if (rotation.y > 0.0001f) {
-    new_game_obj->rotation_matrix = rotate(mat4(1.0), -rotation.y, vec3(0, 1, 0));
-
-    if (game_asset->collision_type == COL_PERFECT) {
-      new_game_obj->collision_hull = game_asset->collision_hull;
-      for (Polygon& p : new_game_obj->collision_hull) {
-        for (vec3& v : p.vertices) {
-          v = new_game_obj->rotation_matrix * vec4(v, 1.0);
-        }
-
-        for (vec3& n : p.normals) {
-          n = new_game_obj->rotation_matrix * vec4(n, 0.0);
-        }
-      }
-
-      BoundingSphere s;
-      if (new_game_obj->asset_group->bounding_sphere.radius > 0.001f) {
-        s = new_game_obj->asset_group->bounding_sphere; 
-      } else {
-        s = new_game_obj->GetAsset()->bounding_sphere;
-      }
-      s.center = new_game_obj->rotation_matrix * s.center;
-      new_game_obj->bounding_sphere = s;
-
-      new_game_obj->aabb = GetAABBFromPolygons(new_game_obj->collision_hull);
-
-      new_game_obj->aabb_tree = ConstructAABBTreeFromPolygons(
-        new_game_obj->collision_hull);
-    }
-  }
-
-  const string mesh_name = new_game_obj->GetAsset()->lod_meshes[0];
-  shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-  if (!mesh) {
-    ThrowError("Mesh ", mesh_name, " does not exist.");
-  }
-
-  if (mesh->animations.size() > 0) {
-    new_game_obj->active_animation = mesh->animations.begin()->first;
-  }
-
-  AddGameObject(new_game_obj);
-
-  UpdateObjectPosition(new_game_obj);
-  return new_game_obj;
-}
-
-void Resources::LoadSectors(const std::string& xml_filename) {
-  pugi::xml_document doc;
-  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
-  if (!result) {
-    throw runtime_error(string("Could not load xml file: ") + xml_filename);
-  }
-
-  cout << "Loading sectors from: " << xml_filename << endl;
-  const pugi::xml_node& xml = doc.child("xml");
-  for (pugi::xml_node sector = xml.child("sector"); sector; 
-    sector = sector.next_sibling("sector")) {
-
-    shared_ptr<Sector> new_sector = make_shared<Sector>(this);
-    new_sector->name = sector.attribute("name").value();
-
-    pugi::xml_attribute occlude = sector.attribute("occlude");
-    if (occlude) {
-       if (string(occlude.value()) == "false") {
-         new_sector->occlude = false;
-       }
-    }
-
-    if (new_sector->name != "outside") {
-      const pugi::xml_node& position = sector.child("position");
-      if (!position) {
-        throw runtime_error("Indoors sector must have a location.");
-      }
-
-      float x = boost::lexical_cast<float>(position.attribute("x").value());
-      float y = boost::lexical_cast<float>(position.attribute("y").value());
-      float z = boost::lexical_cast<float>(position.attribute("z").value());
-      new_sector->position = vec3(x, y, z);
-
-      const pugi::xml_node& mesh_xml = sector.child("mesh");
-      if (!mesh_xml) {
-        throw runtime_error("Indoors sector must have a mesh. Resources::758");
-      }
-
-      shared_ptr<Mesh> mesh = make_shared<Mesh>();
-      const string& mesh_filename = directory_ + "/models_fbx/" + mesh_xml.text().get();
-      FbxData data = LoadFbxData(mesh_filename, *mesh);
-
-      if (meshes_.find(new_sector->name) != meshes_.end()) {
-        ThrowError("Mesh with name ", new_sector->name, " already exists. Resources::766");
-      }
-      meshes_[new_sector->name] = mesh;
-
-      const pugi::xml_node& rotation = sector.child("rotation");
-      if (rotation) {
-        float x = boost::lexical_cast<float>(rotation.attribute("x").value());
-        float y = boost::lexical_cast<float>(rotation.attribute("y").value());
-        float z = boost::lexical_cast<float>(rotation.attribute("z").value());
-        mat4 rotation_matrix = rotate(mat4(1.0), -y, vec3(0, 1, 0));
-
-        for (Polygon& p : mesh->polygons) {
-          for (vec3& v : p.vertices) {
-            v = rotation_matrix * vec4(v, 1.0);
-          }
-
-          for (vec3& n : p.normals) {
-            n = rotation_matrix * vec4(n, 0.0);
-          }
-        }
-      }
-
-      const pugi::xml_node& lighting_xml = sector.child("lighting");
-      if (lighting_xml) {
-        float r = boost::lexical_cast<float>(lighting_xml.attribute("r").value());
-        float g = boost::lexical_cast<float>(lighting_xml.attribute("g").value());
-        float b = boost::lexical_cast<float>(lighting_xml.attribute("b").value());
-        new_sector->lighting_color = vec3(r, g, b);
-      }
-
-      shared_ptr<GameAsset> sector_asset = make_shared<GameAsset>();
-      sector_asset->bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
-      sector_asset->aabb = GetAABBFromPolygons(mesh->polygons);
-      sector_asset->id = id_counter_++;
-      sector_asset->lod_meshes[0] = new_sector->name;
-      sector_asset->name = "sector-" + 
-        boost::lexical_cast<string>(sector_asset->id);
-
-      new_sector->asset_group = CreateAssetGroupForSingleAsset(sector_asset);
-      InsertObjectIntoOctree(outside_octree_, new_sector, 0);
-      cout << "Sector " << new_sector->name << endl;
-      cout << "Octree " << new_sector->octree_node->center << endl;
-      cout << "     - " << new_sector->octree_node->half_dimensions << endl;
-    }
-
-    const pugi::xml_node& game_objs = sector.child("game-objs");
-    for (pugi::xml_node game_obj = game_objs.child("game-obj"); game_obj; 
-      game_obj = game_obj.next_sibling("game-obj")) {
-
-      const string& name = game_obj.attribute("name").value();
-      const pugi::xml_node& position_xml = game_obj.child("position");
-      if (!position_xml) {
-        throw runtime_error("Game object must have a location.");
-      }
-
-      float x = boost::lexical_cast<float>(position_xml.attribute("x").value());
-      float y = boost::lexical_cast<float>(position_xml.attribute("y").value());
-      float z = boost::lexical_cast<float>(position_xml.attribute("z").value());
-      vec3 position = vec3(x, y, z);
-
-      const pugi::xml_node& asset = game_obj.child("asset");
-      if (!asset) {
-        throw runtime_error("Game object must have an asset.");
-      }
-
-      const string& asset_name = asset.text().get();
-
-      vec3 rotation = vec3(0, 0, 0);
-      const pugi::xml_node& rotation_xml = game_obj.child("rotation");
-      if (rotation_xml) {
-        float x = boost::lexical_cast<float>(rotation_xml.attribute("x").value());
-        float y = boost::lexical_cast<float>(rotation_xml.attribute("y").value());
-        float z = boost::lexical_cast<float>(rotation_xml.attribute("z").value());
-        rotation = vec3(x, y, z);
-      }
-
-      ObjPtr new_game_obj = LoadGameObject(name, asset_name, 
-        position, rotation);
-
-      const pugi::xml_node& animation = game_obj.child("animation");
-      if (animation) {
-        const string& animation_name = animation.text().get();
-
-        const string mesh_name = new_game_obj->GetAsset()->lod_meshes[0];
-        if (meshes_.find(mesh_name) == meshes_.end()) {
-          ThrowError("Mesh with name ", mesh_name, " does not exist. Resources::851");
-        }
-        shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-  
-        if (mesh->animations.find(animation_name) != mesh->animations.end()) {
-          new_game_obj->active_animation = animation_name;
-        }
-      }
-
-      const pugi::xml_node& ai_state_xml = game_obj.child("ai-state");
-      if (ai_state_xml) {
-        const string& ai_state = ai_state_xml.text().get();
-        new_game_obj->ai_state = StrToAiState(ai_state);
-      }
-
-      // Only static objects will retain this.
-      new_game_obj->current_sector = new_sector;
-    }
-
-    cout << "Loading waypoints from: " << xml_filename << endl;
-    // const pugi::xml_node& waypoints_xml = xml.child("waypoints");
-    for (pugi::xml_node waypoint_xml = game_objs.child("waypoint"); waypoint_xml; 
-      waypoint_xml = waypoint_xml.next_sibling("waypoint")) {
-      string name = waypoint_xml.attribute("name").value();
-
-      const pugi::xml_node& position = waypoint_xml.child("position");
-      if (!position) {
-        throw runtime_error("Waypoint must have a location.");
-      }
-
-      float x = boost::lexical_cast<float>(position.attribute("x").value());
-      float y = boost::lexical_cast<float>(position.attribute("y").value());
-      float z = boost::lexical_cast<float>(position.attribute("z").value());
-
-      shared_ptr<Waypoint> new_waypoint = CreateWaypoint(vec3(x, y, z), name);
-
-      waypoints_[new_waypoint->name] = new_waypoint;
-      new_waypoint->id = id_counter_++;
-    }
-
-    cout << "Loading regions from: " << xml_filename << endl;
-    for (pugi::xml_node region_xml = game_objs.child("region"); region_xml; 
-      region_xml = region_xml.next_sibling("region")) {
-      string name = region_xml.attribute("name").value();
-
-      const pugi::xml_node& position_xml = region_xml.child("point");
-      if (!position_xml) {
-        throw runtime_error("Region must have a location.");
-      }
-
-      const pugi::xml_node& dimensions_xml = region_xml.child("dimensions");
-      if (!dimensions_xml) {
-        throw runtime_error("Region must have dimensions.");
-      }
-
-      vec3 position = LoadVec3FromXml(position_xml);
-      vec3 dimensions = LoadVec3FromXml(dimensions_xml);
-      cout << "Adding region: " << name << endl;
-      ObjPtr region = CreateRegion(position, dimensions, name);
-      region->GetAsset()->aabb = AABB(position, dimensions);
-      cout << "bla bla: " << name << endl;
-    }
-
-    // TODO: check if sector with that name exists.
-    if (new_sector->name == "outside") {
-      continue;
-    }
-
-    if (sectors_.find(new_sector->name) != sectors_.end()) {
-      ThrowError("Sector with name ", new_sector->name, " already exists.");
-    }
-   
-    sectors_[new_sector->name] = new_sector;
-    new_sector->id = id_counter_++;
-  }
-
-  cout << "Loading waypoint relations from: " << xml_filename << endl;
-  for (pugi::xml_node sector = xml.child("sector"); sector; 
-    sector = sector.next_sibling("sector")) {
-
-    const pugi::xml_node& game_objs = sector.child("game-objs");
-    for (pugi::xml_node waypoint_xml = game_objs.child("waypoint"); waypoint_xml; 
-      waypoint_xml = waypoint_xml.next_sibling("waypoint")) {
-      string name = waypoint_xml.attribute("name").value();
-      shared_ptr<Waypoint> waypoint = waypoints_[name];
-
-      const pugi::xml_node& game_objs = waypoint_xml.child("next-waypoint");
-      for (pugi::xml_node next_waypoint_xml = waypoint_xml.child("next-waypoint"); 
-        next_waypoint_xml; 
-        next_waypoint_xml = next_waypoint_xml.next_sibling("next-waypoint")) {
-
-        const string& next_waypoint_name = next_waypoint_xml.text().get();
-        if (waypoints_.find(next_waypoint_name) == waypoints_.end()) {
-          ThrowError("Waypoint ", next_waypoint_name, " does not exist");
-        }
-
-        shared_ptr<Waypoint> next_waypoint = waypoints_[next_waypoint_name];
-        waypoint->next_waypoints.push_back(next_waypoint);
-      }
-    }
-  } 
-}
-
-void Resources::LoadStabbingTree(const pugi::xml_node& parent_node_xml, 
-  shared_ptr<StabbingTreeNode> parent_node) {
-  for (pugi::xml_node st_node_xml = parent_node_xml.child("st-node"); st_node_xml; 
-    st_node_xml = st_node_xml.next_sibling("st-node")) {
-
-    string sector_name = st_node_xml.attribute("sector").value();
-    shared_ptr<Sector> to_sector = GetSectorByName(sector_name);
-    if (!to_sector) {
-      ThrowError("Sector with name ", sector_name, " doesn't exist.");
-    }
-
-    shared_ptr<StabbingTreeNode> st_node = make_shared<StabbingTreeNode>();
-    st_node->sector = to_sector;
-    LoadStabbingTree(st_node_xml, st_node);
-    parent_node->children.push_back(st_node);
-  }
-}
-
-void Resources::LoadPortals(const std::string& xml_filename) {
-  pugi::xml_document doc;
-  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
-  if (!result) {
-    ThrowError("Could not load xml file: ", xml_filename);
-  }
-
-  cout << "Loading portals from: " << xml_filename << endl;
-  const pugi::xml_node& xml = doc.child("xml");
-  for (pugi::xml_node sector_xml = xml.child("sector"); sector_xml; 
-    sector_xml = sector_xml.next_sibling("sector")) {
-    string sector_name = sector_xml.attribute("name").value();
-
-    shared_ptr<Sector> sector = GetSectorByName(sector_name);
-    if (!sector) {
-      ThrowError("Sector ", sector_name, " does not exist.");
-    }
-
-    const pugi::xml_node& portals = sector_xml.child("portals");
-    for (pugi::xml_node portal_xml = portals.child("portal"); portal_xml; 
-      portal_xml = portal_xml.next_sibling("portal")) {
-
-      string sector_name = portal_xml.attribute("to").value();
-      shared_ptr<Sector> to_sector = GetSectorByName(sector_name);
-      if (!to_sector) {
-        ThrowError("Sector ", sector_name, " does not exist.");
-      }
-
-      shared_ptr<Portal> portal = make_shared<Portal>(this);
-      portal->from_sector = sector;
-      portal->to_sector = to_sector;
-
-      // Is this portal the entrance to a cave?
-      pugi::xml_attribute is_cave = portal_xml.attribute("cave");
-      if (is_cave) {
-         if (string(is_cave.value()) == "true") {
-           portal->cave = true;
-         }
-      }
-
-      const pugi::xml_node& position = portal_xml.child("position");
-      if (!position) {
-        throw runtime_error("Portal must have a location.");
-      }
-
-      float x = boost::lexical_cast<float>(position.attribute("x").value());
-      float y = boost::lexical_cast<float>(position.attribute("y").value());
-      float z = boost::lexical_cast<float>(position.attribute("z").value());
-      portal->position = vec3(x, y, z);
-
-      const pugi::xml_node& mesh_xml = portal_xml.child("mesh");
-      if (!mesh_xml) {
-        throw runtime_error("Portal must have a mesh.");
-      }
-
-      shared_ptr<GameAsset> portal_asset = make_shared<GameAsset>();
-      portal_asset->id = id_counter_++;
-      portal_asset->name = "portal-" + 
-        boost::lexical_cast<string>(portal_asset->id);
-
-      const string mesh_name = portal_asset->name;
-      shared_ptr<Mesh> mesh = make_shared<Mesh>();
-      const string& mesh_filename = directory_ + "/models_fbx/" + mesh_xml.text().get();
-      FbxData data = LoadFbxData(mesh_filename, *mesh);
-      if (meshes_.find(mesh_name) != meshes_.end()) {
-        ThrowError("Mesh with name ", mesh_name, " already exists. Resources::1037");
-      }
-      meshes_[mesh_name] = mesh;
-      portal_asset->lod_meshes[0] = mesh_name;
-
-      portal_asset->shader = shaders_["solid"];
-      portal_asset->collision_type = COL_NONE;
-      portal_asset->bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
-      assets_[portal_asset->name] = portal_asset;
-      portal->asset_group = CreateAssetGroupForSingleAsset(portal_asset);
-
-      sector->portals[to_sector->id] = portal;
-      portal->id = id_counter_++;
-      portal->name = "portal-" + boost::lexical_cast<string>(portal->id);
-      const pugi::xml_node& rotation = portal_xml.child("rotation");
-
-      if (rotation) {
-        float x = boost::lexical_cast<float>(rotation.attribute("x").value());
-        float y = boost::lexical_cast<float>(rotation.attribute("y").value());
-        float z = boost::lexical_cast<float>(rotation.attribute("z").value());
-        portal->rotation_matrix = rotate(mat4(1.0), -y, vec3(0, 1, 0));
-
-        for (Polygon& p : mesh->polygons) {
-          for (vec3& v : p.vertices) {
-            v = portal->rotation_matrix * vec4(v, 1.0);
-          }
-
-          for (vec3& n : p.normals) {
-            n = portal->rotation_matrix * vec4(n, 0.0);
-          }
-        }
-      }
-    }
-
-    sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
-
-    pugi::xml_node stabbing_tree_xml = sector_xml.child("stabbing-tree");
-    if (stabbing_tree_xml) {
-      LoadStabbingTree(stabbing_tree_xml, sector->stabbing_tree);
-    } else {
-      // throw runtime_error("Sector must have a stabbing tree.");
-    }
-  }
-}
-
 void Resources::InitMissiles() {
   // Set a higher number of missiles. Maybe 256.
   for (int i = 0; i < 10; i++) {
@@ -1136,7 +482,7 @@ ObjPtr Resources::CreateGameObjFromPolygons(
   }
 
 
-  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(this);
   game_asset->id = id_counter_++;
   game_asset->name = "polygon-asset-" + boost::lexical_cast<string>(game_asset->id);
   assets_[game_asset->name] = game_asset;
@@ -1179,7 +525,7 @@ ObjPtr Resources::CreateGameObjFromPolygons(
 ObjPtr Resources::CreateGameObjFromMesh(const Mesh& m, 
   string shader_name, const vec3 position, 
   const vector<Polygon>& polygons) {
-  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(this);
   game_asset->id = id_counter_++;
   game_asset->name = "mesh-asset-" + boost::lexical_cast<string>(game_asset->id);
   assets_[game_asset->name] = game_asset;
@@ -1236,8 +582,10 @@ ObjPtr Resources::CreateGameObjFromAsset(
   if (name.empty()) {
     name = "object-" + boost::lexical_cast<string>(id_counter_ + 1);
   }
-  ObjPtr new_game_obj = 
-    LoadGameObject(name, asset_name, position, vec3(0, 0, 0));
+
+  ObjPtr new_game_obj = CreateGameObj(this, asset_name);
+  new_game_obj->Load(name, asset_name, position);
+
   UnlockOctree();
   return new_game_obj;
 }
@@ -1278,10 +626,6 @@ void Resources::UpdateObjectPosition(ObjPtr obj) {
       obj->octree_node->items.erase(obj->id);
     }
     obj->octree_node = nullptr;
-  }
-
-  for (ObjPtr c : obj->children) {
-    c->position = obj->position;
   }
 
   // Update sector.
@@ -1325,14 +669,9 @@ shared_ptr<Sector> Resources::GetSectorAux(
 
   for (auto& s : octree_node->sectors) {
     // TODO: check sector bounding sphere before doing expensive convex hull.
-    const BoundingSphere& bs = s->GetBoundingSphere();
+    const BoundingSphere& bs = s->GetTransformedBoundingSphere();
     if (length2(bs.center - position) < bs.radius * bs.radius) {
-      const string mesh_name = s->GetAsset()->lod_meshes[0];
-      shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-      if (!mesh) {
-        ThrowError("Sector mesh with name ", mesh_name, " does not exist.");
-      }
-
+      shared_ptr<Mesh> mesh = s->GetMesh();
       if (IsInConvexHull(position - s->position, mesh->polygons)) {
         return static_pointer_cast<Sector>(s);
       }
@@ -1674,10 +1013,6 @@ void Resources::DeleteObject(ObjPtr obj) {
     obj->octree_node = nullptr;
   }
 
-  for (ObjPtr c : obj->children) {
-    objects_.erase(c->name);
-  }
-
   objects_.erase(obj->name);
 }
 
@@ -1695,10 +1030,6 @@ void Resources::RemoveObject(ObjPtr obj) {
       obj->octree_node->items.erase(obj->id);
     }
     obj->octree_node = nullptr;
-  }
-
-  for (ObjPtr c : obj->children) {
-    objects_.erase(c->name);
   }
 
   objects_.erase(obj->name);
@@ -1833,8 +1164,8 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->status == STATUS_DEAD) continue;
     if (obj->name == "hand-001") continue;
  
-    if (!IntersectRaySphere(position, direction, obj->GetBoundingSphere(), t, 
-      q)) {
+    if (!IntersectRaySphere(position, direction, 
+      obj->GetTransformedBoundingSphere(), t, q)) {
       continue;
     }
 
@@ -1854,8 +1185,8 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->status == STATUS_DEAD) continue;
     if (obj->name == "hand-001") continue;
 
-    if (!IntersectRaySphere(position, direction, obj->GetBoundingSphere(), t, 
-      q)) {
+    if (!IntersectRaySphere(position, direction, 
+      obj->GetTransformedBoundingSphere(), t, q)) {
       continue;
     }
 
@@ -1898,109 +1229,33 @@ ObjPtr Resources::CollideRayAgainstObjects(vec3 position, vec3 direction) {
 
 void Resources::SaveNewObjects() {
   pugi::xml_document doc;
-  string xml_filename = directory_ + "/objects/auto_objects.xml";
-  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
-  if (!result) {
-    throw runtime_error(string("Could not load xml file: ") + xml_filename);
-  }
+  string xml_filename = directory_ + "/objects/auto_objects3.xml";
 
-  pugi::xml_node xml = doc.child("xml");
-  pugi::xml_node sector = xml.child("sector");
-  pugi::xml_node game_objs = sector.child("game-objs");
+  pugi::xml_node xml = doc.append_child("xml");
+  pugi::xml_node sector = xml.append_child("sector");
+  AppendXmlAttr(sector, "name", "outside");
+  pugi::xml_node game_objs = sector.append_child("game-objs");
 
   // Update object positions and rotations.
-  for (pugi::xml_node game_obj = game_objs.child("game-obj"); game_obj; 
-    game_obj = game_obj.next_sibling("game-obj")) {
+  unordered_map<string, shared_ptr<GameObject>>& objs = GetObjects();
+  for (auto& [name, obj] : objs) {
+    switch (obj->type) {
+      case GAME_OBJ_DOOR:
+      case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DEFAULT:
+      case GAME_OBJ_WAYPOINT:
+      case GAME_OBJ_REGION:
+        break;
+      default:
+        continue;
+    }
 
-    const string& name = game_obj.attribute("name").value();
-    ObjPtr obj = GetObjectByName(name);
-    if (!obj) {
-      // Remove objects.
-      cout << "Removing " << name << endl;
-      game_objs.remove_child(game_obj);
+    if (name == "hand-001" || name == "skydome" || name == "player") continue;
+    if (obj->parent_bone_id != -1) {
       continue;
     }
-    
-    cout << "Name: " << name << endl;
-    if (game_obj.child("position")) {
-      game_obj.remove_child("position");
-    }
 
-    pugi::xml_node position = game_obj.append_child("position");
-    position.append_attribute("x") = obj->position.x;
-    position.append_attribute("y") = obj->position.y;
-    position.append_attribute("z") = obj->position.z;
-
-    if (game_obj.child("rotation")) {
-      game_obj.remove_child("rotation");
-    }
-
-    vec3 v = vec3(obj->rotation_matrix * vec4(1, 0, 0, 1));
-    v.y = 0;
-    v = normalize(v);
-    float angle = atan2(v.z, v.x);
-    if (angle < 0) {
-      angle = 2.0f * 3.141592f + angle;
-      // angle = -angle;
-    }
-    cout << "Angle: " << angle << endl;
-
-    pugi::xml_node rotation = game_obj.append_child("rotation");
-    rotation.append_attribute("x") = 0;
-    rotation.append_attribute("y") = angle;
-    rotation.append_attribute("z") = 0;
-  }
-
-  for (auto obj : new_objects_) {
-    double time = glfwGetTime();
-    string ms = boost::lexical_cast<string>(time);
-
-    pugi::xml_node node;
-    if (obj->type == GAME_OBJ_REGION) {
-      node = game_objs.append_child("region");
-      node.append_attribute("name") = string(obj->name + "-" + ms).c_str();
-
-      AABB aabb = obj->GetAsset()->aabb;
-      pugi::xml_node position = node.append_child("point");
-      position.append_attribute("x") = obj->position.x;
-      position.append_attribute("y") = obj->position.y;
-      position.append_attribute("z") = obj->position.z;
-
-      pugi::xml_node dimensions = node.append_child("dimensions");
-      dimensions.append_attribute("x") = aabb.dimensions.x;
-      dimensions.append_attribute("y") = aabb.dimensions.y;
-      dimensions.append_attribute("z") = aabb.dimensions.z;
-      continue;
-    } else if (obj->type == GAME_OBJ_WAYPOINT) {
-      node = game_objs.append_child("waypoint");
-    } else {
-      node = game_objs.append_child("game-obj");
-    }
-
-    node.append_attribute("name") = string(obj->name + "-" + ms).c_str();
-
-    pugi::xml_node asset = node.append_child("asset");
-    asset.append_child(pugi::node_pcdata).set_value(obj->asset_group->name.c_str());
-
-    pugi::xml_node position = node.append_child("position");
-    position.append_attribute("x") = obj->position.x;
-    position.append_attribute("y") = obj->position.y;
-    position.append_attribute("z") = obj->position.z;
-
-    vec3 v = vec3(obj->rotation_matrix * vec4(1, 0, 0, 1));
-    v.y = 0;
-    v = normalize(v);
-    float angle = atan2(v.z, v.x);
-    if (angle < 0) {
-      angle = 2.0f * 3.141592f + angle;
-      // angle = -angle;
-    }
-    cout << "Angle: " << angle << endl;
-
-    pugi::xml_node rotation = node.append_child("rotation");
-    rotation.append_attribute("x") = 0;
-    rotation.append_attribute("y") = angle;
-    rotation.append_attribute("z") = 0;
+    obj->ToXml(game_objs);
   }
 
   doc.save_file(xml_filename.c_str());
@@ -2037,7 +1292,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     if (item->status == STATUS_DEAD) continue;
     if (item->name == "hand-001") continue;
  
-    const BoundingSphere& s = item->GetBoundingSphere();
+    const BoundingSphere& s = item->GetTransformedBoundingSphere();
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
     if (!IntersectRaySphere(position, direction, s, tmin, q)) {
@@ -2056,7 +1311,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
       if (item->status == STATUS_DEAD) continue;
       if (item->name == "hand-001") continue;
 
-      const BoundingSphere& s = item->GetBoundingSphere();
+      const BoundingSphere& s = item->GetTransformedBoundingSphere();
       float distance = length(position - item->position);
       if (distance > max_distance) continue;
       if (!IntersectRaySphere(position, direction, s, tmin, q)) {
@@ -2281,7 +1536,7 @@ shared_ptr<Waypoint> Resources::GetWaypointByName(const string& name) {
 
 shared_ptr<Region> Resources::GetRegionByName(const string& name) {
   if (regions_.find(name) == regions_.end()) return nullptr;
-  return regions_[name];
+  return static_pointer_cast<Region>(regions_[name]);
 }
 
 shared_ptr<ParticleType> Resources::GetParticleTypeByName(const string& name) {
@@ -2297,7 +1552,7 @@ shared_ptr<Mesh> Resources::GetMeshByName(const string& name) {
 GLuint Resources::GetTextureByName(const string& name) {
   // Segfault when loading from terrain.
   if (textures_.find(name) == textures_.end()) {
-    ThrowError("Texture ", name, " does not exist");
+    return 0;
   }
   return textures_[name];
 }
@@ -2319,107 +1574,6 @@ void Resources::AddNewObject(ObjPtr obj) {
   LockOctree();
   new_objects_.push_back(obj); 
   UnlockOctree();
-}
-
-void Resources::CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
-  vector<unsigned int>& indices, vector<Polygon>& polygons,
-  vec3 dimensions) {
-  float w = dimensions.x;
-  float h = dimensions.y;
-  float l = dimensions.z;
- 
-  vector<vec3> v {
-    vec3(0, h, 0), vec3(w, h, 0), vec3(0, 0, 0), vec3(w, 0, 0), // Back face.
-    vec3(0, h, l), vec3(w, h, l), vec3(0, 0, l), vec3(w, 0, l), // Front face.
-  };
-
-  vertices = {
-    v[0], v[4], v[1], v[1], v[4], v[5], // Top.
-    v[1], v[3], v[0], v[0], v[3], v[2], // Back.
-    v[0], v[2], v[4], v[4], v[2], v[6], // Left.
-    v[5], v[7], v[1], v[1], v[7], v[3], // Right.
-    v[4], v[6], v[5], v[5], v[6], v[7], // Front.
-    v[6], v[2], v[7], v[7], v[2], v[3]  // Bottom.
-  };
-
-  vector<vec2> u = {
-    vec2(0, 0), vec2(0, l), vec2(w, 0), vec2(w, l), // Top.
-    vec2(0, 0), vec2(0, h), vec2(w, 0), vec2(w, h), // Back.
-    vec2(0, 0), vec2(0, h), vec2(l, 0), vec2(l, h)  // Left.
-  };
-
-  uvs = {
-    u[0], u[1], u[2],  u[2],  u[1], u[3],  // Top.
-    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Back.
-    u[8], u[9], u[10], u[10], u[9], u[11], // Left.
-    u[8], u[9], u[10], u[10], u[9], u[11], // Right.
-    u[4], u[5], u[6],  u[6],  u[5], u[7],  // Front.
-    u[0], u[1], u[2],  u[2],  u[1], u[3]   // Bottom.
-  };
-
-  for (int i = 0; i < 12; i++) {
-    Polygon p;
-    p.vertices.push_back(vertices[i]);
-    p.vertices.push_back(vertices[i+1]);
-    p.vertices.push_back(vertices[i+2]);
-    p.indices.push_back(i);
-    p.indices.push_back(i+1);
-    p.indices.push_back(i+2);
-    polygons.push_back(p);
-  }
-
-  indices = vector<unsigned int>(36);
-  for (int i = 0; i < 36; i++) { indices[i] = i; }
-}
-
-ObjPtr Resources::CreateRegion(vec3 pos, vec3 dimensions, string name) {
-  LockOctree();
-  vector<vec3> vertices;
-  vector<vec2> uvs;
-  vector<unsigned int> indices;
-  vector<Polygon> polygons;
-  CreateCube(vertices, uvs, indices, polygons, dimensions);
-
-  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>();
-  game_asset->id = id_counter_++;
-  game_asset->name = "mesh-asset-" + boost::lexical_cast<string>(game_asset->id);
-  assets_[game_asset->name] = game_asset;
-
-  Mesh m = CreateMesh(0, vertices, uvs, indices);
-  const string mesh_name = game_asset->name;
-  shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-  if (mesh) {
-    ThrowError("Region mesh ", mesh_name, " already exists.");
-  }
-  meshes_[mesh_name] = make_shared<Mesh>();
-  *meshes_[mesh_name] = m;
-
-  game_asset->lod_meshes[0] = mesh_name;
-  meshes_[mesh_name]->polygons = polygons;
-
-  game_asset->shader = shaders_["region"];
-  game_asset->aabb = GetAABBFromPolygons(m.polygons);
-  game_asset->bounding_sphere = GetAssetBoundingSphere(polygons);
-  game_asset->collision_type = COL_NONE;
-  game_asset->physics_behavior = PHYSICS_NONE;
-
-  shared_ptr<Region> new_game_obj = make_shared<Region>(this);
-  new_game_obj->id = id_counter_++;
-  if (name.empty()) {
-    new_game_obj->name = "region-" + boost::lexical_cast<string>(id_counter_);
-  } else {
-    new_game_obj->name = name;
-  }
-
-  new_game_obj->position = pos;
-  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(game_asset);
-  AddGameObject(new_game_obj);
-  UpdateObjectPosition(new_game_obj);
-
-  regions_[new_game_obj->name] = new_game_obj;
-
-  UnlockOctree();
-  return new_game_obj;
 }
 
 string Resources::GetString(string name) {
@@ -2550,3 +1704,286 @@ bool Resources::InsertItemInInvetory(int item_id) {
   }
   return false;
 }
+
+void Resources::AddTexture(const string& texture_name, 
+  const GLuint texture_id) {
+  if (textures_.find(texture_name) == textures_.end()) {
+    textures_[texture_name] = texture_id;
+  }
+}
+
+void Resources::AddAsset(shared_ptr<GameAsset> asset) {
+  if (assets_.find(asset->name) != assets_.end()) {
+    throw runtime_error(string("Asset with name ") + asset->name + 
+      " already exists.");
+  }
+  
+  assets_[asset->name] = asset;
+  asset->id = id_counter_++;
+}
+
+void Resources::AddMesh(const string& name, const Mesh& mesh) {
+  if (meshes_.find(name) != meshes_.end()) {
+    throw runtime_error(string("Mesh with name ") + name + " already exists.");
+  }
+  meshes_[name] = make_shared<Mesh>();
+  *meshes_[name] = mesh;
+}
+
+void Resources::AddRegion(const string& name, ObjPtr region) {
+  if (regions_.find(name) != regions_.end()) {
+    throw runtime_error(string("Region with name ") + name + 
+      " already exists.");
+  }
+  regions_[name] = region;
+}
+
+string Resources::GetRandomName() {
+  double time = glfwGetTime();
+  return "id-" + boost::lexical_cast<string>(id_counter_) + "" +
+    boost::lexical_cast<string>(time);
+}
+
+shared_ptr<Region> Resources::CreateRegion(vec3 pos, vec3 dimensions) {
+  shared_ptr<Region> region = make_shared<Region>(this);
+  region->Load(GetRandomName(), pos, vec3(10));
+  return region;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void Resources::LoadSectors(const std::string& xml_filename) {
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
+  if (!result) {
+    throw runtime_error(string("Could not load xml file: ") + xml_filename);
+  }
+
+  cout << "Loading sectors from: " << xml_filename << endl;
+  const pugi::xml_node& xml = doc.child("xml");
+  for (pugi::xml_node sector = xml.child("sector"); sector; 
+    sector = sector.next_sibling("sector")) {
+
+    shared_ptr<Sector> new_sector = make_shared<Sector>(this);
+    new_sector->Load(sector);
+
+    if (new_sector->name != "outside") {
+      if (sectors_.find(new_sector->name) != sectors_.end()) {
+        ThrowError("Sector with name ", new_sector->name, " already exists.");
+      }
+      sectors_[new_sector->name] = new_sector;
+      new_sector->id = id_counter_++;
+    }
+
+    const pugi::xml_node& game_objs = sector.child("game-objs");
+    for (pugi::xml_node game_obj_xml = game_objs.child("game-obj"); 
+      game_obj_xml; game_obj_xml = game_obj_xml.next_sibling("game-obj")) {
+
+      const pugi::xml_node& asset_xml = game_obj_xml.child("asset");
+      if (!asset_xml) {
+        throw runtime_error("Game object must have an asset.");
+      }
+
+      const string& asset_name = asset_xml.text().get();
+      ObjPtr new_game_obj = CreateGameObj(this, asset_name);
+      new_game_obj->Load(game_obj_xml);
+    }
+
+    cout << "Loading waypoints from: " << xml_filename << endl;
+    // const pugi::xml_node& waypoints_xml = xml.child("waypoints");
+    for (pugi::xml_node waypoint_xml = game_objs.child("waypoint"); waypoint_xml; 
+      waypoint_xml = waypoint_xml.next_sibling("waypoint")) {
+      string name = waypoint_xml.attribute("name").value();
+
+      const pugi::xml_node& position = waypoint_xml.child("position");
+      if (!position) {
+        throw runtime_error("Waypoint must have a location.");
+      }
+
+      float x = boost::lexical_cast<float>(position.attribute("x").value());
+      float y = boost::lexical_cast<float>(position.attribute("y").value());
+      float z = boost::lexical_cast<float>(position.attribute("z").value());
+
+      shared_ptr<Waypoint> new_waypoint = CreateWaypoint(vec3(x, y, z), name);
+
+      waypoints_[new_waypoint->name] = new_waypoint;
+      new_waypoint->id = id_counter_++;
+    }
+
+    cout << "Loading regions from: " << xml_filename << endl;
+    for (pugi::xml_node region_xml = game_objs.child("region"); region_xml; 
+      region_xml = region_xml.next_sibling("region")) {
+      shared_ptr<Region> region = make_shared<Region>(this);
+      region->Load(region_xml);
+    }
+  }
+
+  cout << "Loading waypoint relations from: " << xml_filename << endl;
+  for (pugi::xml_node sector = xml.child("sector"); sector; 
+    sector = sector.next_sibling("sector")) {
+
+    const pugi::xml_node& game_objs = sector.child("game-objs");
+    for (pugi::xml_node waypoint_xml = game_objs.child("waypoint"); waypoint_xml; 
+      waypoint_xml = waypoint_xml.next_sibling("waypoint")) {
+      string name = waypoint_xml.attribute("name").value();
+      shared_ptr<Waypoint> waypoint = waypoints_[name];
+
+      const pugi::xml_node& game_objs = waypoint_xml.child("next-waypoint");
+      for (pugi::xml_node next_waypoint_xml = waypoint_xml.child("next-waypoint"); 
+        next_waypoint_xml; 
+        next_waypoint_xml = next_waypoint_xml.next_sibling("next-waypoint")) {
+
+        const string& next_waypoint_name = next_waypoint_xml.text().get();
+        if (waypoints_.find(next_waypoint_name) == waypoints_.end()) {
+          ThrowError("Waypoint ", next_waypoint_name, " does not exist");
+        }
+
+        shared_ptr<Waypoint> next_waypoint = waypoints_[next_waypoint_name];
+        waypoint->next_waypoints.push_back(next_waypoint);
+      }
+    }
+  } 
+}
+
+void Resources::LoadStabbingTree(const pugi::xml_node& parent_node_xml, 
+  shared_ptr<StabbingTreeNode> parent_node) {
+  for (pugi::xml_node st_node_xml = parent_node_xml.child("st-node"); st_node_xml; 
+    st_node_xml = st_node_xml.next_sibling("st-node")) {
+
+    string sector_name = st_node_xml.attribute("sector").value();
+    shared_ptr<Sector> to_sector = GetSectorByName(sector_name);
+    if (!to_sector) {
+      ThrowError("Sector with name ", sector_name, " doesn't exist.");
+    }
+
+    shared_ptr<StabbingTreeNode> st_node = make_shared<StabbingTreeNode>();
+    st_node->sector = to_sector;
+    LoadStabbingTree(st_node_xml, st_node);
+    parent_node->children.push_back(st_node);
+  }
+}
+
+void Resources::LoadPortals(const std::string& xml_filename) {
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
+  if (!result) {
+    ThrowError("Could not load xml file: ", xml_filename);
+  }
+
+  cout << "Loading portals from: " << xml_filename << endl;
+  const pugi::xml_node& xml = doc.child("xml");
+  for (pugi::xml_node sector_xml = xml.child("sector"); sector_xml; 
+    sector_xml = sector_xml.next_sibling("sector")) {
+    string sector_name = sector_xml.attribute("name").value();
+
+    shared_ptr<Sector> sector = GetSectorByName(sector_name);
+    if (!sector) {
+      ThrowError("Sector ", sector_name, " does not exist.");
+    }
+
+    const pugi::xml_node& portals = sector_xml.child("portals");
+    for (pugi::xml_node portal_xml = portals.child("portal"); portal_xml; 
+      portal_xml = portal_xml.next_sibling("portal")) {
+
+      string sector_name = portal_xml.attribute("to").value();
+      shared_ptr<Sector> to_sector = GetSectorByName(sector_name);
+      if (!to_sector) {
+        ThrowError("Sector ", sector_name, " does not exist.");
+      }
+
+      shared_ptr<Portal> portal = make_shared<Portal>(this);
+      portal->from_sector = sector;
+      portal->to_sector = to_sector;
+
+      // Is this portal the entrance to a cave?
+      pugi::xml_attribute is_cave = portal_xml.attribute("cave");
+      if (is_cave) {
+         if (string(is_cave.value()) == "true") {
+           portal->cave = true;
+         }
+      }
+
+      const pugi::xml_node& position = portal_xml.child("position");
+      if (!position) {
+        throw runtime_error("Portal must have a location.");
+      }
+
+      float x = boost::lexical_cast<float>(position.attribute("x").value());
+      float y = boost::lexical_cast<float>(position.attribute("y").value());
+      float z = boost::lexical_cast<float>(position.attribute("z").value());
+      portal->position = vec3(x, y, z);
+
+      const pugi::xml_node& mesh_xml = portal_xml.child("mesh");
+      if (!mesh_xml) {
+        throw runtime_error("Portal must have a mesh.");
+      }
+
+      shared_ptr<GameAsset> portal_asset = make_shared<GameAsset>(this);
+      portal_asset->id = id_counter_++;
+      portal_asset->name = "portal-" + 
+        boost::lexical_cast<string>(portal_asset->id);
+
+      const string mesh_name = portal_asset->name;
+      shared_ptr<Mesh> mesh = make_shared<Mesh>();
+      const string& mesh_filename = directory_ + "/models_fbx/" + mesh_xml.text().get();
+      FbxData data = LoadFbxData(mesh_filename, *mesh);
+      if (meshes_.find(mesh_name) != meshes_.end()) {
+        ThrowError("Mesh with name ", mesh_name, " already exists. Resources::1037");
+      }
+      meshes_[mesh_name] = mesh;
+      portal_asset->lod_meshes[0] = mesh_name;
+
+      portal_asset->shader = shaders_["solid"];
+      portal_asset->collision_type = COL_NONE;
+      portal_asset->bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
+      assets_[portal_asset->name] = portal_asset;
+      portal->asset_group = CreateAssetGroupForSingleAsset(portal_asset);
+
+      sector->portals[to_sector->id] = portal;
+      portal->id = id_counter_++;
+      portal->name = "portal-" + boost::lexical_cast<string>(portal->id);
+      const pugi::xml_node& rotation = portal_xml.child("rotation");
+
+      if (rotation) {
+        float x = boost::lexical_cast<float>(rotation.attribute("x").value());
+        float y = boost::lexical_cast<float>(rotation.attribute("y").value());
+        float z = boost::lexical_cast<float>(rotation.attribute("z").value());
+        portal->rotation_matrix = rotate(mat4(1.0), -y, vec3(0, 1, 0));
+
+        for (Polygon& p : mesh->polygons) {
+          for (vec3& v : p.vertices) {
+            v = portal->rotation_matrix * vec4(v, 1.0);
+          }
+
+          for (vec3& n : p.normals) {
+            n = portal->rotation_matrix * vec4(n, 0.0);
+          }
+        }
+      }
+    }
+
+    sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
+
+    pugi::xml_node stabbing_tree_xml = sector_xml.child("stabbing-tree");
+    if (stabbing_tree_xml) {
+      LoadStabbingTree(stabbing_tree_xml, sector->stabbing_tree);
+    } else {
+      // throw runtime_error("Sector must have a stabbing tree.");
+    }
+  }
+}
+

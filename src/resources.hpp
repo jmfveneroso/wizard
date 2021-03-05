@@ -55,7 +55,7 @@ enum GameState {
 
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
-  vec3 initial_player_pos = vec3(11067, 227, 7667);
+  vec3 initial_player_pos = vec3(11067, 20227, 7667);
   vec3 respawn_point = vec3(10045, 500, 10015);
   float target_player_speed = 0.04f; 
   float player_speed = 0.03f; 
@@ -105,6 +105,7 @@ class Resources {
   string shaders_dir_;
   int id_counter_ = 0;
   double frame_start_ = 0;
+  double delta_time_ = 0;
 
   shared_ptr<Configs> configs_;
   GameState game_state_ = STATE_EDITOR;
@@ -121,7 +122,7 @@ class Resources {
   unordered_map<string, shared_ptr<Sector>> sectors_;
   unordered_map<string, shared_ptr<GameObject>> objects_;
   unordered_map<string, shared_ptr<Waypoint>> waypoints_;
-  unordered_map<string, shared_ptr<Region>> regions_;
+  unordered_map<string, ObjPtr> regions_;
   unordered_map<string, shared_ptr<ParticleType>> particle_types_;
   unordered_map<string, string> strings_;
   vector<shared_ptr<Missile>> missiles_;
@@ -150,20 +151,15 @@ class Resources {
   };
 
   // Aux loading functions.
-  void AddGameObject(shared_ptr<GameObject> game_obj);
-  shared_ptr<GameAsset> LoadAsset(const pugi::xml_node& asset);
   shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
   void LoadStabbingTree(const pugi::xml_node& parent_node, 
     shared_ptr<StabbingTreeNode> new_parent_node);
   shared_ptr<GameObject> LoadGameObject(string name, string asset_name, 
     vec3 position, vec3 rotation);
-  shared_ptr<GameAssetGroup> 
-    CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset);
 
   // XML loading functions.
   void LoadShaders(const string& directory);
   void LoadMeshes(const string& directory);
-  void LoadAsset(const string& xml_filename);
   void LoadAssetFile(const string& xml_filename);
   void LoadAssets(const string& directory);
   void LoadConfig(const string& xml_filename);
@@ -185,8 +181,6 @@ class Resources {
   unsigned char compressed_height_map_[192000000]; // 192 MB.
 
   // TODO: move to space partition.
-  void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
-    shared_ptr<GameObject> object, int depth);
   vector<shared_ptr<GameObject>> GenerateOptimizedOctreeAux(
     shared_ptr<OctreeNode> octree_node, 
     vector<shared_ptr<GameObject>> top_objs);
@@ -214,6 +208,10 @@ class Resources {
   GameState GetGameState() { return game_state_; }
   void SetGameState(GameState new_state) { game_state_ = new_state; }
   void Cleanup();
+
+  shared_ptr<GameAssetGroup> 
+    CreateAssetGroupForSingleAsset(shared_ptr<GameAsset> asset);
+  void AddGameObject(shared_ptr<GameObject> game_obj);
 
 
   // ====================
@@ -246,6 +244,8 @@ class Resources {
   shared_ptr<Configs> GetConfigs();
   string GetString(string name);
   vector<ItemData>& GetItemData();
+  double GetDeltaTime() { return delta_time_; }
+  void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
   // ====================
 
   // TODO: where?
@@ -280,14 +280,12 @@ class Resources {
     vec3 position);
   shared_ptr<Sector> GetSector(vec3 position);
   void CalculateAllClosestLightPoints();
+  void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
+    shared_ptr<GameObject> object, int depth);
 
   void LockOctree() { octree_mutex_.lock(); }
   void UnlockOctree() { octree_mutex_.unlock(); }
 
-  void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
-    vector<unsigned int>& indices, vector<Polygon>& polygons,
-    vec3 dimensions);
-  ObjPtr CreateRegion(vec3 pos, vec3 dimensions, string name = "");
   shared_ptr<Waypoint> CreateWaypoint(vec3 position, string name = "");
 
   // TODO: script functions. Move somewhere.
@@ -308,6 +306,13 @@ class Resources {
   void TurnOnActionable(const string& name);
   void TurnOffActionable(const string& name);
   bool InsertItemInInvetory(int item_id);
+
+  void AddTexture(const string& texture_name, const GLuint texture_id);
+  void AddAsset(shared_ptr<GameAsset> asset);
+  void AddMesh(const string& name, const Mesh& mesh);
+  void AddRegion(const string& name, ObjPtr region);
+  shared_ptr<Region> CreateRegion(vec3 pos, vec3 dimensions);
+  string GetRandomName();
 };
 
 AABB GetObjectAABB(const vector<Polygon>& polygons);

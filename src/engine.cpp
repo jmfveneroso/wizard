@@ -102,7 +102,10 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "create-region") {
     Camera c = player_input_->GetCamera();
     vec3 position = c.position + c.direction * 10.0f;
-    configs->new_building = resources_->CreateRegion(position, vec3(10));
+
+    shared_ptr<Region> region = resources_->CreateRegion(position, vec3(10));
+
+    configs->new_building = region;
     configs->place_object = true;
     configs->place_axis = 1;
     resources_->AddNewObject(configs->new_building);
@@ -307,6 +310,26 @@ bool Engine::ProcessGameInput() {
 }
 
 void Engine::AfterFrame() {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  {
+    // TODO: periodic events: update frame, cooldown.
+    resources_->UpdateCooldowns();
+    resources_->RemoveDead();
+
+    if (!configs->stop_time) {
+      // 1 minute per second.
+      configs->time_of_day += (1.0f / (60.0f * 60.0f));
+      if (configs->time_of_day > 24.0f) {
+        configs->time_of_day -= 24.0f;
+      }
+
+      float radians = configs->time_of_day * ((2.0f * 3.141592f) / 24.0f);
+      configs->sun_position = 
+        vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
+        vec4(0.0f, -1.0f, 0.0f, 1.0f));
+    }
+  }
+
   switch (resources_->GetGameState()) {
     case STATE_GAME: {
       renderer_->DrawScreenEffects();
@@ -335,6 +358,8 @@ void Engine::AfterFrame() {
 }
 
 void Engine::UpdateAnimationFrames() {
+  float d = resources_->GetDeltaTime() / 0.016666f;
+
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
   for (auto& [name, obj] : objs) {
@@ -347,7 +372,7 @@ void Engine::UpdateAnimationFrames() {
           break;
         case 1: // opening.
           resources_->ChangeObjectAnimation(door, "Armature|open");
-          door->frame++;
+          door->frame += 1.0f * d;
           if (door->frame >= 59) {
             door->state = 2;
             door->frame = 0;
@@ -360,7 +385,7 @@ void Engine::UpdateAnimationFrames() {
           break;
         case 3: // closing.
           resources_->ChangeObjectAnimation(door, "Armature|close");
-          door->frame++;
+          door->frame += 1.0f * d;
           if (door->frame >= 59) {
             door->state = 0;
             door->frame = 0;
@@ -378,11 +403,11 @@ void Engine::UpdateAnimationFrames() {
       switch (actionable->state) {
         case 0: // idle.
           resources_->ChangeObjectAnimation(actionable, "Armature|idle");
-          actionable->frame++;
+          actionable->frame += 1.0f * d;
           break;
         case 1: { // start.
           resources_->ChangeObjectAnimation(actionable, "Armature|start");
-          actionable->frame++;
+          actionable->frame += 1.0f * d;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
           if (actionable->frame >= num_frames - 1) {
             actionable->state = 2;
@@ -393,7 +418,7 @@ void Engine::UpdateAnimationFrames() {
         }
         case 2: // on.
           resources_->ChangeObjectAnimation(actionable, "Armature|on");
-          actionable->frame++;
+          actionable->frame += 1.0f * d;
           break;
         case 3: { // shutdown.
           resources_->ChangeObjectAnimation(actionable, "Armature|shutdown");
@@ -427,14 +452,14 @@ void Engine::UpdateAnimationFrames() {
     }
 
     const Animation& animation = mesh->animations[obj->active_animation];
-    obj->frame++;
+    obj->frame += 1.0f * d;
     if (obj->frame >= animation.keyframes.size()) {
       obj->frame = 0;
     }
   }
 }
 
-void Engine::RunBeforeFrameDebugFunctions() {
+void Engine::BeforeFrameDebug() {
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
   for (auto& [name, obj] : objs) {
@@ -483,6 +508,30 @@ void Engine::RunBeforeFrameDebugFunctions() {
   }
 }
 
+void Engine::BeforeFrame() {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  {
+    // BeforeFrameDebug();
+    UpdateAnimationFrames();
+    ProcessGameInput();
+    item_->ProcessItems();
+    craft_->ProcessCrafting();
+    npc_->ProcessNpcs();
+    ai_->RunSpiderAI();
+    script_manager_->ProcessScripts();
+    resources_->UpdateParticles();
+    physics_->Run();
+    collision_resolver_->Collide();
+
+    configs->taking_hit -= 1.0f;
+    if (configs->taking_hit < 0.0) {
+      configs->player_speed = configs->target_player_speed;
+    } else {
+      configs->player_speed = configs->target_player_speed / 6.0f;
+    }
+  }
+}
+
 void Engine::Run() {
   text_editor_->set_run_command_fn(std::bind(&Engine::RunCommand, this, 
     std::placeholders::_1));
@@ -499,44 +548,22 @@ void Engine::Run() {
   // collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
 
   int frames = 0;
+  double next_print_time = glfwGetTime();
   double last_time = glfwGetTime();
   do {
     frames++;
+
     double current_time = glfwGetTime();
     delta_time_ = current_time - last_time;
-    if (delta_time_ >= 1.0) { 
-      cout << 1000.0 / double(frames) << " ms/frame" << endl;
+    if (current_time >= next_print_time) { 
+      cout << 1000.0 / double(frames) << " ms / frame" << endl;
+      next_print_time = current_time + 1.0;
       frames = 0;
-      last_time += 1.0;
     }
+    last_time = current_time;
+    resources_->SetDeltaTime(delta_time_);
 
-    UpdateAnimationFrames();
-
-    ProcessGameInput();
-
-    RunBeforeFrameDebugFunctions();
-
-    shared_ptr<Configs> configs = resources_->GetConfigs();
-    {
-      item_->ProcessItems();
-      craft_->ProcessCrafting();
-      npc_->ProcessNpcs();
-
-      ai_->RunSpiderAI();
-      script_manager_->ProcessScripts();
-
-      resources_->UpdateParticles();
-
-      physics_->Run();
-      collision_resolver_->Collide();
-
-      configs->taking_hit -= 1.0f;
-      if (configs->taking_hit < 0.0) {
-        configs->player_speed = configs->target_player_speed;
-      } else {
-        configs->player_speed = configs->target_player_speed / 6.0f;
-      }
-    }
+    BeforeFrame();
 
     resources_->LockOctree();
     Camera c = player_input_->GetCamera();
@@ -544,25 +571,6 @@ void Engine::Run() {
     renderer_->Draw();
     resources_->UnlockOctree();
 
-    {
-      // TODO: periodic events: update frame, cooldown.
-      resources_->UpdateCooldowns();
-
-      resources_->RemoveDead();
-
-      if (!configs->stop_time) {
-        // 1 minute per second.
-        configs->time_of_day += (1.0f / (60.0f * 60.0f));
-        if (configs->time_of_day > 24.0f) {
-          configs->time_of_day -= 24.0f;
-        }
-
-        float radians = configs->time_of_day * ((2.0f * 3.141592f) / 24.0f);
-        configs->sun_position = 
-          vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
-          vec4(0.0f, -1.0f, 0.0f, 1.0f));
-      }
-    }
     AfterFrame();
 
     // project_4d_->CreateHypercube(vec3(11623, 177, 7550), hypercube_rotation);

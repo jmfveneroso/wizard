@@ -14,7 +14,13 @@
 #include <unordered_map>
 #include <vector>
 
-class GameAsset {
+class Resources;
+
+class GameAsset : public enable_shared_from_this<GameAsset> {
+  Resources* resources_;
+
+  void LoadBones(const pugi::xml_node& skeleton_xml);
+
  public:
   int id;
   int index = 0;
@@ -48,7 +54,7 @@ class GameAsset {
   shared_ptr<AABBTreeNode> aabb_tree = nullptr;
 
   // Skeleton.
-  vector<shared_ptr<GameAsset>> bone_hit_boxes;
+  unordered_map<int, BoundingSphere> bones;
 
   shared_ptr<GameAsset> parent = nullptr;
 
@@ -75,8 +81,8 @@ class GameAsset {
 
   vector<vec3> vertices;
 
-  GameAsset();
-  void Load(const pugi::xml_node&);
+  GameAsset(Resources* resources);
+  void Load(const pugi::xml_node& asset_xml);
   vector<vec3> GetVertices();
   string GetDisplayName();
 };

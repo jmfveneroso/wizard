@@ -48,6 +48,8 @@ class Engine {
 
   void RunCommand(string command);
   bool ProcessGameInput();
+  void BeforeFrameDebug();
+  void BeforeFrame();
   void AfterFrame();
   void UpdateAnimationFrames();
   void ProcessCollisionsAsync();
