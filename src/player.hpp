@@ -7,11 +7,13 @@
 #include "craft.hpp"
 #include "terrain.hpp"
 #include "dialog.hpp"
+#include "inventory.hpp"
 
 class PlayerInput {
   shared_ptr<Resources> resources_;
   shared_ptr<Craft> craft_;
   shared_ptr<Project4D> project_4d_;
+  shared_ptr<Inventory> inventory_;
   shared_ptr<Terrain> terrain_;
   shared_ptr<Dialog> dialog_;
   std::default_random_engine generator_;
@@ -22,7 +24,8 @@ class PlayerInput {
   shared_ptr<Sector> old_sector = nullptr;
 
   void Extract(const Camera& c);
-  void InteractWithItem(const Camera& c, bool interact = false);
+  void InteractWithItem(GLFWwindow* window, const Camera& c, 
+    bool interact = false);
   void EditTerrain(GLFWwindow* window, const Camera& c);
   void Build(GLFWwindow* window, const Camera& c);
   void PlaceObject(GLFWwindow* window, const Camera& c);
@@ -31,6 +34,7 @@ class PlayerInput {
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 
     shared_ptr<Project4D> project_4d, shared_ptr<Craft> craft, 
+    shared_ptr<Inventory> inventory,
     shared_ptr<Terrain> terrain, shared_ptr<Dialog> dialog);
 
   Camera GetCamera();

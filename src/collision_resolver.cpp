@@ -30,7 +30,8 @@ bool IsCollidable(shared_ptr<GameObject> obj) {
     default:
       return false;
   }
-  switch (obj->GetAsset()->collision_type) {
+
+  switch (obj->GetCollisionType()) {
     case COL_NONE:
     case COL_UNDEFINED:
       return false;
@@ -64,13 +65,57 @@ bool IsMissileCollidingAgainstItsOwner(shared_ptr<GameObject> obj1,
   return false;
 }
 
+void GetTerrainPolygons(shared_ptr<Resources> resources, 
+  vec2 pos, vector<Polygon>& polygons) {
+  ivec2 top_left = ivec2(pos.x, pos.y);
+
+  int k = 2;
+  vector<vec3> v {
+    vec3(pos.x - k, 0, pos.y - k),
+    vec3(pos.x - k, 0, pos.y + k),
+    vec3(pos.x + k, 0, pos.y - k),
+    vec3(pos.x + k, 0, pos.y + k)
+  };
+
+  vector<vec3> normals(4);
+  for (int i = 0; i < 4; i++) {
+    v[i].y = resources->GetHeightMap().GetTerrainHeight(
+      vec2(v[i].x, v[i].z), &normals[i]);
+  }
+
+  // Top triangle.
+  Polygon polygon;
+  polygon.vertices.push_back(v[0]);
+  polygon.vertices.push_back(v[1]);
+  polygon.vertices.push_back(v[2]);
+  polygons.push_back(polygon);
+
+  // Bottom triangle.
+  Polygon polygon2;
+  polygon2.vertices.push_back(v[1]);
+  polygon2.vertices.push_back(v[2]);
+  polygon2.vertices.push_back(v[3]);
+  polygons.push_back(polygon2);
+
+  vec3 normal = vec3(0, 0, 0);
+  for (int i = 0; i < 4; i++) {
+    normal += normals[i];
+  }
+  normal /= 4.0f;
+
+  for (int i = 0; i < 3; i++) {
+    polygons[0].normals.push_back(normal);
+    polygons[1].normals.push_back(normal);
+  }
+}
+
 bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
   if (obj1->updated_at < start_time_ && obj2->updated_at < start_time_) {
     return false;
   }
 
-  if (obj1->GetAsset()->physics_behavior == PHYSICS_FIXED &&
-      obj2->GetAsset()->physics_behavior == PHYSICS_FIXED) {
+  if (obj1->GetPhysicsBehavior() == PHYSICS_FIXED &&
+      obj2->GetPhysicsBehavior() == PHYSICS_FIXED) {
     return false;
   }
 
@@ -92,6 +137,7 @@ void CollisionResolver::Collide() {
   double start_time = glfwGetTime();
 
   collisions_.clear();
+  tentative_pairs_.clear();
 
   ClearMetrics();
   UpdateObjectPositions();
@@ -109,8 +155,6 @@ void CollisionResolver::Collide() {
   for (auto& [obj1, obj2] : tentative_pairs_) {
     ProcessTentativePair(obj1, obj2);
   }
-
-  tentative_pairs_.clear();
 
   // find_time = glfwGetTime();
   // duration = find_time - start_time;
@@ -167,6 +211,7 @@ void CollisionResolver::CollideAlongAxis(shared_ptr<OctreeNode> octree_node,
   while (octree_node && octree_node->axis == -1) {
     octree_node = octree_node->parent;
   }
+  if (!octree_node) throw runtime_error("Invalid octree node");
 
   int axis = octree_node->axis;
   if (axis == -1) throw runtime_error("Invalid axis");
@@ -175,7 +220,7 @@ void CollisionResolver::CollideAlongAxis(shared_ptr<OctreeNode> octree_node,
   if (obj->type == GAME_OBJ_MISSILE) {
     s.center = obj->prev_position + 0.5f*(obj->position - obj->prev_position);
     s.radius = 0.5f * length(obj->prev_position - obj->position) + 
-      obj->GetAsset()->bounding_sphere.radius;
+      obj->GetBoundingSphere().radius;
   } else {
     s = obj->GetTransformedBoundingSphere();
   }
@@ -297,8 +342,17 @@ vector<shared_ptr<CollisionSP>> GetCollisionsSP(ObjPtr obj1, ObjPtr obj2) {
 }
 
 // Sphere - Terrain.
-vector<shared_ptr<CollisionST>> GetCollisionsST(ObjPtr obj1) {
-  return { make_shared<CollisionST>(obj1) };
+vector<shared_ptr<CollisionST>> GetCollisionsST(ObjPtr obj1, 
+  shared_ptr<Resources> resources) {
+  vector<Polygon> polygons;
+  GetTerrainPolygons(resources, vec2(obj1->position.x, obj1->position.z), 
+    polygons);
+
+  vector<shared_ptr<CollisionST>> cols;
+  for (const auto& polygon : polygons) {
+    cols.push_back(make_shared<CollisionST>(obj1, polygon));
+  }
+  return cols;
 }
 
 // Sphere - Convex Hull.
@@ -337,10 +391,12 @@ vector<shared_ptr<CollisionSO>> GetCollisionsSO(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
   BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
 
+  cout << "I say there is: " << obj1->name << " == " << obj2->name << endl;
   vec3 point_of_contact;
   if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
     return {};
   }
+
   return { make_shared<CollisionSO>(obj1, obj2) };
 }
 
@@ -406,13 +462,43 @@ vector<shared_ptr<CollisionBP>> GetCollisionsBP(ObjPtr obj1, ObjPtr obj2) {
   return collisions;
 }
 
-// Bones - Terrain.
-vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1) {
-  vector<shared_ptr<CollisionBT>> collisions;
-  for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
-    collisions.push_back(make_shared<CollisionBT>(obj1, bone_id));
+// Bones - OBB.
+vector<shared_ptr<CollisionBO>> GetCollisionsBO(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
+  BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
+
+  vec3 point_of_contact;
+  if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
+    return {};
   }
-  return collisions;
+
+  vector<shared_ptr<CollisionBO>> cols;
+  for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
+    cols.push_back(make_shared<CollisionBO>(obj1, obj2, bone_id));
+  }
+  return cols;
+}
+
+// Bones - Terrain.
+vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1, 
+  shared_ptr<Resources> resources) {
+  // vector<shared_ptr<CollisionBT>> collisions;
+  // for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
+  //   collisions.push_back(make_shared<CollisionBT>(obj1, bone_id));
+  // }
+  // return collisions;
+
+  vector<Polygon> polygons;
+  GetTerrainPolygons(resources, vec2(obj1->position.x, obj1->position.z), 
+    polygons);
+
+  vector<shared_ptr<CollisionBT>> cols;
+  for (const auto& polygon : polygons) {
+    for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
+      cols.push_back(make_shared<CollisionBT>(obj1, bone_id, polygon));
+    }
+  }
+  return cols;
 }
 
 // Quick Sphere - Sphere.
@@ -586,13 +672,26 @@ vector<shared_ptr<CollisionOP>> GetCollisionsOP(ObjPtr obj1, ObjPtr obj2) {
   return cols;
 }
 
+vector<shared_ptr<CollisionOT>> GetCollisionsOT(ObjPtr obj1, 
+  shared_ptr<Resources> resources) {
+  vector<Polygon> polygons;
+  GetTerrainPolygons(resources, vec2(obj1->position.x, obj1->position.z), 
+    polygons);
+
+  vector<shared_ptr<CollisionOT>> cols;
+  for (const auto& polygon : polygons) {
+    cols.push_back(make_shared<CollisionOT>(obj1, polygon));
+  }
+  return cols;
+}
+
 vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
   if (!IsPairCollidable(obj1, obj2)) return {};
 
   num_objects_tested_++;
 
-  CollisionType col1 = obj1->GetAsset()->collision_type;
-  CollisionType col2 = obj2->GetAsset()->collision_type;
+  CollisionType col1 = obj1->GetCollisionType();
+  CollisionType col2 = obj2->GetCollisionType();
   CollisionPair col_pair = kAllowedCollisionPairs[col1][col2];
 
   vector<ColPtr> collisions;
@@ -607,6 +706,7 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_BB: Merge(collisions, GetCollisionsBB(obj1, obj2)); break;
     case CP_BQ: Merge(collisions, GetCollisionsQB(obj2, obj1)); break;
     case CP_BP: Merge(collisions, GetCollisionsBP(obj1, obj2)); break;
+    case CP_BO: Merge(collisions, GetCollisionsBO(obj1, obj2)); break;
     case CP_QS: Merge(collisions, GetCollisionsQS(obj1, obj2)); break;
     case CP_QB: Merge(collisions, GetCollisionsQB(obj1, obj2)); break;
     case CP_QQ: break;
@@ -631,15 +731,16 @@ void CollisionResolver::FindCollisionsWithTerrain() {
   vector<ColPtr> collisions;
   shared_ptr<Sector> outside = resources_->GetSectorByName("outside");
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
-    if (obj1->current_sector->id != outside->id) continue;
+    if (!obj1->current_sector || obj1->current_sector->id != outside->id) continue;
     if (!IsCollidable(obj1)) continue;
-    if (obj1->GetAsset()->physics_behavior == PHYSICS_FIXED) continue;
+    if (obj1->GetPhysicsBehavior() == PHYSICS_FIXED) continue;
 
-    switch (obj1->GetAsset()->collision_type) {
-      case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1)); break;
-      case COL_BONES:        Merge(collisions, GetCollisionsBT(obj1)); break;
+    switch (obj1->GetCollisionType()) {
+      case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1, resources_)); break;
+      case COL_BONES:        Merge(collisions, GetCollisionsBT(obj1, resources_)); break;
       case COL_QUICK_SPHERE: Merge(collisions, GetCollisionsQT(obj1)); break;
       case COL_CONVEX_HULL:  Merge(collisions, GetCollisionsHT(obj1, resources_)); break;
+      case COL_OBB:          Merge(collisions, GetCollisionsOT(obj1, resources_)); break;
       default: break;
     }
   }
@@ -681,39 +782,6 @@ void FillCollisionBlankFields(ColPtr c) {
   }
 }
 
-void CollisionResolver::GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons) {
-  ivec2 top_left = ivec2(pos.x, pos.y);
-
-  TerrainPoint p[4];
-  p[0] = resources_->GetHeightMap().GetTerrainPoint(top_left.x, top_left.y);
-  p[1] = resources_->GetHeightMap().GetTerrainPoint(top_left.x, top_left.y + 1.1);
-  p[2] = resources_->GetHeightMap().GetTerrainPoint(top_left.x + 1.1, top_left.y + 1.1);
-  p[3] = resources_->GetHeightMap().GetTerrainPoint(top_left.x + 1.1, top_left.y);
-
-  const float& h0 = p[0].height;
-  const float& h1 = p[1].height;
-  const float& h2 = p[2].height;
-  const float& h3 = p[3].height;
-
-  // Top triangle.
-  vec2 tile_v = pos - vec2(top_left);
-  Polygon polygon;
-  polygon.vertices.push_back(vec3(top_left.x, h0, top_left.y));
-  polygon.vertices.push_back(vec3(top_left.x, h1, top_left.y + 1.0));
-  polygon.vertices.push_back(vec3(top_left.x + 1.0, h3, top_left.y));
-  polygons.push_back(polygon);
-
-  // Bottom triangle.
-  Polygon polygon2;
-  polygon2.vertices.push_back(vec3(top_left.x + 1.0, h2, top_left.y + 1.0));
-  polygon2.vertices.push_back(vec3(top_left.x + 1.0, h3, top_left.y));
-  polygon2.vertices.push_back(vec3(top_left.x, h1, top_left.y + 1.0));
-  polygons.push_back(polygon2);
-
-  polygons[0].normals.push_back(p[0].normal);
-  polygons[1].normals.push_back(p[0].normal);
-}
-
 // Test Sphere - Sphere.
 void CollisionResolver::TestCollisionSS(shared_ptr<CollisionSS> c) {
   BoundingSphere s1 = c->obj1->GetTransformedBoundingSphere();
@@ -737,7 +805,8 @@ void CollisionResolver::TestCollisionSB(shared_ptr<CollisionSB> c) {
 }
 
 vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector, 
-  const vec3& surface_normal, const vec3& movement, bool& in_contact) {
+  const vec3& surface_normal, const vec3& movement, bool& in_contact, 
+  bool allow_climb = true) {
   in_contact = false;
   const vec3 up = vec3(0, 1, 0);
 
@@ -745,7 +814,12 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
   float flatness = dot(surface_normal, up);
 
   // Surface is too steep.
-  if (flatness < 0.5f) {
+  if (flatness < 0.6f && !allow_climb) {
+    return displacement_vector - dot(displacement_vector, up) * up;
+  }
+
+  // Surface is still too steep.
+  if (flatness < 0.7f) {
     return displacement_vector;
   }
  
@@ -787,7 +861,6 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
 // Test Sphere - Perfect.
 void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
   BoundingSphere s1 = c->obj1->GetTransformedBoundingSphere();
-
   c->collided = IntersectBoundingSphereWithTriangle(s1, 
     c->polygon + c->obj2->position, c->displacement_vector, 
     c->point_of_contact);
@@ -909,22 +982,72 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
   }
 }
 
+// Test Bones - OBB.
+void CollisionResolver::TestCollisionBO(shared_ptr<CollisionBO> c) {
+  BoundingSphere s = c->obj1->GetBoneBoundingSphere(c->bone);
+
+  OBB obb = c->obj2->GetTransformedOBB();
+
+  // Transforms.
+  mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
+  mat3 from_world_space = inverse(to_world_space);
+
+  BoundingSphere s_in_obb_space;
+  s_in_obb_space.center = from_world_space * s.center;
+  s_in_obb_space.radius = s.radius;
+
+  vec3 obb_center = c->obj2->position + obb.center;
+
+  AABB aabb_in_obb_space;
+  aabb_in_obb_space.point = from_world_space * obb_center - obb.half_widths;
+  aabb_in_obb_space.dimensions = obb.half_widths * 2.0f;
+
+  c->collided = IntersectSphereAABB(s_in_obb_space, aabb_in_obb_space, 
+    c->displacement_vector, c->point_of_contact);
+  if (c->collided) {
+    c->displacement_vector = to_world_space * c->displacement_vector;
+    c->normal = normalize(c->displacement_vector);
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
-  BoundingSphere s = c->obj1->GetBoneBoundingSphere(c->bone);
-  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
-  c->collided = (s.center.y - s.radius < h);
+  // BoundingSphere s = c->obj1->GetBoneBoundingSphere(c->bone);
+  // float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  // c->collided = (s.center.y - s.radius < h);
+  // if (c->collided) {
+  //   float m = h - (s.center.y - s.radius);
+  //   if (c->obj1->name == "alessia") {
+  //     // cout << "++++++++++++++++++++++++ s: " << s << endl;
+  //     // cout << "++++++++++++++++++++++++ h: " << h << endl;
+  //     // cout << "++++++++++++++++++++++++ m: " << m << endl;
+  //   }
+
+  //   c->displacement_vector = vec3(0.0f, m, 0.0f);
+  //   c->point_of_contact = c->obj1->position - vec3(0.0f, m - s.radius, 0.0f);
+  //   FillCollisionBlankFields(c);
+  // }
+
+  BoundingSphere s1 = c->obj1->GetBoneBoundingSphere(c->bone);
+  c->collided = IntersectBoundingSphereWithTriangle(s1, c->polygon, 
+    c->displacement_vector, c->point_of_contact);
+  c->normal = c->polygon.normals[0];
   if (c->collided) {
-    float m = h - (s.center.y - s.radius);
-    c->displacement_vector = vec3(0.0f, m, 0.0f);
-    c->point_of_contact = c->obj1->position - vec3(0.0f, m - s.radius, 0.0f);
+    const vec3& surface_normal = c->polygon.normals[0];
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+
+    bool in_contact;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, surface_normal, v, in_contact, false);
+
     FillCollisionBlankFields(c);
   }
 }
 
 // Test Quick Sphere - Perfect.
 void CollisionResolver::TestCollisionQP(shared_ptr<CollisionQP> c) {
-  BoundingSphere s = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
+  BoundingSphere s = c->obj1->GetBoundingSphere() + c->obj1->prev_position;
   vec3 v = c->obj1->position - c->obj1->prev_position;
   float t; // Time of collision.
   Polygon polygon = c->polygon + c->obj2->position;
@@ -939,7 +1062,7 @@ void CollisionResolver::TestCollisionQP(shared_ptr<CollisionQP> c) {
 
 // Test Quick Sphere - Sphere.
 void CollisionResolver::TestCollisionQS(shared_ptr<CollisionQS> c) {
-  BoundingSphere s1 = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
+  BoundingSphere s1 = c->obj1->GetBoundingSphere() + c->obj1->prev_position;
   BoundingSphere s2 = c->obj2->GetTransformedBoundingSphere();
   vec3 v = c->obj1->position - c->obj1->prev_position;
 
@@ -955,7 +1078,7 @@ void CollisionResolver::TestCollisionQS(shared_ptr<CollisionQS> c) {
 
 // Test Quick Sphere - Bones.
 void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
-  BoundingSphere s1 = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
+  BoundingSphere s1 = c->obj1->GetBoundingSphere() + c->obj1->prev_position;
   BoundingSphere s2 = c->obj2->GetBoneBoundingSphere(c->bone);
   vec3 v = c->obj1->position - c->obj1->prev_position;
   float t; // Time of collision.
@@ -975,7 +1098,7 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
   c->collided = (s.center.y - s.radius < h);
   if (c->collided) {
     vector<Polygon> polygons;
-    GetTerrainPolygons(vec2(s.center.x, s.center.z), polygons);
+    GetTerrainPolygons(resources_, vec2(s.center.x, s.center.z), polygons);
 
     const vector<vec3>& v0 = polygons[0].vertices;
     const vector<vec3>& v1 = polygons[1].vertices;
@@ -996,7 +1119,7 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
 }
 
 void CollisionResolver::TestCollisionQH(shared_ptr<CollisionQH> c) {
-  BoundingSphere s = c->obj1->GetAsset()->bounding_sphere + c->obj1->prev_position;
+  BoundingSphere s = c->obj1->GetBoundingSphere() + c->obj1->prev_position;
   vec3 v = c->obj1->position - c->obj1->prev_position;
   float t; // Time of collision.
   c->collided = IntersectMovingSphereTriangle(s, v, c->polygon, t, 
@@ -1018,7 +1141,7 @@ void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
   for (vec3 v : game_asset->GetVertices()) {
     v = (c->obj1->rotation_matrix * v) + c->obj1->position;
     vector<Polygon> terrain_polygons;
-    GetTerrainPolygons(vec2(v.x, v.z), terrain_polygons);
+    GetTerrainPolygons(resources_, vec2(v.x, v.z), terrain_polygons);
 
     vec3 normal = terrain_polygons[0].normals[0];
     vec3 pivot = terrain_polygons[0].vertices[0];
@@ -1094,6 +1217,82 @@ void CollisionResolver::TestCollisionOP(shared_ptr<CollisionOP> c) {
   // }
 }
 
+// Test OBB - Terrain.
+void CollisionResolver::TestCollisionOT(shared_ptr<CollisionOT> c) {
+  OBB obb = c->obj1->GetTransformedOBB();
+  vec3 obb_center = c->obj1->position + obb.center;
+
+  mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
+  mat3 from_world_space = inverse(to_world_space);
+
+  Polygon polygon_in_obb_space = from_world_space * c->polygon;
+
+  AABB aabb_in_obb_space;
+  aabb_in_obb_space.point = from_world_space * obb_center - obb.half_widths;
+  aabb_in_obb_space.dimensions = obb.half_widths * 2.0f;
+
+  c->collided = TestTriangleAABB(polygon_in_obb_space, aabb_in_obb_space,
+      c->displacement_vector, c->point_of_contact);
+
+  if (c->collided) {
+    c->displacement_vector = to_world_space * c->displacement_vector;
+    c->normal = c->polygon.normals[0];
+
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    bool in_contact = false;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, c->normal, v, in_contact, false);
+
+    if (in_contact) {
+      // TODO: in contact with terrain? Makes sense?
+      // c->obj1->in_contact_with = c->obj2;
+    }
+
+    FillCollisionBlankFields(c);
+  }
+
+  return;
+
+  BoundingSphere s = c->obj1->GetTransformedBoundingSphere();
+  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
+  // c->collided = (s.center.y - s.radius < h);
+  c->collided = (s.center.y < h);
+  if (c->collided) {
+    vector<Polygon> polygons;
+    GetTerrainPolygons(resources_, vec2(s.center.x, s.center.z), polygons);
+
+    const vector<vec3>& v0 = polygons[0].vertices;
+    const vector<vec3>& v1 = polygons[1].vertices;
+    bool inside;
+
+    vec3 p1 = ClosestPtPointTriangle(s.center, v0[0], v0[1], v0[2], &inside);
+    vec3 p2 = ClosestPtPointTriangle(s.center, v1[0], v1[1], v1[2], &inside);
+
+    vec3 surface_normal;
+    if (length2(p1 - s.center) < length2(p2 - s.center)) {
+      c->displacement_vector = p1 - s.center;
+      c->point_of_contact = p1;
+      surface_normal = polygons[0].normals[0];
+    } else {
+      c->displacement_vector = p2 - s.center;
+      c->point_of_contact = p2;
+      surface_normal = polygons[1].normals[0];
+    }
+
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    bool in_contact = false;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, surface_normal, v, in_contact);
+
+    if (in_contact) {
+      // TODO: in contact with terrain? Makes sense?
+      // c->obj1->in_contact_with = c->obj2;
+    }
+
+    FillCollisionBlankFields(c);
+  }
+}
+
 void CollisionResolver::TestCollision(ColPtr c) {
   switch (c->collision_pair) {
     case CP_SS: 
@@ -1112,6 +1311,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionBB(static_pointer_cast<CollisionBB>(c)); break;
     case CP_BP:
       TestCollisionBP(static_pointer_cast<CollisionBP>(c)); break;
+    case CP_BO:
+      TestCollisionBO(static_pointer_cast<CollisionBO>(c)); break;
     case CP_BT:
       TestCollisionBT(static_pointer_cast<CollisionBT>(c)); break;
     case CP_QP:
@@ -1129,6 +1330,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionHT(static_pointer_cast<CollisionHT>(c)); break;
     case CP_OP:
       TestCollisionOP(static_pointer_cast<CollisionOP>(c)); break;
+    case CP_OT:
+      TestCollisionOT(static_pointer_cast<CollisionOT>(c)); break;
     default: break;
   }
 }
@@ -1164,7 +1367,8 @@ void CollisionResolver::ResolveCollisions() {
     ObjPtr obj2 = c->obj2;
 
     // Recalculate collision if the object has collided before.
-    if (ids.find(obj1->id) != ids.end() || (obj2 && ids.find(obj2->id) != ids.end())) {
+    if (ids.find(obj1->id) != ids.end() || 
+       (obj2 && ids.find(obj2->id) != ids.end())) {
       if (c->collision_pair == CP_QT) continue;
       TestCollision(c);
       if (!c->collided) { 
@@ -1172,11 +1376,11 @@ void CollisionResolver::ResolveCollisions() {
       }
     }
 
-    if (obj1->GetAsset()->physics_behavior != PHYSICS_FIXED) {
+    if (obj1->GetPhysicsBehavior() != PHYSICS_FIXED) {
       ids.insert(obj1->id);
     }
 
-    if (obj2 && obj2->GetAsset()->physics_behavior != PHYSICS_FIXED) {
+    if (obj2 && obj2->GetPhysicsBehavior() != PHYSICS_FIXED) {
       ids.insert(obj2->id);
     }
 
@@ -1191,7 +1395,19 @@ void CollisionResolver::ResolveCollisions() {
       normal = -(d - 2 * dot(d, n) * n);
 
       obj1->position += displacement_vector;
-      if (obj2 && obj2->GetAsset()->type == ASSET_CREATURE) {
+      if (obj2 && obj2->type == GAME_OBJ_PLAYER) {
+        // TODO: this check shouldn't be placed here. After I have an engine
+        // class, it should be made there.
+
+        obj2->life -= 10;
+        resources_->GetConfigs()->taking_hit = 30.0f;
+        obj2->paralysis_cooldown = 100;
+
+        if (obj2->life <= 0.0f) {
+          obj2->life = 100.0f;
+          obj2->position = resources_->GetConfigs()->respawn_point;
+        }
+      } else if (obj2 && obj2->IsCreature()) {
         // (obj2->GetAsset()->name == "spider" 
         // || obj2->GetAsset()->name == "cephalid")) {
         obj2->life -= 50;
@@ -1207,22 +1423,10 @@ void CollisionResolver::ResolveCollisions() {
           obj2->status = STATUS_TAKING_HIT;
           obj2->frame = 0;
         }
-      } else if (obj2 && obj2->GetAsset()->name == "player") {
-        // TODO: this check shouldn't be placed here. After I have an engine
-        // class, it should be made there.
-
-        obj2->life -= 10;
-        resources_->GetConfigs()->taking_hit = 30.0f;
-        obj2->paralysis_cooldown = 100;
-
-        if (obj2->life <= 0.0f) {
-          obj2->life = 100.0f;
-          obj2->position = resources_->GetConfigs()->respawn_point;
-        }
       } else {
         if (obj2) {
-          if (obj2->GetAsset()->collision_type == COL_CONVEX_HULL && 
-            obj2->GetAsset()->physics_behavior != PHYSICS_FIXED) {
+          if (obj2->GetCollisionType() == COL_CONVEX_HULL && 
+            obj2->GetPhysicsBehavior() != PHYSICS_FIXED) {
             vec3 r = c->point_of_contact - c->obj2->position;
             vec3 f = -c->displacement_vector;
             vec3 torque = cross(r, f);
@@ -1241,7 +1445,8 @@ void CollisionResolver::ResolveCollisions() {
       continue;
     }
 
-    if (length2(displacement_vector) < 0.0001f) {
+    float magnitude2 = length2(displacement_vector);
+    if (magnitude2 < 0.0001f) {
       continue;
     }
 
@@ -1258,6 +1463,22 @@ void CollisionResolver::ResolveCollisions() {
     }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.85) obj1->can_jump = true;
+
+    if (obj1->name == "alessia") {
+      // if (obj2) {
+      //   cout << "Alessia collided with " << obj2->name << endl;
+      // } else {
+      //   cout << "Alessia collided with terrain." << endl;
+      // }
+      // cout << "displacement" << displacement_vector << endl;
+    }
+
+    if (dot(normal, vec3(0, 1, 0)) > 0.6f) {
+      if (dot(obj1->speed, vec3(0, -1, 0)) > 50.0f * GRAVITY) {
+        obj1->life -= 10;
+      }
+    }
+
     obj1->position += displacement_vector;
 
     vec3 v = normalize(displacement_vector);
@@ -1267,7 +1488,7 @@ void CollisionResolver::ResolveCollisions() {
     }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.6) {
-      if (obj1->GetAsset()->name == "spider") {
+      if (obj1->IsAsset("spider")) {
         obj1->up = normal;
       }
     }
@@ -1280,14 +1501,14 @@ void CollisionResolver::ResolveCollisions() {
   vector<ObjPtr>& objs = resources_->GetMovingObjects();
   for (ObjPtr obj : objs) {
     if (!obj->in_contact_with) continue;
-    if (obj->in_contact_with->GetAsset()->physics_behavior == PHYSICS_FIXED) {
+    if (obj->in_contact_with->GetPhysicsBehavior() == PHYSICS_FIXED) {
       continue;
     }
 
     vec3 v = obj->in_contact_with->position - obj->in_contact_with->prev_position;
     obj->position += v;
 
-    float inertia = 1.0f / obj->in_contact_with->GetAsset()->mass;
+    float inertia = 1.0f / obj->in_contact_with->GetMass();
     mat4 rotation_matrix = rotate(
       mat4(1.0),
       length(obj->in_contact_with->torque) * inertia,

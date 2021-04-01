@@ -4,10 +4,12 @@
 #include <random>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-#include "resources.hpp"
+#include "util.hpp"
+
+class Resources;
 
 class ScriptManager {
-  shared_ptr<Resources> resources_;
+  Resources* resources_;
   std::default_random_engine generator_;
   PyObject* module_;
 
@@ -15,10 +17,11 @@ class ScriptManager {
   void ProcessEvent(shared_ptr<Event> e);
 
  public:
-  ScriptManager(shared_ptr<Resources> asset_catalog);
+  ScriptManager(Resources* resources);
   ~ScriptManager();
 
   void ProcessScripts();
+  string CallStrFn(const string& fn_name);
 };
 
 #endif // __SCRIPTS_HPP__

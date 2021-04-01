@@ -54,7 +54,7 @@ enum CollisionPair {
   CP_OB,     // OBB -> BONES (Not implemented)
   CP_OQ,     // OBB -> QUICK_SPHERE (Not implemented)
   CP_OP,     // OBB -> PERFECT
-  CP_OT,     // OBB -> TERRAIN (Not implemented)
+  CP_OT,     // OBB -> TERRAIN
   CP_OH,     // OBB -> C. HULL (Not implemented)             
   CP_OO,     // OBB -> OBB (Not implemented)             
   CP_UNDEFINED 
@@ -121,8 +121,10 @@ struct CollisionSO : Collision {
 };
 
 struct CollisionST : Collision {
+  Polygon polygon;
   CollisionST() {}
-  CollisionST(ObjPtr o1) : Collision(CP_ST, o1, nullptr) {}
+  CollisionST(ObjPtr o1, Polygon polygon) 
+    : Collision(CP_ST, o1, nullptr), polygon(polygon) {}
 };
 
 struct CollisionBB : Collision {
@@ -141,11 +143,19 @@ struct CollisionBP : Collision {
     : Collision(CP_BP, o1, o2), bone(bone), polygon(polygon) {}
 };
 
+struct CollisionBO : Collision {
+  int bone;
+  CollisionBO() {}
+  CollisionBO(ObjPtr o1, ObjPtr o2, int bone)
+    : Collision(CP_BO, o1, o2), bone(bone) {}
+};
+
 struct CollisionBT : Collision {
   int bone;
+  Polygon polygon;
   CollisionBT() {}
-  CollisionBT(ObjPtr o1, int bone) 
-    : Collision(CP_BT, o1, nullptr), bone(bone) {}
+  CollisionBT(ObjPtr o1, int bone, Polygon polygon) 
+    : Collision(CP_BT, o1, nullptr), bone(bone), polygon(polygon) {}
 };
 
 struct CollisionQS : Collision {
@@ -193,6 +203,13 @@ struct CollisionOP : Collision {
     : Collision(CP_OP, o1, o2), polygon(polygon) {}
 };
 
+struct CollisionOT : Collision {
+  Polygon polygon;
+  CollisionOT() {}
+  CollisionOT(ObjPtr o1, Polygon polygon)
+    : Collision(CP_OT, o1, nullptr), polygon(polygon) {}
+};
+
 class CollisionResolver {
   shared_ptr<Resources> resources_;
 
@@ -213,7 +230,6 @@ class CollisionResolver {
   void PrintMetrics();
 
   // Aux methods.
-  void GetTerrainPolygons(vec2 pos, vector<Polygon>& polygons);
   bool IsPairCollidable(ObjPtr obj1, ObjPtr obj2);
   void CollideAlongAxis(shared_ptr<OctreeNode> octree_node, ObjPtr obj);
 
@@ -225,6 +241,7 @@ class CollisionResolver {
   void TestCollisionST(shared_ptr<CollisionST> c);
   void TestCollisionBB(shared_ptr<CollisionBB> c);
   void TestCollisionBP(shared_ptr<CollisionBP> c);
+  void TestCollisionBO(shared_ptr<CollisionBO> c);
   void TestCollisionBT(shared_ptr<CollisionBT> c);
   void TestCollisionQS(shared_ptr<CollisionQS> c);
   void TestCollisionQP(shared_ptr<CollisionQP> c);
@@ -233,6 +250,7 @@ class CollisionResolver {
   void TestCollisionQH(shared_ptr<CollisionQH> c);
   void TestCollisionHT(shared_ptr<CollisionHT> c);
   void TestCollisionOP(shared_ptr<CollisionOP> c);
+  void TestCollisionOT(shared_ptr<CollisionOT> c);
   void TestCollision(ColPtr c);
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

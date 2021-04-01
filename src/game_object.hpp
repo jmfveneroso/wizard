@@ -16,6 +16,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
  
  public:
   GameObjectType type = GAME_OBJ_DEFAULT;
+  CollisionType collision_type_ = COL_UNDEFINED;
 
   int id;
   string name;
@@ -34,7 +35,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   int rotation_factor = 0;
 
-  vec3 up = vec3(0, -1, 0); // Determines object up direction.
+  vec3 up = vec3(0, 1, 0); // Determines object up direction.
   vec3 forward = vec3(0, 0, 1); // Determines object forward direction.
 
   quat cur_rotation = quat(0, 0, 0, 1);
@@ -60,7 +61,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   int parent_bone_id = -1;
 
   // TODO: Stuff that should polymorph to something that depends on GameObject.
-  float life = 100.0f;
+  float life = 50.0f;
   vec3 speed = vec3(0);
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
@@ -81,6 +82,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   vector<int> active_textures { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
   int cooldown = 0;
+  bool loaded_collision = false;
 
   // TODO: maybe would be better to attach a status.
   int paralysis_cooldown = 0;
@@ -99,6 +101,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsExtractable();
   bool IsItem();
   bool IsMovingObject();
+  bool IsCreature();
+  bool IsAsset(const string& asset_name);
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
   // int GetNumFramesInCurrentAnimation();
@@ -109,6 +113,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
     const vec3& in_position);
   void Load(pugi::xml_node& xml);
   void ToXml(pugi::xml_node& parent);
+  void CollisionDataToXml(pugi::xml_node& parent);
 
   // Collision.
 
@@ -127,17 +132,29 @@ class GameObject : public enable_shared_from_this<GameObject> {
   BoundingSphere GetTransformedBoundingSphere();
   OBB GetTransformedOBB();
   BoundingSphere GetBoneBoundingSphere(int bone_id);
+  CollisionType GetCollisionType();
+  PhysicsBehavior GetPhysicsBehavior();
+  float GetMass();
+  void CalculateCollisionData();
+  void LoadCollisionData(pugi::xml_node& xml);
+  void LookAt(vec3 look_at);
+  shared_ptr<Mesh> GetMesh();
+  int GetNumFramesInCurrentAnimation();
+  void ChangePosition(const vec3& pos);
+  void ClearActions();
 };
 
 struct Player : public GameObject {
   PlayerAction player_action = PLAYER_IDLE;
-  int num_spells = 10;
-  int num_spells_2 = 2;
   int selected_spell = 0;
-  vec3 rotation = vec3(0, 0, 0);
+  vec3 rotation = vec3(-0.6139, -0.0424196, -0.78824);
+  string talking_to;
+  void LookAt(vec3 direction);
 
   Player(Resources* resources) 
-    : GameObject(resources, GAME_OBJ_PLAYER) {}
+    : GameObject(resources, GAME_OBJ_PLAYER) {
+    collision_type_ = COL_SPHERE;
+  }
 };
 
 struct Missile : public GameObject {
@@ -151,8 +168,11 @@ struct Portal : public GameObject {
   bool cave = false;
   shared_ptr<Sector> from_sector;
   shared_ptr<Sector> to_sector;
+  string mesh_name;
+
   Portal(Resources* resources) 
     : GameObject(resources, GAME_OBJ_PORTAL) {}
+  void Load(pugi::xml_node& xml, shared_ptr<Sector> sector);
 };
 
 struct Region : public GameObject {
@@ -187,7 +207,10 @@ struct Sector : public GameObject {
 };
 
 struct Door : public GameObject {
-  int state = 0; // 0: closed, 1: opening, 2: open, 3: closing
+  DoorState state = DOOR_CLOSED; // 0: closed, 1: opening, 2: open, 3: closing.
+  DoorState initial_state = DOOR_CLOSED;
+  vector<shared_ptr<Event>> on_open_events;
+
   Door(Resources* resources) 
     : GameObject(resources, GAME_OBJ_DOOR) {}
 };
@@ -207,10 +230,13 @@ struct Waypoint : public GameObject {
 using ObjPtr = shared_ptr<GameObject>;
 
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name);
+ObjPtr CreateGameObjFromAsset(Resources* resources,
+  string asset_name, vec3 position, const string obj_name = "");
+ObjPtr CreateSkydome(Resources* resources);
 
 
 // ============================================================================
-// AI
+// AI,
 // ============================================================================
 
 struct Action {
@@ -261,8 +287,18 @@ struct StandAction : Action {
 };
 
 struct TalkAction : Action {
-  TalkAction() 
-    : Action(ACTION_TALK) {}
+  string npc;
+  TalkAction() : Action(ACTION_TALK) {}
+  TalkAction(string npc) 
+    : Action(ACTION_TALK), npc(npc) {}
+};
+
+struct AnimationAction : Action {
+  string animation_name;
+  bool loop = true;
+  AnimationAction() : Action(ACTION_ANIMATION) {}
+  AnimationAction(string animation_name, bool loop = true) 
+    : Action(ACTION_ANIMATION), animation_name(animation_name), loop(loop) {}
 };
 
 struct CastSpellAction : Action {
@@ -270,6 +306,22 @@ struct CastSpellAction : Action {
   CastSpellAction(string spell_name) 
     : Action(ACTION_CAST_SPELL), spell_name(spell_name) {}
 };
+
+struct WaitAction : Action {
+  float until;
+  WaitAction(float until) 
+    : Action(ACTION_WAIT), until(until) {}
+};
+
+shared_ptr<Player> CreatePlayer(Resources* resources);
+shared_ptr<Portal> CreatePortal(Resources* resources, 
+  shared_ptr<Sector> from_sector, pugi::xml_node& xml);
+
+ObjPtr CreateGameObjFromPolygons(Resources* resources,
+  const vector<Polygon>& polygons, const string& name, const vec3& position);
+
+ObjPtr CreateGameObjFromMesh(Resources* resources, const Mesh& m, 
+  string shader_name, const vec3 position, const vector<Polygon>& polygons);
 
 #endif // __GAME_OBJECT_HPP__
 

@@ -110,7 +110,9 @@ enum ActionType {
   ACTION_TAKE_AIM,
   ACTION_STAND,
   ACTION_TALK,
-  ACTION_CAST_SPELL
+  ACTION_CAST_SPELL,
+  ACTION_WAIT,
+  ACTION_ANIMATION
 };
 
 enum ParticleBehavior {
@@ -120,7 +122,16 @@ enum ParticleBehavior {
 
 enum EventType {
   EVENT_ON_INTERACT_WITH_SECTOR = 0,
+  EVENT_ON_INTERACT_WITH_DOOR,
   EVENT_NONE 
+};
+
+enum DoorState {
+  DOOR_CLOSED = 0,
+  DOOR_OPENING,
+  DOOR_OPEN,
+  DOOR_CLOSING,
+  DOOR_WEAK_LOCK
 };
 
 struct Camera {
@@ -212,7 +223,7 @@ struct SphereTreeNode {
 
 struct AABBTreeNode {
   AABB aabb;
-  shared_ptr<AABBTreeNode> lft, rgt;
+  shared_ptr<AABBTreeNode> lft = nullptr, rgt = nullptr;
 
   bool has_polygon = false;
   Polygon polygon;
@@ -264,6 +275,17 @@ struct RegionEvent : Event {
       region(region), unit(unit), callback(callback) {}
 };
 
+struct DoorEvent : Event {
+  string interaction = "open";
+  string door;
+  string callback;
+
+  DoorEvent() : Event(EVENT_ON_INTERACT_WITH_DOOR) {}
+  DoorEvent(string interaction, string door, string callback)
+    : Event(EVENT_ON_INTERACT_WITH_DOOR), interaction(interaction),
+      door(door), callback(callback) {}
+};
+
 using MeshPtr = shared_ptr<Mesh>;
 using ConvexHull = vector<Polygon>;
 
@@ -301,9 +323,12 @@ ostream& operator<<(ostream& os, const Edge& e);
 ostream& operator<<(ostream& os, const Polygon& p);
 ostream& operator<<(ostream& os, const ConvexHull& ch);
 ostream& operator<<(ostream& os, const BoundingSphere& bs);
+ostream& operator<<(ostream& os, const AABB& aabb);
 ostream& operator<<(ostream& os, const OBB& obb);
 ostream& operator<<(ostream& os, const shared_ptr<SphereTreeNode>& 
   sphere_tree_node);
+ostream& operator<<(ostream& os, const shared_ptr<AABBTreeNode>& 
+  aabb_tree_node);
 
 vec3 operator*(const mat4& m, const vec3& v);
 Polygon operator*(const mat4& m, const Polygon& poly);
@@ -313,6 +338,8 @@ BoundingSphere operator+(const BoundingSphere& sphere, const vec3& v);
 BoundingSphere operator-(const BoundingSphere& sphere, const vec3& v);
 AABB operator+(const AABB& aabb, const vec3& v);
 AABB operator-(const AABB& aabb, const vec3& v);
+bool operator==(const mat4& m1, const mat4& m2);
+bool operator!=(const mat4& m1, const mat4& m2);
 
 template<typename First, typename ...Rest>
 void sample_log(First&& first, Rest&& ...rest) {
@@ -335,10 +362,15 @@ float clamp(float v, float low, float high);
 vec3 clamp(vec3 v, float low, float high);
 
 CollisionType StrToCollisionType(const std::string& s);
+std::string CollisionTypeToStr(const CollisionType& col);
 
 ParticleBehavior StrToParticleBehavior(const std::string& s);
 
 PhysicsBehavior StrToPhysicsBehavior(const std::string& s);
+
+DoorState StrToDoorState(const std::string& s);
+
+string DoorStateToStr(const DoorState& state);
 
 AiState StrToAiState(const std::string& s);
 
@@ -348,6 +380,7 @@ BoundingSphere GetBoundingSphereFromVertices(
 BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons);
 
 vec3 LoadVec3FromXml(const pugi::xml_node& node);
+vec4 LoadVec4FromXml(const pugi::xml_node& node);
 
 float LoadFloatFromXml(const pugi::xml_node& node);
 
@@ -372,6 +405,8 @@ void AppendXmlNode(pugi::xml_node& node, const string& name,
   shared_ptr<AABBTreeNode> aabb_tree_node);
 void AppendXmlTextNode(pugi::xml_node& node, const string& name, 
   const string& s);
+void AppendXmlNode(pugi::xml_node& node, const string& name, quat new_quat);
+void AppendXmlAttr(pugi::xml_node& node, const vec4& v);
 
 void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices, vector<Polygon>& polygons,

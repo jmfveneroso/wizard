@@ -188,22 +188,33 @@ bool AI::ProcessStatus(ObjPtr spider) {
   return true;
 }
 
+void AI::ProcessNPC(ObjPtr unit) {
+  if (!unit->actions.empty()) {
+    return;
+  }
+
+  // unit->LookAt(resources_->GetPlayer()->position);
+  resources_->ChangeObjectAnimation(unit, "Armature|idle");
+}
+
 // Given the environment and the queued actions, what should be the next 
 // actions? 
-void AI::ProcessMentalState(ObjPtr spider) {
-  if (spider->GetAsset()->type != ASSET_CREATURE) return;
-  // if (spider->GetAsset()->name != "spider" &&
-  //     spider->GetAsset()->name != "cephalid") return;
+void AI::ProcessMentalState(ObjPtr unit) {
+  if (unit->GetAsset()->type != ASSET_CREATURE) return;
 
   // IDLE
   // WANDER
   // AGGRESSIVE
 
+  if (unit->name == "alessia") {
+    ProcessNPC(unit);
+  }
+
   // TODO: mental states should be Attack, Flee, Patrol (search), Hunt, Wander.
-  switch (spider->ai_state) {
-    case WANDER: Wander(spider); break;
-    case AI_ATTACK: Attack(spider); break;
-    case CHASE: Chase(spider); break;
+  switch (unit->ai_state) {
+    case WANDER: Wander(unit); break;
+    case AI_ATTACK: Attack(unit); break;
+    case CHASE: Chase(unit); break;
     default: break;
   }
 }
@@ -336,10 +347,28 @@ bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
   return false;
 }
 
-bool AI::ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action) {
-  spider->active_textures[1] = 1;
-  if (!resources_->ChangeObjectAnimation(spider, "Armature|talk")) {
-    resources_->ChangeObjectAnimation(spider, "talking");
+bool AI::ProcessAnimationAction(ObjPtr unit, 
+  shared_ptr<AnimationAction> action) {
+  if (!resources_->ChangeObjectAnimation(unit, action->animation_name)) {
+    return true;
+  }
+
+  int num_frames = unit->GetNumFramesInCurrentAnimation();
+  if (!action->loop && unit->frame >= num_frames - 1) {
+    return true;
+  }
+
+  return false;
+}
+
+bool AI::ProcessTalkAction(ObjPtr unit, shared_ptr<TalkAction> action) {
+  if (!resources_->ChangeObjectAnimation(unit, "Armature|talk")) {
+    resources_->ChangeObjectAnimation(unit, "talking");
+  }
+
+  int num_frames = unit->GetNumFramesInCurrentAnimation();
+  if (unit->frame >= num_frames - 1) {
+    return true;
   }
   return false;
 }
@@ -495,6 +524,61 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_ANIMATION: {
+      shared_ptr<AnimationAction> animation_action =  
+        static_pointer_cast<AnimationAction>(action);
+      if (ProcessAnimationAction(spider, animation_action)) {
+        spider->actions.pop();
+        spider->frame = 0;
+      }
+      break;
+    }
+    default: 
+      break;
+  }
+}
+
+void AI::ProcessPlayerAction(ObjPtr player) {
+  if (player->actions.empty()) return;
+
+  shared_ptr<Action> action = player->actions.front();
+  float player_speed = resources_->GetConfigs()->player_speed; 
+
+  float d = resources_->GetDeltaTime() / 0.016666f;
+  switch (action->type) {
+    case ACTION_MOVE: {
+      shared_ptr<MoveAction> move_action =  
+        static_pointer_cast<MoveAction>(action);
+      vec3 to_next_location = move_action->destination - player->position;
+
+      shared_ptr<Player> player_p = static_pointer_cast<Player>(player);
+      player_p->LookAt(to_next_location + vec3(0, 5.5, 0));
+
+      to_next_location.y = 0;
+
+      float dist_next_location = length(to_next_location);
+      if (dist_next_location < 15.0f) {
+        player->actions.pop();
+      } else {
+        player->speed += normalize(to_next_location) * player_speed * d;
+      }
+      break;
+    }
+    case ACTION_WAIT: {
+      shared_ptr<WaitAction> wait_action =  
+        static_pointer_cast<WaitAction>(action);
+      if (glfwGetTime() > wait_action->until) {
+        player->actions.pop();
+      }
+      break;
+    }
+    case ACTION_TALK: {
+      shared_ptr<TalkAction> talk_action =  
+        static_pointer_cast<TalkAction>(action);
+      resources_->TalkTo(talk_action->npc);
+      player->actions.pop();
+      break;
+    }
     default: 
       break;
   }
@@ -503,6 +587,11 @@ void AI::ProcessNextAction(ObjPtr spider) {
 void AI::RunSpiderAI() {
   int num_spiders = 0;
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
+    if (obj1->type == GAME_OBJ_PLAYER) {
+      ProcessPlayerAction(obj1);
+      continue;
+    }
+
     if (obj1->GetAsset()->type != ASSET_CREATURE) continue;
     if (obj1->being_placed) continue;
     // if (obj1->GetAsset()->name != "spider" && 
@@ -515,35 +604,33 @@ void AI::RunSpiderAI() {
       num_spiders++;
     }
 
-    ObjPtr spider = obj1;
-
     // TODO: maybe should go to physics.
-    if (dot(spider->up, vec3(0, 1, 0)) < 0) {
-      spider->up = vec3(0, 1, 0);
+    if (dot(obj1->up, vec3(0, 1, 0)) < 0) {
+      obj1->up = vec3(0, 1, 0);
     }
 
     // Check status. If taking hit, dying, poisoned, etc.
-    if (!ProcessStatus(spider)) continue;
-    ProcessMentalState(spider);
-    ProcessNextAction(spider);
+    if (!ProcessStatus(obj1)) continue;
+    ProcessMentalState(obj1);
+    ProcessNextAction(obj1);
   }
 
   // TODO: this should go somewhere else.
-  if (num_spiders < 10) {
-    int dice = rand() % 1000; 
-    if (dice > 2) return;
+  // if (num_spiders < 2) {
+  //   int dice = rand() % 1000; 
+  //   if (dice > 2) return;
 
-    dice = rand() % 1000; 
-    vec3 position = vec3(9649, 134, 10230);
-    if (dice < 500) {
-      position = vec3(9610, 132, 9885);
-    }
+  //   dice = rand() % 1000; 
+  //   vec3 position = vec3(9649, 134, 10230);
+  //   if (dice < 500) {
+  //     position = vec3(9610, 132, 9885);
+  //   }
 
-    shared_ptr<GameObject> obj = resources_->CreateGameObjFromAsset(
-      "spider", position);
-    obj->position = position;
-    ChangeState(obj, WANDER);
-    cout << "Created spider" << endl; 
-  }
+  //   shared_ptr<GameObject> obj = CreateGameObjFromAsset(resources_.get(),
+  //     "spider", position);
+  //   obj->position = position;
+  //   ChangeState(obj, WANDER);
+  //   cout << "Created spider" << endl; 
+  // }
 }
 

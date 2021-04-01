@@ -21,6 +21,8 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
 
   void LoadBones(const pugi::xml_node& skeleton_xml);
 
+  CollisionType collision_type_ = COL_UNDEFINED;
+
  public:
   int id;
   int index = 0;
@@ -29,6 +31,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   int item_id = -1;
   string item_icon;
   AssetType type = ASSET_STATIC;
+  bool loaded_collision = false;
 
   // Mesh.
   // unordered_map<int, Mesh> lod_meshes;
@@ -46,7 +49,6 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
 
   // Collision.
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
-  CollisionType collision_type = COL_UNDEFINED;
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
   OBB obb;
@@ -54,6 +56,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   shared_ptr<AABBTreeNode> aabb_tree = nullptr;
 
   // Skeleton.
+  unordered_map<int, string> bone_to_mesh_name; // TODO: think of something better.
   unordered_map<int, BoundingSphere> bones;
 
   shared_ptr<GameAsset> parent = nullptr;
@@ -85,6 +88,12 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   void Load(const pugi::xml_node& asset_xml);
   vector<vec3> GetVertices();
   string GetDisplayName();
+  CollisionType GetCollisionType() { return collision_type_; }
+  void SetCollisionType(CollisionType col_type) { collision_type_ = col_type; }
+
+  void CalculateCollisionData();
+  void CollisionDataToXml(pugi::xml_node& parent);
+  void LoadCollisionData(pugi::xml_node& xml);
 };
 
 class GameAssetGroup {
@@ -97,6 +106,13 @@ class GameAssetGroup {
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
 };
+
+shared_ptr<GameAsset> CreateAsset(Resources* resources, 
+  const pugi::xml_node& xml);
+shared_ptr<GameAsset> CreateAsset(Resources* resources);
+
+shared_ptr<GameAssetGroup> CreateAssetGroupForSingleAsset(
+  Resources* resources, shared_ptr<GameAsset> asset);
 
 #endif // __GAME_ASSET_HPP__
 

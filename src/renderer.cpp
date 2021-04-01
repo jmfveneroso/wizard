@@ -183,6 +183,12 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
     return true;
   }
 
+  // Distance cull.
+  float size_in_camera = bounding_sphere.radius / obj->distance;
+  if (obj->type != GAME_OBJ_MISSILE && size_in_camera < 0.005f) {
+    return true;
+  }
+
   // TODO: fix IsInConvexHull
   // Occlusion cull.
   // for (auto& ch : occluder_convex_hulls) {
@@ -339,7 +345,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
   if (node->sector->name == "outside") {
     clip_terrain_ = true;
 
-    const string mesh_name = p->GetAsset()->lod_meshes[0];
+    const string mesh_name = p->mesh_name;
     shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
     if (!mesh) {
       throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
@@ -442,6 +448,11 @@ void Renderer::DrawOutside() {
 // TODO: split into functions for each shader.
 void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   if (obj == nullptr) return;
+
+  if (obj->type == GAME_OBJ_PORTAL) {
+    // TODO: draw portal.
+    return;
+  }
 
   if (obj->GetAsset()->type == ASSET_CREATURE) {
     if (obj->status == STATUS_BURROWED) {
@@ -927,35 +938,46 @@ void Renderer::DrawScreenEffects() {
     draw_2d_->DrawImage("hit-effect", 0, 0, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
   }
 
+  if (configs->fading_out > -60.0) {
+    draw_2d_->DrawImage("fade-out", 0, 0, kWindowWidth, kWindowHeight, 
+      1.0f - (abs(configs->fading_out) / 60.0f));
+  }
+
   draw_2d_->DrawImage("crosshair", 640-4, 400-4, 8, 8, 0.5);
 
   DrawSpellbar();
 
-  draw_2d_->DrawRectangle(19, 51, 202, 22, vec3(0.85, 0.7, 0.13));
-  draw_2d_->DrawRectangle(20, 50, 200, 20, vec3(0.7, 0.2, 0.2));
-
   // HP.
   shared_ptr<Player> player = resources_->GetPlayer();
-  int hp_bar_width = (player->life / 100.0f) * 200;
+  float hp_bar_width = player->life / 100.0f;
   hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
-  draw_2d_->DrawRectangle(20, 50, hp_bar_width, 20, vec3(0.3, 0.8, 0.3));
 
-  // Spells.
-  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells), 250, 22, vec3(1, 0.69, 0.23));
-  draw_2d_->DrawText(boost::lexical_cast<string>(player->num_spells_2), 300, 22, vec3(1, 0.69, 0.23));
+  draw_2d_->DrawImage("hp_liquid", 25, 760, hp_bar_width * 266, 266, 1.0, 
+    vec2(hp_bar_width, 1));
+  draw_2d_->DrawImage("hp_bar", 20, 750, 300, 300, 1.0);
 
   if (configs->edit_terrain != "none") {
-    draw_2d_->DrawText("Brush size:", 350, 22, vec3(1, 0.3, 0.3));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->brush_size), 450, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText("Brush size:", 350, 22, vec4(1, 0.3, 0.3, 1.0));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->brush_size), 450, 22, vec4(1, 0.3, 0.3, 1));
 
-    draw_2d_->DrawText("Selected tile:", 550, 22, vec3(1, 0.3, 0.3));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->selected_tile), 670, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText("Selected tile:", 550, 22, vec4(1, 0.3, 0.3, 1.0));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->selected_tile), 670, 22, vec4(1, 0.3, 0.3, 1));
 
-    draw_2d_->DrawText("Raise Factor:", 750, 22, vec3(1, 0.3, 0.3));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 870, 22, vec3(1, 0.3, 0.3));
+    draw_2d_->DrawText("Raise Factor:", 750, 22, vec4(1, 0.3, 0.3, 1.0));
+    draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 870, 22, vec4(1, 0.3, 0.3, 1));
   }
 
-  if (configs->interacting_item) {
+  // Draw messages.
+  double cur_time = glfwGetTime();
+  int num_msgs = configs->messages.size();
+  for (int i = num_msgs-1, y = 0; i >= num_msgs - 5 && i >= 0; i--, y += 20) {
+    const string& msg = get<0>(configs->messages[i]);
+    const float time_remaining = (get<1>(configs->messages[i]) - cur_time) / 10.0f;
+    draw_2d_->DrawText(msg, 25, 800 - 730 + y, 
+      vec4(1, 1, 1, time_remaining), 1.0, false, "avenir_light_oblique");
+  }
+
+  if (configs->interacting_item && resources_->GetGameState() == STATE_GAME) {
     ObjPtr item = configs->interacting_item;
 
     // TODO: event. On hover item.
@@ -964,7 +986,7 @@ void Renderer::DrawScreenEffects() {
         draw_2d_->DrawImage("interact_item", 384, 588, 512, 512, 1.0);
         const string item_name = item->GetAsset()->GetDisplayName();
         draw_2d_->DrawText(string("Pick ") + item_name, 384 + 70, 
-          kWindowHeight - 588 - 40, vec3(1), 1.0, false, 
+          kWindowHeight - 588 - 40, vec4(1), 1.0, false, 
           "avenir_light_oblique");
         break;
       }
@@ -972,16 +994,22 @@ void Renderer::DrawScreenEffects() {
         shared_ptr<Door> door = static_pointer_cast<Door>(item);
         if (door->state == 0) {
           draw_2d_->DrawImage("interact_item", 384, 588, 512, 512, 1.0);
-          draw_2d_->DrawText("Open door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+          draw_2d_->DrawText("Open door", 384 + 70, kWindowHeight - 588 - 40, vec4(1), 1.0, false, "avenir_light_oblique");
         } else if (door->state == 2) {
           draw_2d_->DrawImage("interact_item", 384, 588, 512, 512, 1.0);
-          draw_2d_->DrawText("Close door", 384 + 70, kWindowHeight - 588 - 40, vec3(1), 1.0, false, "avenir_light_oblique");
+          draw_2d_->DrawText("Close door", 384 + 70, kWindowHeight - 588 - 40, vec4(1), 1.0, false, "avenir_light_oblique");
+        } else if (door->state == 4) {
+          draw_2d_->DrawText("The door is locked", 384 + 70, kWindowHeight - 588 - 40, vec4(1), 1.0, false, "avenir_light_oblique");
         }
         break;
       }
       default:
         break;
     }
+  }
+
+  if (!configs->overlay.empty()) {
+    draw_2d_->DrawImage(configs->overlay, 400, 100, 600, 600, 0.1);
   }
 }
 

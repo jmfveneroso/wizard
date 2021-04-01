@@ -150,8 +150,9 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
 
   texture_ = LoadPng("resources/textures_png/grass.png");
   texture1_ = LoadPng("resources/textures_png/dirt.png");
-  texture2_ = LoadPng("resources/textures_png/leaves.png");
+  texture2_ = LoadPng("resources/textures_png/gravel.png");
   texture3_ = LoadPng("resources/textures_png/mossy_stone.png");
+  texture4_ = LoadPng("resources/textures_png/leaves.png");
   water_texture_ = LoadPng("resources/textures_png/water_dudv.png");
   water_normal_texture_ = LoadPng("resources/textures_png/water_normal.png");
   // texture_ = resources_->GetTextureByName("tiles");
@@ -860,6 +861,10 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glActiveTexture(GL_TEXTURE11);
     glBindTexture(GL_TEXTURE_2D, texture3_);
     glUniform1i(GetUniformId(program_id, "texture3_sampler"), 11);
+
+    glActiveTexture(GL_TEXTURE12);
+    glBindTexture(GL_TEXTURE_2D, texture4_);
+    glUniform1i(GetUniformId(program_id, "texture4_sampler"), 12);
 
 
     ivec2 offset = ivec2(0, 0);

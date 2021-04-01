@@ -18,13 +18,7 @@ void GameAsset::LoadBones(const pugi::xml_node& skeleton_xml) {
 
     int bone_id = mesh->bones_to_ids[bone_name];
     const string bone_mesh_name = bone_xml.text().get();
-    shared_ptr<Mesh> bone_hit_box = resources_->GetMeshByName(bone_mesh_name);
-    if (!bone_hit_box) {
-      throw runtime_error(string("Bone mesh ") + bone_mesh_name + 
-        " does not exist.");
-    }
-
-    bones[bone_id] = GetAssetBoundingSphere(bone_hit_box->polygons);
+    bone_to_mesh_name[bone_id] = bone_mesh_name;
   }
 }
 
@@ -121,20 +115,7 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
   // Collision type.
   const pugi::xml_node& col_type_xml = asset_xml.child("collision-type");
   if (col_type_xml) {
-    collision_type = StrToCollisionType(col_type_xml.text().get());
-
-    const string mesh_name = lod_meshes[0];
-    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
-    if (!mesh) {
-      throw string("Collision hull ") + mesh_name + " does not exist.";
-    }
-
-    aabb = GetAABBFromPolygons(mesh->polygons);
-    bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
-
-    if (collision_type == COL_PERFECT) {
-      aabb_tree = ConstructAABBTreeFromPolygons(collision_hull);
-    }
+    collision_type_ = StrToCollisionType(col_type_xml.text().get());
   }
 
   // Physics.
@@ -209,6 +190,41 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
   resources_->AddAsset(shared_from_this());
 }
 
+void GameAsset::CalculateCollisionData() {
+  const string mesh_name = lod_meshes[0];
+  shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+
+  aabb = GetAABBFromPolygons(mesh->polygons);
+  bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
+
+  switch (collision_type_) {
+    case COL_BONES: {
+      for (const auto& [bone_id, bone_mesh_name] : bone_to_mesh_name) {
+        shared_ptr<Mesh> bone_hit_box = resources_->GetMeshByName(bone_mesh_name);
+        if (!bone_hit_box) {
+          throw runtime_error(string("Bone mesh ") + bone_mesh_name + 
+            " does not exist.");
+        }
+
+        bones[bone_id] = GetAssetBoundingSphere(bone_hit_box->polygons);
+
+        if (mesh_name == "alessia") {
+          cout << "BBBBBB: " << bones[bone_id] << endl;
+        }
+      }
+      break;
+    }
+    case COL_PERFECT: {
+      aabb_tree = ConstructAABBTreeFromPolygons(collision_hull);
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+  loaded_collision = true;
+}
+
 vector<vec3> GameAsset::GetVertices() {
   if (!vertices.empty()) return vertices;
   
@@ -233,4 +249,128 @@ vector<vec3> GameAsset::GetVertices() {
 string GameAsset::GetDisplayName() {
   if (display_name.empty()) return name;
   return display_name;
+}
+
+shared_ptr<GameAsset> CreateAsset(Resources* resources, 
+  const pugi::xml_node& xml) {
+  shared_ptr<GameAsset> asset = CreateAsset(resources);
+  asset->Load(xml);
+  return asset;
+}
+
+shared_ptr<GameAsset> CreateAsset(Resources* resources) {
+  return make_shared<GameAsset>(resources);
+}
+
+shared_ptr<GameAssetGroup> CreateAssetGroupForSingleAsset(Resources* resources, 
+  shared_ptr<GameAsset> asset) {
+  shared_ptr<GameAssetGroup> asset_group = resources->GetAssetGroupByName(
+    asset->name);
+  if (asset_group) {
+    return asset_group;
+  }
+
+  asset_group = make_shared<GameAssetGroup>();
+  asset_group->assets.push_back(asset);
+  asset_group->name = asset->name;
+  resources->AddAssetGroup(asset_group);
+  return asset_group;
+}
+
+void GameAsset::CollisionDataToXml(pugi::xml_node& parent) {
+  pugi::xml_node node = parent.append_child("asset");
+
+  AppendXmlAttr(node, "name", name);
+  AppendXmlNode(node, "bounding-sphere", bounding_sphere);
+  AppendXmlNode(node, "aabb", aabb);
+
+  if (aabb_tree) {
+    AppendXmlNode(node, "aabb-tree", aabb_tree);
+  }
+}
+
+void LoadAssetCollisionDataAux(shared_ptr<AABBTreeNode> aabb_tree_node, 
+  const pugi::xml_node& xml) {
+  const pugi::xml_node& aabb_xml = xml.child("aabb");
+  if (aabb_xml) {
+    const pugi::xml_node& point_xml = aabb_xml.child("point");
+    aabb_tree_node->aabb.point = LoadVec3FromXml(point_xml);
+    const pugi::xml_node& dimensions_xml = aabb_xml.child("dimensions");
+    aabb_tree_node->aabb.dimensions = LoadVec3FromXml(dimensions_xml);
+  } else {
+    throw runtime_error("There is no aabb for node.");
+  }
+
+  const pugi::xml_node& polygon_xml = xml.child("polygon");
+  if (polygon_xml) {
+    aabb_tree_node->has_polygon = true;
+    for (pugi::xml_node v_xml = polygon_xml.child("vertex"); v_xml; 
+      v_xml = v_xml.next_sibling("vertex")) {
+      aabb_tree_node->polygon.vertices.push_back(LoadVec3FromXml(v_xml));
+    }
+
+    const pugi::xml_node& normal_xml = polygon_xml.child("normal");
+    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
+    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
+    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
+    return;
+  }
+
+  pugi::xml_node node_xml = xml.child("node");
+  if (node_xml) {
+    aabb_tree_node->lft = make_shared<AABBTreeNode>();
+    LoadAssetCollisionDataAux(aabb_tree_node->lft, node_xml);
+  }
+
+  node_xml = node_xml.next_sibling("node");
+  if (node_xml) {
+    aabb_tree_node->rgt = make_shared<AABBTreeNode>();
+    LoadAssetCollisionDataAux(aabb_tree_node->rgt, node_xml);
+  } else {
+    throw runtime_error("Has left AabbTreeNode but does not have left.");
+  }
+}
+
+// TODO: remove this and replace by a function that can be used here and in the
+// object.
+void GameAsset::LoadCollisionData(pugi::xml_node& xml) {
+  const pugi::xml_node& bounding_sphere_xml = xml.child("bounding-sphere");
+  if (bounding_sphere_xml) {
+    const pugi::xml_node& center_xml = bounding_sphere_xml.child("center");
+    bounding_sphere.center = LoadVec3FromXml(center_xml);
+    const pugi::xml_node& radius_xml = bounding_sphere_xml.child("radius");
+    bounding_sphere.radius = boost::lexical_cast<float>(radius_xml.text().get());
+  }
+
+  const pugi::xml_node& aabb_xml = xml.child("aabb");
+  if (aabb_xml) {
+    const pugi::xml_node& point_xml = aabb_xml.child("point");
+    aabb.point = LoadVec3FromXml(point_xml);
+    const pugi::xml_node& dimensions_xml = aabb_xml.child("dimensions");
+    aabb.dimensions = LoadVec3FromXml(dimensions_xml);
+  }
+
+  const pugi::xml_node& obb_xml = xml.child("obb");
+  if (obb_xml) {
+    const pugi::xml_node& center_xml = obb_xml.child("center");
+    obb.center = LoadVec3FromXml(center_xml);
+
+    const pugi::xml_node& axis_x_xml = obb_xml.child("axis-x");
+    obb.axis[0] = LoadVec3FromXml(axis_x_xml);
+    const pugi::xml_node& axis_y_xml = obb_xml.child("axis-y");
+    obb.axis[1] = LoadVec3FromXml(axis_y_xml);
+    const pugi::xml_node& axis_z_xml = obb_xml.child("axis-z");
+    obb.axis[2] = LoadVec3FromXml(axis_z_xml);
+
+    const pugi::xml_node& half_widths_xml = obb_xml.child("half_widths");
+    obb.half_widths = LoadVec3FromXml(half_widths_xml);
+  }
+
+  const pugi::xml_node& aabb_tree_xml = xml.child("aabb-tree");
+  if (aabb_tree_xml) {
+    aabb_tree = make_shared<AABBTreeNode>();
+    const pugi::xml_node& node_xml = aabb_tree_xml.child("node");
+    LoadAssetCollisionDataAux(aabb_tree, node_xml);
+  }
+  loaded_collision = true;
 }

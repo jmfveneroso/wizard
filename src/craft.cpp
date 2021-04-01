@@ -13,74 +13,74 @@ void Craft::PressKeyCallback(int key, int scancode, int action, int mods) {
 }
 
 void Craft::CraftSpell(int number) {
-  vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
-  if (number == 0) {
-    int num_items = 0;
-    for (auto& [asset, count] : inventory) {
-      if (asset->name == "small-rock") {
-        num_items++;
-      }
-    }
-    if (num_items < 5) return;
+  // vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
+  // if (number == 0) {
+  //   int num_items = 0;
+  //   for (auto& [asset, count] : inventory) {
+  //     if (asset->name == "small-rock") {
+  //       num_items++;
+  //     }
+  //   }
+  //   if (num_items < 5) return;
 
-    vector<tuple<shared_ptr<GameAsset>, int>> new_inventory;
-    int count = 0;
-    for (auto& [asset, count] : inventory) {
-      if (asset->name == "small-rock" && count > 0) {
-        count--;
-        continue;
-      }
-      new_inventory.push_back({asset, count});
-    }
-    inventory = new_inventory;
+  //   vector<tuple<shared_ptr<GameAsset>, int>> new_inventory;
+  //   int count = 0;
+  //   for (auto& [asset, count] : inventory) {
+  //     if (asset->name == "small-rock" && count > 0) {
+  //       count--;
+  //       continue;
+  //     }
+  //     new_inventory.push_back({asset, count});
+  //   }
+  //   inventory = new_inventory;
 
-    ObjPtr* cubes = project_4d_->GetCubes();
-    for (int i = 0; i < 8; i++) { 
-      if (!cubes[i]) continue;
-      cubes[i]->draw = true;
-    }
-    hypercube_life_ = 20;
-    creating_spell_ = 0;
-    inventory.clear();
-    for (int i = 0; i < new_inventory.size(); i++) {
-      inventory.push_back(new_inventory[i]);
-    }
-    cout << "Creating 0" << endl;
-  } else if (number == 1) {
-    int num_items = 0;
+  //   ObjPtr* cubes = project_4d_->GetCubes();
+  //   for (int i = 0; i < 8; i++) { 
+  //     if (!cubes[i]) continue;
+  //     cubes[i]->draw = true;
+  //   }
+  //   hypercube_life_ = 20;
+  //   creating_spell_ = 0;
+  //   inventory.clear();
+  //   for (int i = 0; i < new_inventory.size(); i++) {
+  //     inventory.push_back(new_inventory[i]);
+  //   }
+  //   cout << "Creating 0" << endl;
+  // } else if (number == 1) {
+  //   int num_items = 0;
 
-    for (auto& [asset, count] : inventory) {
-      if (asset->name == "berry") {
-        num_items++;
-      }
-    }
-    if (num_items < 5) return;
+  //   for (auto& [asset, count] : inventory) {
+  //     if (asset->name == "berry") {
+  //       num_items++;
+  //     }
+  //   }
+  //   if (num_items < 5) return;
 
-    vector<tuple<shared_ptr<GameAsset>, int>> new_inventory;
-    int count = 0;
-    for (auto& [asset, count] : inventory) {
-      if (asset->name == "berry" && count > 0) {
-        count--;
-        continue;
-      }
-      new_inventory.push_back({asset, count});
-    }
-    inventory = new_inventory;
+  //   vector<tuple<shared_ptr<GameAsset>, int>> new_inventory;
+  //   int count = 0;
+  //   for (auto& [asset, count] : inventory) {
+  //     if (asset->name == "berry" && count > 0) {
+  //       count--;
+  //       continue;
+  //     }
+  //     new_inventory.push_back({asset, count});
+  //   }
+  //   inventory = new_inventory;
 
-    ObjPtr* cubes = project_4d_->GetCubes();
-    for (int i = 0; i < 8; i++) { 
-      if (!cubes[i]) continue;
-      cubes[i]->draw = true;
-    }
-    hypercube_life_ = 20;
-    creating_spell_ = 1;
+  //   ObjPtr* cubes = project_4d_->GetCubes();
+  //   for (int i = 0; i < 8; i++) { 
+  //     if (!cubes[i]) continue;
+  //     cubes[i]->draw = true;
+  //   }
+  //   hypercube_life_ = 20;
+  //   creating_spell_ = 1;
 
-    inventory.clear();
-    for (int i = 0; i < new_inventory.size(); i++) {
-      inventory.push_back(new_inventory[i]);
-    }
-    cout << "Creating 1" << endl;
-  }
+  //   inventory.clear();
+  //   for (int i = 0; i < new_inventory.size(); i++) {
+  //     inventory.push_back(new_inventory[i]);
+  //   }
+  //   cout << "Creating 1" << endl;
+  // }
 }
 
 bool Craft::ProcessDefaultInput(int key, int scancode, int action, 
@@ -140,11 +140,6 @@ void Craft::ProcessCrafting() {
         cubes[i]->draw = false;
       }
 
-      if (creating_spell_ == 0) {
-        player->num_spells += 10;
-      } else {
-        player->num_spells_2 += 2;
-      }
       creating_spell_ = -1;
     }
   }

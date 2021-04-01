@@ -18,6 +18,7 @@ class AI {
   void Attack(ObjPtr spider);
   void Wander(ObjPtr spider);
   void Chase(ObjPtr spider);
+  void ProcessNPC(ObjPtr unit);
 
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
   bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);
@@ -31,11 +32,13 @@ class AI {
   bool ProcessRangedAttackAction(ObjPtr spider, 
     shared_ptr<RangedAttackAction> action);
   bool ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action);
+  bool ProcessAnimationAction(ObjPtr spider, shared_ptr<AnimationAction> action);
   bool ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessMentalState(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);
+  void ProcessPlayerAction(ObjPtr player);
 
  public:
   AI(shared_ptr<Resources> asset_catalog);

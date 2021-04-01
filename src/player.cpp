@@ -2,15 +2,16 @@
 
 PlayerInput::PlayerInput(shared_ptr<Resources> asset_catalog, 
     shared_ptr<Project4D> project_4d, shared_ptr<Craft> craft, 
+    shared_ptr<Inventory> inventory,
     shared_ptr<Terrain> terrain,
     shared_ptr<Dialog> dialog)
   : resources_(asset_catalog), project_4d_(project_4d), craft_(craft), 
-    terrain_(terrain), dialog_(dialog) {
+    inventory_(inventory), terrain_(terrain), dialog_(dialog) {
 }
 
-void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
+void PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c, 
+  bool interact) {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  vector<tuple<shared_ptr<GameAsset>, int>>& inventory = resources_->GetInventory();
   vector<shared_ptr<GameObject>> items = resources_->GetItems();
 
   vec3 p = c.position;
@@ -24,15 +25,38 @@ void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
       if (item->type == GAME_OBJ_DOOR) {
         shared_ptr<Door> door = static_pointer_cast<Door>(item);
         if (door->state == 0) {
-          door->state = 1;
-        } else if (door->state == 2) {
-          door->state = 3;
+          door->state = DOOR_OPENING;
+          for (shared_ptr<Event> e : door->on_open_events) {
+            cout << "ADDING....." << endl;
+            shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
+            cout << "Callback: " << door_event->callback << endl;
+            resources_->AddEvent(e);
+          }
+        } else if (door->state == DOOR_OPEN) {
+          door->state = DOOR_CLOSING;
         }
       } else {
-        int item_id = item->GetAsset()->item_id;
-        if (resources_->InsertItemInInvetory(item_id)) {
-          inventory.push_back({ item->GetAsset(), 1 });
-          resources_->RemoveObject(item);
+        shared_ptr<GameAsset> asset = item->GetAsset();
+        if (item->name == "book1-001") {
+          configs->learned_spells[1] = 1;
+          inventory_->Enable(window, INVENTORY_SPELLBOOK);
+          resources_->SetGameState(STATE_INVENTORY);
+          resources_->AddMessage("You learned to cast magic missile.");
+        } else if (item->name == "book2-001") {
+          configs->learned_spells[2] = 1;
+          inventory_->Enable(window, INVENTORY_SPELLBOOK);
+          resources_->SetGameState(STATE_INVENTORY);
+          resources_->AddMessage("You learned to cast minor open lock.");
+        } else if (item->name == "altar-001") {
+          inventory_->Enable(window, INVENTORY_CRAFT);
+          resources_->SetGameState(STATE_INVENTORY);
+        } else {
+          int item_id = asset->item_id;
+          if (resources_->InsertItemInInventory(item_id)) {
+            resources_->RemoveObject(item);
+            resources_->AddMessage(string("You picked a " + 
+              item->GetDisplayName()));
+          }
         }
       }
     }
@@ -62,15 +86,15 @@ void PlayerInput::InteractWithItem(const Camera& c, bool interact) {
 
   // TODO: move this to other location. Should be NPC but how?
   vector<pair<string, string>> npc_values {
-    { "fisherman-001", "fisherman-speech" },
-    { "leader", "leader-speech" },
-    { "bird-tamer", "bird-tamer-speech" },
-    { "farmer", "farmer-speech" },
-    { "huntress", "huntress-speech" },
-    { "innkeep", "innkeep-speech" },
-    { "blacksmith-man", "blacksmith-speech" },
-    { "librarian", "librarian-speech" },
-    { "alchemist", "alchemist-speech" }
+    { "alessia", "leader-speech" },
+    // { "fisherman-001", "fisherman-speech" },
+    // { "bird-tamer", "bird-tamer-speech" },
+    // { "farmer", "farmer-speech" },
+    // { "huntress", "huntress-speech" },
+    // { "innkeep", "innkeep-speech" },
+    // { "blacksmith-man", "blacksmith-speech" },
+    // { "librarian", "librarian-speech" },
+    // { "alchemist", "alchemist-speech" }
   };
 
   for (const auto& [name, speech] : npc_values) {
@@ -280,6 +304,9 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
   state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
   if (state == GLFW_PRESS) {
     resources_->SetGameState(STATE_GAME);
+    configs->new_building->CalculateCollisionData();
+    resources_->GenerateOptimizedOctree();
+
     configs->place_object = false;
     configs->scale_object = false;
     configs->scale_pivot = configs->new_building->position;
@@ -289,6 +316,7 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
 
 Camera PlayerInput::GetCamera() {
   shared_ptr<Player> player = resources_->GetPlayer();
+  
   vec3 direction(
     cos(player->rotation.x) * sin(player->rotation.y), 
     sin(player->rotation.x),
@@ -306,9 +334,10 @@ Camera PlayerInput::GetCamera() {
     0,
     cos(player->rotation.x) * cos(player->rotation.y)
   );
-  
+
   vec3 up = glm::cross(right, direction);
-  Camera c = Camera(player->position + vec3(0, 3.0, 0), direction, up);
+  Camera c = Camera(player->position, direction, up);
+
   c.rotation.x = player->rotation.x;
   c.rotation.y = player->rotation.y;
   c.right = right;
@@ -340,7 +369,10 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   );
 
   Camera c = GetCamera();
-  
+  if (!player->actions.empty()) {
+    return c;
+  }
+
   if (resources_->GetGameState() == STATE_EDITOR) return c;
 
   float player_speed = resources_->GetConfigs()->player_speed; 
@@ -399,9 +431,12 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     }
   }
 
-  double x_pos, y_pos;
-  glfwGetCursorPos(window, &x_pos, &y_pos);
-  glfwSetCursorPos(window, 0, 0);
+  double x_pos = 0, y_pos = 0;
+  int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
+  if (focused) {
+    glfwGetCursorPos(window, &x_pos, &y_pos);
+    glfwSetCursorPos(window, 0, 0);
+  }
 
   // Change orientation.
   float mouse_sensitivity = 0.003f;
@@ -420,29 +455,41 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     
           // TODO: check which spell here.
           if (configs->spellbar[configs->selected_spell] == 1) {
-          // if (player->num_spells > 0) {
             obj->active_animation = "Armature|shoot";
             player->player_action = PLAYER_CASTING;
             obj->frame = 0;
             animation_frame = 60;
             resources_->CreateChargeMagicMissileEffect();
             player->selected_spell = 0;
-            player->num_spells--;
             configs->spellbar[configs->selected_spell] = 0;
+          } else if (configs->spellbar[configs->selected_spell] == 4) {
+            vec3 p = c.position;
+            vec3 d = normalize(c.direction);
+            ObjPtr item = resources_->IntersectRayObjects(p, d, 10.0f);
+            if (item && item->type == GAME_OBJ_DOOR) {
+              shared_ptr<Door> door = static_pointer_cast<Door>(item);
+              if (door->state == 4) {
+                door->state = DOOR_CLOSED;
+                obj->active_animation = "Armature|shoot";
+                player->player_action = PLAYER_CASTING;
+                obj->frame = 0;
+                animation_frame = 60;
+                resources_->CreateChargeMagicMissileEffect();
+                player->selected_spell = 4;
+                configs->spellbar[configs->selected_spell] = 0;
+              }
+            }
           }
         }
         debounce = 20;
       } else if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
         if (debounce < 0) {
-          if (player->num_spells_2 > 0) {
-            obj->active_animation = "Armature|shoot";
-            player->player_action = PLAYER_CASTING;
-            obj->frame = 0;
-            animation_frame = 60;
-            resources_->CreateChargeMagicMissileEffect();
-            player->selected_spell = 1;
-            player->num_spells_2--;
-          }
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          animation_frame = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 1;
         }
         debounce = 20;
       } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
@@ -468,7 +515,6 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
           obj->frame = 0;
           animation_frame = 60;
           resources_->CreateChargeMagicMissileEffect();
-          player->num_spells--;
           configs->spellbar[configs->selected_spell] = 0;
         } else {
           obj->active_animation = "Armature|idle";
@@ -486,6 +532,8 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
           resources_->CastMagicMissile(c);
           resources_->CastMagicMissile(c2);
           resources_->CastMagicMissile(c3);
+        } else if (player->selected_spell == 4) {
+
         }
       }
       break;
@@ -509,7 +557,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   bool interacted_with_item = false;
   if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
     if (throttle_counter_ < 0) {
-      InteractWithItem(c, true);
+      InteractWithItem(window, c, true);
       interacted_with_item = true;
     }
     throttle_counter_ = 20;
@@ -558,10 +606,18 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     if (configs->place_object) {
       configs->new_building->rotation_matrix *= rotate(mat4(1.0), 0.005f, vec3(0, 1, 0));
     }
+  } else if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+    if (configs->place_object) {
+      configs->new_building->rotation_matrix *= rotate(mat4(1.0), -0.005f, vec3(1, 0, 0));
+    }
+  } else if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {
+    if (configs->place_object) {
+      configs->new_building->rotation_matrix *= rotate(mat4(1.0), 0.005f, vec3(1, 0, 0));
+    }
   }
 
   if (!interacted_with_item) {
-    InteractWithItem(c, false);
+    InteractWithItem(window, c, false);
   }
 
   EditTerrain(window, c);

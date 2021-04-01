@@ -25,6 +25,7 @@ uniform sampler2D texture_sampler;
 uniform sampler2D texture1_sampler;
 uniform sampler2D texture2_sampler;
 uniform sampler2D texture3_sampler;
+uniform sampler2D texture4_sampler;
 uniform sampler2DShadow shadow_sampler;
 uniform sampler2DShadow shadow_sampler1;
 uniform sampler2DShadow shadow_sampler2;
@@ -123,7 +124,8 @@ void main() {
     }
   }
 
-  vec2 uv = fract(in_data.UV);
+  // vec2 uv = fract(in_data.UV);
+  vec2 uv = in_data.UV;
 
   // Texture.
   vec3 diffuse_color;
@@ -134,9 +136,18 @@ void main() {
   // vec3 t3 = texture(texture_sampler, vec2(0.0, 0.5) + uv / 2.1).rgb;
   // vec3 t4 = texture(texture_sampler, vec2(0.5, 0.5) + uv / 2.1).rgb;
   vec3 t1 = texture(texture_sampler,  uv).rgb;
+  t1 = mix(texture(texture_sampler,  uv * 0.25).rgb, t1, 0.5);
+
   vec3 t2 = texture(texture1_sampler, uv).rgb;
+  t2 = mix(texture(texture1_sampler,  uv * 0.25).rgb, t2, 0.5);
+
   vec3 t3 = texture(texture2_sampler, uv).rgb;
+  t3 = mix(texture(texture2_sampler,  uv * 0.25).rgb, t3, 0.5);
+
   vec3 t4 = texture(texture3_sampler, uv).rgb;
+  t4 = mix(texture(texture3_sampler,  uv * 0.25).rgb, t4, 0.5);
+
+  vec3 t5 = texture(texture4_sampler, uv).rgb;
 
   vec3 blending = mix(in_data.blending, in_data.coarser_blending, in_data.alpha);
 

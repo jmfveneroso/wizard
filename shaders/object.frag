@@ -118,35 +118,13 @@ void main(){
   vec3 out_color = ambient_color;
 
   float sun_intensity = outdoors * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
-  if (enable_bump_map > 0) {
-    vec3 tex_normal_tangentspace = normalize(texture(bump_map_sampler, 
-      vec2(in_data.UV.x, in_data.UV.y)).rgb * 2.0 - 1.0);
-    vec3 n = tex_normal_tangentspace;
-    vec3 l = in_data.light_dir_tangentspace;
-    float cos_theta = clamp(dot(n, l), 0, 1);
 
-    vec3 E = normalize(in_data.eye_dir_tangentspace);
-    vec3 R = reflect(-l, n);
-    float cos_alpha = clamp(dot(E, R), 0, 1);
-         
-    ambient_color = 0.3 * ambient_color;
-    vec3 specular_color = vec3(0.8);
-    out_color += sun_intensity * (diffuse_color * light_color * light_power * cos_theta);
-
-    // out_color += specular_color * light_color * light_power * pow(cos_alpha, 5);
-    // out_color += sun_intensity * (diffuse_color * light_color * light_power * cos_theta
-    //   + specular_color * light_color * light_power * pow(cos_alpha, 5));
-
-  } else {
-    // Sun light.
-    vec3 light_cameraspace = (V * vec4(light_direction, 0.0)).xyz;
-    vec3 n = normalize(in_data.normal);
-    vec3 l = normalize(light_cameraspace);
-    float brightness = clamp(dot(n, l), 0, 1);
-    out_color += sun_intensity * (diffuse_color * light_color * light_power * brightness);
-  }
-
+  // Sun light.
+  vec3 light_cameraspace = (V * vec4(light_direction, 0.0)).xyz;
   vec3 n = normalize(in_data.normal);
+  vec3 l = normalize(light_cameraspace);
+  float brightness = clamp(dot(n, l), 0, 1);
+  out_color += sun_intensity * (diffuse_color * light_color * light_power * brightness);
 
   // Directional lighting.
   // vec3 result = CalcDirLight(dir_light, norm, viewDir);
