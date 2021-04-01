@@ -32,11 +32,13 @@ class Draw2D {
  public:
   Draw2D(shared_ptr<Resources> asset_catalog, const string dir);
 
-  void DrawChar(char, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, const string& font_name = "ubuntu_monospace");
-  void DrawText(const string&, float, float, vec3 = {1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false, const string& font_name = "ubuntu_monospace");
+  void DrawChar(char, float, float, vec4 = {1.0, 1.0, 1.0, 1.0}, GLfloat = 1.0, const string& font_name = "ubuntu_monospace");
+  void DrawText(const string&, float, float, vec4 = {1.0, 1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false, const string& font_name = "ubuntu_monospace");
   void DrawLine(vec2, vec2, GLfloat, vec3);
   void DrawRectangle(GLfloat, GLfloat, GLfloat, GLfloat, vec3);
-  void DrawImage(const string& texture, GLfloat, GLfloat, GLfloat, GLfloat, GLfloat);
+
+  void DrawImage(const string& texture, GLfloat x, GLfloat y, GLfloat width, 
+    GLfloat height, GLfloat transparency, vec2 uv = vec2(1, 1));
 };
 
 #endif // __2D_HPP__

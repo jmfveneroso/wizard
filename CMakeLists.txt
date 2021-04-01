@@ -79,7 +79,6 @@ set(
   src/item.cpp 
   src/craft.cpp 
   src/dialog.cpp 
-  src/npc.cpp 
   src/engine.cpp 
   src/game_asset.cpp 
   src/game_object.cpp 

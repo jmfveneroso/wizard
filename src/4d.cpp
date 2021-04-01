@@ -142,8 +142,8 @@ void Project4D::BuildCube(int i, const vector<vec3>& v, const vec3& pos) {
     mesh->polygons = polygons;
   } else {
     Mesh m = CreateMesh(0, vertices, uvs, indices);
-    cubes_[i] = resources_->CreateGameObjFromMesh(m, "hypercube", 
-      pos, polygons);
+    cubes_[i] = CreateGameObjFromMesh(resources_.get(), m, "hypercube", pos, 
+      polygons);
     cubes_[i]->draw = false;
   }
 }

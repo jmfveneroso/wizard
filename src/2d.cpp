@@ -148,7 +148,8 @@ void Draw2D::LoadFonts() {
   }
 }
 
-void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale, const string& font_name) {
+void Draw2D::DrawChar(char c, float x, float y, vec4 color, GLfloat scale, 
+  const string& font_name) {
   glBindVertexArray(vao_);
 
   glEnable(GL_BLEND);
@@ -158,7 +159,7 @@ void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale, const
   glUseProgram(shader_id_);
 
   // Activate corresponding render state	
-  glUniform3f(GetUniformId(shader_id_, "textColor"), color.x, color.y, color.z);
+  glUniform4f(GetUniformId(shader_id_, "textColor"), color.x, color.y, color.z, color.a);
   glUniformMatrix4fv(GetUniformId(shader_id_, "projection"), 1, GL_FALSE, &projection_[0][0]);
 
   glActiveTexture(GL_TEXTURE0);
@@ -197,7 +198,7 @@ void Draw2D::DrawChar(char c, float x, float y, vec3 color, GLfloat scale, const
 }
 
 void Draw2D::DrawText(
-  const string& text, float x, float y, vec3 color, GLfloat scale,
+  const string& text, float x, float y, vec4 color, GLfloat scale,
   bool center, const string& font_name
 ) {
   int step = (characters_[font_name]['a'].Advance >> 6);
@@ -269,7 +270,7 @@ void Draw2D::DrawRectangle(GLfloat x, GLfloat y, GLfloat width, GLfloat height, 
 }
 
 void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y, 
-  GLfloat width, GLfloat height, GLfloat transparency) {
+  GLfloat width, GLfloat height, GLfloat transparency, vec2 uv) {
   GLuint shader_id = resources_->GetShader("2d_image");
 
   glBindVertexArray(vao_);
@@ -288,7 +289,7 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
   };
 
   vector<vec2> uvs = {
-    { 0, 1 }, { 0, 0 }, { 1, 1 }, { 1, 1 }, { 0, 0 }, { 1, 0 }
+    { 0, uv.y }, { 0, 0 }, { uv.x, uv.y }, { uv.x, uv.y }, { 0, 0 }, { uv.x, 0 }
   };
 
   vec3 color = vec3(1.0, 0, 0);

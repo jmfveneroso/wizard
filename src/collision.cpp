@@ -1,12 +1,6 @@
 #include "collision.hpp"
 #include <limits>
 
-ostream& operator<<(ostream& os, const AABB& aabb) {
-  os << "Point: " << aabb.point << endl;
-  os << "Dimensions: " << aabb.dimensions << endl;
-  return os;
-}
-
 void NormalizePlane(vec4& plane) {
  float mag = sqrt(plane[0] * plane[0] + plane[1] * plane[1] + 
    plane[2] * plane[2]);
@@ -425,44 +419,71 @@ bool IntersectRaySphere(vec3 p, vec3 d, BoundingSphere s, float &t, vec3 &q) {
 }
 
 bool IntersectRayAABB(vec3 p, vec3 d, AABB a, float &tmin, vec3 &q) {
-  tmin = 0.0f;
-  float tmax = numeric_limits<float>::max();
-
+  const int RIGHT = 0;
+  const int LEFT = 1;
+  const int MIDDLE = 2;
   vec3 aabb_min = a.point;
   vec3 aabb_max = a.point + a.dimensions;
- 
-  // For all three slabs
+  
+  vec3 candidatePlane;
+
+  // Find candidate planes; this loop can be avoided if
+  // rays cast all from the eye(assume perpsective view)
+  bool inside = true;
+  int quadrant[3];
   for (int i = 0; i < 3; i++) {
-    if (abs(d[i]) < 0.00001f) {
-      // Ray is parallel to slab. No hit if origin not within slab
-      if (p[i] < aabb_min[i] || p[i] > aabb_max[i]) {
+    if (p[i] < aabb_min[i]) {
+      quadrant[i] = LEFT;
+      candidatePlane[i] = aabb_min[i];
+      inside = false;
+    } else if (p[i] > aabb_max[i]) {
+      quadrant[i] = RIGHT;
+      candidatePlane[i] = aabb_max[i];
+      inside = false;
+    } else	{
+      quadrant[i] = MIDDLE;
+    }
+  }
+  
+  /* Ray origin inside bounding box */
+  if (inside) {
+    q = p;
+    return true;
+  }
+  
+  /* Calculate T distances to candidate planes */
+  vec3 maxT;
+  for (int i = 0; i < 3; i++) {
+    if (quadrant[i] != MIDDLE && d[i] != 0) {
+      maxT[i] = (candidatePlane[i] - p[i]) / d[i];
+    } else {
+      maxT[i] = -1.;
+    }
+  }
+  
+  // Get largest of the maxT's for final choice of intersection
+  int whichPlane = 0;
+  for (int i = 1; i < 3; i++) {
+    if (maxT[whichPlane] < maxT[i]) {
+      whichPlane = i;
+    }
+  }
+  
+  /* Check final candidate actually inside box */
+  if (maxT[whichPlane] < 0) { 
+    return false;
+  }
+  
+  for (int i = 0; i < 3; i++) {
+    if (whichPlane != i) {
+      q[i] = p[i] + maxT[whichPlane] * d[i];
+      if (q[i] < aabb_min[i] || q[i] > aabb_max[i]) {
         return false;
       }
     } else {
-      // Compute intersection t value of ray with near and far plane of slab
-      float ood = 1.0f / d[i];
-      float t1 = (aabb_min[i] - p[i]) * ood;
-      float t2 = (aabb_max[i] - p[i]) * ood;
-
-      // Make t1 be intersection with near plane, t2 with far plane
-      if (t1 > t2) {
-        // Swap(t1, t2);
-        float aux = t1;
-        t1 = t2;
-        t2 = aux;
-      }
-
-      // Compute the intersection of slab intersection intervals
-      if (t1 > tmin) tmin = t1;
-      if (t2 > tmax) tmax = t2;
-
-      // Exit with no collision as soon as slab intersection becomes empty
-      if (tmin > tmax) return false;
+      q[i] = candidatePlane[i];
     }
   }
-
-  // Ray intersects all 3 slabs. Return point (q) and intersection t value (tmin)
-  q = p + d * tmin;
   return true;
 }
 

@@ -24,8 +24,6 @@
 using namespace std;
 using namespace glm;
 
-ostream& operator<<(ostream& os, const AABB& v);
-
 void ExtractFrustumPlanes(const mat4& MVP, vec4 planes[6]);
 
 bool CollideSphereFrustum(const BoundingSphere& bounding_sphere, 

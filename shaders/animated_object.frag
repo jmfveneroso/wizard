@@ -70,7 +70,7 @@ void main(){
 
   // Normal.
   vec3 n = normalize(in_data.normal);
-  vec3 l = normalize(light_cameraspace);
+  vec3 l = normalize(-light_cameraspace);
 
   float brightness = clamp(dot(n, l), 0, 1);
 

@@ -211,6 +211,13 @@ ostream& operator<<(ostream& os, const BoundingSphere& bs) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const AABB& aabb) {
+  os << "AABB point: " << aabb.point << ", dimensions: " << aabb.dimensions
+    << ")";
+  return os;
+
+}
+
 ostream& operator<<(ostream& os, const OBB& obb) {
   os << "center: " << obb.center << ", axis[0]: " << obb.axis[0]
      << ", axis[1]: " << obb.axis[1] << ", axis[2]" << obb.axis[2]
@@ -252,6 +259,36 @@ ostream& operator<<(ostream& os, const shared_ptr<SphereTreeNode>&
 
     for (int i = 0; i < depth; i++) os << "  ";
     os << current->sphere;
+  }
+  return os;
+}
+
+ostream& operator<<(ostream& os, const shared_ptr<AABBTreeNode>& 
+  aabb_tree_node) {
+  queue<tuple<shared_ptr<AABBTreeNode>, int, bool>> q;
+  q.push({ aabb_tree_node, 0, true });
+
+  int counter = 0;
+  while (!q.empty()) {
+    auto& [current, depth, lft] = q.front();
+    q.pop();
+
+    if (current->lft) q.push({ current->lft, depth + 1, true });
+    if (current->rgt) q.push({ current->rgt, depth + 1, false });
+
+    for (int i = 0; i < depth; i++) os << "  ";
+    os << counter++ << "(" << ((lft) ? "lft" : "rgt") << ")";
+
+    if (current->has_polygon) {
+      os << endl; 
+      for (int i = 0; i < depth; i++) os << "  ";
+      os << "  " << current->polygon << endl; 
+    } else {
+      os << endl; 
+    }
+
+    for (int i = 0; i < depth; i++) os << "  ";
+    os << current->aabb;
   }
   return os;
 }
@@ -634,7 +671,7 @@ quat RotationBetweenVectors(vec3 start, vec3 dest) {
   }
   
   rotation_axis = cross(start, dest);
-  float s = sqrt( (1 + cos_theta)*2 );
+  float s = sqrt((1 + cos_theta) * 2);
   float invs = 1 / s;
   return quat(
     s * 0.5f, 
@@ -798,6 +835,20 @@ CollisionType StrToCollisionType(const std::string& s) {
   return str_to_col_type[s];
 }
 
+std::string CollisionTypeToStr(const CollisionType& col) {
+  static unordered_map<CollisionType, string> col_type_to_str ({
+    { COL_SPHERE, "sphere" },
+    { COL_BONES, "bones" },
+    { COL_PERFECT, "perfect" },
+    { COL_QUICK_SPHERE, "quick-sphere" },
+    { COL_CONVEX_HULL, "convex-hull" },
+    { COL_OBB, "obb" },
+    { COL_NONE, "none" },
+    { COL_UNDEFINED, "undefined" }
+  });
+  return col_type_to_str[col];
+}
+
 ParticleBehavior StrToParticleBehavior(const std::string& s) {
   static unordered_map<string, ParticleBehavior> str_to_p_type ({
     { "fixed", PARTICLE_FIXED },
@@ -832,6 +883,28 @@ AiState StrToAiState(const std::string& s) {
     { "script", SCRIPT }
   });
   return str_to_ai_state[s];
+}
+
+DoorState StrToDoorState(const std::string& s) {
+  static unordered_map<string, DoorState> str_to_door_state ({
+    { "closed", DOOR_CLOSED },
+    { "opening", DOOR_OPENING },
+    { "open", DOOR_OPEN },
+    { "closing", DOOR_CLOSING },
+    { "weak-lock", DOOR_WEAK_LOCK }
+  });
+  return str_to_door_state[s];
+}
+
+string DoorStateToStr(const DoorState& state) {
+  static unordered_map<DoorState, string> door_state_to_str_ ({
+    { DOOR_CLOSED, "closed" },
+    { DOOR_OPENING, "opening" },
+    { DOOR_OPEN, "open" },
+    { DOOR_CLOSING, "closing" },
+    { DOOR_WEAK_LOCK, "weak-lock" }
+  });
+  return door_state_to_str_[state];
 }
 
 BoundingSphere GetBoundingSphereFromVertices(
@@ -869,6 +942,15 @@ vec3 LoadVec3FromXml(const pugi::xml_node& node) {
   v.x = boost::lexical_cast<float>(node.attribute("x").value());
   v.y = boost::lexical_cast<float>(node.attribute("y").value());
   v.z = boost::lexical_cast<float>(node.attribute("z").value());
+  return v;
+}
+
+vec4 LoadVec4FromXml(const pugi::xml_node& node) {
+  vec4 v;
+  v.x = boost::lexical_cast<float>(node.attribute("x").value());
+  v.y = boost::lexical_cast<float>(node.attribute("y").value());
+  v.z = boost::lexical_cast<float>(node.attribute("z").value());
+  v.w = boost::lexical_cast<float>(node.attribute("w").value());
   return v;
 }
 
@@ -913,6 +995,13 @@ void AppendXmlAttr(pugi::xml_node& node, const vec3& v) {
   node.append_attribute("x") = v.x;
   node.append_attribute("y") = v.y;
   node.append_attribute("z") = v.z;
+}
+
+void AppendXmlAttr(pugi::xml_node& node, const vec4& v) {
+  node.append_attribute("x") = v.x;
+  node.append_attribute("y") = v.y;
+  node.append_attribute("z") = v.z;
+  node.append_attribute("w") = v.w;
 }
 
 void AppendXmlNode(pugi::xml_node& node, const string& name, const vec3& v) {
@@ -1035,3 +1124,20 @@ void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs,
   for (int i = 0; i < 36; i++) { indices[i] = i; }
 }
 
+bool operator==(const mat4& m1, const mat4& m2) {
+  for (int i = 0; i < 4; i++) {
+    for (int j = 0; j < 4; j++) {
+      if (abs(m1[i][j] - m2[i][j]) > 0.0001f) return false;
+    }
+  }
+  return true;
+}
+
+bool operator!=(const mat4& m1, const mat4& m2) {
+  return !(m1 == m2);
+}
+
+void AppendXmlNode(pugi::xml_node& node, const string& name, quat new_quat) {
+  pugi::xml_node new_node = node.append_child(name.c_str());
+  AppendXmlAttr(new_node, vec4(new_quat.x, new_quat.y, new_quat.z, new_quat.w));
+}

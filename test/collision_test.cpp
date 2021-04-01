@@ -24,6 +24,35 @@ TEST(Collisions, TestSphereSphere) {
   ExpectVec3Eq(vec3(0, -1, 0), displacement_vector);
 }
 
+TEST(Collisions, TestIntersectRayAABB) {
+  vec3 p = vec3(0, 0, 0);
+  vec3 d = vec3(1, 0, 0);
+
+  AABB aabb(vec3(5, -5, -5), vec3(10, 10, 10));
+
+  float tmin;
+  vec3 q;
+  bool result = IntersectRayAABB(p, d, aabb, tmin, q);
+
+  EXPECT_TRUE(result);
+
+  d = vec3(0, 0, 1);
+  result = IntersectRayAABB(p, d, aabb, tmin, q);
+  EXPECT_FALSE(result);
+
+  aabb = AABB(vec3(-1, -1, -1), vec3(5, 5, 5));
+  p = vec3(0.0, 100.0, 0.0);
+  d = vec3(0.1, 1.0, 0.1);
+  result = IntersectRayAABB(p, d, aabb, tmin, q);
+  EXPECT_FALSE(result);
+
+  aabb = AABB(vec3(-1, -1, -1), vec3(5, 5, 5));
+  p = vec3(0.0, 100.0, 0.0);
+  d = vec3(0.0, -1.0, 0.0);
+  result = IntersectRayAABB(p, d, aabb, tmin, q);
+  EXPECT_TRUE(result);
+}
+
 } // End of namespace
 
 int main(int argc, char **argv) {

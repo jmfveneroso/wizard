@@ -16,17 +16,15 @@ Engine::Engine(
   shared_ptr<PlayerInput> player_input,
   shared_ptr<Item> item,
   shared_ptr<Dialog> dialog,
-  shared_ptr<Npc> npc,
-  shared_ptr<ScriptManager> script_manager,
   GLFWwindow* window,
   int window_width,
   int window_height
 ) : project_4d_(project_4d), renderer_(renderer), text_editor_(text_editor),
     inventory_(inventory), craft_(craft), resources_(asset_catalog),
     collision_resolver_(collision_resolver), ai_(ai), physics_(physics),
-    player_input_(player_input), item_(item), dialog_(dialog), npc_(npc),
-    script_manager_(script_manager), window_(window), 
-    window_width_(window_width), window_height_(window_height) {
+    player_input_(player_input), item_(item), dialog_(dialog), 
+    window_(window), window_width_(window_width), 
+    window_height_(window_height) {
 }
 
 // TODO: move this elsewhere.
@@ -46,9 +44,6 @@ void Engine::RunCommand(string command) {
     float y = boost::lexical_cast<float>(result[2]);
     float z = boost::lexical_cast<float>(result[3]);
     player->position = vec3(x, y, z);
-  } else if (result[0] == "spells") {
-    player->num_spells += 100;
-    player->num_spells_2 += 100;
   } else if (result[0] == "speed") {
     if (result.size() == 2) {
       float speed = boost::lexical_cast<float>(result[1]);
@@ -61,6 +56,8 @@ void Engine::RunCommand(string command) {
     configs->time_of_day = boost::lexical_cast<float>(result[1]);
   } else if (result[0] == "levitate") {
     configs->levitate = true;
+  } else if (result[0] == "self-harm") {
+    player->life -= 10.0f;
   } else if (result[0] == "nolevitate") {
     configs->levitate = false;
   } else if (result[0] == "time") {
@@ -85,15 +82,18 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "nos") {
     configs->target_player_speed = 0.04;
     configs->levitate = false;
+  } else if (result[0] == "overlay") {
+    configs->overlay = "wizard-farm-concept";
+  } else if (result[0] == "nooverlay") {
+    configs->overlay = "";
   } else if (result[0] == "create") {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
-      cout << "Creating asset: " << asset_name << endl;
       configs->place_axis = 1;
 
       Camera c = player_input_->GetCamera();
       vec3 position = c.position + c.direction * 10.0f;
-      configs->new_building = resources_->CreateGameObjFromAsset(
+      configs->new_building = CreateGameObjFromAsset(resources_.get(), 
         asset_name, position);
       configs->new_building->being_placed = true;
       configs->place_object = true;
@@ -119,7 +119,9 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "save") {
     resources_->GetHeightMap().Save();
   } else if (result[0] == "save-objs") {
-    resources_->SaveNewObjects();
+    resources_->SaveObjects();
+  } else if (result[0] == "save-collision") {
+    resources_->SaveCollisionData();
   }
 }
 
@@ -181,11 +183,10 @@ bool Engine::ProcessGameInput() {
         throttle_counter_ = 20;
       } else if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
-          glfwSetCursorPos(window, 640 - 32, 400 + 32);
-          inventory_->Enable();
+          inventory_->Enable(window);
           resources_->SetGameState(STATE_INVENTORY);
         }
-        throttle_counter_ = 20;
+        throttle_counter_ = 10;
         return false;
       } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
@@ -203,19 +204,27 @@ bool Engine::ProcessGameInput() {
           }
         }
         throttle_counter_ = 4;
+      } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_tile = 0;
+        }
+        throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           configs->selected_spell = 0;
+          configs->selected_tile = 1;
         }
         throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           configs->selected_spell = 1;
+          configs->selected_tile = 2;
         }
         throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           configs->selected_spell = 2;
+          configs->selected_tile = 3;
         }
         throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
@@ -245,6 +254,15 @@ bool Engine::ProcessGameInput() {
         throttle_counter_ = 5;
       }
       player_input_->ProcessInput(window_);
+
+
+      shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
+      if (current_dialog->enabled) {
+        glfwSetCursorPos(window_, 0, 0);
+        inventory_->Enable(window, INVENTORY_DIALOG);
+        resources_->SetGameState(STATE_INVENTORY);
+      }
+
       return false;
     }
     case STATE_EDITOR: {
@@ -313,8 +331,7 @@ void Engine::AfterFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   {
     // TODO: periodic events: update frame, cooldown.
-    resources_->UpdateCooldowns();
-    resources_->RemoveDead();
+    resources_->RunPeriodicEvents();
 
     if (!configs->stop_time) {
       // 1 minute per second.
@@ -366,31 +383,33 @@ void Engine::UpdateAnimationFrames() {
     if (obj->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(obj);
       switch (door->state) {
-        case 0: // closed.
+        case DOOR_CLOSED: 
           door->frame = 0;
           resources_->ChangeObjectAnimation(door, "Armature|open");
           break;
-        case 1: // opening.
+        case DOOR_OPENING: 
           resources_->ChangeObjectAnimation(door, "Armature|open");
           door->frame += 1.0f * d;
           if (door->frame >= 59) {
-            door->state = 2;
+            door->state = DOOR_OPEN;
             door->frame = 0;
             resources_->ChangeObjectAnimation(door, "Armature|close");
           }
           break;
-        case 2: // open.
+        case DOOR_OPEN:
           door->frame = 0;
           resources_->ChangeObjectAnimation(door, "Armature|close");
           break;
-        case 3: // closing.
+        case DOOR_CLOSING:
           resources_->ChangeObjectAnimation(door, "Armature|close");
           door->frame += 1.0f * d;
           if (door->frame >= 59) {
-            door->state = 0;
+            door->state = DOOR_CLOSED;
             door->frame = 0;
             resources_->ChangeObjectAnimation(door, "Armature|open");
           }
+          break;
+        default:
           break;
       }
       continue; 
@@ -492,17 +511,12 @@ void Engine::BeforeFrameDebug() {
 
     if (door_obbs_.find(obb_name) == door_obbs_.end()) {
       shared_ptr<GameObject> obb_obj = 
-        resources_->CreateGameObjFromPolygons(mesh.polygons, obb_name,
+        CreateGameObjFromPolygons(resources_.get(), mesh.polygons, obb_name,
           obj->position);
       door_obbs_[obb_name] = obb_obj;
     } else {
       ObjPtr obb_obj = door_obbs_[obb_name];
       MeshPtr mesh = resources_->GetMesh(obb_obj);
-      if (mesh == nullptr) {
-        cout << "xxx---xxx" << endl;
-        continue;
-      }
-
       UpdateMesh(*mesh, vertices, uvs, indices);
     }
   }
@@ -516,19 +530,10 @@ void Engine::BeforeFrame() {
     ProcessGameInput();
     item_->ProcessItems();
     craft_->ProcessCrafting();
-    npc_->ProcessNpcs();
     ai_->RunSpiderAI();
-    script_manager_->ProcessScripts();
     resources_->UpdateParticles();
     physics_->Run();
     collision_resolver_->Collide();
-
-    configs->taking_hit -= 1.0f;
-    if (configs->taking_hit < 0.0) {
-      configs->player_speed = configs->target_player_speed;
-    } else {
-      configs->player_speed = configs->target_player_speed / 6.0f;
-    }
   }
 }
 
@@ -546,6 +551,7 @@ void Engine::Run() {
 
   // Start threads.
   // collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
+  glfwSetCursorPos(window_, 0, 0);
 
   int frames = 0;
   double next_print_time = glfwGetTime();

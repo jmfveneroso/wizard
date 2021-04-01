@@ -25,13 +25,7 @@ void Physics::Run() {
       continue;
     }
 
-    PhysicsBehavior physics_behavior = obj->physics_behavior;
-    if (physics_behavior == PHYSICS_UNDEFINED) {
-      if (obj->GetAsset()) {
-        physics_behavior = obj->GetAsset()->physics_behavior;
-      }
-    }
-
+    PhysicsBehavior physics_behavior = obj->GetPhysicsBehavior();
     if (physics_behavior == PHYSICS_UNDEFINED || 
       physics_behavior == PHYSICS_FIXED || 
       physics_behavior == PHYSICS_NONE) {

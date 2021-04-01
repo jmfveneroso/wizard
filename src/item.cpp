@@ -5,6 +5,7 @@ Item::Item(shared_ptr<Resources> asset_catalog)
 }
 
 void Item::ProcessItems() {
+  return;
   vector<shared_ptr<GameObject>> extractables = resources_->GetExtractables();
   if (extractables.size() == 0 && respawn_countdown_ < 0) {
     respawn_countdown_ = 1000;
@@ -13,12 +14,11 @@ void Item::ProcessItems() {
   respawn_countdown_--;
   if (respawn_countdown_ == 0) {
     vec3 pos = vec3(11500, 26, 7165);
-    shared_ptr<GameObject> item = resources_->CreateGameObjFromAsset(
+    shared_ptr<GameObject> item = CreateGameObjFromAsset(resources_.get(),
       "rock", pos);
 
     pos = vec3(11600, 32, 7165);
-    item = resources_->CreateGameObjFromAsset(
-      "weeds", pos);
+    item = CreateGameObjFromAsset(resources_.get(), "weeds", pos);
   }
 
   for (auto obj : extractables) {
@@ -41,7 +41,7 @@ void Item::ProcessItems() {
         std::normal_distribution<float> distribution(0.0, 10.0);
         float x = distribution(generator_);
         float y = distribution(generator_);
-        shared_ptr<GameObject> item = resources_->CreateGameObjFromAsset(
+        shared_ptr<GameObject> item = CreateGameObjFromAsset(resources_.get(),
           "small-rock", obj->position + vec3(x, 0, y));
 
         vec3 main_direction = vec3(0.0f, 1.0f, 0.0f);
@@ -63,7 +63,7 @@ void Item::ProcessItems() {
         std::normal_distribution<float> distribution(0.0, 10.0);
         float x = distribution(generator_);
         float y = distribution(generator_);
-        shared_ptr<GameObject> item = resources_->CreateGameObjFromAsset(
+        shared_ptr<GameObject> item = CreateGameObjFromAsset(resources_.get(),
           "berry", obj->position + vec3(x, 0, y));
 
         vec3 main_direction = vec3(0.0f, 1.0f, 0.0f);

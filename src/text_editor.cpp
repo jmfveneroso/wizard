@@ -420,7 +420,7 @@ void TextEditor::Draw(int win_x, int win_y) {
     int digits_ = 0;
     for (int aux = y + 1; aux; aux /= 10) { digits_++; }
     int offset_x = (digits - digits_) * 9;
-    draw_2d_->DrawText(ss.str(), win_x + 2 + offset_x, base_y - height, vec3(1, 0.69, 0.23));
+    draw_2d_->DrawText(ss.str(), win_x + 2 + offset_x, base_y - height, vec4(1, 0.69, 0.23, 1));
 
     if (lines[y].size() == 0 && cursor_row_ == y && mode != 2) {
       draw_2d_->DrawChar((char) 150, base_x + 2, base_y - height);
@@ -435,14 +435,14 @@ void TextEditor::Draw(int win_x, int win_y) {
           x == lines[y].size() - 1 && mode == 0) draw_cursor = true;
       if (mode == 2) draw_cursor = false;
 
-      vec3 color = vec3(1);
+      vec4 color = vec4(1);
       if (mode_ == CREATE_OBJECT && cursor_row_ == y) {
-        color = vec3(0.3);
+        color = vec4(0.3, 0.3, 0.3, 1);
       }
 
       if (draw_cursor) {
         draw_2d_->DrawChar((char) 150, base_x + 2 + x * 9, base_y - height);
-        draw_2d_->DrawChar(lines[y][x], base_x + 2 + x * 9, base_y - height, vec3(0, 0, 0));
+        draw_2d_->DrawChar(lines[y][x], base_x + 2 + x * 9, base_y - height, vec4(0, 0, 0, 1));
       } else {
         draw_2d_->DrawChar(lines[y][x], base_x + 2 + x * 9, base_y - height, color);
       }
@@ -455,20 +455,20 @@ void TextEditor::Draw(int win_x, int win_y) {
   }
 
   for (int y = lines.size(); y < 30; ++y) {
-    draw_2d_->DrawText("~", win_x + 2, base_y - height, vec3(1, 0.69, 0.23));
+    draw_2d_->DrawText("~", win_x + 2, base_y - height, vec4(1, 0.69, 0.23, 1));
     height += kLineHeight;
   }
 
   draw_2d_->DrawRectangle(win_x + 2, base_y - kLineHeight * 29 - 3, win_x + 596, kLineHeight, vec3(1, 0.69, 0.23));
-  draw_2d_->DrawText(filename, win_x + 2, base_y - kLineHeight * 30, vec3(0.3));
+  draw_2d_->DrawText(filename, win_x + 2, base_y - kLineHeight * 30, vec4(0.3, 0.3, 0.3, 1));
 
   if (mode == 1) {
-    draw_2d_->DrawText("-- INSERT --", win_x + 2, base_y - kLineHeight * 32, vec3(1, 0.69, 0.23));
+    draw_2d_->DrawText("-- INSERT --", win_x + 2, base_y - kLineHeight * 32, vec4(1, 0.69, 0.23, 1));
   }
 
   // Cursor.
   if (mode == 2) {
-    draw_2d_->DrawText(command, win_x + 2, base_y - kLineHeight * 31, vec3(1, 0.69, 0.23));
-    draw_2d_->DrawChar((char) 150, win_x + 2 + command.size() * 9, base_y - kLineHeight * 31, vec3(1, 0.69, 0.23));
+    draw_2d_->DrawText(command, win_x + 2, base_y - kLineHeight * 31, vec4(1, 0.69, 0.23, 1));
+    draw_2d_->DrawChar((char) 150, win_x + 2 + command.size() * 9, base_y - kLineHeight * 31, vec4(1, 0.69, 0.23, 1));
   }
 }

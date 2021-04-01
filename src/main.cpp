@@ -8,11 +8,10 @@
 #include "item.hpp"
 #include "craft.hpp"
 #include "dialog.hpp"
-#include "npc.hpp"
 #include "engine.hpp"
 #include "scripts.hpp"
 
-shared_ptr<Resources> asset_catalog = nullptr;
+shared_ptr<Resources> resources = nullptr;
 shared_ptr<Renderer> renderer = nullptr;
 shared_ptr<TextEditor> text_editor = nullptr;
 shared_ptr<Craft> craft = nullptr;
@@ -23,7 +22,6 @@ shared_ptr<Physics> physics = nullptr;
 shared_ptr<CollisionResolver> collision_resolver = nullptr;
 shared_ptr<AI> ai = nullptr;
 shared_ptr<Inventory> inventory = nullptr;
-shared_ptr<Npc> npc = nullptr;
 shared_ptr<PlayerInput> player_input = nullptr;
 shared_ptr<Item> item = nullptr;
 shared_ptr<Engine> engine = nullptr;
@@ -90,26 +88,24 @@ int main() {
   const string resources_dir = "resources";
   const string shaders_dir = "shaders";
 
-  asset_catalog = make_shared<Resources>(resources_dir, shaders_dir);
-  draw_2d = make_shared<Draw2D>(asset_catalog, resources_dir);
-  project_4d = make_shared<Project4D>(asset_catalog);
-  renderer = make_shared<Renderer>(asset_catalog, draw_2d, project_4d, window_, 
+  resources = make_shared<Resources>(resources_dir, shaders_dir);
+  draw_2d = make_shared<Draw2D>(resources, resources_dir);
+  project_4d = make_shared<Project4D>(resources);
+  renderer = make_shared<Renderer>(resources, draw_2d, project_4d, window_, 
     window_width_, window_height_);
-  physics = make_shared<Physics>(asset_catalog);
-  collision_resolver = make_shared<CollisionResolver>(asset_catalog);
-  ai = make_shared<AI>(asset_catalog);
+  physics = make_shared<Physics>(resources);
+  collision_resolver = make_shared<CollisionResolver>(resources);
+  ai = make_shared<AI>(resources);
   text_editor = make_shared<TextEditor>(draw_2d);
-  inventory = make_shared<Inventory>(asset_catalog, draw_2d);
-  craft = make_shared<Craft>(asset_catalog, draw_2d, project_4d);
-  dialog = make_shared<Dialog>(asset_catalog, draw_2d);
-  npc = make_shared<Npc>(asset_catalog, ai);
-  player_input = make_shared<PlayerInput>(asset_catalog, project_4d, craft, 
-    renderer->terrain(), dialog);
-  item = make_shared<Item>(asset_catalog);
-  script_manager = make_shared<ScriptManager>(asset_catalog);
+  inventory = make_shared<Inventory>(resources, draw_2d);
+  craft = make_shared<Craft>(resources, draw_2d, project_4d);
+  dialog = make_shared<Dialog>(resources, draw_2d);
+  player_input = make_shared<PlayerInput>(resources, project_4d, craft, 
+    inventory, renderer->terrain(), dialog);
+  item = make_shared<Item>(resources);
   engine = make_shared<Engine>(project_4d, renderer, text_editor, inventory, 
-    craft, asset_catalog, collision_resolver, ai, physics, player_input, item, 
-    dialog, npc, script_manager, window_, window_width_, window_height_);
+    craft, resources, collision_resolver, ai, physics, player_input, item, 
+    dialog, window_, window_width_, window_height_);
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);
   glfwSetKeyCallback(renderer->window(), PressKeyCallback);

@@ -109,7 +109,10 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
       vertices.push_back(vertex_index);
     }
 
-    for (int k = 0; k < mesh->GetElementUVCount(); ++k) {
+    int element_uv_count = mesh->GetElementUVCount();
+    if (element_uv_count == 0) continue;
+
+    for (int k = 0; k < 1; ++k) {
       FbxGeometryElementUV* uv = mesh->GetElementUV(k);
       switch (uv->GetMappingMode()) {
         default:
@@ -135,8 +138,9 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
           switch (uv->GetReferenceMode()) {
             case FbxGeometryElement::eDirect:
             case FbxGeometryElement::eIndexToDirect: {
-              uvs.push_back(Get2DVector(
-                uv->GetDirectArray().GetAt(lTextureUVIndex)));
+              vec2 uv_vec = Get2DVector(
+                uv->GetDirectArray().GetAt(lTextureUVIndex));
+              uvs.push_back(uv_vec);
             }
             break;
             default:
@@ -201,6 +205,10 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
     polygon.indices.push_back(vertices[j+1]);
     data->polygons.push_back(polygon);
   }
+  // cout << "indices: " << data->indices.size() << endl;
+  // cout << "uvs: " << data->uvs.size() << endl;
+  // cout << "normals: " << data->normals.size() << endl;
+  // cout << "polygons: " << data->polygons.size() << endl;
 }
 
 // Extract polygon data.

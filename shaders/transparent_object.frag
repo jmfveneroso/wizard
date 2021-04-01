@@ -18,7 +18,7 @@ uniform int enable_bump_map;
 
 void main(){
   vec4 diffuse_color = texture(texture_sampler, in_data.UV);
-  if (diffuse_color.a < 0.7) {
+  if (diffuse_color.a < 0.05) {
     discard;
   }
 
