@@ -33,6 +33,12 @@ void Physics::Run() {
       continue;
     }
 
+    if (obj->asset_group) {
+      if (obj->GetAsset()->name == "fish") {
+        continue;
+      }
+    }
+
     // Gravity.
     if (obj->name == "player" && configs->levitate) {
       obj->can_jump = true;

@@ -22,17 +22,17 @@ uniform mat4 VP;
 
 void main() {
   float particle_size = xyzs.w; // because we encoded it this way.
-  vec3 particle_center_wordspace = xyzs.xyz;
+  vec3 particle_center_worldspace = xyzs.xyz;
   
-  vec3 vertex_pos_worldspace = particle_center_wordspace 
+  vec3 vertex_pos_worldspace = particle_center_worldspace 
     + camera_right_worldspace * square_vertices.x * particle_size
     + camera_up_worldspace * square_vertices.y * particle_size;
   
   clip_space = VP * vec4(vertex_pos_worldspace, 1.0f);
 
   if (is_fixed > 0) {
-    clip_space = vec4(xyzs.xyz, 1.0f) + vec4(square_vertices.x, square_vertices.y, 0, 0)
-      * particle_size;
+    clip_space = vec4(xyzs.xyz, 1.0f) + 
+      vec4(square_vertices.x, square_vertices.y, 0, 0) * particle_size;
   }
 
   // Output position of the vertex

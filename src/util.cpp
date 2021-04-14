@@ -852,7 +852,8 @@ std::string CollisionTypeToStr(const CollisionType& col) {
 ParticleBehavior StrToParticleBehavior(const std::string& s) {
   static unordered_map<string, ParticleBehavior> str_to_p_type ({
     { "fixed", PARTICLE_FIXED },
-    { "fall", PARTICLE_FALL }
+    { "fall", PARTICLE_FALL },
+    { "none", PARTICLE_NONE }
   });
   return str_to_p_type[s];
 }

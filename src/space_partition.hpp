@@ -53,7 +53,7 @@ struct OctreeNode {
   unordered_map<int, shared_ptr<GameObject>> items;
 
   vector<shared_ptr<Sector>> sectors;
-  vector<shared_ptr<Region>> regions;
+  unordered_map<int, shared_ptr<Region>> regions;
 
   OctreeNode() {}
   OctreeNode(vec3 center, vec3 half_dimensions) : center(center), 

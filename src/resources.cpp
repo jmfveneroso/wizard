@@ -209,24 +209,52 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
 
   for (pugi::xml_node dialog_xml = xml.child("dialog"); dialog_xml; 
     dialog_xml = dialog_xml.next_sibling("dialog")) {
-    shared_ptr<DialogStr> dialog = make_shared<DialogStr>();
+    shared_ptr<DialogChain> dialog = make_shared<DialogChain>();
     dialog->name = dialog_xml.attribute("name").value();
  
     for (pugi::xml_node phrase_xml = dialog_xml.child("phrase"); phrase_xml; 
       phrase_xml = phrase_xml.next_sibling("phrase")) {
+      string name = phrase_xml.attribute("name").value();
       pugi::xml_attribute animation_xml = dialog_xml.attribute("animation");
+
+      string animation = "Armature|talk";
       if (animation_xml) {
-        dialog->animations.push_back(animation_xml.value());
-      } else {
-        dialog->animations.push_back("Armature|talk");
+        animation = animation_xml.value();
       }
 
       const string& content = phrase_xml.text().get();
-      dialog->phrases.push_back(content);
+      Phrase phrase = Phrase(name, content, animation);
+
+      for (pugi::xml_node option_xml = phrase_xml.child("option"); option_xml; 
+        option_xml = option_xml.next_sibling("option")) {
+        string next = option_xml.attribute("next").value();
+        string option_content = option_xml.text().get();
+        phrase.options.push_back({ next, option_content });
+      }
+
+      dialog->phrases.push_back(phrase);
     }
     dialog->name = dialog_xml.attribute("name").value();
 
     dialogs_[dialog->name] = dialog;
+  }
+
+  for (pugi::xml_node quest_xml = xml.child("quest"); quest_xml; 
+    quest_xml = quest_xml.next_sibling("dialog")) {
+    shared_ptr<Quest> quest = make_shared<Quest>();
+    quest->name = quest_xml.attribute("name").value();
+ 
+    pugi::xml_node title_xml = quest_xml.child("title");
+    if (title_xml) {
+      quest->title = title_xml.text().get();
+    }
+
+    pugi::xml_node description_xml = quest_xml.child("description");
+    if (description_xml) {
+      quest->description = description_xml.text().get();
+    }
+
+    quests_[quest->name] = quest;
   }
 
   for (pugi::xml_node npc_xml = xml.child("npc"); npc_xml; 
@@ -396,14 +424,14 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     object->octree_node = octree_node;
     if (object->IsLight()) {
       octree_node->lights[object->id] = object;
-      // shared_ptr<OctreeNode> n = octree_node;
-      // while (n) {
-      //   n = n->parent;
-      // }
     }
 
     if (object->IsItem()) {
       octree_node->items[object->id] = object;
+    }
+
+    if (object->type == GAME_OBJ_REGION) {
+      octree_node->regions[object->id] = static_pointer_cast<Region>(object);
     }
 
     if (object->IsMovingObject()) {
@@ -451,6 +479,13 @@ void Resources::InitMissiles() {
     // missiles_[new_missile->name] = new_missile;
     missiles_.push_back(new_missile);
   }
+
+  for (int i = 0; i < 10; i++) {
+    shared_ptr<GameAsset> asset0 = GetAssetByName("harpoon-missile");
+    shared_ptr<Missile> new_missile = CreateMissileFromAsset(asset0);
+    new_missile->life = 0;
+    missiles_.push_back(new_missile);
+  }
 }
 
 void Resources::Cleanup() {
@@ -477,7 +512,6 @@ shared_ptr<Missile> Resources::CreateMissileFromAsset(
 }
 
 shared_ptr<Waypoint> Resources::CreateWaypoint(vec3 position, string name) {
-  LockOctree();
   shared_ptr<Waypoint> new_game_obj = make_shared<Waypoint>(this);
 
   if (name.empty()) {
@@ -494,7 +528,6 @@ shared_ptr<Waypoint> Resources::CreateWaypoint(vec3 position, string name) {
   AddGameObject(new_game_obj);
   UpdateObjectPosition(new_game_obj);
 
-  UnlockOctree();
   return new_game_obj;
 }
 
@@ -511,13 +544,16 @@ void Resources::UpdateObjectPosition(ObjPtr obj) {
     if (obj->IsItem()) {
       obj->octree_node->items.erase(obj->id);
     }
+    if (obj->IsRegion()) {
+      obj->octree_node->regions.erase(obj->id);
+    }
     obj->octree_node = nullptr;
   }
 
   // Update sector.
   shared_ptr<Sector> sector = GetSector(obj->position);
 
-  // Check region events.
+  // Check sector events.
   if (obj->current_sector) {
     if (sector->name != obj->current_sector->name) {
       for (shared_ptr<Event> e : sector->on_enter_events) {
@@ -533,8 +569,32 @@ void Resources::UpdateObjectPosition(ObjPtr obj) {
       }
     }
   }
-
   obj->current_sector = sector;
+
+  // Update region.
+  shared_ptr<Region> region = GetRegion(obj->position);
+  if (region) {
+    if (!obj->current_region || 
+      (obj->current_region && region->name != obj->current_region->name)) {
+      for (shared_ptr<Event> e : region->on_enter_events) {
+        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        if (obj->name != region_event->unit) continue;
+        AddEvent(e);
+      }
+    }
+  }
+
+  if (obj->current_region) {
+    if (!region || 
+      (region && region->name != obj->current_region->name)) {
+      for (shared_ptr<Event> e : obj->current_region->on_leave_events) {
+        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        if (obj->name != region_event->unit) continue;
+        AddEvent(e);
+      }
+    }
+  }
+  obj->current_region = region;
 
   // Update position into octree.
   InsertObjectIntoOctree(sector->octree_node, obj, 0);
@@ -580,6 +640,31 @@ shared_ptr<Sector> Resources::GetSector(vec3 position) {
   return outside;
 }
 
+shared_ptr<Region> Resources::GetRegionAux(shared_ptr<OctreeNode> octree_node, 
+  vec3 position) {
+  if (!octree_node) return nullptr;
+
+  for (const auto& [id, r] : octree_node->regions) {
+    const AABB& aabb = r->GetTransformedAABB();
+    if (IsPointInAABB(position, aabb)) {
+      return static_pointer_cast<Region>(r);
+    }
+  }
+
+  int index = 0;
+  for (int i = 0; i < 3; i++) {
+    float delta = position[i] - octree_node->center[i];
+    if (delta > 0.0f) index |= (1 << i); // ZYX
+  }
+  return GetRegionAux(octree_node->children[index], position);
+}
+
+shared_ptr<Region> Resources::GetRegion(vec3 position) {
+  shared_ptr<Region> s = GetRegionAux(GetOctreeRoot(), position);
+  if (s) return s;
+  return nullptr;
+}
+
 // TODO: move to particle file.
 int Resources::FindUnusedParticle(){
   for (int i = last_used_particle_; i < kMaxParticles; i++) {
@@ -601,17 +686,24 @@ int Resources::FindUnusedParticle(){
 
 // TODO: move to particle file.
 void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
-  vec3 color, float size, float life, float spread) {
+  vec3 color, float size, float life, float spread, const string& type) {
   for (int i = 0; i < num_particles; i++) {
     int particle_index = FindUnusedParticle();
     Particle& p = particle_container_[particle_index];
+
+    if (type == "splash") {
+      ObjPtr ripple = CreateGameObjFromAsset(this, "z-quad", pos + vec3(0, 1.0f, 0));
+      UpdateObjectPosition(ripple);
+      AddNewObject(ripple);
+      pos += vec3(0, 3.5f, 0);
+    }
 
     p.frame = 0;
     p.life = life;
     p.pos = pos;
     p.color = vec4(color, 0.0f);
-    p.type = GetParticleTypeByName("explosion");
 
+    p.type = GetParticleTypeByName(type);
     if (size < 0) {
       p.size = (rand() % 1000) / 500.0f + 0.1f;
     } else {
@@ -677,7 +769,7 @@ void Resources::UpdateParticles() {
 void Resources::CastMagicMissile(const Camera& camera) {
   shared_ptr<Missile> obj = nullptr;
   for (const auto& missile: missiles_) {
-    if (missile->life <= 0) {
+    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
       obj = missile;
       break;
     }
@@ -707,12 +799,45 @@ void Resources::CastMagicMissile(const Camera& camera) {
   UpdateObjectPosition(obj);
 }
 
+void Resources::CastHarpoon(const Camera& camera) {
+  shared_ptr<Missile> obj = nullptr;
+  for (const auto& missile: missiles_) {
+    if (missile->life <= 0 && missile->GetAsset()->name == "harpoon-missile") {
+      obj = missile;
+      break;
+    }
+  }
+
+  obj->life = 10000;
+  obj->owner = player_;
+
+  vec3 left = normalize(cross(camera.up, camera.direction));
+  obj->position = camera.position + camera.direction * 14.0f + left * -0.81f +  
+    camera.up * -0.2f;
+
+  vec3 p2 = camera.position + camera.direction * 3000.0f;
+  obj->speed = normalize(p2 - obj->position) * 4.0f;
+
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera.rotation.y + 4.70f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+}
+
 // TODO: this should probably go to main.
 void Resources::SpiderCastMagicMissile(ObjPtr spider, 
   const vec3& direction, bool paralysis) {
   shared_ptr<Missile> obj = nullptr;
   for (const auto& missile: missiles_) {
-    if (missile->life <= 0) {
+    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
       obj = missile;
       break;
     }
@@ -753,8 +878,12 @@ bool Resources::SpiderCastPowerMagicMissile(ObjPtr spider,
 
 void Resources::UpdateMissiles() {
   // TODO: maybe could be part of physics.
-  for (const auto& missile: missiles_) {
+  for (const auto& missile : missiles_) {
     missile->life -= 1;
+  }
+
+  for (const auto& effect : effects_) {
+    effect->life -= 1;
   }
 }
 
@@ -968,6 +1097,16 @@ void Resources::RemoveDead() {
     if (obj->status != STATUS_DEAD) continue;
     RemoveObject(obj);
   }
+
+  for (ObjPtr obj : new_objects_) {
+    if (obj->asset_group == nullptr) continue;
+    if (obj->GetAsset()->name != "z-quad") continue;
+
+    shared_ptr<Mesh> mesh = GetMesh(obj);
+    int num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
+    if (obj->frame < num_frames - 1) continue;
+    RemoveObject(obj);
+  }
 }
 
 void Resources::MakeGlow(ObjPtr obj) {
@@ -1136,8 +1275,6 @@ void Resources::SaveObjects() {
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
       case GAME_OBJ_DEFAULT:
-      // case GAME_OBJ_REGION:
-      // case GAME_OBJ_WAYPOINT:
         break;
       default:
         continue;
@@ -1153,8 +1290,31 @@ void Resources::SaveObjects() {
     obj->ToXml(game_objs);
   }
 
+  for (auto& [name, obj] : regions_) {
+    shared_ptr<Region> region = static_pointer_cast<Region>(obj);
+    region->ToXml(game_objs);
+  }
+
   doc.save_file(xml_filename.c_str());
   cout << "Saved objects: " << xml_filename << endl;
+
+  xml_filename = directory_ + "/objects/waypoints.xml";
+  pugi::xml_document doc2;
+  xml = doc2.append_child("xml");
+  sector = xml.append_child("sector");
+  AppendXmlAttr(sector, "name", "outside");
+  game_objs = sector.append_child("game-objs");
+  for (auto& [name, obj] : GetObjects()) {
+    switch (obj->type) {
+      case GAME_OBJ_WAYPOINT:
+        break;
+      default:
+        continue;
+    }
+    obj->ToXml(game_objs);
+  }
+  doc2.save_file(xml_filename.c_str());
+  cout << "Saved waypoints: " << xml_filename << endl;
 }
 
 void Resources::LoadCollisionData(const string& filename) {
@@ -1247,6 +1407,10 @@ void Resources::SaveCollisionData() {
       continue;
     }
 
+    // if (npcs_.find(name) != npcs_.end()) {
+    //   continue;
+    // }
+
     obj->CollisionDataToXml(game_objs);
   }
 
@@ -1278,6 +1442,15 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
 
       return IntersectRayAABB(p_in_obb_space, d_in_obb_space, 
         aabb_in_obb_space, tmin, q);
+    }
+    case COL_BONES: {
+      for (const auto& [bone_id, bs] : obj->bones) {
+        BoundingSphere s = obj->GetBoneBoundingSphere(bone_id);
+        if (IntersectRaySphere(position, direction, s, tmin, q)) {
+          return true;
+        }
+      }
+      return false;
     }
     default: {
       const BoundingSphere& s = obj->GetTransformedBoundingSphere();
@@ -1315,6 +1488,22 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     // if (item->type != GAME_OBJ_DEFAULT && item->type != GAME_OBJ_WAYPOINT) continue;
     if (item->status == STATUS_DEAD) continue;
     if (item->name == "hand-001") continue;
+ 
+    float distance = length(position - item->position);
+    if (distance > max_distance) continue;
+
+    if (!IntersectRayObject(item, position, direction, tmin, q)) continue;
+
+    if (!closest_item || distance < closest_distance) { 
+      closest_item = item;
+      closest_distance = distance;
+    }
+  }
+
+  // TODO: maybe index npcs?
+  for (auto& [id, item] : node->moving_objs) {
+    if (item->status == STATUS_DEAD) continue;
+    if (!item->IsNpc()) continue;
  
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
@@ -1587,9 +1776,7 @@ unordered_map<string, shared_ptr<Sector>> Resources::GetSectors() {
 }
 
 void Resources::AddNewObject(ObjPtr obj) { 
-  LockOctree();
   new_objects_.push_back(obj); 
-  UnlockOctree();
 }
 
 string Resources::GetString(string name) {
@@ -1604,21 +1791,23 @@ bool Resources::IsPlayerInsideRegion(const string& name) {
     return false;
   }
 
-  AABB aabb = region->GetAsset()->aabb;
+  AABB aabb = region->GetTransformedAABB();
   vec3 closest_p = ClosestPtPointAABB(player->position, aabb);
   return length(closest_p - player->position) < 5.0f;
 }
 
 void Resources::IssueMoveOrder(const string& unit_name, 
   const string& waypoint_name) {
+  cout << unit_name << endl;
   ObjPtr unit = GetObjectByName(unit_name);
   if (!unit) return;
 
   ObjPtr waypoint = GetWaypointByName(waypoint_name);
   if (!waypoint) return;
 
+  cout << waypoint_name << endl;
+
   unit->actions.push(make_shared<MoveAction>(waypoint->position));
-  unit->actions.push(make_shared<RangedAttackAction>());
 }
 
 bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) {
@@ -1640,21 +1829,37 @@ bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) 
 void Resources::RegisterOnEnterEvent(const string& region_name, 
   const string& unit_name, const string& callback) {
   shared_ptr<Sector> sector = GetSectorByName(region_name);
-  if (!sector) return;
+  if (sector) {
+    sector->on_enter_events.push_back(
+      make_shared<RegionEvent>("enter", region_name, unit_name, callback)
+    );
+    return;
+  }
 
-  sector->on_enter_events.push_back(
-    make_shared<RegionEvent>("enter", region_name, unit_name, callback)
-  );
+  shared_ptr<Region> region = GetRegionByName(region_name);
+  if (region) {
+    region->on_enter_events.push_back(
+      make_shared<RegionEvent>("enter", region_name, unit_name, callback)
+    );
+  }
 }
 
 void Resources::RegisterOnLeaveEvent(const string& region_name, 
   const string& unit_name, const string& callback) {
   shared_ptr<Sector> sector = GetSectorByName(region_name);
-  if (!sector) return;
+  if (sector) {
+    sector->on_leave_events.push_back(
+      make_shared<RegionEvent>("leave", region_name, unit_name, callback)
+    );
+    return;
+  }
 
-  sector->on_leave_events.push_back(
-    make_shared<RegionEvent>("leave", region_name, unit_name, callback)
-  );
+  shared_ptr<Region> region = GetRegionByName(region_name);
+  if (region) {
+    region->on_leave_events.push_back(
+      make_shared<RegionEvent>("leave", region_name, unit_name, callback)
+    );
+  }
 }
 
 void Resources::RegisterOnOpenEvent(const string& door_name, 
@@ -1671,8 +1876,15 @@ void Resources::RegisterOnOpenEvent(const string& door_name,
 void Resources::RegisterOnFinishDialogEvent(const string& dialog_name, 
   const string& callback) {
   current_dialog_->on_finish_dialog_events[dialog_name] = callback;
-  cout << ">>>>>>>>>>>>>>>>>>>>>> REGISTER " << dialog_name << endl;
-  cout << ">>>>>>>>>>>>>>>>>>>>>> REGISTER " << callback << endl;
+}
+
+void Resources::RegisterOnFinishPhraseEvent(const string& dialog_name, 
+  const string& phrase_name, const string& callback) {
+  if (dialogs_.find(dialog_name) == dialogs_.end()) {
+    ThrowError("Dialog chain ", dialog_name, " does not exist.");
+  }
+
+  dialogs_[dialog_name]->on_finish_phrase_events[phrase_name] = callback;
 }
 
 vector<shared_ptr<Event>>& Resources::GetEvents() {
@@ -1855,6 +2067,16 @@ void Resources::LoadSectors(const std::string& xml_filename) {
       float z = boost::lexical_cast<float>(position.attribute("z").value());
 
       shared_ptr<Waypoint> new_waypoint = CreateWaypoint(vec3(x, y, z), name);
+      const pugi::xml_node& spawn_xml = waypoint_xml.child("spawn");
+      if (spawn_xml) {
+        const string& spawn_unit = spawn_xml.text().get();
+        new_waypoint->spawn = spawn_unit;
+      }
+
+      if (!new_waypoint->spawn.empty()) {
+        spawn_points_[new_waypoint->name] = new_waypoint;
+        cout << "Spawn " << new_waypoint->name << endl;
+      }
 
       waypoints_[new_waypoint->name] = new_waypoint;
       new_waypoint->id = id_counter_++;
@@ -1984,6 +2206,51 @@ void Resources::ProcessPeriodicCallbacks() {
   }
 }
 
+void Resources::ProcessSpawnPoints() {
+  for (const auto& [name, spawn_point] : spawn_points_) {
+    if (spawn_point->spawn.empty()) continue;
+    spawn_point->fish_jump++;
+
+    if (spawn_point->fish_jump == 0) {
+      std::normal_distribution<float> distribution(0.0, 10.0);
+      float x = distribution(generator_);
+      float z = distribution(generator_);
+      vec3 pos = spawn_point->position + vec3(x, 0, z);
+
+      ObjPtr fish_ripple = CreateGameObjFromAsset(this, "fish-ripple", pos);
+      fish_ripple->life = 240.0f;
+      UpdateObjectPosition(fish_ripple);
+      effects_.push_back(fish_ripple);
+
+      cout << "Creating spawn unit: " << spawn_point->spawn << endl;
+      spawn_point->spawned_unit = CreateGameObjFromAsset(this, spawn_point->spawn, pos - vec3(0, 10, 0));
+      UpdateObjectPosition(spawn_point->spawned_unit);
+      AddNewObject(spawn_point->spawned_unit);
+    } else if (spawn_point->fish_jump == 240) {
+      if (spawn_point->spawned_unit) {
+        spawn_point->spawned_unit->active_animation = "Armature|jump";
+        spawn_point->spawned_unit->position += vec3(0, 10.0f, 0);
+        spawn_point->spawned_unit->frame = 0;
+        UpdateObjectPosition(spawn_point->spawned_unit);
+      }
+
+    } else if (spawn_point->fish_jump > 240 && spawn_point->fish_jump < 440 ) {
+      if (spawn_point->spawned_unit) {
+        if (int(spawn_point->spawned_unit->frame) == 20 || int(spawn_point->spawned_unit->frame) == 75) {
+          CreateParticleEffect(1, spawn_point->spawned_unit->position, 
+            vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 7.0, 32.0f, 3.0f, "splash");
+        }
+      }
+    } else if (spawn_point->fish_jump > 640) {
+      spawn_point->fish_jump = -300;
+      if (spawn_point->spawned_unit) {
+        RemoveObject(spawn_point->spawned_unit);
+        spawn_point->spawned_unit = nullptr;
+      }
+    }
+  }
+}
+
 void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
@@ -1991,6 +2258,7 @@ void Resources::RunPeriodicEvents() {
   script_manager_->ProcessScripts();
   ProcessNpcs();
   ProcessPeriodicCallbacks();
+  ProcessSpawnPoints();
 
   configs_->fading_out -= 1.0f;
   configs_->taking_hit -= 1.0f;
@@ -2005,7 +2273,7 @@ void Resources::AddEvent(shared_ptr<Event> e) {
   events_.push_back(e);
 }
 
-shared_ptr<DialogStr> Resources::GetNpcDialog(const string& target_name) {
+shared_ptr<DialogChain> Resources::GetNpcDialog(const string& target_name) {
   if (npcs_.find(target_name) == npcs_.end()) return nullptr;
  
   ObjPtr npc = GetObjectByName(target_name);
@@ -2025,7 +2293,7 @@ void Resources::TalkTo(const string& target_name) {
   current_dialog_->npc = npc;
   current_dialog_->current_phrase = 0;
 
-  shared_ptr<DialogStr> dialog = GetNpcDialog(target_name);
+  shared_ptr<DialogChain> dialog = GetNpcDialog(target_name);
   if (!dialog) return;
 
   current_dialog_->enabled = true;
@@ -2048,4 +2316,26 @@ void Resources::RunScriptFn(const string& script_fn_name) {
 void Resources::SetPeriodicCallback(const string& script_name, float seconds) {
   double time = glfwGetTime() + seconds;
   periodic_callbacks_.push_back({ script_name, time });
+}
+
+void Resources::StartQuest(const string& quest_name) {
+  if (quests_.find(quest_name) == quests_.end()) { 
+    ThrowError("Quest ", quest_name, " does not exist.");
+  }
+
+  quests_[quest_name]->active = true;
+  AddMessage(string("Quest " + quests_[quest_name]->title + " started."));
+}
+
+void Resources::LearnSpell(const unsigned int spell_id) {
+  if (spell_id > configs_->learned_spells.size() - 1) {
+    ThrowError("Learned spell for id ", spell_id, " does not exist.");
+  }
+
+  configs_->learned_spells[spell_id] = 1;
+  if (spell_id > spell_data_.size() - 1) {
+    ThrowError("Spell data for id ", spell_id, " does not exist.");
+  }
+
+  AddMessage(string("You learned to cast ") + spell_data_[spell_id].name);
 }

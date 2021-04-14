@@ -5,17 +5,12 @@
 #include "physics.hpp"
 #include "player.hpp"
 #include "inventory.hpp"
-#include "item.hpp"
-#include "craft.hpp"
-#include "dialog.hpp"
 #include "engine.hpp"
 #include "scripts.hpp"
 
 shared_ptr<Resources> resources = nullptr;
 shared_ptr<Renderer> renderer = nullptr;
 shared_ptr<TextEditor> text_editor = nullptr;
-shared_ptr<Craft> craft = nullptr;
-shared_ptr<Dialog> dialog = nullptr;
 shared_ptr<Draw2D> draw_2d = nullptr;
 shared_ptr<Project4D> project_4d = nullptr;
 shared_ptr<Physics> physics = nullptr;
@@ -23,7 +18,6 @@ shared_ptr<CollisionResolver> collision_resolver = nullptr;
 shared_ptr<AI> ai = nullptr;
 shared_ptr<Inventory> inventory = nullptr;
 shared_ptr<PlayerInput> player_input = nullptr;
-shared_ptr<Item> item = nullptr;
 shared_ptr<Engine> engine = nullptr;
 shared_ptr<ScriptManager> script_manager = nullptr;
 
@@ -34,8 +28,6 @@ void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
 void PressKeyCallback(GLFWwindow* window, int key, int scancode, int action, 
   int mods) {
   text_editor->PressKeyCallback(key, scancode, action, mods);
-  craft->PressKeyCallback(key, scancode, action, mods);
-  dialog->PressKeyCallback(key, scancode, action, mods);
 }
 
 int window_width_ = WINDOW_WIDTH;
@@ -98,14 +90,11 @@ int main() {
   ai = make_shared<AI>(resources);
   text_editor = make_shared<TextEditor>(draw_2d);
   inventory = make_shared<Inventory>(resources, draw_2d);
-  craft = make_shared<Craft>(resources, draw_2d, project_4d);
-  dialog = make_shared<Dialog>(resources, draw_2d);
-  player_input = make_shared<PlayerInput>(resources, project_4d, craft, 
-    inventory, renderer->terrain(), dialog);
-  item = make_shared<Item>(resources);
+  player_input = make_shared<PlayerInput>(resources, project_4d, 
+    inventory, renderer->terrain());
   engine = make_shared<Engine>(project_4d, renderer, text_editor, inventory, 
-    craft, resources, collision_resolver, ai, physics, player_input, item, 
-    dialog, window_, window_width_, window_height_);
+    resources, collision_resolver, ai, physics, player_input,
+    window_, window_width_, window_height_);
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);
   glfwSetKeyCallback(renderer->window(), PressKeyCallback);

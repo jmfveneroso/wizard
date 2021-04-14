@@ -93,7 +93,7 @@ void AI::Chase(ObjPtr spider) {
   ObjPtr player = resources_->GetObjectByName("player");
   vec3 dir = player->position - spider->position;
 
-  if (spider->GetAsset()->name == "spider" || spider->GetAsset()->name == "demon-vine") {
+  if (spider->GetAsset()->name == "spider" || spider->GetAsset()->name == "demon-vine" || spider->GetAsset()->name == "cephalid") {
     int dice = rand() % 3; 
     if (length(dir) > 100 && dice < 2) {
       vec3 next_pos = spider->position + normalize(dir) * 50.0f;
@@ -117,6 +117,13 @@ void AI::Chase(ObjPtr spider) {
   if (glfwGetTime() > spider->state_changed_at + 20) {
     spider->actions = {};
     spider->actions.push(make_shared<ChangeStateAction>(WANDER));
+  }
+}
+
+void AI::Idle(ObjPtr spider) {
+  if (!spider->actions.empty()) {
+    // Complete the actions before choosing other actions.
+    return;
   }
 }
 
@@ -206,12 +213,14 @@ void AI::ProcessMentalState(ObjPtr unit) {
   // WANDER
   // AGGRESSIVE
 
-  if (unit->name == "alessia") {
+  if (unit->IsNpc()) {
     ProcessNPC(unit);
+    return;
   }
 
   // TODO: mental states should be Attack, Flee, Patrol (search), Hunt, Wander.
   switch (unit->ai_state) {
+    case IDLE: Idle(unit); break;
     case WANDER: Wander(unit); break;
     case AI_ATTACK: Attack(unit); break;
     case CHASE: Chase(unit); break;
@@ -223,13 +232,13 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
   shared_ptr<RangedAttackAction> action) {
   resources_->ChangeObjectAnimation(spider, "Armature|attack");
 
-  if (spider->frame >= 79) {
+  if (int(spider->frame) >= 79) {
     return true;
   }
 
-  if (spider->frame == 44) {
+  if (int(spider->frame) == 44) {
     ObjPtr player = resources_->GetObjectByName("player");
-    vec3 dir = player->position - spider->position;
+    vec3 dir = (player->position + vec3(0, -3.0f, 0)) - spider->position;
 
     vec3 forward = normalize(vec3(dir.x, 0, dir.z));
     vec3 right = normalize(cross(forward, vec3(0, 1, 0)));
@@ -533,8 +542,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
-    default: 
+    default: {
       break;
+    }
   }
 }
 
@@ -543,6 +553,7 @@ void AI::ProcessPlayerAction(ObjPtr player) {
 
   shared_ptr<Action> action = player->actions.front();
   float player_speed = resources_->GetConfigs()->player_speed; 
+  shared_ptr<Configs> configs = resources_->GetConfigs();
 
   float d = resources_->GetDeltaTime() / 0.016666f;
   switch (action->type) {
@@ -576,6 +587,25 @@ void AI::ProcessPlayerAction(ObjPtr player) {
       shared_ptr<TalkAction> talk_action =  
         static_pointer_cast<TalkAction>(action);
       resources_->TalkTo(talk_action->npc);
+      player->actions.pop();
+      break;
+    }
+    case ACTION_LOOK_AT: {
+      shared_ptr<LookAtAction> look_at_action =  
+        static_pointer_cast<LookAtAction>(action);
+      ObjPtr target_obj = resources_->GetObjectByName(look_at_action->obj);
+      if (target_obj) {
+        vec3 to_obj = target_obj->position - player->position;
+        if (configs->override_camera_pos) {
+          to_obj = target_obj->position - configs->camera_pos;
+        }
+
+        if (target_obj->IsNpc()) {
+          to_obj = target_obj->position + vec3(0, 5.5, 0) - player->position;
+        }
+        shared_ptr<Player> player_p = static_pointer_cast<Player>(player);
+        player_p->LookAt(to_obj);
+      }
       player->actions.pop();
       break;
     }

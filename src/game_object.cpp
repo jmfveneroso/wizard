@@ -66,7 +66,7 @@ void GameObject::Load(pugi::xml_node& xml) {
 
 BoundingSphere GameObject::GetBoundingSphere() {
   if (!asset_group) {
-    throw runtime_error("No asset group in game object.");
+    return bounding_sphere;
   }
 
   if (asset_group->assets.empty()) {
@@ -142,6 +142,30 @@ AABB GameObject::GetAABB() {
   }
 
   // r.point += position;
+  return r;
+}
+
+AABB GameObject::GetTransformedAABB() {
+  if (!asset_group) {
+    AABB r = aabb;
+    r.point += position;
+    return r;
+  }
+
+  if (asset_group->assets.empty()) {
+    throw runtime_error("Asset group in game object is empty.");
+  }
+
+  AABB r;
+  if (length2(aabb.dimensions) > 0.001f) {
+    r = aabb; 
+  } else if (length2(asset_group->aabb.dimensions) > 0.001f) {
+    r = asset_group->aabb; 
+  } else {
+    r = GetAsset()->aabb;
+  }
+
+  r.point += position;
   return r;
 }
 
@@ -360,6 +384,16 @@ void GameObject::CollisionDataToXml(pugi::xml_node& parent) {
   AppendXmlNode(node, "aabb", aabb);
 
   switch (GetCollisionType()) {
+    case COL_BONES: {
+      pugi::xml_node bones_xml = node.append_child("bones");
+      for (const auto& [bone_id, bs] : bones) {
+        pugi::xml_node bs_node = bones_xml.append_child("bone");
+        bs_node.append_attribute("id") = bone_id;
+        AppendXmlNode(bs_node, "center", bs.center);
+        AppendXmlTextNode(bs_node, "radius", bs.radius);
+      }
+      break;
+    }
     case COL_OBB: {
       const OBB obb = GetOBB();
       AppendXmlNode(node, "obb", obb);
@@ -374,6 +408,17 @@ void GameObject::CollisionDataToXml(pugi::xml_node& parent) {
     default:
       break;
   }
+}
+
+void Region::ToXml(pugi::xml_node& parent) {
+  pugi::xml_node region_xml = parent.append_child("region");
+
+  shared_ptr<Mesh> mesh = GetMesh();
+  aabb = GetAABBFromPolygons(mesh->polygons); 
+
+  AppendXmlAttr(region_xml, "name", name);
+  AppendXmlNode(region_xml, "point", position);
+  AppendXmlNode(region_xml, "dimensions", aabb.dimensions);
 }
 
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
@@ -519,7 +564,9 @@ void Portal::Load(pugi::xml_node& xml, shared_ptr<Sector> from_sector) {
 
 void Region::Load(const string& name, const vec3& position, 
   const vec3& dimensions) {
-  aabb = AABB(position, dimensions);
+  this->name = name;
+  this->position = position;
+  aabb = AABB(vec3(0), dimensions);
 
   vector<vec3> vertices;
   vector<vec2> uvs;
@@ -612,6 +659,7 @@ ObjPtr CreateGameObjFromAsset(Resources* resources,
 
   ObjPtr new_game_obj = CreateGameObj(resources, asset_name);
   new_game_obj->Load(name, asset_name, position);
+  new_game_obj->CalculateCollisionData();
   return new_game_obj;
 }
 
@@ -659,6 +707,7 @@ PhysicsBehavior GameObject::GetPhysicsBehavior() {
 
 bool GameObject::IsCreature() {
   if (!asset_group) return false;
+  if (GetAsset()->name == "fish") return true;
   return GetAsset()->type == ASSET_CREATURE;
 }
 
@@ -922,6 +971,21 @@ void GameObject::LoadCollisionData(pugi::xml_node& xml) {
     const pugi::xml_node& node_xml = aabb_tree_xml.child("node");
     LoadCollisionDataAux(aabb_tree, node_xml);
   }
+
+  const pugi::xml_node& bones_xml = xml.child("bones");
+  if (bones_xml) {
+    for (pugi::xml_node bone_xml = bones_xml.child("bone"); bone_xml; 
+      bone_xml = bone_xml.next_sibling("bone")) {
+
+      int bone_id = boost::lexical_cast<int>(bone_xml.attribute("id").value());
+      const pugi::xml_node& center_xml = bone_xml.child("center");
+      bounding_sphere.center = LoadVec3FromXml(center_xml);
+      const pugi::xml_node& radius_xml = bone_xml.child("radius");
+      bounding_sphere.radius = boost::lexical_cast<float>(radius_xml.text().get());
+      bones[bone_id] = bounding_sphere;
+    }
+  }
+
   resources_->UpdateObjectPosition(shared_from_this());
   loaded_collision = true;
 }
@@ -953,8 +1017,6 @@ void GameObject::ChangePosition(const vec3& pos) {
   position = pos;
   speed = vec3(0);
   resources_->UpdateObjectPosition(shared_from_this());
-  up = vec3(0, 1, 0);
-  rotation_matrix = mat4();
 }
 
 void Player::LookAt(vec3 direction) {
@@ -965,4 +1027,13 @@ void Player::LookAt(vec3 direction) {
 
 void GameObject::ClearActions() {
   while (!actions.empty()) actions.pop();
+}
+
+bool GameObject::IsNpc() {
+  const auto& npcs = resources_->GetNpcs();
+  return npcs.find(name) != npcs.end();
+}
+
+bool GameObject::IsRegion() {
+  return type == GAME_OBJ_REGION;
 }

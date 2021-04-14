@@ -171,6 +171,7 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   const vector<vector<Polygon>>& occluder_convex_hulls) {
   if (obj->name == "hand-001") return true;
   if (obj->name == "skydome") return true;
+  if (obj->never_cull) return false;
   // TODO: draw hand without object.
 
   if (!obj->draw) {
@@ -705,7 +706,39 @@ void Renderer::DrawObjects(vector<ObjPtr> objs) {
   glEnable(GL_CULL_FACE);
 }
 
+void Renderer::DrawHypercube() {
+  glViewport(0, 0, window_width_, window_height_);
+  glClearColor(0.73, 0.81, 0.92, 1.0);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+  static vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+
+  projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
+    4.0f / 3.0f, NEAR_CLIPPING, FAR_CLIPPING);
+
+  view_matrix_ = glm::lookAt(
+    vec3(0, 0, 0), // Camera is here
+    vec3(0, 0, 1), // Look here.
+    vec3(0, 1, 0)  // Up. 
+  );
+
+  project_4d_->CreateHypercube(vec3(0, 0, 20), hypercube_rotation);
+  hypercube_rotation[0] += 0.02;
+  hypercube_rotation[1] += 0.02;
+
+  ObjPtr* cubes = project_4d_->GetCubes();
+  for (int i = 0; i < 8; i++) {
+    ObjPtr obj = cubes[i];
+    if (!obj) continue;
+    DrawObject(obj);
+  }
+
+  glClear(GL_DEPTH_BUFFER_BIT);
+}
+
 void Renderer::Draw() {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
   vec3 normal;
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(camera_.position.x, camera_.position.z), &normal);
   float delta_h = camera_.position.y - h;
@@ -721,6 +754,14 @@ void Renderer::Draw() {
     camera_.position + camera_.direction, // and looks here : at the same position, plus "direction"
     camera_.up                            // Head is up (set to vec3(0, -1, 0) to look upside-down)
   );
+
+  if (configs->override_camera_pos) {
+    view_matrix_ = glm::lookAt(
+      configs->camera_pos,
+      configs->camera_pos + camera_.direction, // and looks here : at the same position, plus "direction"
+      vec3(0, 1, 0)
+    );
+  }
 
   DrawShadows();
 
@@ -1026,8 +1067,8 @@ void Renderer::DrawHand() {
     vec3(0.0f, 0.0f, 1.0f)
   );
   obj->rotation_matrix = rotation_matrix;
-  obj->position = camera_.position + camera_.direction * -5.0f;
-  obj->position += vec3(0, -0.5, 0);
+  obj->position = camera_.position + camera_.direction;
+  obj->position += vec3(0, -2.0, 0);
 
   DrawObject(obj);
 }

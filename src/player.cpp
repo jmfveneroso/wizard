@@ -1,12 +1,11 @@
 #include "player.hpp"
 
 PlayerInput::PlayerInput(shared_ptr<Resources> asset_catalog, 
-    shared_ptr<Project4D> project_4d, shared_ptr<Craft> craft, 
+    shared_ptr<Project4D> project_4d, 
     shared_ptr<Inventory> inventory,
-    shared_ptr<Terrain> terrain,
-    shared_ptr<Dialog> dialog)
-  : resources_(asset_catalog), project_4d_(project_4d), craft_(craft), 
-    inventory_(inventory), terrain_(terrain), dialog_(dialog) {
+    shared_ptr<Terrain> terrain)
+  : resources_(asset_catalog), project_4d_(project_4d), 
+    inventory_(inventory), terrain_(terrain) {
 }
 
 void PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c, 
@@ -27,9 +26,7 @@ void PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
         if (door->state == 0) {
           door->state = DOOR_OPENING;
           for (shared_ptr<Event> e : door->on_open_events) {
-            cout << "ADDING....." << endl;
             shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
-            cout << "Callback: " << door_event->callback << endl;
             resources_->AddEvent(e);
           }
         } else if (door->state == DOOR_OPEN) {
@@ -50,6 +47,12 @@ void PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
         } else if (item->name == "altar-001") {
           inventory_->Enable(window, INVENTORY_CRAFT);
           resources_->SetGameState(STATE_INVENTORY);
+        } else if (item->name == "alessia") {
+          resources_->TalkTo(item->name);
+        } else if (item->name == "finganforn") {
+          resources_->TalkTo(item->name);
+        } else if (item->name == "bene") {
+          resources_->TalkTo(item->name);
         } else {
           int item_id = asset->item_id;
           if (resources_->InsertItemInInventory(item_id)) {
@@ -62,51 +65,6 @@ void PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
     }
     configs->interacting_item = item;
     hit = true;
-  }
-
-  if (hit || !interact) {
-    return;
-  }
-
-  float t;
-  vec3 q;
-
-  // CRAFT.  
-  // shared_ptr<GameObject> obj = resources_->GetObjectByName("mana-pool-001");
-
-  // if (IntersectRaySphere(p, d, obj->GetTransformedBoundingSphere(), t, q)) {
-  //   craft_->Enable();
-  //   resources_->SetGameState(STATE_CRAFT);
-  //   hit = true;
-  // }
-
-  // if (hit) {
-  //   return;
-  // }
-
-  // TODO: move this to other location. Should be NPC but how?
-  vector<pair<string, string>> npc_values {
-    { "alessia", "leader-speech" },
-    // { "fisherman-001", "fisherman-speech" },
-    // { "bird-tamer", "bird-tamer-speech" },
-    // { "farmer", "farmer-speech" },
-    // { "huntress", "huntress-speech" },
-    // { "innkeep", "innkeep-speech" },
-    // { "blacksmith-man", "blacksmith-speech" },
-    // { "librarian", "librarian-speech" },
-    // { "alchemist", "alchemist-speech" }
-  };
-
-  for (const auto& [name, speech] : npc_values) {
-    ObjPtr npc = resources_->GetObjectByName(name);
-    if (IntersectRaySphere(p, d, npc->GetTransformedBoundingSphere(), t, q)) {
-      dialog_->SetMainText(resources_->GetString(speech));
-      dialog_->SetDialogOptions({ "Build", "Goodbye" });
-      dialog_->Enable();
-      resources_->SetGameState(STATE_DIALOG);
-      while (!npc->actions.empty()) npc->actions.pop();
-      npc->actions.push(make_shared<TalkAction>());
-    }
   }
 }
 
@@ -284,6 +242,7 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
         }
 
         UpdateMesh(*mesh, vertices, uvs, indices);
+        mesh->polygons = polygons;
         obj->GetAsset()->aabb = GetAABBFromPolygons(polygons);
         resources_->UpdateObjectPosition(obj);
       } else {
@@ -449,12 +408,13 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   switch (player->player_action) {
     case PLAYER_IDLE: {
-      obj->active_animation = "Armature|idle";
+      obj->active_animation = "Armature|idle.001";
       if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
         if (debounce < 0) {
     
           // TODO: check which spell here.
-          if (configs->spellbar[configs->selected_spell] == 1) {
+          if (configs->spellbar[configs->selected_spell] == 1) { 
+            // Magic missile.
             obj->active_animation = "Armature|shoot";
             player->player_action = PLAYER_CASTING;
             obj->frame = 0;
@@ -479,6 +439,34 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
                 configs->spellbar[configs->selected_spell] = 0;
               }
             }
+          } else if (configs->spellbar[configs->selected_spell] == 7) {
+            mat4 rotation_matrix = rotate(
+              mat4(1.0),
+              c.rotation.y + 4.71f,
+              vec3(0.0f, 1.0f, 0.0f)
+            );
+            rotation_matrix = rotate(
+              rotation_matrix,
+              c.rotation.x,
+              vec3(0.0f, 0.0f, 1.0f)
+            );
+            obj->rotation_matrix = rotation_matrix;
+            vec3 pos = c.position + vec3(0, -2.0f, 0);
+
+            active_harpoon = CreateGameObjFromAsset(resources_.get(), "harpoon", pos);
+            active_harpoon->rotation_matrix = rotation_matrix;
+            active_harpoon->active_animation = "Armature.001|throw_harpoon";
+            active_harpoon->frame = 0;
+            active_harpoon->never_cull = true;
+
+            resources_->UpdateObjectPosition(active_harpoon);
+            resources_->AddNewObject(active_harpoon);
+
+            player->player_action = PLAYER_EXTRACTING;
+            obj->active_animation = "Armature|throw";
+            animation_frame = 80;
+            obj->frame = 0;
+            configs->spellbar[configs->selected_spell] = 0;
           }
         }
         debounce = 20;
@@ -494,9 +482,31 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         debounce = 20;
       } else if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if (debounce < 0) {
+          mat4 rotation_matrix = rotate(
+            mat4(1.0),
+            c.rotation.y + 4.71f,
+            vec3(0.0f, 1.0f, 0.0f)
+          );
+          rotation_matrix = rotate(
+            rotation_matrix,
+            c.rotation.x,
+            vec3(0.0f, 0.0f, 1.0f)
+          );
+          obj->rotation_matrix = rotation_matrix;
+          vec3 pos = c.position + vec3(0, -2.0f, 0);
+
+          active_harpoon = CreateGameObjFromAsset(resources_.get(), "harpoon", pos);
+          active_harpoon->rotation_matrix = rotation_matrix;
+          active_harpoon->active_animation = "Armature.001|throw_harpoon";
+          active_harpoon->frame = 0;
+          active_harpoon->never_cull = true;
+
+          resources_->UpdateObjectPosition(active_harpoon);
+          resources_->AddNewObject(active_harpoon);
+
           player->player_action = PLAYER_EXTRACTING;
-          obj->active_animation = "Armature|extract";
-          animation_frame = 90;
+          obj->active_animation = "Armature|throw";
+          animation_frame = 80;
           obj->frame = 0;
         }
         debounce = 20;
@@ -506,7 +516,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     case PLAYER_CASTING: {
       obj->active_animation = "Armature|shoot";
       if (animation_frame == 0 && glfwGetKey(window, GLFW_KEY_C) != GLFW_PRESS) {
-        obj->active_animation = "Armature|idle";
+        obj->active_animation = "Armature|idle.001";
         obj->frame = 0;
         player->player_action = PLAYER_IDLE;
       } else if (animation_frame <= 0 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
@@ -517,7 +527,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
           resources_->CreateChargeMagicMissileEffect();
           configs->spellbar[configs->selected_spell] = 0;
         } else {
-          obj->active_animation = "Armature|idle";
+          obj->active_animation = "Armature|idle.001";
           obj->frame = 0;
         }
       } else if (animation_frame == 20) {
@@ -539,12 +549,31 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       break;
     }
     case PLAYER_EXTRACTING: {
-      if (animation_frame == 60) {
-        Extract(c);
-      }
+      mat4 rotation_matrix = rotate(
+        mat4(1.0),
+        c.rotation.y + 4.71f,
+        vec3(0.0f, 1.0f, 0.0f)
+      );
+      rotation_matrix = rotate(
+        rotation_matrix,
+        c.rotation.x,
+        vec3(0.0f, 0.0f, 1.0f)
+      );
+      active_harpoon->rotation_matrix = rotation_matrix;
+      active_harpoon->position = c.position + vec3(0, -2.0f, 0);
 
-      if (animation_frame == 0) {
-        obj->active_animation = "Armature|idle";
+      resources_->UpdateObjectPosition(active_harpoon);
+      resources_->AddNewObject(active_harpoon);
+
+      if (animation_frame == 39) {
+        // Extract(c);
+        vec3 right = cross(c.up, c.direction);
+
+        resources_->RemoveObject(active_harpoon);
+        active_harpoon = nullptr;
+        resources_->CastHarpoon(c);
+
+        obj->active_animation = "Armature|idle.001";
         obj->frame = 0;
         player->player_action = PLAYER_IDLE;
         debounce = 20;

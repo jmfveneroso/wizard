@@ -207,10 +207,6 @@ void GameAsset::CalculateCollisionData() {
         }
 
         bones[bone_id] = GetAssetBoundingSphere(bone_hit_box->polygons);
-
-        if (mesh_name == "alessia") {
-          cout << "BBBBBB: " << bones[bone_id] << endl;
-        }
       }
       break;
     }
@@ -286,6 +282,16 @@ void GameAsset::CollisionDataToXml(pugi::xml_node& parent) {
 
   if (aabb_tree) {
     AppendXmlNode(node, "aabb-tree", aabb_tree);
+  }
+
+  if (collision_type_ == COL_BONES) {
+    pugi::xml_node bones_xml = node.append_child("bones");
+    for (const auto& [bone_id, bs] : bones) {
+      pugi::xml_node bs_node = bones_xml.append_child("bone");
+      bs_node.append_attribute("id") = bone_id;
+      AppendXmlNode(bs_node, "center", bs.center);
+      AppendXmlTextNode(bs_node, "radius", bs.radius);
+    }
   }
 }
 
@@ -372,5 +378,20 @@ void GameAsset::LoadCollisionData(pugi::xml_node& xml) {
     const pugi::xml_node& node_xml = aabb_tree_xml.child("node");
     LoadAssetCollisionDataAux(aabb_tree, node_xml);
   }
+
+  const pugi::xml_node& bones_xml = xml.child("bones");
+  if (bones_xml) {
+    for (pugi::xml_node bone_xml = bones_xml.child("bone"); bone_xml; 
+      bone_xml = bone_xml.next_sibling("bone")) {
+
+      int bone_id = boost::lexical_cast<int>(bone_xml.attribute("id").value());
+      const pugi::xml_node& center_xml = bone_xml.child("center");
+      bounding_sphere.center = LoadVec3FromXml(center_xml);
+      const pugi::xml_node& radius_xml = bone_xml.child("radius");
+      bounding_sphere.radius = boost::lexical_cast<float>(radius_xml.text().get());
+      bones[bone_id] = bounding_sphere;
+    }
+  }
+
   loaded_collision = true;
 }
