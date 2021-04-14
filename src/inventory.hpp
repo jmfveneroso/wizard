@@ -11,7 +11,8 @@ enum InventoryState {
   INVENTORY_ITEMS = 0,
   INVENTORY_SPELLBOOK,
   INVENTORY_CRAFT,
-  INVENTORY_DIALOG
+  INVENTORY_DIALOG,
+  INVENTORY_QUEST_LOG
 };
 
 class Inventory {
@@ -35,6 +36,7 @@ class Inventory {
   bool lft_click_ = false;
   bool rgt_click_ = false;
   int throttle_ = 0;
+  int cursor_pos_ = 0;
 
   void UpdateMouse(GLFWwindow* window);
   bool IsMouseInRectangle(int left, int right, int bottom, int top);
@@ -50,6 +52,8 @@ class Inventory {
   void DrawCraftTable(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
   void DrawDialog(GLFWwindow* window);
+  void DrawQuestLog(GLFWwindow* window);
+  void NextPhrase(GLFWwindow* window, const string& next_phrase_name = "");
 
  public:
   bool enabled;

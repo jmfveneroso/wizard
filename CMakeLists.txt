@@ -76,9 +76,6 @@ set(
   src/4d.cpp 
   src/player.cpp 
   src/inventory.cpp 
-  src/item.cpp 
-  src/craft.cpp 
-  src/dialog.cpp 
   src/engine.cpp 
   src/game_asset.cpp 
   src/game_object.cpp 

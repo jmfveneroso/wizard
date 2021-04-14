@@ -3,6 +3,8 @@
 
 #include <chrono>
 
+const float kWaterHeight = 5.0f;
+
 // TODO: do we need terrain here?
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
   // Sphere / Bones / Quick Sphere / Perfect / C. Hull / OBB /  Terrain 
@@ -297,7 +299,7 @@ vector<shared_ptr<CollisionSS>> GetCollisionsSS(ObjPtr obj1, ObjPtr obj2) {
 // Sphere - Bones.
 vector<shared_ptr<CollisionSB>> GetCollisionsSB(ObjPtr obj1, ObjPtr obj2) {
   vector<shared_ptr<CollisionSB>> collisions;
-  for (int bone_id = 0; bone_id < obj2->bones.size(); bone_id++) {
+  for (const auto& [bone_id, bs] : obj2->bones) {
     collisions.push_back(make_shared<CollisionSB>(obj1, obj2, bone_id));
   }
   return collisions;
@@ -391,7 +393,6 @@ vector<shared_ptr<CollisionSO>> GetCollisionsSO(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
   BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
 
-  cout << "I say there is: " << obj1->name << " == " << obj2->name << endl;
   vec3 point_of_contact;
   if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
     return {};
@@ -410,8 +411,8 @@ vector<shared_ptr<CollisionBB>> GetCollisionsBB(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionBB>> collisions;
-  for (int bone_id_1 = 0; bone_id_1 < obj1->bones.size(); bone_id_1++) {
-    for (int bone_id_2 = 0; bone_id_2 < obj2->bones.size(); bone_id_2++) {
+  for (const auto& [bone_id_1, bs1] : obj1->bones) {
+    for (const auto& [bone_id_2, bs2] : obj2->bones) {
       collisions.push_back(make_shared<CollisionBB>(obj1, obj2, bone_id_1, 
         bone_id_2));
     }
@@ -437,7 +438,7 @@ vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
   }
 
   vector<shared_ptr<CollisionBP>> cols;
-  for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
+  for (const auto& [bone_id, bs1] : obj1->bones) {
     cols.push_back(make_shared<CollisionBP>(obj1, obj2, bone_id, node->polygon));
   }
   return cols;
@@ -473,7 +474,7 @@ vector<shared_ptr<CollisionBO>> GetCollisionsBO(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionBO>> cols;
-  for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
+  for (const auto& [bone_id, bs] : obj1->bones) {
     cols.push_back(make_shared<CollisionBO>(obj1, obj2, bone_id));
   }
   return cols;
@@ -482,11 +483,13 @@ vector<shared_ptr<CollisionBO>> GetCollisionsBO(ObjPtr obj1, ObjPtr obj2) {
 // Bones - Terrain.
 vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1, 
   shared_ptr<Resources> resources) {
-  // vector<shared_ptr<CollisionBT>> collisions;
-  // for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
-  //   collisions.push_back(make_shared<CollisionBT>(obj1, bone_id));
-  // }
-  // return collisions;
+
+  vec3 normal;
+  float h = resources->GetHeightMap().GetTerrainHeight(
+    vec2(obj1->position.x, obj1->position.z), &normal);
+  if (obj1->position.y - 10 > h) {
+    return {};
+  }
 
   vector<Polygon> polygons;
   GetTerrainPolygons(resources, vec2(obj1->position.x, obj1->position.z), 
@@ -494,7 +497,7 @@ vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1,
 
   vector<shared_ptr<CollisionBT>> cols;
   for (const auto& polygon : polygons) {
-    for (int bone_id = 0; bone_id < obj1->bones.size(); bone_id++) {
+    for (const auto& [bone_id, bs] : obj1->bones) {
       cols.push_back(make_shared<CollisionBT>(obj1, bone_id, polygon));
     }
   }
@@ -575,7 +578,7 @@ vector<shared_ptr<CollisionQB>> GetCollisionsQB(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionQB>> collisions;
-  for (int bone_id = 0; bone_id < obj2->bones.size(); bone_id++) {
+  for (const auto& [bone_id, bs] : obj2->bones) {
     collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
   }
   return collisions;
@@ -944,6 +947,12 @@ void CollisionResolver::TestCollisionST(shared_ptr<CollisionST> c) {
   BoundingSphere s = c->obj1->GetTransformedBoundingSphere();
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
+
+  // if (s.center.y < kWaterHeight) {
+  //   c->collided = true;
+  //   h = 5.0f;
+  // }
+
   if (c->collided) {
     float m = h - (s.center.y - s.radius);
     c->displacement_vector = vec3(0.0f, m, 0.0f);
@@ -1013,23 +1022,24 @@ void CollisionResolver::TestCollisionBO(shared_ptr<CollisionBO> c) {
 
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
-  // BoundingSphere s = c->obj1->GetBoneBoundingSphere(c->bone);
-  // float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
-  // c->collided = (s.center.y - s.radius < h);
-  // if (c->collided) {
-  //   float m = h - (s.center.y - s.radius);
-  //   if (c->obj1->name == "alessia") {
-  //     // cout << "++++++++++++++++++++++++ s: " << s << endl;
-  //     // cout << "++++++++++++++++++++++++ h: " << h << endl;
-  //     // cout << "++++++++++++++++++++++++ m: " << m << endl;
-  //   }
-
-  //   c->displacement_vector = vec3(0.0f, m, 0.0f);
-  //   c->point_of_contact = c->obj1->position - vec3(0.0f, m - s.radius, 0.0f);
-  //   FillCollisionBlankFields(c);
-  // }
-
   BoundingSphere s1 = c->obj1->GetBoneBoundingSphere(c->bone);
+  vec3 normal;
+  float h = resources_->GetHeightMap().GetTerrainHeight(
+    vec2(c->obj1->position.x, c->obj1->position.z), &normal);
+
+  if (s1.center.y < kWaterHeight) {
+    c->collided = true;
+    h = 5.0f;
+  }
+
+  if (c->obj1->position.y < h - 10) {
+    c->collided = true;
+    c->displacement_vector = vec3(0, 
+      (h - c->obj1->position.y) + c->obj1->GetBoundingSphere().radius, 0);
+    FillCollisionBlankFields(c);
+    return;
+  }
+
   c->collided = IntersectBoundingSphereWithTriangle(s1, c->polygon, 
     c->displacement_vector, c->point_of_contact);
   c->normal = c->polygon.normals[0];
@@ -1096,23 +1106,33 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
   BoundingSphere s = c->obj1->GetTransformedBoundingSphere();
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
   c->collided = (s.center.y - s.radius < h);
+
+  bool collided_with_water = false;
+  if (s.center.y < kWaterHeight) {
+    c->collided = true;
+    c->displacement_vector = vec3(0);
+    collided_with_water = true;
+  }
+
   if (c->collided) {
-    vector<Polygon> polygons;
-    GetTerrainPolygons(resources_, vec2(s.center.x, s.center.z), polygons);
+    if (!collided_with_water) {
+      vector<Polygon> polygons;
+      GetTerrainPolygons(resources_, vec2(s.center.x, s.center.z), polygons);
 
-    const vector<vec3>& v0 = polygons[0].vertices;
-    const vector<vec3>& v1 = polygons[1].vertices;
-    bool inside;
+      const vector<vec3>& v0 = polygons[0].vertices;
+      const vector<vec3>& v1 = polygons[1].vertices;
+      bool inside;
 
-    vec3 p1 = ClosestPtPointTriangle(s.center, v0[0], v0[1], v0[2], &inside);
-    vec3 p2 = ClosestPtPointTriangle(s.center, v1[0], v1[1], v1[2], &inside);
+      vec3 p1 = ClosestPtPointTriangle(s.center, v0[0], v0[1], v0[2], &inside);
+      vec3 p2 = ClosestPtPointTriangle(s.center, v1[0], v1[1], v1[2], &inside);
 
-    if (length2(p1 - s.center) < length2(p2 - s.center)) {
-      c->displacement_vector = p1 - s.center;
-      c->point_of_contact = p1;
-    } else {
-      c->displacement_vector = p2 - s.center;
-      c->point_of_contact = p2;
+      if (length2(p1 - s.center) < length2(p2 - s.center)) {
+        c->displacement_vector = p1 - s.center;
+        c->point_of_contact = p1;
+      } else {
+        c->displacement_vector = p2 - s.center;
+        c->point_of_contact = p2;
+      }
     }
     FillCollisionBlankFields(c);
   }
@@ -1233,6 +1253,13 @@ void CollisionResolver::TestCollisionOT(shared_ptr<CollisionOT> c) {
 
   c->collided = TestTriangleAABB(polygon_in_obb_space, aabb_in_obb_space,
       c->displacement_vector, c->point_of_contact);
+
+  if (obb_center.y < kWaterHeight) {
+    c->collided = true;
+    float h = 5.0f;
+    c->displacement_vector = vec3(
+      from_world_space * vec4(0, (h - (obb_center.y)), 0, 1));
+  }
 
   if (c->collided) {
     c->displacement_vector = to_world_space * c->displacement_vector;
@@ -1410,18 +1437,35 @@ void CollisionResolver::ResolveCollisions() {
       } else if (obj2 && obj2->IsCreature()) {
         // (obj2->GetAsset()->name == "spider" 
         // || obj2->GetAsset()->name == "cephalid")) {
-        obj2->life -= 50;
+        // obj2->life -= 50;
         resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
           vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
+
+        // TODO: change.
+        if (obj1->GetAsset()->name == "harpoon-missile" && 
+            obj2->GetAsset()->name == "fish") {
+          obj2->life = -100;
+          resources_->InsertItemInInventory(8);
+
+          const string& item_name = resources_->GetItemData()[8].name;
+          resources_->AddMessage(string("You picked a ") + item_name);
+        } else if (obj1->GetAsset()->name == "harpoon-missile" && 
+            obj2->GetAsset()->name == "white-carp") {
+           obj2->life = -100;
+          resources_->InsertItemInInventory(9);
+
+          const string& item_name = resources_->GetItemData()[9].name;
+          resources_->AddMessage(string("You picked a ") + item_name);
+        }
 
         // TODO: need another class to take care of units. Like HitUnit(unit);
         // TODO: ChangeStatus(status)
         if (obj2->life <= 0) {
-          obj2->status = STATUS_DYING;
-          obj2->frame = 0;
+          // obj2->status = STATUS_DYING;
+          // obj2->frame = 0;
         } else {
-          obj2->status = STATUS_TAKING_HIT;
-          obj2->frame = 0;
+          // obj2->status = STATUS_TAKING_HIT;
+          // obj2->frame = 0;
         }
       } else {
         if (obj2) {
@@ -1437,9 +1481,19 @@ void CollisionResolver::ResolveCollisions() {
             obj2->speed += -c->displacement_vector;
             obj2->torque += torque;
           } 
+          resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
+            vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+        } else {
+          // TODO: Check if collision with water.
+          if (obj1->position.y < 5.0f) {
+            vec3 pos = vec3(obj1->position.x, 5.0f, obj1->position.z);
+            resources_->CreateParticleEffect(1, pos, normal * 1.0f, 
+              vec3(1.0, 1.0, 1.0), 7.0, 32.0f, 3.0f, "splash");
+          } else {
+            resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
+              vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+          }
         }
-        resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
-          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
       }
       obj1->life = -1;
       continue;
@@ -1463,15 +1517,6 @@ void CollisionResolver::ResolveCollisions() {
     }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.85) obj1->can_jump = true;
-
-    if (obj1->name == "alessia") {
-      // if (obj2) {
-      //   cout << "Alessia collided with " << obj2->name << endl;
-      // } else {
-      //   cout << "Alessia collided with terrain." << endl;
-      // }
-      // cout << "displacement" << displacement_vector << endl;
-    }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.6f) {
       if (dot(obj1->speed, vec3(0, -1, 0)) > 50.0f * GRAVITY) {

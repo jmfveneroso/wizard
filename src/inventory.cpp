@@ -204,6 +204,10 @@ void Inventory::DrawInventory(const Camera& camera, int win_x, int win_y,
       lft_click_) {
       state_ = INVENTORY_SPELLBOOK;
       throttle_ = 20;
+    } else if (IsMouseInRectangle(win_x + 376, win_x + 442, win_y + 62, 
+      win_y + 46) && lft_click_) {
+      state_ = INVENTORY_QUEST_LOG;
+      throttle_ = 20;
     }
   }
 }
@@ -212,7 +216,7 @@ void Inventory::DrawSpellPage() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   vector<ItemData>& item_data = resources_->GetItemData();
 
-  for (int i = 1; i < 3; i++) {
+  for (int i = 1; i < 5; i++) {
     if (!configs->learned_spells[i]) continue;
 
     const SpellData& spell_data = resources_->GetSpellData()[i];
@@ -231,13 +235,13 @@ void Inventory::DrawSpellPage() {
         DrawContextPanel(left + 64, top - 160, spell_data.name, 
           description);
 
-        for (int i = 0; i < spell_data.formula.size(); i++) {
-          int item_id = spell_data.formula[i];
+        for (int j = 0; j < spell_data.formula.size(); j++) {
+          int item_id = spell_data.formula[j];
           if (item_id == 0) continue;
 
           int x = left + 128 + 10;
           int y = top - 160 + 250;
-          draw_2d_->DrawImage(item_data[item_id].icon, x + i * 74, y, 64, 64, 1.0); 
+          draw_2d_->DrawImage(item_data[item_id].icon, x + j * 74, y, 64, 64, 1.0); 
         }
       }
     }
@@ -252,6 +256,10 @@ void Inventory::DrawSpellbook() {
       IsMouseInRectangle(win_x_ + 132, win_x_ + 216, win_y_ + 62, win_y_ +  
         46) && lft_click_) {
       state_ = INVENTORY_ITEMS;
+      throttle_ = 20;
+    } else if (IsMouseInRectangle(win_x_ + 376, win_x_ + 442, win_y_ + 62, 
+      win_y_ + 46) && lft_click_) {
+      state_ = INVENTORY_QUEST_LOG;
       throttle_ = 20;
     }
   }
@@ -339,35 +347,114 @@ void Inventory::DrawCraftTable(const Camera& camera, int win_x, int win_y,
   }
 }
 
-void Inventory::DrawDialog(GLFWwindow* window) {
-  shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
+void Inventory::DrawQuestLog(GLFWwindow* window) {
+  draw_2d_->DrawImage("quest_log", win_x_, win_y_, 800, 800, 1.0);
+  if (--throttle_ < 0 && selected_item_ == 0) {
+    if (
+      IsMouseInRectangle(win_x_ + 132, win_x_ + 216, win_y_ + 62, win_y_ +  
+        46) && lft_click_) {
+      state_ = INVENTORY_ITEMS;
+      throttle_ = 20;
+    } else if (IsMouseInRectangle(win_x_ + 244, win_x_ + 287, win_y_ + 62, 
+      win_y_ + 46) && lft_click_) {
+      state_ = INVENTORY_SPELLBOOK;
+      throttle_ = 20;
+    }
+  }
 
+  unordered_map<string, shared_ptr<Quest>> quests = resources_->GetQuests();
+  vector<shared_ptr<Quest>> active_quests;
+  for (const auto& [quest_name, quest] : quests) {
+    if (!quest->active) continue;
+    active_quests.push_back(quest);
+  }
+
+  int x = win_x_;
+  int y = win_y_;
+  for (const auto& quest : active_quests) {
+    draw_2d_->DrawText(quest->title, x + 80, kWindowHeight - (y + 130), 
+      vec4(1), 1.0, false, "avenir_light_oblique");
+    y += 20;
+  }
+}
+
+void Inventory::NextPhrase(GLFWwindow* window, const string& next_phrase_name) {
+  shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
+  const Phrase& cur_phrase = current_dialog->dialog->phrases[current_dialog->current_phrase];
+  const string dialog_name = current_dialog->dialog->name;
+  const int num_phrases = current_dialog->dialog->phrases.size();
+  const int num_options = cur_phrase.options.size();
   ObjPtr npc = current_dialog->npc;
-  if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS && throttle_ < 0) {
-    throttle_ = 20;
-    int num_phrases = current_dialog->dialog->phrases.size();
+
+  // Run events.
+  const string& phrase_name = 
+    current_dialog->dialog->phrases[current_dialog->current_phrase].name;
+  if (current_dialog->dialog->on_finish_phrase_events.find(phrase_name) != 
+    current_dialog->dialog->on_finish_phrase_events.end()) {
+    resources_->RunScriptFn(
+      current_dialog->dialog->on_finish_phrase_events[phrase_name]);
+  }
+
+  if (next_phrase_name.empty()) {
     if (current_dialog->current_phrase < num_phrases - 1) {
       current_dialog->current_phrase++;
       current_dialog->processed_animation = false;
     } else {
-      const string dialog_name = current_dialog->dialog->name;
       if (current_dialog->on_finish_dialog_events.find(dialog_name) != 
         current_dialog->on_finish_dialog_events.end()) {
         resources_->RunScriptFn(
           current_dialog->on_finish_dialog_events[dialog_name]);
       }
-
       npc->ClearActions();
       Disable();
       glfwSetCursorPos(window, 0, 0);
       resources_->SetGameState(STATE_GAME);
+    }
+  } else {
+    bool found = false;
+    for (int i = 0; i < current_dialog->dialog->phrases.size(); i++) {
+      const Phrase& phrase = current_dialog->dialog->phrases[i];
+      if (phrase.name == next_phrase_name) {
+        current_dialog->current_phrase = i;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      throw runtime_error(string("Dialog with name ") + next_phrase_name +
+        " does not exist.");
+    }
+  }
+}
+
+void Inventory::DrawDialog(GLFWwindow* window) {
+  shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
+  const Phrase& cur_phrase = current_dialog->dialog->phrases[current_dialog->current_phrase];
+  int num_phrases = current_dialog->dialog->phrases.size();
+  int num_options = cur_phrase.options.size();
+
+  ObjPtr npc = current_dialog->npc;
+  if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS && throttle_ < 0) {
+    throttle_ = 20;
+
+    if (num_options > 0) {
+      if (++cursor_pos_ > num_options - 1) cursor_pos_ = 0;
+    } else {
+      NextPhrase(window);
+    }
+  } else if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS && throttle_ < 0) {
+    if (num_options > 0) {
+      if (cursor_pos_ > cur_phrase.options.size()) {
+        throw runtime_error("Dialog option beyond scope.");
+      }
+      NextPhrase(window, get<0>(cur_phrase.options[cursor_pos_]));
     }
   }
 
   if (npc && !current_dialog->processed_animation) {
     npc->ClearActions();
     npc->LookAt(resources_->GetPlayer()->position);
-    string animation_name = current_dialog->dialog->animations[current_dialog->current_phrase];
+    string animation_name = current_dialog->dialog->phrases[current_dialog->current_phrase].animation;
     npc->actions.push(make_shared<AnimationAction>(animation_name));
     current_dialog->processed_animation = true;
   }
@@ -378,7 +465,7 @@ void Inventory::DrawDialog(GLFWwindow* window) {
 
   pos_y += 100;
 
-  string phrase = current_dialog->dialog->phrases[current_dialog->current_phrase];
+  string phrase = current_dialog->dialog->phrases[current_dialog->current_phrase].content;
 
   vector<string> words;
   boost::split(words, phrase, boost::is_any_of(" \n\r\t"));
@@ -411,6 +498,18 @@ void Inventory::DrawDialog(GLFWwindow* window) {
     pos_y += 20;
   }
 
+  int pos = 0;
+  for (const auto& [next, content] : cur_phrase.options) {
+    if (cursor_pos_ == pos) {
+      draw_2d_->DrawImage("next-dialog", 240, pos_y - 30, 64, 64, 1.0);
+    }
+
+    draw_2d_->DrawText(content, 300, kWindowHeight - pos_y, vec4(1), 1.0, false, 
+      "avenir_light_oblique");
+    pos_y += 20;
+    pos++;
+  }
+
   if (current_dialog->current_phrase ==
     current_dialog->dialog->phrases.size() - 1) {
     draw_2d_->DrawImage("dialog-end", 900, 620, 64, 64, 1.0);
@@ -418,16 +517,6 @@ void Inventory::DrawDialog(GLFWwindow* window) {
     current_dialog->dialog->phrases.size() - 1) {
     draw_2d_->DrawImage("next-dialog", 900, 620, 64, 64, 1.0);
   }
-
-  // for (int i = 0; i < dialog_options_.size(); i++) {
-  //   pos_y += 20;
-  //   if (cursor_ == i) {
-  //     draw_2d_->DrawRectangle(300, kWindowHeight - (pos_y - 16), 
-  //       300 + 200, 18, vec3(1, 0.69, 0.23));
-  //   }
-  //   draw_2d_->DrawText(dialog_options_[i], 300-1, kWindowHeight - pos_y, 
-  //     vec4(1), 1.0, false, "avenir_light_oblique");
-  // }
 }
 
 void Inventory::Draw(const Camera& camera, int win_x, int win_y, 
@@ -446,6 +535,10 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
       break;
     case INVENTORY_SPELLBOOK:
       DrawSpellbook();
+      DrawSpellbar(); 
+      break;
+    case INVENTORY_QUEST_LOG:
+      DrawQuestLog(window);
       DrawSpellbar(); 
       break;
     case INVENTORY_CRAFT:

@@ -8,21 +8,23 @@ Engine::Engine(
   shared_ptr<Renderer> renderer,
   shared_ptr<TextEditor> text_editor,
   shared_ptr<Inventory> inventory,
-  shared_ptr<Craft> craft,
   shared_ptr<Resources> asset_catalog,
   shared_ptr<CollisionResolver> collision_resolver,
   shared_ptr<AI> ai,
   shared_ptr<Physics> physics,
   shared_ptr<PlayerInput> player_input,
-  shared_ptr<Item> item,
-  shared_ptr<Dialog> dialog,
   GLFWwindow* window,
   int window_width,
   int window_height
-) : project_4d_(project_4d), renderer_(renderer), text_editor_(text_editor),
-    inventory_(inventory), craft_(craft), resources_(asset_catalog),
-    collision_resolver_(collision_resolver), ai_(ai), physics_(physics),
-    player_input_(player_input), item_(item), dialog_(dialog), 
+) : project_4d_(project_4d), 
+    renderer_(renderer), 
+    text_editor_(text_editor),
+    inventory_(inventory), 
+    resources_(asset_catalog),
+    collision_resolver_(collision_resolver), 
+    ai_(ai), 
+    physics_(physics),
+    player_input_(player_input), 
     window_(window), window_width_(window_width), 
     window_height_(window_height) {
 }
@@ -95,6 +97,11 @@ void Engine::RunCommand(string command) {
       vec3 position = c.position + c.direction * 10.0f;
       configs->new_building = CreateGameObjFromAsset(resources_.get(), 
         asset_name, position);
+
+      if (asset_name == "fish") {
+        configs->new_building->active_animation = "Armature|jump";
+      }
+
       configs->new_building->being_placed = true;
       configs->place_object = true;
       resources_->AddNewObject(configs->new_building);
@@ -126,7 +133,7 @@ void Engine::RunCommand(string command) {
 }
 
 void Engine::ProcessCollisionsAsync() {
-  double min_time_elapsed = 1.0f / 60.0f;
+  const double min_time_elapsed = 1.0f / 60.0f;
 
   double last_update = 0;
   while (!terminate_) {
@@ -154,6 +161,12 @@ bool Engine::ProcessGameInput() {
   GLFWwindow* window = renderer_->window();
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
+  if (configs->show_spellbook) {
+    configs->show_spellbook = false;
+    inventory_->Enable(window, INVENTORY_SPELLBOOK);
+    resources_->SetGameState(STATE_INVENTORY);
+  }
+
   switch (resources_->GetGameState()) {
     case STATE_GAME: { 
       shared_ptr<Player> player = resources_->GetPlayer();
@@ -284,30 +297,6 @@ bool Engine::ProcessGameInput() {
       }
       return true;
     }
-    case STATE_CRAFT: {
-      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          craft_->Disable();
-        }
-        throttle_counter_ = 20;
-      }
-      if (!craft_->enabled) {
-        resources_->SetGameState(STATE_GAME);
-      }
-      return true;
-    }
-    case STATE_DIALOG: {
-      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          dialog_->Disable();
-        }
-        throttle_counter_ = 20;
-      }
-      if (!dialog_->enabled) {
-        resources_->SetGameState(STATE_GAME);
-      }
-      return true;
-    }
     case STATE_BUILD: {
       Camera c = player_input_->ProcessInput(window);
       renderer_->SetCamera(c);
@@ -359,14 +348,6 @@ void Engine::AfterFrame() {
     case STATE_INVENTORY: {
       Camera c = player_input_->GetCamera();
       inventory_->Draw(c, 200, 100, window_);
-      break;
-    }
-    case STATE_CRAFT: {
-      craft_->Draw();
-      break;
-    }
-    case STATE_DIALOG: {
-      dialog_->Draw();
       break;
     }
     default:
@@ -528,12 +509,10 @@ void Engine::BeforeFrame() {
     // BeforeFrameDebug();
     UpdateAnimationFrames();
     ProcessGameInput();
-    item_->ProcessItems();
-    craft_->ProcessCrafting();
     ai_->RunSpiderAI();
     resources_->UpdateParticles();
-    physics_->Run();
-    collision_resolver_->Collide();
+    // physics_->Run();
+    // collision_resolver_->Collide();
   }
 }
 
@@ -550,8 +529,10 @@ void Engine::Run() {
   vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
   // Start threads.
-  // collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
+  collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
   glfwSetCursorPos(window_, 0, 0);
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
 
   int frames = 0;
   double next_print_time = glfwGetTime();
@@ -574,13 +555,16 @@ void Engine::Run() {
     resources_->LockOctree();
     Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
-    renderer_->Draw();
+
+    if (configs->render_scene == "default") {
+      renderer_->Draw();
+    } else if (configs->render_scene == "hypercube") {
+      renderer_->DrawHypercube();
+    }
+
     resources_->UnlockOctree();
 
     AfterFrame();
-
-    // project_4d_->CreateHypercube(vec3(11623, 177, 7550), hypercube_rotation);
-    // hypercube_rotation[2] += 0.02;
 
     glfwSwapBuffers(window_);
     glfwPollEvents();
@@ -593,5 +577,5 @@ void Engine::Run() {
   terminate_ = true;
 
   // Join threads.
-  // collision_thread_.join();
+  collision_thread_.join();
 }

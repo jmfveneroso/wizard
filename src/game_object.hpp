@@ -9,6 +9,7 @@ struct Sector;
 struct Waypoint;
 struct Action;
 class Resources;
+class Region;
 
 class GameObject : public enable_shared_from_this<GameObject> {
  protected:
@@ -46,11 +47,13 @@ class GameObject : public enable_shared_from_this<GameObject> {
   // TODO: remove.
   bool draw = true;
   bool freeze = false;
+  bool never_cull = false;
 
   string active_animation = "";
   double frame = 0;
 
   shared_ptr<Sector> current_sector;
+  shared_ptr<Region> current_region = nullptr;
   shared_ptr<OctreeNode> octree_node;
 
   // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
@@ -68,7 +71,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   double updated_at = 0;
   Status status = STATUS_NONE;
   
-  AiState ai_state = WANDER;
+  AiState ai_state = IDLE;
   float state_changed_at = 0;
   queue<shared_ptr<Action>> actions;
 
@@ -103,6 +106,9 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsMovingObject();
   bool IsCreature();
   bool IsAsset(const string& asset_name);
+  bool IsNpc();
+  bool IsRegion();
+
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
   // int GetNumFramesInCurrentAnimation();
@@ -126,6 +132,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   BoundingSphere GetBoundingSphere();
   AABB GetAABB();
+  AABB GetTransformedAABB();
   OBB GetOBB();
   shared_ptr<AABBTreeNode> GetAABBTree();
 
@@ -176,11 +183,15 @@ struct Portal : public GameObject {
 };
 
 struct Region : public GameObject {
+  vector<shared_ptr<Event>> on_enter_events;
+  vector<shared_ptr<Event>> on_leave_events;
+
   Region(Resources* resources) 
     : GameObject(resources, GAME_OBJ_REGION) {}
 
   void Load(const string& name, const vec3& position, const vec3& dimensions);
   void Load(pugi::xml_node& xml);
+  void ToXml(pugi::xml_node& parent);
 };
 
 struct Sector : public GameObject {
@@ -222,9 +233,14 @@ struct Actionable : public GameObject {
 };
 
 struct Waypoint : public GameObject {
+  string spawn = "";
+  int fish_jump = -1000;
+  shared_ptr<GameObject> spawned_unit = nullptr;
+
   vector<shared_ptr<Waypoint>> next_waypoints;
   Waypoint(Resources* resources) 
     : GameObject(resources, GAME_OBJ_WAYPOINT) {}
+  void ToXml(pugi::xml_node& parent);
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -291,6 +307,13 @@ struct TalkAction : Action {
   TalkAction() : Action(ACTION_TALK) {}
   TalkAction(string npc) 
     : Action(ACTION_TALK), npc(npc) {}
+};
+
+struct LookAtAction : Action {
+  string obj;
+  LookAtAction() : Action(ACTION_LOOK_AT) {}
+  LookAtAction(string obj) 
+    : Action(ACTION_LOOK_AT), obj(obj) {}
 };
 
 struct AnimationAction : Action {

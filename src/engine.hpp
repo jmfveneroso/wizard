@@ -8,9 +8,6 @@
 #include "physics.hpp"
 #include "player.hpp"
 #include "inventory.hpp"
-#include "item.hpp"
-#include "craft.hpp"
-#include "dialog.hpp"
 #include "scripts.hpp"
 
 #include <thread>
@@ -25,14 +22,11 @@ class Engine {
   shared_ptr<Renderer> renderer_ = nullptr;
   shared_ptr<TextEditor> text_editor_ = nullptr;
   shared_ptr<Inventory> inventory_ = nullptr;
-  shared_ptr<Craft> craft_ = nullptr;
   shared_ptr<Resources> resources_ = nullptr;
   shared_ptr<CollisionResolver> collision_resolver_ = nullptr;
   shared_ptr<AI> ai_ = nullptr;
   shared_ptr<Physics> physics_ = nullptr;
   shared_ptr<PlayerInput> player_input_ = nullptr;
-  shared_ptr<Item> item_ = nullptr;
-  shared_ptr<Dialog> dialog_ = nullptr;
 
   float delta_time_ = 0.0f;
   int window_width_ = WINDOW_WIDTH;
@@ -61,14 +55,11 @@ class Engine {
     shared_ptr<Renderer> renderer,
     shared_ptr<TextEditor> text_editor,
     shared_ptr<Inventory> inventory,
-    shared_ptr<Craft> craft,
     shared_ptr<Resources> asset_catalog,
     shared_ptr<CollisionResolver> collision_resolver,
     shared_ptr<AI> ai,
     shared_ptr<Physics> physics,
     shared_ptr<PlayerInput> player_input,
-    shared_ptr<Item> item,
-    shared_ptr<Dialog> dialog,
     GLFWwindow* window,
     int window_width,
     int window_height

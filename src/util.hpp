@@ -110,6 +110,7 @@ enum ActionType {
   ACTION_TAKE_AIM,
   ACTION_STAND,
   ACTION_TALK,
+  ACTION_LOOK_AT,
   ACTION_CAST_SPELL,
   ACTION_WAIT,
   ACTION_ANIMATION
@@ -117,7 +118,8 @@ enum ActionType {
 
 enum ParticleBehavior {
   PARTICLE_FIXED = 0,
-  PARTICLE_FALL = 1
+  PARTICLE_FALL,
+  PARTICLE_NONE
 };
 
 enum EventType {

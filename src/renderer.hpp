@@ -127,6 +127,7 @@ class Renderer {
     int window_height);
 
   void Draw();
+  void DrawHypercube();
   void SetCamera(const Camera& camera) { camera_ = camera; }
 
   GLFWwindow* window() { return window_; }

@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <vector>
 #include <unordered_set>
+#include <random>
 
 #include <fbxsdk.h>
 #include <GL/glew.h>
@@ -54,6 +55,13 @@ enum GameState {
   STATE_BUILD
 };
 
+struct Quest {
+  bool active = false;
+  string name;
+  string title;
+  string description;
+};
+
 struct Configs {
   vec3 world_center = vec3(10000, 0, 10000);
   vec3 initial_player_pos = vec3(10947.5, 172.5, 7528);
@@ -62,9 +70,9 @@ struct Configs {
   float player_speed = 0.03f; 
   float taking_hit = 0.0f; 
   float fading_out = -60.0f; 
-  float time_of_day = 5.0f;
+  float time_of_day = 7.0f;
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
-  bool disable_attacks = true;
+  bool disable_attacks = false;
   string edit_terrain = "none";
   bool levitate = false;
   float jump_force = 0.3f;
@@ -81,21 +89,25 @@ struct Configs {
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
   int item_matrix[8][7] = {
-    { 0, 0, 0, 0, 5, 5, 5 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 1, 0, 0, 0 },
-    { 0, 0, 0, 1, 1, 0, 0 },
+    { 7, 0, 0, 0, 5, 5, 5 },
+    { 7, 0, 0, 0, 0, 6, 0 },
+    { 7, 0, 0, 1, 0, 0, 0 },
+    { 7, 0, 0, 1, 1, 0, 0 },
     { 0, 0, 0, 2, 3, 0, 0 },
     { 0, 0, 0, 0, 4, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 }
+    { 0, 0, 0, 0, 0, 0, 8 },
+    { 0, 0, 0, 0, 0, 0, 8 }
   };
   int selected_spell = 0;
-  int spellbar[8] = { 4, 0, 0, 1, 0, 0, 0, 0 };
+  int spellbar[8] = { 7, 7, 7, 7, 1, 1, 1, 1 };
   int craft_table[5] = { 0, 0, 0, 0, 0 };
-  vector<int> learned_spells { 0, 0, 0 };
+  vector<int> learned_spells { 0, 0, 0, 0, 0, 0, 0, 0 };
   vector<tuple<string, float>> messages;
   string overlay;
+  string render_scene = "default";
+  bool show_spellbook = false;
+  bool override_camera_pos = false;
+  vec3 camera_pos = vec3(0, 0, 0);
 };
 
 struct ItemData {
@@ -125,17 +137,27 @@ struct SpellData {
   }
 };
 
-struct DialogStr {
+struct Phrase {
   string name;
-  vector<string> phrases;
-  vector<string> animations;
+  string content;
+  string animation;
+  vector<pair<string, string>> options;
+ 
+  Phrase(string name, string content, string animation) 
+    : name(name), content(content), animation(animation) {}
+};
+
+struct DialogChain {
+  string name;
+  vector<Phrase> phrases;
+  unordered_map<string, string> on_finish_phrase_events;
 };
 
 struct CurrentDialog {
   bool enabled = false;
   bool processed_animation = false;
   ObjPtr npc;
-  shared_ptr<DialogStr> dialog;
+  shared_ptr<DialogChain> dialog;
   int current_phrase = 0;
 
   unordered_map<string, string> on_finish_dialog_events;
@@ -158,6 +180,7 @@ class Resources {
   double delta_time_ = 0;
   shared_ptr<ScriptManager> script_manager_ = nullptr;
   unordered_map<string, shared_ptr<Npc>> npcs_;
+  std::default_random_engine generator_;
 
   shared_ptr<Configs> configs_;
   GameState game_state_ = STATE_EDITOR;
@@ -179,13 +202,16 @@ class Resources {
   unordered_map<string, shared_ptr<GameObject>> objects_;
   unordered_map<string, shared_ptr<GameObject>> consumed_consumables_;
   unordered_map<string, shared_ptr<Waypoint>> waypoints_;
+  unordered_map<string, shared_ptr<Waypoint>> spawn_points_;
   unordered_map<string, ObjPtr> regions_;
   unordered_map<string, shared_ptr<ParticleType>> particle_types_;
   unordered_map<string, string> strings_;
-  unordered_map<string, shared_ptr<DialogStr>> dialogs_;
+  unordered_map<string, shared_ptr<DialogChain>> dialogs_;
+  unordered_map<string, shared_ptr<Quest>> quests_;
   unordered_map<string, int> game_flags_;
   vector<shared_ptr<Missile>> missiles_;
   unordered_map<string, string> scripts_;
+  vector<ObjPtr> effects_;
 
   // GameObject indices.
   vector<shared_ptr<GameObject>> new_objects_;
@@ -209,7 +235,11 @@ class Resources {
     { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot" },
     { 3, "Poison Vial", "poison-description", "poison_icon", "potion" },
     { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "open-lock-crystal" },
-    { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock" }
+    { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock" },
+    { 6, "Dispel Magic", "dispel-magic-description", "dispel_magic_icon", "tiny-rock" },
+    { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock" },
+    { 8, "Fish", "fish-description", "fish_icon", "fish" },
+    { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp" }
   };
 
   vector<SpellData> spell_data_ {
@@ -218,6 +248,10 @@ class Resources {
       "magic_missile_icon", vec2(96, 128), vec2(64, 64), { 5 }, 1 },
     { "Minor Open Lock", "minor-open-lock-description", 
       "open_lock_icon", vec2(160, 128), vec2(64, 64), { 2, 3 }, 4 },
+    { "Dispel Magic", "dispel-magic-description", 
+      "dispel_magic_icon", vec2(224, 128), vec2(64, 64), { 2, 3 }, 6 },
+    { "Harpoon", "harpoon-description", 
+      "harpoon_icon", vec2(288, 128), vec2(64, 64), { 2, 3 }, 6 }
   };
 
   // Aux loading functions.
@@ -259,6 +293,7 @@ class Resources {
 
   shared_ptr<OctreeNode> GetDeepestOctreeNodeAtPos(const vec3& pos);
   void ProcessNpcs();
+  void ProcessSpawnPoints();
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir);
@@ -313,6 +348,9 @@ class Resources {
   vector<SpellData>& GetSpellData();
   double GetDeltaTime() { return delta_time_; }
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
+  unordered_map<string, shared_ptr<Npc>>& GetNpcs() { return npcs_; }
+  unordered_map<string, shared_ptr<Quest>>& GetQuests() { return quests_; }
+
   // ====================
 
   // TODO: where?
@@ -326,12 +364,14 @@ class Resources {
 
   // TODO: move to particle / missiles.
   void CastMagicMissile(const Camera& camera);
+  void CastHarpoon(const Camera& camera);
   void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction, bool paralysis = false);
   bool SpiderCastPowerMagicMissile(ObjPtr spider, const vec3& direction);
   void UpdateMissiles();
   void UpdateParticles();
-  void CreateParticleEffect(int num_particles, vec3 pos, 
-    vec3 normal, vec3 color, float size, float life, float spread);
+  void CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
+    vec3 color, float size, float life, float spread, 
+    const string& type = "explosion");
   void CreateChargeMagicMissileEffect();
   void InitMissiles();
   int FindUnusedParticle();
@@ -345,6 +385,9 @@ class Resources {
   shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 
     vec3 position);
   shared_ptr<Sector> GetSector(vec3 position);
+  shared_ptr<Region> GetRegionAux(shared_ptr<OctreeNode> octree_node, 
+    vec3 position);
+  shared_ptr<Region> GetRegion(vec3 position);
   void CalculateAllClosestLightPoints();
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
     shared_ptr<GameObject> object, int depth);
@@ -368,6 +411,8 @@ class Resources {
     const string& callback);
   void RegisterOnOpenEvent(const string& door_name, const string& callback);
   void RegisterOnFinishDialogEvent(const string& dialog_name, const string& callback);
+  void RegisterOnFinishPhraseEvent(const string& dialog_name, 
+    const string& phrase_name, const string& callback);
 
   vector<shared_ptr<Event>>& GetEvents();
 
@@ -390,13 +435,13 @@ class Resources {
   void SetGameFlag(const string& name, int value);
 
   void TalkTo(const string& target_name);
-  shared_ptr<DialogStr> GetNpcDialog(const string& target_name);
+  shared_ptr<DialogChain> GetNpcDialog(const string& target_name);
   void RunScriptFn(const string& script_name);
 
   void SetPeriodicCallback(const string& script_name, float seconds);
   void GenerateOptimizedOctree();
+  void StartQuest(const string& quest_name);
+  void LearnSpell(const unsigned int spell_id);
 };
-
-AABB GetObjectAABB(const vector<Polygon>& polygons);
 
 #endif // __RESOURCES_HPP__

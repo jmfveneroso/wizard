@@ -67,12 +67,35 @@ static PyObject* set_position(PyObject *self, PyObject *args) {
   }
 
   vec3 new_pos = vec3(x, y, z);
-  if (length(obj->position - new_pos) > 50.0f) {
-    cout << "Changing pos: " << obj->position << endl;
+  if (isnan(obj->position.x) || length(obj->position - new_pos) > 50.0f) {
     obj->ChangePosition(new_pos);
-    cout << "After: " << obj->position << endl;
   }
 
+  return PyBool_FromLong(0);
+}
+
+static PyObject* override_camera_pos(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+  char* c_ptr2; 
+  char* c_ptr3; 
+
+  if (!PyArg_ParseTuple(args, "sss", &c_ptr1, &c_ptr2, &c_ptr3)) return NULL;
+  if (!c_ptr1 || !c_ptr2 || !c_ptr3) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
+  string s3 = reinterpret_cast<char*>(c_ptr3);
+  float x = boost::lexical_cast<float>(s1);
+  float y = boost::lexical_cast<float>(s2);
+  float z = boost::lexical_cast<float>(s3);
+
+  vec3 pos = vec3(x, y, z);
+  if (length(pos) < 0.1f) {
+    gResources->GetConfigs()->override_camera_pos = false;
+  } else {
+    gResources->GetConfigs()->override_camera_pos = true;
+  }
+  gResources->GetConfigs()->camera_pos = vec3(x, y, z);
   return PyBool_FromLong(0);
 }
 
@@ -131,7 +154,6 @@ static PyObject* register_onleave_event(PyObject *self, PyObject *args) {
 }
 
 static PyObject* register_onopen_event(PyObject *self, PyObject *args) {
-  cout << "<<<<<<<<<<<< ON OPEN" << endl;
   char* c_ptr1; 
   char* c_ptr2; 
 
@@ -151,18 +173,13 @@ static PyObject* register_onopen_event(PyObject *self, PyObject *args) {
 }
 
 static PyObject* register_on_finish_dialog_event(PyObject *self, PyObject *args) {
-  cout << "<<<<<<<<<<<<<<<<<< CAll" << endl;
   char* c_ptr1; 
   char* c_ptr2; 
 
   // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
   if (!PyArg_ParseTuple(args, "ss", &c_ptr1, &c_ptr2)) return NULL;
 
-  cout << "xxx" << endl;
-
   if (!c_ptr1 || !c_ptr2) return NULL;
-
-  cout << "yyy" << endl;
 
   string s1 = reinterpret_cast<char*>(c_ptr1);
   string s2 = reinterpret_cast<char*>(c_ptr2);
@@ -170,9 +187,28 @@ static PyObject* register_on_finish_dialog_event(PyObject *self, PyObject *args)
     return NULL;
   }
 
-  cout << "zzz" << endl;
-
   gResources->RegisterOnFinishDialogEvent(s1, s2);
+  return PyBool_FromLong(0);
+}
+
+static PyObject* register_on_finish_phrase_event(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+  char* c_ptr2; 
+  char* c_ptr3; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "sss", &c_ptr1, &c_ptr2, &c_ptr3)) return NULL;
+
+  if (!c_ptr1 || !c_ptr2 || !c_ptr3) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
+  string s3 = reinterpret_cast<char*>(c_ptr3);
+  if (!gResources) {
+    return NULL;
+  }
+
+  gResources->RegisterOnFinishPhraseEvent(s1, s2, s3);
   return PyBool_FromLong(0);
 }
 
@@ -210,12 +246,106 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
       return PyBool_FromLong(0);
     }
     obj->actions.push(make_shared<TalkAction>(target_obj->name));
+  } else if (s2 == "look_at") {
+    ObjPtr target_obj = gResources->GetObjectByName(s3);
+    if (!target_obj) {
+      return PyBool_FromLong(0);
+    }
+    obj->actions.push(make_shared<LookAtAction>(target_obj->name));
   } else if (s2 == "wait") {
     float current_time = glfwGetTime();
     float seconds = boost::lexical_cast<float>(s3);
     obj->actions.push(make_shared<WaitAction>(current_time + seconds));
+  } else if (s2 == "change-state") {
+    if (s3 == "attack") {
+      cout << "Change state attack: " << obj->name << endl;
+      obj->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+    }
   }
 
+  return PyBool_FromLong(1);
+}
+
+static PyObject* create_particle_effect(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+  char* c_ptr2; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "ss", &c_ptr1, &c_ptr2)) return NULL;
+
+  if (!c_ptr1 || !c_ptr2) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
+  if (!gResources) {
+    return NULL;
+  }
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) {
+    return PyBool_FromLong(0);
+  }
+
+  gResources->CreateParticleEffect(32, obj->position, vec3(0, 1, 0) * 2.0f, 
+    vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
+
+  return PyBool_FromLong(1);
+}
+
+static PyObject* start_scene(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+
+  if (!c_ptr1) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  if (!gResources) {
+    return NULL;
+  }
+
+  gResources->GetConfigs()->render_scene = s1;
+  return PyBool_FromLong(1);
+}
+
+static PyObject* start_quest(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+
+  if (!c_ptr1) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  if (!gResources) {
+    return NULL;
+  }
+
+  gResources->StartQuest(s1);
+  return PyBool_FromLong(1);
+}
+
+static PyObject* show_spellbook(PyObject *self, PyObject *args) {
+  if (!gResources) {
+    return NULL;
+  }
+
+  gResources->GetConfigs()->show_spellbook = true;
+  return PyBool_FromLong(1);
+}
+
+static PyObject* learn_spell(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  if (!gResources) {
+    return NULL;
+  }
+
+  int spell_id = boost::lexical_cast<int>(s1);
+  gResources->LearnSpell(spell_id);
   return PyBool_FromLong(1);
 }
 
@@ -370,6 +500,8 @@ static PyMethodDef EmbMethods[] = {
   "Register on open event" },
  { "register_on_finish_dialog_event", register_on_finish_dialog_event, 
   METH_VARARGS, "Register on finish dialog event" },
+ { "register_on_finish_phrase_event", register_on_finish_phrase_event, 
+  METH_VARARGS, "Register on finish phrase event" },
  { "print_message", print_message, METH_VARARGS,
   "Prints a message" },
  { "change_object_animation", change_object_animation, METH_VARARGS,
@@ -383,6 +515,14 @@ static PyMethodDef EmbMethods[] = {
  { "set_position", set_position, METH_VARARGS, "Set object position" },
  { "register_callback", register_callback, METH_VARARGS, "Register callback" },
  { "fade_out", fade_out, METH_VARARGS, "Fade out" },
+ { "create_particle_effect", create_particle_effect, METH_VARARGS, 
+   "Create particle effect" },
+ { "start_scene", start_scene, METH_VARARGS, "Start scene" },
+ { "start_quest", start_quest, METH_VARARGS, "Start quest" },
+ { "show_spellbook", show_spellbook, METH_VARARGS, "Show spellbook" },
+ { "learn_spell", learn_spell, METH_VARARGS, "Learn spell" },
+ { "override_camera_pos", override_camera_pos, METH_VARARGS, 
+   "Override camera pos" },
  { NULL, NULL, 0, NULL }
 };
 

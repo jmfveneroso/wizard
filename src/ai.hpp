@@ -16,6 +16,7 @@ class AI {
 
   bool RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold = 0.75f);
   void Attack(ObjPtr spider);
+  void Idle(ObjPtr spider);
   void Wander(ObjPtr spider);
   void Chase(ObjPtr spider);
   void ProcessNPC(ObjPtr unit);
