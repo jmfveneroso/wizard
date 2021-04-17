@@ -2251,24 +2251,6 @@ void Resources::ProcessSpawnPoints() {
   }
 }
 
-void Resources::RunPeriodicEvents() {
-  UpdateCooldowns();
-  RemoveDead();
-  ProcessMessages();
-  script_manager_->ProcessScripts();
-  ProcessNpcs();
-  ProcessPeriodicCallbacks();
-  ProcessSpawnPoints();
-
-  configs_->fading_out -= 1.0f;
-  configs_->taking_hit -= 1.0f;
-  if (configs_->taking_hit < 0.0) {
-    configs_->player_speed = configs_->target_player_speed;
-  } else {
-    configs_->player_speed = configs_->target_player_speed / 6.0f;
-  }
-}
-
 void Resources::AddEvent(shared_ptr<Event> e) {
   events_.push_back(e);
 }
@@ -2338,4 +2320,150 @@ void Resources::LearnSpell(const unsigned int spell_id) {
   }
 
   AddMessage(string("You learned to cast ") + spell_data_[spell_id].name);
+}
+
+void Resources::UpdateAnimationFrames() {
+  float d = GetDeltaTime() / 0.016666f;
+
+  for (auto& [name, obj] : objects_) {
+    if (obj->type == GAME_OBJ_DOOR) {
+      shared_ptr<Door> door = static_pointer_cast<Door>(obj);
+      switch (door->state) {
+        case DOOR_CLOSED: 
+          door->frame = 0;
+          ChangeObjectAnimation(door, "Armature|open");
+          break;
+        case DOOR_OPENING: 
+          ChangeObjectAnimation(door, "Armature|open");
+          door->frame += 1.0f * d;
+          if (door->frame >= 59) {
+            door->state = DOOR_OPEN;
+            door->frame = 0;
+            ChangeObjectAnimation(door, "Armature|close");
+          }
+          break;
+        case DOOR_OPEN:
+          door->frame = 0;
+          ChangeObjectAnimation(door, "Armature|close");
+          break;
+        case DOOR_CLOSING:
+          ChangeObjectAnimation(door, "Armature|close");
+          door->frame += 1.0f * d;
+          if (door->frame >= 59) {
+            door->state = DOOR_CLOSED;
+            door->frame = 0;
+            ChangeObjectAnimation(door, "Armature|open");
+          }
+          break;
+        default:
+          break;
+      }
+      continue; 
+    }
+
+    if (obj->type == GAME_OBJ_ACTIONABLE) {
+      shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
+      shared_ptr<Mesh> mesh = GetMesh(actionable);
+
+      switch (actionable->state) {
+        case 0: // idle.
+          ChangeObjectAnimation(actionable, "Armature|idle");
+          actionable->frame += 1.0f * d;
+          break;
+        case 1: { // start.
+          ChangeObjectAnimation(actionable, "Armature|start");
+          actionable->frame += 1.0f * d;
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
+          if (actionable->frame >= num_frames - 1) {
+            actionable->state = 2;
+            actionable->frame = 0;
+            ChangeObjectAnimation(actionable, "Armature|on");
+          }
+          break;
+        }
+        case 2: // on.
+          ChangeObjectAnimation(actionable, "Armature|on");
+          actionable->frame += 1.0f * d;
+          break;
+        case 3: { // shutdown.
+          ChangeObjectAnimation(actionable, "Armature|shutdown");
+          actionable->frame++;
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|shutdown");
+          if (actionable->frame >= num_frames - 1) {
+            actionable->state = 0;
+            actionable->frame = 0;
+            ChangeObjectAnimation(actionable, "Armature|idle");
+          }
+          break;
+        }
+      }
+
+      int num_frames = GetNumFramesInAnimation(*mesh, actionable->active_animation);
+      if (actionable->frame >= num_frames) {
+        actionable->frame = 0;
+      }
+      continue; 
+    }
+
+    if (obj->type != GAME_OBJ_DEFAULT) {
+      continue;
+    }
+
+    shared_ptr<GameAsset> asset = obj->GetAsset();
+    const string mesh_name = asset->lod_meshes[0];
+    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    }
+
+    const Animation& animation = mesh->animations[obj->active_animation];
+    obj->frame += 1.0f * d;
+    if (obj->frame >= animation.keyframes.size()) {
+      obj->frame = 0;
+    }
+  }
+}
+
+void Resources::RunPeriodicEvents() {
+  UpdateCooldowns();
+  RemoveDead();
+  ProcessMessages();
+  script_manager_->ProcessScripts();
+  ProcessNpcs();
+  ProcessPeriodicCallbacks();
+  ProcessSpawnPoints();
+  UpdateAnimationFrames();
+  UpdateParticles();
+  UpdateFrameStart();
+  UpdateMissiles();
+
+  // TODO: create time function.
+  if (!configs_->stop_time) {
+    // 1 minute per second.
+    configs_->time_of_day += (1.0f / (60.0f * 60.0f));
+    if (configs_->time_of_day > 24.0f) {
+      configs_->time_of_day -= 24.0f;
+    }
+
+    float radians = configs_->time_of_day * ((2.0f * 3.141592f) / 24.0f);
+    configs_->sun_position = 
+      vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
+      vec4(0.0f, -1.0f, 0.0f, 1.0f));
+  }
+
+  configs_->fading_out -= 1.0f;
+  configs_->taking_hit -= 1.0f;
+  if (configs_->taking_hit < 0.0) {
+    configs_->player_speed = configs_->target_player_speed;
+  } else {
+    configs_->player_speed = configs_->target_player_speed / 6.0f;
+  }
+}
+
+void Resources::CallStrFn(const string& fn) {
+  script_manager_->CallStrFn(fn);
+}
+
+void Resources::CallStrFn(const string& fn, const string& arg) {
+  script_manager_->CallStrFn(fn, arg);
 }

@@ -187,6 +187,11 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     mass = boost::lexical_cast<float>(mass_xml.text().get());
   }
 
+  const pugi::xml_node& ai_script_xml = asset_xml.child("ai-script");
+  if (ai_script_xml) {
+    ai_script = ai_script_xml.text().get();
+  }
+
   resources_->AddAsset(shared_from_this());
 }
 

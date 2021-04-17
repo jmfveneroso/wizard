@@ -132,7 +132,7 @@ void Engine::RunCommand(string command) {
   }
 }
 
-void Engine::ProcessCollisionsAsync() {
+void Engine::RunPeriodicEventsAsync() {
   const double min_time_elapsed = 1.0f / 60.0f;
 
   double last_update = 0;
@@ -144,19 +144,13 @@ void Engine::ProcessCollisionsAsync() {
       int ms = (min_time_elapsed - time_elapsed) * 1000;
       this_thread::sleep_for(chrono::milliseconds(ms));
     }
-    last_update = cur_time;
+    last_update = glfwGetTime();
 
-    resources_->LockOctree();
-    physics_->Run();
-    collision_resolver_->Collide();
-    resources_->UnlockOctree();
+    resources_->RunPeriodicEvents();
   }
 }
 
 bool Engine::ProcessGameInput() {
-  resources_->UpdateFrameStart();
-  resources_->UpdateMissiles();
-
   --throttle_counter_;
   GLFWwindow* window = renderer_->window();
 
@@ -268,14 +262,12 @@ bool Engine::ProcessGameInput() {
       }
       player_input_->ProcessInput(window_);
 
-
       shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
       if (current_dialog->enabled) {
         glfwSetCursorPos(window_, 0, 0);
         inventory_->Enable(window, INVENTORY_DIALOG);
         resources_->SetGameState(STATE_INVENTORY);
       }
-
       return false;
     }
     case STATE_EDITOR: {
@@ -318,24 +310,6 @@ bool Engine::ProcessGameInput() {
 
 void Engine::AfterFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  {
-    // TODO: periodic events: update frame, cooldown.
-    resources_->RunPeriodicEvents();
-
-    if (!configs->stop_time) {
-      // 1 minute per second.
-      configs->time_of_day += (1.0f / (60.0f * 60.0f));
-      if (configs->time_of_day > 24.0f) {
-        configs->time_of_day -= 24.0f;
-      }
-
-      float radians = configs->time_of_day * ((2.0f * 3.141592f) / 24.0f);
-      configs->sun_position = 
-        vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
-        vec4(0.0f, -1.0f, 0.0f, 1.0f));
-    }
-  }
-
   switch (resources_->GetGameState()) {
     case STATE_GAME: {
       renderer_->DrawScreenEffects();
@@ -352,110 +326,6 @@ void Engine::AfterFrame() {
     }
     default:
       break; 
-  }
-}
-
-void Engine::UpdateAnimationFrames() {
-  float d = resources_->GetDeltaTime() / 0.016666f;
-
-  unordered_map<string, shared_ptr<GameObject>>& objs = 
-    resources_->GetObjects();
-  for (auto& [name, obj] : objs) {
-    if (obj->type == GAME_OBJ_DOOR) {
-      shared_ptr<Door> door = static_pointer_cast<Door>(obj);
-      switch (door->state) {
-        case DOOR_CLOSED: 
-          door->frame = 0;
-          resources_->ChangeObjectAnimation(door, "Armature|open");
-          break;
-        case DOOR_OPENING: 
-          resources_->ChangeObjectAnimation(door, "Armature|open");
-          door->frame += 1.0f * d;
-          if (door->frame >= 59) {
-            door->state = DOOR_OPEN;
-            door->frame = 0;
-            resources_->ChangeObjectAnimation(door, "Armature|close");
-          }
-          break;
-        case DOOR_OPEN:
-          door->frame = 0;
-          resources_->ChangeObjectAnimation(door, "Armature|close");
-          break;
-        case DOOR_CLOSING:
-          resources_->ChangeObjectAnimation(door, "Armature|close");
-          door->frame += 1.0f * d;
-          if (door->frame >= 59) {
-            door->state = DOOR_CLOSED;
-            door->frame = 0;
-            resources_->ChangeObjectAnimation(door, "Armature|open");
-          }
-          break;
-        default:
-          break;
-      }
-      continue; 
-    }
-
-    if (obj->type == GAME_OBJ_ACTIONABLE) {
-      shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
-      shared_ptr<Mesh> mesh = resources_->GetMesh(actionable);
-
-      switch (actionable->state) {
-        case 0: // idle.
-          resources_->ChangeObjectAnimation(actionable, "Armature|idle");
-          actionable->frame += 1.0f * d;
-          break;
-        case 1: { // start.
-          resources_->ChangeObjectAnimation(actionable, "Armature|start");
-          actionable->frame += 1.0f * d;
-          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
-          if (actionable->frame >= num_frames - 1) {
-            actionable->state = 2;
-            actionable->frame = 0;
-            resources_->ChangeObjectAnimation(actionable, "Armature|on");
-          }
-          break;
-        }
-        case 2: // on.
-          resources_->ChangeObjectAnimation(actionable, "Armature|on");
-          actionable->frame += 1.0f * d;
-          break;
-        case 3: { // shutdown.
-          resources_->ChangeObjectAnimation(actionable, "Armature|shutdown");
-          actionable->frame++;
-          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|shutdown");
-          if (actionable->frame >= num_frames - 1) {
-            actionable->state = 0;
-            actionable->frame = 0;
-            resources_->ChangeObjectAnimation(actionable, "Armature|idle");
-          }
-          break;
-        }
-      }
-
-      int num_frames = GetNumFramesInAnimation(*mesh, actionable->active_animation);
-      if (actionable->frame >= num_frames) {
-        actionable->frame = 0;
-      }
-      continue; 
-    }
-
-    if (obj->type != GAME_OBJ_DEFAULT) {
-      continue;
-    }
-
-    shared_ptr<GameAsset> asset = obj->GetAsset();
-    const string mesh_name = asset->lod_meshes[0];
-    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
-    if (!mesh) {
-      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
-    }
-
-    const Animation& animation = mesh->animations[obj->active_animation];
-    obj->frame += 1.0f * d;
-    if (obj->frame >= animation.keyframes.size()) {
-      obj->frame = 0;
-    }
   }
 }
 
@@ -507,13 +377,11 @@ void Engine::BeforeFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   {
     // BeforeFrameDebug();
-    UpdateAnimationFrames();
-    ProcessGameInput();
-    ai_->RunSpiderAI();
-    resources_->UpdateParticles();
-    // physics_->Run();
-    // collision_resolver_->Collide();
+    physics_->Run();
+    collision_resolver_->Collide();
+    ai_->Run();
   }
+  ProcessGameInput();
 }
 
 void Engine::Run() {
@@ -526,10 +394,9 @@ void Engine::Run() {
   cout << "Open GL version is " << major_version << "." << minor_version 
     << endl;
 
-  vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
-
   // Start threads.
-  collision_thread_ = thread(&Engine::ProcessCollisionsAsync, this);
+  periodic_events_thread_ = thread(&Engine::RunPeriodicEventsAsync, this);
+
   glfwSetCursorPos(window_, 0, 0);
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
@@ -552,7 +419,7 @@ void Engine::Run() {
 
     BeforeFrame();
 
-    resources_->LockOctree();
+    resources_->Lock();
     Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
 
@@ -561,8 +428,7 @@ void Engine::Run() {
     } else if (configs->render_scene == "hypercube") {
       renderer_->DrawHypercube();
     }
-
-    resources_->UnlockOctree();
+    resources_->Unlock();
 
     AfterFrame();
 
@@ -577,5 +443,5 @@ void Engine::Run() {
   terminate_ = true;
 
   // Join threads.
-  collision_thread_.join();
+  // periodic_events_thread_.join();
 }

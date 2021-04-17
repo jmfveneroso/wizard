@@ -213,18 +213,26 @@ struct CollisionOT : Collision {
 class CollisionResolver {
   shared_ptr<Resources> resources_;
 
-  vector<ColPtr> collisions_;
+  queue<ColPtr> collisions_;
 
   // Statistics.
   double start_time_ = 0;
   int num_objects_tested_ = 0;
   int perfect_collision_tests_ = 0;
 
-  // Threads.
-  const int kMaxFindThreads = 16;
+  // Parallelism.
+  bool terminate_ = false;
+  const int kMaxThreads = 16;
   vector<thread> find_threads_;
+  vector<thread> test_threads_;
+
+  int running_find_tasks_ = 0;
+  int running_test_tasks_ = 0;
+  queue<shared_ptr<OctreeNode>> find_tasks_;
+
+  mutex test_mutex_;
   mutex find_mutex_;
-  vector<tuple<ObjPtr, ObjPtr>> tentative_pairs_;
+  queue<tuple<ObjPtr, ObjPtr>> tentative_pairs_;
 
   void ClearMetrics();
   void PrintMetrics();
@@ -256,17 +264,20 @@ class CollisionResolver {
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);
 
   void UpdateObjectPositions();
-  void FindCollisions(shared_ptr<OctreeNode> octree_node, 
-    vector<ObjPtr> objs);
+  void FindCollisions(shared_ptr<OctreeNode> octree_node);
 
-  // TODO: this should be improved for terrain with high steepness.
-  void FindCollisionsWithTerrain();
+  void TestCollisionsWithTerrain();
   void ResolveCollisions();
 
   void ProcessTentativePair(ObjPtr obj1, ObjPtr obj2);
 
+  void FindCollisionsAsync();
+  void ProcessTentativePairAsync();
+  void CreateThreads();
+
  public:
   CollisionResolver(shared_ptr<Resources> asset_catalog);
+  ~CollisionResolver();
 
   void Collide();
 };

@@ -108,6 +108,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsAsset(const string& asset_name);
   bool IsNpc();
   bool IsRegion();
+  bool IsCollidable();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();

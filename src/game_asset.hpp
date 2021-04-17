@@ -32,6 +32,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   string item_icon;
   AssetType type = ASSET_STATIC;
   bool loaded_collision = false;
+  string ai_script;
 
   // Mesh.
   // unordered_map<int, Mesh> lod_meshes;

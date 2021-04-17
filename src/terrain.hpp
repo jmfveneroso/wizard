@@ -44,9 +44,6 @@ struct Clipmap {
   vec4 row_normals[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
   vec4 col_normals[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
 
-  vec2 row_tileset[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
-  vec2 col_tileset[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
-
   vec3 row_blending[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
   vec3 col_blending[CLIPMAP_SIZE+1][CLIPMAP_SIZE+1];
 
@@ -58,7 +55,6 @@ struct Clipmap {
 
   GLuint height_texture;
   GLuint normals_texture;
-  GLuint tileset_texture;
   GLuint blending_texture;
   GLuint coarser_blending_texture;
 

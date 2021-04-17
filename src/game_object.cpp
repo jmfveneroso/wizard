@@ -1037,3 +1037,29 @@ bool GameObject::IsNpc() {
 bool GameObject::IsRegion() {
   return type == GAME_OBJ_REGION;
 }
+
+bool GameObject::IsCollidable() {
+  switch (type) {
+    case GAME_OBJ_DEFAULT:
+    case GAME_OBJ_PLAYER:
+    case GAME_OBJ_DOOR:
+    case GAME_OBJ_ACTIONABLE:
+      break;
+    case GAME_OBJ_MISSILE:
+      return (life > 0);
+    default:
+      return false;
+  }
+
+  switch (GetCollisionType()) {
+    case COL_NONE:
+    case COL_UNDEFINED:
+      return false;
+    default:
+      break;
+  }
+
+  if (parent_bone_id != -1) return false;
+  if (status == STATUS_DYING) return false;
+  return true;
+}

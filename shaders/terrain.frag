@@ -10,7 +10,6 @@ in FragData {
   vec3 barycentric;
   vec3 blending;
   vec3 coarser_blending;
-  vec2 tileset;
   float alpha;
   vec4 shadow_coord; 
   vec4 shadow_coord1; 

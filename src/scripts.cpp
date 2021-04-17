@@ -584,6 +584,20 @@ string ScriptManager::CallStrFn(const string& fn_name) {
   return string(c_string);
 }
 
+string ScriptManager::CallStrFn(const string& fn_name, const string& arg) {
+  PyObject *pFunc;
+  pFunc = PyObject_GetAttrString(module_, fn_name.c_str());
+  if (!pFunc || !PyCallable_Check(pFunc)) return "";
+
+  PyObject *pArgs, *pValue;
+
+  pArgs = Py_BuildValue("(s)", arg.c_str());
+  pValue = PyObject_CallObject(pFunc, pArgs);
+
+  const char* c_string = PyUnicode_AsUTF8(pValue);
+  return string(c_string);
+}
+
 void ScriptManager::ProcessEvent(shared_ptr<Event> e) {
   string callback;
   switch (e->type) {

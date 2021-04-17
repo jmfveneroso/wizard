@@ -4,8 +4,6 @@
 
 namespace {
 
-const int kTileSize = 52;
-
 void DoInOrder() {}
 
 template<typename Lambda0, typename ...Lambdas>
@@ -34,6 +32,13 @@ Renderer::Renderer(shared_ptr<Resources> asset_catalog,
   cout << "Window width: " << window_width_ << endl;
   cout << "Window height: " << window_height_ << endl;
   Init();
+}
+
+Renderer::~Renderer() {
+  terminate_ = true;
+  for (int i = 0; i < kMaxThreads; i++) {
+    find_threads_[i].join();
+  }
 }
 
 void Renderer::InitShadowFramebuffer() {
@@ -72,6 +77,8 @@ void Renderer::Init() {
   terrain_->set_shadow_texture(shadow_textures_[2], 2);
 
   CreateParticleBuffers();
+
+  CreateThreads();
 }
 
 void Renderer::GetFrustumPlanes(vec4 frustum_planes[6]) {
@@ -82,9 +89,9 @@ void Renderer::GetFrustumPlanes(vec4 frustum_planes[6]) {
   ExtractFrustumPlanes(MVP, frustum_planes);
 }
 
-void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos, 
-  shared_ptr<OctreeNode> octree_node,
-  vector<shared_ptr<GameObject>>& objects) {
+// TODO: Do this function async.
+void Renderer::GetVisibleObjects(
+  shared_ptr<OctreeNode> octree_node) {
   if (!octree_node) {
     return;
   }
@@ -94,14 +101,18 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
   aabb.dimensions = octree_node->half_dimensions * 2.0f;
 
   // TODO: find better name for this function.
-  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos)) {
+  if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos_)) {
     return;
   }
 
   for (int i = 0; i < 8; i++) {
-    GetPotentiallyVisibleObjects(player_pos, octree_node->children[i], objects);
+    find_mutex_.lock();
+    find_tasks_.push(octree_node->children[i]);
+    find_mutex_.unlock();
+    // GetPotentiallyVisibleObjects(player_pos, octree_node->children[i]);
   }
 
+  // TODO: remove far objects from octree. Store assets based on location.
   for (auto& [id, obj] : octree_node->objects) {
     switch (obj->type) {
       case GAME_OBJ_DEFAULT:
@@ -121,9 +132,12 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
         continue;
     }
 
-    if (obj->status != STATUS_DEAD) {
-      objects.push_back(obj);
-    }
+    if (obj->status == STATUS_DEAD) continue;
+    vector<vector<Polygon>> occluder_convex_hulls;
+    if (CullObject(obj, occluder_convex_hulls)) continue;
+    find_mutex_.lock();
+    visible_objects_.push_back(obj);
+    find_mutex_.unlock();
   }
 
   for (auto& [id, obj] : octree_node->moving_objs) {
@@ -145,26 +159,35 @@ void Renderer::GetPotentiallyVisibleObjects(const vec3& player_pos,
         continue;
     }
 
-    if (obj->status != STATUS_DEAD) {
-      objects.push_back(obj);
-    }
+    if (obj->status == STATUS_DEAD) continue;
+    vector<vector<Polygon>> occluder_convex_hulls;
+    if (CullObject(obj, occluder_convex_hulls)) continue;
+    find_mutex_.lock();
+    visible_objects_.push_back(obj);
+    find_mutex_.unlock();
   }
 }
 
 vector<shared_ptr<GameObject>> 
-Renderer::GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector) {
-  vector<shared_ptr<GameObject>> objs;
-  GetPotentiallyVisibleObjects(camera_.position, sector->octree_node, objs);
+Renderer::GetVisibleObjectsFromSector(shared_ptr<Sector> sector) {
+  find_mutex_.lock();
+  visible_objects_.clear();
+  player_pos_ = camera_.position;
+  find_tasks_.push(sector->octree_node);
+  find_mutex_.unlock();
+
+  while (!find_tasks_.empty() || running_tasks_ > 0) {
+    this_thread::sleep_for(chrono::microseconds(200));
+  }
+  // GetPotentiallyVisibleObjects(sector->octree_node);
 
   // Sort from closest to farthest.
-  for (auto& obj : objs) {
-    obj->distance = length(camera_.position - obj->position);
-  }
-  std::sort(objs.begin(), objs.end(), [] (const auto& lhs, const auto& rhs) {
+  std::sort(visible_objects_.begin(), visible_objects_.end(), 
+    [] (const auto& lhs, const auto& rhs) {
     return lhs->distance < rhs->distance;
   });
 
-  return objs;
+  return visible_objects_;
 }
 
 bool Renderer::CullObject(shared_ptr<GameObject> obj, 
@@ -185,6 +208,7 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   }
 
   // Distance cull.
+  obj->distance = length(camera_.position - obj->position);
   float size_in_camera = bounding_sphere.radius / obj->distance;
   if (obj->type != GAME_OBJ_MISSILE && size_in_camera < 0.005f) {
     return true;
@@ -256,7 +280,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
   vector<ObjPtr> visible_objects;
 
   vector<shared_ptr<GameObject>> objs =
-    GetPotentiallyVisibleObjectsFromSector(sector);
+    GetVisibleObjectsFromSector(sector);
 
   vector<shared_ptr<GameObject>> transparent_objs;
   GLuint transparent_shader = resources_->GetShader("transparent_object");
@@ -267,9 +291,9 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
   // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
   vector<vector<Polygon>> occluder_convex_hulls;
   for (auto& obj : objs) {
-    if (CullObject(obj, occluder_convex_hulls)) {
-      continue;
-    }
+    // if (CullObject(obj, occluder_convex_hulls)) {
+    //   continue;
+    // }
 
     if (obj->GetAsset()->shader == transparent_shader || 
         obj->GetAsset()->shader == lake_shader || 
@@ -958,7 +982,7 @@ void Renderer::DrawSpellbar() {
   draw_2d_->DrawImage("spell_bar", 400, 730, 600, 600, 1.0);
   for (int x = 0; x < 8; x++) {
     int top = 742;
-    int left = 433 + kTileSize * x;
+    int left = 433 + 52 * x;
     int item_id = configs->spellbar[x];
     if (item_id != 0) {
       draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
@@ -1229,3 +1253,30 @@ void Renderer::DrawParticles() {
   glBindVertexArray(0);
 }
 
+void Renderer::FindVisibleObjectsAsync() {
+  while (!terminate_) {
+    find_mutex_.lock();
+    if (find_tasks_.empty()) {
+      find_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(1));
+      continue;
+    }
+
+    shared_ptr<OctreeNode> node = find_tasks_.front();
+    find_tasks_.pop();
+    running_tasks_++;
+    find_mutex_.unlock();
+
+    GetVisibleObjects(node);
+
+    find_mutex_.lock();
+    running_tasks_--;
+    find_mutex_.unlock();
+  }
+}
+
+void Renderer::CreateThreads() {
+  for (int i = 0; i < kMaxThreads; i++) {
+    find_threads_.push_back(thread(&Renderer::FindVisibleObjectsAsync, this));
+  }
+}
