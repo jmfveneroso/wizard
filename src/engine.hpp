@@ -36,6 +36,8 @@ class Engine {
 
   bool terminate_ = false;
   thread collision_thread_;
+  thread ai_thread_;
+  thread periodic_events_thread_;
 
   void RunCommand(string command);
   bool ProcessGameInput();
@@ -43,7 +45,7 @@ class Engine {
   void BeforeFrame();
   void AfterFrame();
   void UpdateAnimationFrames();
-  void ProcessCollisionsAsync();
+  void RunPeriodicEventsAsync();
 
   // Debug.
   unordered_map<string, ObjPtr> door_obbs_;

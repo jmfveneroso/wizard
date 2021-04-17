@@ -87,10 +87,10 @@ const vector<ivec2> subregion_size_offsets = {
   {-1, 0}, // 6:  1, 3
   {1,  0}, // 7:  2, 0
   {-1, 0}, // 8:  2, 3
-  {1, 0}, // 9:  3, 0
-  {0, 0}, // 10: 3, 1
-  {0, 0}, // 11: 3, 2
-  {0, 0}  // 12: 3, 3
+  {1,  0}, // 9:  3, 0
+  {0,  0}, // 10: 3, 1
+  {0,  0}, // 11: 3, 2
+  {0,  0}  // 12: 3, 3
 };
 
 ivec2 WorldToGridCoordinates(vec3 coords) {
@@ -176,11 +176,6 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->normals_texture);
     glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RGBA, CLIPMAP_SIZE+1, 
       CLIPMAP_SIZE+1, 0, GL_RGBA, GL_FLOAT, NULL);
-
-    glGenTextures(1, &clipmaps_[i]->tileset_texture);
-    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->tileset_texture);
-    glTexImage2D(GL_TEXTURE_RECTANGLE, 0, GL_RG, CLIPMAP_SIZE+1, 
-      CLIPMAP_SIZE+1, 0, GL_RG, GL_FLOAT, NULL);
 
     glGenTextures(1, &clipmaps_[i]->blending_texture);
     glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->blending_texture);
@@ -315,7 +310,6 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   // two spaces in the vec4.
   normal *= 1 / normal.y;
 
-  vec2 tileset = vec2(0, 0);
   vec3 blending = terrain_point.blending;
   vec3 coarser_blending = blending;
   vec3 coarser_normal = normal;
@@ -355,12 +349,10 @@ void Terrain::UpdatePoint(ivec2 p, shared_ptr<Clipmap> clipmap,
   // TODO: this should be automatized instead of hard coded.
   clipmap->row_heights[p.y][p.x] = height;
   clipmap->row_normals[p.y][p.x] = vec4(normal.x, normal.z, coarser_normal.x, coarser_normal.z);
-  clipmap->row_tileset[p.y][p.x] = tileset;
   clipmap->row_blending[p.y][p.x] = blending;
   clipmap->row_coarser_blending[p.y][p.x] = coarser_blending;
   clipmap->col_heights[p.x][p.y] = height;
   clipmap->col_normals[p.x][p.y] = vec4(normal.x, normal.z, coarser_normal.x, coarser_normal.z);
-  clipmap->col_tileset[p.x][p.y] = tileset;
   clipmap->col_blending[p.x][p.y] = blending;
   clipmap->col_coarser_blending[p.x][p.y] = coarser_blending;
 }
@@ -477,10 +469,6 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
       glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, 0, y, CLIPMAP_SIZE + 1, 1, 
         GL_RGBA, GL_FLOAT, &clipmap->row_normals[y][0]);
 
-      glBindTexture(GL_TEXTURE_RECTANGLE, clipmap->tileset_texture);
-      glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, 0, y, CLIPMAP_SIZE + 1, 1, 
-        GL_RG, GL_FLOAT, &clipmap->row_tileset[y][0]);
-
       // TODO: maybe store the two blending texture into a single texture as in the case of the normal.
       glBindTexture(GL_TEXTURE_RECTANGLE, clipmap->blending_texture);
       glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, 0, y, CLIPMAP_SIZE + 1, 1, 
@@ -505,10 +493,6 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
       glBindTexture(GL_TEXTURE_RECTANGLE, clipmap->normals_texture);
       glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, x, 0, 1, CLIPMAP_SIZE + 1, 
         GL_RGBA, GL_FLOAT, &clipmap->col_normals[x][0]);
-
-      glBindTexture(GL_TEXTURE_RECTANGLE, clipmap->tileset_texture);
-      glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, x, 0, 1, CLIPMAP_SIZE + 1, 
-        GL_RG, GL_FLOAT, &clipmap->col_tileset[x][0]);
 
       glBindTexture(GL_TEXTURE_RECTANGLE, clipmap->blending_texture);
       glTexSubImage2D(GL_TEXTURE_RECTANGLE, 0, x, 0, 1, CLIPMAP_SIZE + 1, 
@@ -823,48 +807,44 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glUniform1i(GetUniformId(program_id, "normal_sampler"), 1);
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->tileset_texture);
-    glUniform1i(GetUniformId(program_id, "tile_type_sampler"), 2);
+    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->blending_texture);
+    glUniform1i(GetUniformId(program_id, "blending_sampler"), 2);
 
     glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->blending_texture);
-    glUniform1i(GetUniformId(program_id, "blending_sampler"), 3);
+    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->coarser_blending_texture);
+    glUniform1i(GetUniformId(program_id, "coarser_blending_sampler"), 3);
 
     glActiveTexture(GL_TEXTURE4);
-    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->coarser_blending_texture);
-    glUniform1i(GetUniformId(program_id, "coarser_blending_sampler"), 4);
+    glBindTexture(GL_TEXTURE_2D, texture_);
+    glUniform1i(GetUniformId(program_id, "texture_sampler"), 4);
 
     glActiveTexture(GL_TEXTURE5);
-    glBindTexture(GL_TEXTURE_2D, texture_);
-    glUniform1i(GetUniformId(program_id, "texture_sampler"), 5);
+    glBindTexture(GL_TEXTURE_2D, shadow_textures_[0]);
+    glUniform1i(GetUniformId(program_id, "shadow_sampler"), 5);
 
     glActiveTexture(GL_TEXTURE6);
-    glBindTexture(GL_TEXTURE_2D, shadow_textures_[0]);
-    glUniform1i(GetUniformId(program_id, "shadow_sampler"), 6);
+    glBindTexture(GL_TEXTURE_2D, shadow_textures_[1]);
+    glUniform1i(GetUniformId(program_id, "shadow_sampler1"), 6);
 
     glActiveTexture(GL_TEXTURE7);
-    glBindTexture(GL_TEXTURE_2D, shadow_textures_[1]);
-    glUniform1i(GetUniformId(program_id, "shadow_sampler1"), 7);
+    glBindTexture(GL_TEXTURE_2D, shadow_textures_[2]);
+    glUniform1i(GetUniformId(program_id, "shadow_sampler2"), 7);
 
     glActiveTexture(GL_TEXTURE8);
-    glBindTexture(GL_TEXTURE_2D, shadow_textures_[2]);
-    glUniform1i(GetUniformId(program_id, "shadow_sampler2"), 8);
+    glBindTexture(GL_TEXTURE_2D, texture1_);
+    glUniform1i(GetUniformId(program_id, "texture1_sampler"), 8);
 
     glActiveTexture(GL_TEXTURE9);
-    glBindTexture(GL_TEXTURE_2D, texture1_);
-    glUniform1i(GetUniformId(program_id, "texture1_sampler"), 9);
+    glBindTexture(GL_TEXTURE_2D, texture2_);
+    glUniform1i(GetUniformId(program_id, "texture2_sampler"), 9);
 
     glActiveTexture(GL_TEXTURE10);
-    glBindTexture(GL_TEXTURE_2D, texture2_);
-    glUniform1i(GetUniformId(program_id, "texture2_sampler"), 10);
+    glBindTexture(GL_TEXTURE_2D, texture3_);
+    glUniform1i(GetUniformId(program_id, "texture3_sampler"), 10);
 
     glActiveTexture(GL_TEXTURE11);
-    glBindTexture(GL_TEXTURE_2D, texture3_);
-    glUniform1i(GetUniformId(program_id, "texture3_sampler"), 11);
-
-    glActiveTexture(GL_TEXTURE12);
     glBindTexture(GL_TEXTURE_2D, texture4_);
-    glUniform1i(GetUniformId(program_id, "texture4_sampler"), 12);
+    glUniform1i(GetUniformId(program_id, "texture4_sampler"), 11);
 
 
     ivec2 offset = ivec2(0, 0);

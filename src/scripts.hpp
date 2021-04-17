@@ -22,6 +22,7 @@ class ScriptManager {
 
   void ProcessScripts();
   string CallStrFn(const string& fn_name);
+  string CallStrFn(const string& fn_name, const string& arg);
 };
 
 #endif // __SCRIPTS_HPP__

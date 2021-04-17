@@ -1,6 +1,8 @@
 #ifndef __RENDERER_HPP__
 #define __RENDERER_HPP__
 
+#include <thread>
+#include <mutex>
 #include "resources.hpp"
 #include "terrain.hpp"
 #include "2d.hpp"
@@ -59,9 +61,19 @@ class Renderer {
   bool clip_terrain_ = false;
   vec3 terrain_clipping_point_;
   vec3 terrain_clipping_normal_;
+  vec3 player_pos_;
 
   vector<GLuint> shadow_framebuffers_ { 0, 0, 0 };
   vector<GLuint> shadow_textures_ { 0, 0, 0 };
+
+  // Parallelism. 
+  bool terminate_ = false;
+  const int kMaxThreads = 16;
+  vector<thread> find_threads_;
+  mutex find_mutex_;
+  queue<shared_ptr<OctreeNode>> find_tasks_;
+  int running_tasks_ = 0;
+  vector<ObjPtr> visible_objects_;
 
   // http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-16-shadow-mapping/
   // https://devansh.space/cascaded-shadow-maps
@@ -79,8 +91,10 @@ class Renderer {
     const vector<vector<Polygon>>& occluder_convex_hulls);
   void DrawObjectShadow(ObjPtr obj, int level);
   void DrawObject(ObjPtr obj);
+
+  void GetVisibleObjects(shared_ptr<OctreeNode> octree_node);
   vector<shared_ptr<GameObject>> 
-  GetPotentiallyVisibleObjectsFromSector(shared_ptr<Sector> sector);
+    GetVisibleObjectsFromSector(shared_ptr<Sector> sector);
 
   ConvexHull CreateConvexHullFromOccluder(const vector<Polygon>& polygons, 
     const vec3& player_pos);
@@ -88,11 +102,6 @@ class Renderer {
   // TODO: move.
   shared_ptr<GameObject> CreateMeshFromConvexHull(const ConvexHull& ch);
   shared_ptr<GameObject> CreateMeshFromAABB(const AABB& aabb);
-
-  // TODO: move.
-  void GetPotentiallyVisibleObjects(const vec3& player_pos, 
-    shared_ptr<OctreeNode> octree_node,
-    vector<shared_ptr<GameObject>>& objects);
 
   // TODO: probably should go somewhere else.
   void InitShadowFramebuffer();
@@ -120,11 +129,14 @@ class Renderer {
   void DrawOutside();
   void DrawObjects(vector<ObjPtr> objs);
   void DrawHand();
+  void FindVisibleObjectsAsync();
+  void CreateThreads();
 
  public:
   Renderer(shared_ptr<Resources> asset_catalog, shared_ptr<Draw2D> draw_2d,
     shared_ptr<Project4D> project_4d, GLFWwindow* window, int window_width,
     int window_height);
+  ~Renderer();
 
   void Draw();
   void DrawHypercube();

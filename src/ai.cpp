@@ -1,6 +1,16 @@
 #include "ai.hpp"
 
+const float kMinDistance = 200.0f;
+
 AI::AI(shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {
+  CreateThreads();
+}
+
+AI::~AI() {
+  terminate_ = true;
+  for (int i = 0; i < kMaxThreads; i++) {
+    ai_threads_[i].join();
+  }
 }
 
 void AI::ChangeState(ObjPtr obj, AiState state) {
@@ -614,53 +624,77 @@ void AI::ProcessPlayerAction(ObjPtr player) {
   }
 }
 
-void AI::RunSpiderAI() {
-  int num_spiders = 0;
-  for (ObjPtr obj1 : resources_->GetMovingObjects()) {
-    if (obj1->type == GAME_OBJ_PLAYER) {
-      ProcessPlayerAction(obj1);
+void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
+  if (!node) return;
+
+  const vec3& player_pos = resources_->GetPlayer()->position;
+  for (int i = 0; i < 3; i++) {
+    if ((player_pos[i] - node->center[i]) > 
+      node->half_dimensions[i] + kMinDistance) {
+      return;
+    }
+  }
+
+  for (auto [id, obj] : node->moving_objs) {
+    if (obj->type != GAME_OBJ_DEFAULT) continue;
+    if (obj->GetAsset()->type != ASSET_CREATURE) continue;
+    if (obj->being_placed) continue;
+    if (obj->distance > kMinDistance) continue;
+    ai_tasks_.push(obj);
+  }
+  
+  for (int i = 0; i < 8; i++) {
+    RunAiInOctreeNode(node->children[i]);
+  }
+}
+
+void AI::Run() {
+  RunAiInOctreeNode(resources_->GetOctreeRoot());
+  ProcessPlayerAction(resources_->GetPlayer());
+
+  while (!ai_tasks_.empty() || running_tasks_ > 0) {
+    this_thread::sleep_for(chrono::microseconds(200));
+  }
+}
+
+void AI::ProcessUnitAiAsync() {
+  while (!terminate_) {
+    ai_mutex_.lock();
+    if (ai_tasks_.empty()) {
+      ai_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(1));
       continue;
     }
 
-    if (obj1->GetAsset()->type != ASSET_CREATURE) continue;
-    if (obj1->being_placed) continue;
-    // if (obj1->GetAsset()->name != "spider" && 
-    //   obj1->GetAsset()->name != "fisherman-body" &&
-    //   obj1->GetAsset()->name != "cephalid") continue;
-
-    // TODO: replace this by script that checks the number of spiders and 
-    // creates more if necessary.
-    if (obj1->GetAsset()->name == "spider") {
-      num_spiders++;
-    }
+    auto& obj = ai_tasks_.front();
+    ai_tasks_.pop();
+    running_tasks_++;
+    ai_mutex_.unlock();
 
     // TODO: maybe should go to physics.
-    if (dot(obj1->up, vec3(0, 1, 0)) < 0) {
-      obj1->up = vec3(0, 1, 0);
+    if (dot(obj->up, vec3(0, 1, 0)) < 0) {
+      obj->up = vec3(0, 1, 0);
     }
 
     // Check status. If taking hit, dying, poisoned, etc.
-    if (!ProcessStatus(obj1)) continue;
-    ProcessMentalState(obj1);
-    ProcessNextAction(obj1);
+    if (ProcessStatus(obj)) {
+      ProcessMentalState(obj);
+      ProcessNextAction(obj);
+    }
+
+    string ai_script = obj->GetAsset()->ai_script;
+    if (!ai_script.empty()) {
+      resources_->CallStrFn(ai_script, obj->name);  
+    }
+
+    ai_mutex_.lock();
+    running_tasks_--;
+    ai_mutex_.unlock();
   }
-
-  // TODO: this should go somewhere else.
-  // if (num_spiders < 2) {
-  //   int dice = rand() % 1000; 
-  //   if (dice > 2) return;
-
-  //   dice = rand() % 1000; 
-  //   vec3 position = vec3(9649, 134, 10230);
-  //   if (dice < 500) {
-  //     position = vec3(9610, 132, 9885);
-  //   }
-
-  //   shared_ptr<GameObject> obj = CreateGameObjFromAsset(resources_.get(),
-  //     "spider", position);
-  //   obj->position = position;
-  //   ChangeState(obj, WANDER);
-  //   cout << "Created spider" << endl; 
-  // }
 }
 
+void AI::CreateThreads() {
+  for (int i = 0; i < kMaxThreads; i++) {
+    ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
+  }
+}

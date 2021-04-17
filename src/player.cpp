@@ -123,7 +123,6 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
             if (configs->selected_tile > 0) {
               p.blending[configs->selected_tile-1] = 1;
             }
-            p.tile_set = vec2(0, 0);
           } else if (configs->edit_terrain == "height") {
             if (left_or_right == 1) {
               p.height += 0.03 * factor * configs->raise_factor;

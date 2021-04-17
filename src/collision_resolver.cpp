@@ -5,7 +5,6 @@
 
 const float kWaterHeight = 5.0f;
 
-// TODO: do we need terrain here?
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
   // Sphere / Bones / Quick Sphere / Perfect / C. Hull / OBB /  Terrain 
   { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SH,    CP_SO, CP_ST }, // Sphere 
@@ -18,32 +17,16 @@ vector<vector<CollisionPair>> kAllowedCollisionPairs {
 };
 
 CollisionResolver::CollisionResolver(
-  shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {}
+  shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {
+  CreateThreads();
+}
 
-bool IsCollidable(shared_ptr<GameObject> obj) {
-  switch (obj->type) {
-    case GAME_OBJ_DEFAULT:
-    case GAME_OBJ_PLAYER:
-    case GAME_OBJ_DOOR:
-    case GAME_OBJ_ACTIONABLE:
-      break;
-    case GAME_OBJ_MISSILE:
-      return (obj->life > 0);
-    default:
-      return false;
+CollisionResolver::~CollisionResolver() {
+  terminate_ = true;
+  for (int i = 0; i < kMaxThreads; i++) {
+    find_threads_[i].join();
+    test_threads_[i].join();
   }
-
-  switch (obj->GetCollisionType()) {
-    case COL_NONE:
-    case COL_UNDEFINED:
-      return false;
-    default:
-      break;
-  }
-
-  if (obj->parent_bone_id != -1) return false;
-  if (obj->status == STATUS_DYING) return false;
-  return true;
 }
 
 // TODO: better to have a list: ignore_collision_from [id1, id2, id3]
@@ -130,7 +113,9 @@ void CollisionResolver::ProcessTentativePair(ObjPtr obj1, ObjPtr obj2) {
   for (auto& c : collisions) {
     TestCollision(c);
     if (c->collided) {
-      collisions_.push_back(c);
+      find_mutex_.lock();
+      collisions_.push(c);
+      find_mutex_.unlock();
     }
   }
 }
@@ -138,13 +123,37 @@ void CollisionResolver::ProcessTentativePair(ObjPtr obj1, ObjPtr obj2) {
 void CollisionResolver::Collide() {
   double start_time = glfwGetTime();
 
-  collisions_.clear();
-  tentative_pairs_.clear();
-
+  find_mutex_.lock();
   ClearMetrics();
   UpdateObjectPositions();
+  running_find_tasks_ = 0;
+  running_test_tasks_ = 0;
+  find_tasks_.push(resources_->GetOctreeRoot());
+  find_mutex_.unlock();
 
-  FindCollisions(resources_->GetOctreeRoot(), {});
+  // Find collisions async.
+  while (true) {
+    find_mutex_.lock();
+    if (!find_tasks_.empty() || running_find_tasks_ > 0) {
+      find_mutex_.unlock();
+      this_thread::sleep_for(chrono::microseconds(200));
+      continue;
+    }
+    find_mutex_.unlock();
+    break;
+  }
+
+  // Test tentative pairs async.
+  while (true) {
+    find_mutex_.lock();
+    if (!tentative_pairs_.empty() || running_test_tasks_ > 0) {
+      find_mutex_.unlock();
+      this_thread::sleep_for(chrono::microseconds(200));
+      continue;
+    }
+    find_mutex_.unlock();
+    break;
+  }
 
   // double find_time = glfwGetTime();
   // double duration = find_time - start_time;
@@ -152,11 +161,7 @@ void CollisionResolver::Collide() {
   // cout << "Find tentative pairs took: " << duration << " seconds " << percent_of_a_frame
   //   << "\% of a frame" << endl;
 
-  FindCollisionsWithTerrain();
-
-  for (auto& [obj1, obj2] : tentative_pairs_) {
-    ProcessTentativePair(obj1, obj2);
-  }
+  TestCollisionsWithTerrain();
 
   // find_time = glfwGetTime();
   // duration = find_time - start_time;
@@ -164,7 +169,9 @@ void CollisionResolver::Collide() {
   // cout << "Find collisions took: " << duration << " seconds " << percent_of_a_frame
   //   << "\% of a frame" << endl;
 
+  find_mutex_.lock();
   ResolveCollisions();
+  find_mutex_.unlock();
 
   // PrintMetrics();
 
@@ -251,36 +258,51 @@ void CollisionResolver::CollideAlongAxis(shared_ptr<OctreeNode> octree_node,
     const SortedStaticObj& static_obj = static_objects[i];
     if (static_obj.start > end) break;
     if (static_obj.end < start) continue;
-    if (!IsCollidable(static_obj.obj)) continue;
+    if (!static_obj.obj->IsCollidable()) continue;
      
-    tentative_pairs_.push_back({ obj, static_obj.obj });
+    find_mutex_.lock();
+    tentative_pairs_.push({ obj, static_obj.obj });
+    find_mutex_.unlock();
   }
 }
 
-void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node, 
-  vector<shared_ptr<GameObject>> objs) {
+void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node) {
   if (!octree_node || octree_node->updated_at < start_time_) return;
 
   for (auto [id, obj1] : octree_node->moving_objs) {
-    if (!IsCollidable(obj1)) continue;
+    if (!obj1->IsCollidable()) continue;
     CollideAlongAxis(octree_node, obj1);
+  }
+
+  vector<ObjPtr> objs = {};
+  shared_ptr<OctreeNode> parent = octree_node->parent;
+  while (parent != nullptr) {
+    for (auto [id, obj] : octree_node->moving_objs) {
+      if (!obj->IsCollidable()) continue;
+      objs.push_back(obj);
+    }
+    parent = parent->parent;
   }
   
   for (auto [id, obj1] : octree_node->moving_objs) {
-    if (!IsCollidable(obj1)) continue;
+    if (!obj1->IsCollidable()) continue;
 
     for (int i = 0; i < objs.size(); i++) {
       shared_ptr<GameObject> obj2 = objs[i];
       if (obj1->id == obj2->id) continue;
-      if (!IsCollidable(obj2)) continue;
+      if (!obj2->IsCollidable()) continue;
        
-      tentative_pairs_.push_back({ obj1, obj2 });
+      find_mutex_.lock();
+      tentative_pairs_.push({ obj1, obj2 });
+      find_mutex_.unlock();
     }
     objs.push_back(obj1);
   }
   
   for (int i = 0; i < 8; i++) {
-    FindCollisions(octree_node->children[i], objs);
+    find_mutex_.lock();
+    find_tasks_.push(octree_node->children[i]);
+    find_mutex_.unlock();
   }
 }
 
@@ -730,12 +752,12 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
 }
 
 // TODO: improve terrain collision.
-void CollisionResolver::FindCollisionsWithTerrain() {
+void CollisionResolver::TestCollisionsWithTerrain() {
   vector<ColPtr> collisions;
   shared_ptr<Sector> outside = resources_->GetSectorByName("outside");
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->current_sector || obj1->current_sector->id != outside->id) continue;
-    if (!IsCollidable(obj1)) continue;
+    if (!obj1->IsCollidable()) continue;
     if (obj1->GetPhysicsBehavior() == PHYSICS_FIXED) continue;
 
     switch (obj1->GetCollisionType()) {
@@ -752,7 +774,7 @@ void CollisionResolver::FindCollisionsWithTerrain() {
     TestCollision(c);
     if (c->collided) {
       find_mutex_.lock();
-      collisions_.push_back(c);
+      collisions_.push(c);
       find_mutex_.unlock();
     }
   }
@@ -880,7 +902,7 @@ void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
 
     if (in_contact) {
       // c->displacement_vector += v2;
-      c->obj1->in_contact_with = c->obj2;
+      // c->obj1->in_contact_with = c->obj2;
     }
 
     FillCollisionBlankFields(c);
@@ -906,7 +928,7 @@ void CollisionResolver::TestCollisionSH(shared_ptr<CollisionSH> c) {
 
     if (in_contact) {
       // c->displacement_vector += v2;
-      c->obj1->in_contact_with = c->obj2;
+      // c->obj1->in_contact_with = c->obj2;
     }
 
     FillCollisionBlankFields(c);
@@ -1378,18 +1400,20 @@ void CollisionResolver::TestCollision(ColPtr c) {
 // are movable apply Newton's third law of motion (both objects are displaced,
 // according to their masses).
 void CollisionResolver::ResolveCollisions() {
-  std::sort(collisions_.begin(), collisions_.end(),
-    // A should go before B?
-    [](const ColPtr& a, const ColPtr& b) {  
-      float min_a = std::min(a->obj1_t, a->obj2_t);
-      float min_b = std::min(b->obj1_t, b->obj2_t);
-      return (min_a < min_b);
-    }
-  ); 
+  // std::sort(collisions_.begin(), collisions_.end(),
+  //   // A should go before B?
+  //   [](const ColPtr& a, const ColPtr& b) {  
+  //     float min_a = std::min(a->obj1_t, a->obj2_t);
+  //     float min_b = std::min(b->obj1_t, b->obj2_t);
+  //     return (min_a < min_b);
+  //   }
+  // ); 
 
   unordered_set<int> ids;
-  for (int i = 0; i < collisions_.size(); i++) {
-    ColPtr c = collisions_[i];
+  while (!collisions_.empty()) {
+    ColPtr c = collisions_.front();
+    collisions_.pop();
+
     ObjPtr obj1 = c->obj1;
     ObjPtr obj2 = c->obj2;
 
@@ -1563,5 +1587,56 @@ void CollisionResolver::ResolveCollisions() {
     vec3 relative_position = obj->position - obj->in_contact_with->position;
     obj->position = obj->in_contact_with->position + vec3(rotation_matrix * 
       vec4(relative_position, 1.0f));
+  }
+}
+
+void CollisionResolver::FindCollisionsAsync() {
+  while (!terminate_) {
+    find_mutex_.lock();
+    if (find_tasks_.empty()) {
+      find_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(1));
+      continue;
+    }
+
+    shared_ptr<OctreeNode> node = find_tasks_.front();
+    find_tasks_.pop();
+    running_find_tasks_++;
+    find_mutex_.unlock();
+
+    FindCollisions(node);
+
+    find_mutex_.lock();
+    running_find_tasks_--;
+    find_mutex_.unlock();
+  }
+}
+
+void CollisionResolver::ProcessTentativePairAsync() {
+  while (!terminate_) {
+    find_mutex_.lock();
+    if (tentative_pairs_.empty()) {
+      find_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(1));
+      continue;
+    }
+
+    auto& [obj1, obj2] = tentative_pairs_.front();
+    tentative_pairs_.pop();
+    running_test_tasks_++;
+    find_mutex_.unlock();
+
+    ProcessTentativePair(obj1, obj2);
+
+    find_mutex_.lock();
+    running_test_tasks_--;
+    find_mutex_.unlock();
+  }
+}
+
+void CollisionResolver::CreateThreads() {
+  for (int i = 0; i < kMaxThreads; i++) {
+    find_threads_.push_back(thread(&CollisionResolver::FindCollisionsAsync, this));
+    test_threads_.push_back(thread(&CollisionResolver::ProcessTentativePairAsync, this));
   }
 }

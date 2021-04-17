@@ -13,7 +13,6 @@ out VertexData {
   vec3 position_cameraspace;
   vec3 blending;
   vec3 coarser_blending;
-  vec2 tileset;
   float alpha;
   vec4 shadow_coord; 
   vec4 shadow_coord1; 
@@ -53,7 +52,6 @@ void main(){
   vec4 normal = texelFetch(normal_sampler, buffer_coords).rgba;
   vec3 blending = texelFetch(blending_sampler, buffer_coords).rgb;
   vec3 coarser_blending = texelFetch(coarser_blending_sampler, buffer_coords).rgb;
-  vec2 tileset = texelFetch(tile_type_sampler, buffer_coords).rg;
 
   out_data.position.x *= TILE_SIZE;
   out_data.position.z *= TILE_SIZE;
@@ -66,15 +64,12 @@ void main(){
 
   out_data.position = (M * vec4(out_data.position, 1)).xyz;
 
-  // TODO: pick only the x and y (which is actually z) components assuming a 
-  // (0, 1, 0) y component and generate normal.
   vec3 normalized_normal = normalize(vec3(normal.x, 1, normal.y));
   vec3 normalized_coarser_normal = normalize(vec3(normal.z, 1, normal.w));
 
   out_data.normal_cameraspace = (V * M * vec4(normalized_normal, 0)).xyz; 
   out_data.coarser_normal_cameraspace = (V * M * vec4(normalized_coarser_normal, 0)).xyz; 
   out_data.position_cameraspace = (V * M * vec4(out_data.position, 1)).xyz;
-  out_data.tileset = tileset;
   out_data.blending = blending;
   out_data.coarser_blending = coarser_blending;
   

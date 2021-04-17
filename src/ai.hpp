@@ -1,14 +1,24 @@
 #ifndef __AI_HPP__
 #define __AI_HPP__
 
+#include <thread>
+#include <mutex>
 #include <random>
+#include "scripts.hpp"
 #include "resources.hpp"
 
 class AI {
   shared_ptr<Resources> resources_;
   std::default_random_engine generator_;
-
-  ObjPtr spiders_;
+  shared_ptr<ScriptManager> script_manager_ = nullptr;
+ 
+  // Parallelism. 
+  bool terminate_ = false;
+  const int kMaxThreads = 16;
+  vector<thread> ai_threads_;
+  mutex ai_mutex_;
+  queue<ObjPtr> ai_tasks_;
+  int running_tasks_ = 0;
 
   shared_ptr<Waypoint> GetClosestWaypoint(const vec3& position);
   void ChangeState(ObjPtr obj, AiState state);
@@ -41,10 +51,15 @@ class AI {
   void ProcessNextAction(ObjPtr spider);
   void ProcessPlayerAction(ObjPtr player);
 
+  void RunAiInOctreeNode(shared_ptr<OctreeNode> node);
+  void ProcessUnitAiAsync();
+  void CreateThreads();
+
  public:
   AI(shared_ptr<Resources> asset_catalog);
+  ~AI();
 
-  void RunSpiderAI();
+  void Run();
 };
 
 #endif // __AI_HPP__

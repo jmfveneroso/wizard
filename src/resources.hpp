@@ -227,7 +227,7 @@ class Resources {
   vector<shared_ptr<Event>> events_;
 
   // Mutexes.
-  mutex octree_mutex_;
+  mutex mutex_;
 
   vector<ItemData> item_data_ {
     { 0, "", "", "", "" },
@@ -277,6 +277,7 @@ class Resources {
   void ProcessMessages();
   void RemoveDead();
   void UpdateCooldowns();
+  void UpdateAnimationFrames();
   void ProcessPeriodicCallbacks();
 
   // TODO: move to particle.
@@ -392,8 +393,8 @@ class Resources {
   void InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
     shared_ptr<GameObject> object, int depth);
 
-  void LockOctree() { octree_mutex_.lock(); }
-  void UnlockOctree() { octree_mutex_.unlock(); }
+  void Lock() { mutex_.lock(); }
+  void Unlock() { mutex_.unlock(); }
 
   shared_ptr<Waypoint> CreateWaypoint(vec3 position, string name = "");
 
@@ -442,6 +443,9 @@ class Resources {
   void GenerateOptimizedOctree();
   void StartQuest(const string& quest_name);
   void LearnSpell(const unsigned int spell_id);
+
+  void CallStrFn(const string& fn);
+  void CallStrFn(const string& fn, const string& arg);
 };
 
 #endif // __RESOURCES_HPP__

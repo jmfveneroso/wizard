@@ -10,7 +10,6 @@ in VertexData {
   vec3 coarser_normal_cameraspace;
   float visibility;
   vec3 position_cameraspace;
-  vec2 tileset;
   vec3 blending;
   vec3 coarser_blending;
   float alpha;
@@ -27,7 +26,6 @@ out FragData {
   float visibility;
   vec3 position_cameraspace;
   vec3 barycentric;
-  vec2 tileset;
   vec3 blending;
   vec3 coarser_blending;
   float alpha;
@@ -52,8 +50,6 @@ void main() {
     out_data.shadow_coord1 = in_data[i].shadow_coord1;
     out_data.shadow_coord2 = in_data[i].shadow_coord2;
     out_data.coarser_blending = in_data[i].coarser_blending;
-    // out_data.tileset = in_data[0].tileset;
-    out_data.tileset = vec2(0, 0);
     out_data.alpha = in_data[i].alpha;
     EmitVertex();
   }
