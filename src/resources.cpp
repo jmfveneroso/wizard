@@ -42,6 +42,11 @@ void Resources::Init() {
 
   CreateSkydome(this);
 
+  vec3 pos = vec3(12153.9023, 90.87160301, 7136.479);
+  ObjPtr s = CreateSphere(this, 20, pos);
+  s->never_cull = true;
+  UpdateObjectPosition(s);
+
   // TODO: move to particle.
   InitMissiles();
 
@@ -531,7 +536,9 @@ shared_ptr<Waypoint> Resources::CreateWaypoint(vec3 position, string name) {
   return new_game_obj;
 }
 
-void Resources::UpdateObjectPosition(ObjPtr obj) {
+void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
+  if (lock) mutex_.lock(); 
+
   // Clear position data.
   if (obj->octree_node) {
     obj->octree_node->objects.erase(obj->id);
@@ -607,6 +614,7 @@ void Resources::UpdateObjectPosition(ObjPtr obj) {
   }
 
   obj->updated_at = glfwGetTime();
+  if (lock) mutex_.unlock(); 
 }
 
 shared_ptr<Sector> Resources::GetSectorAux(
@@ -753,7 +761,8 @@ void Resources::UpdateParticles() {
       continue;
     }
 
-    if (p.life % p.type->keep_frame == 0) {
+    if (p.type == nullptr) continue;
+    if (int(p.life) % p.type->keep_frame == 0) {
       p.frame++;
     }
 
@@ -1090,6 +1099,7 @@ void Resources::RemoveObject(ObjPtr obj) {
 }
 
 void Resources::RemoveDead() {
+  Lock();
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
     if (obj->type == GAME_OBJ_PLAYER) continue;
@@ -1107,6 +1117,7 @@ void Resources::RemoveDead() {
     if (obj->frame < num_frames - 1) continue;
     RemoveObject(obj);
   }
+  Unlock();
 }
 
 void Resources::MakeGlow(ObjPtr obj) {

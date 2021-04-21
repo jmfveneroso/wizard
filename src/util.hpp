@@ -358,7 +358,8 @@ AABB GetAABBFromVertices(const vector<vec3>& vertices);
 AABB GetAABBFromPolygons(const vector<Polygon>& polygons);
 AABB GetAABBFromPolygons(const Polygon& polygon);
 
-Mesh CreateDome();
+Mesh CreateDome(int dome_radius = 9000, int num_circles = 32, 
+  int num_points_in_circle = 64);
 
 float clamp(float v, float low, float high);
 vec3 clamp(vec3 v, float low, float high);
@@ -413,5 +414,7 @@ void AppendXmlAttr(pugi::xml_node& node, const vec4& v);
 void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices, vector<Polygon>& polygons,
   vec3 dimensions);
+
+Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle);
 
 #endif // __UTIL_HPP__

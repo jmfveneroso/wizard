@@ -269,6 +269,7 @@ void CollisionResolver::CollideAlongAxis(shared_ptr<OctreeNode> octree_node,
 void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node) {
   if (!octree_node || octree_node->updated_at < start_time_) return;
 
+  resources_->Lock();
   for (auto [id, obj1] : octree_node->moving_objs) {
     if (!obj1->IsCollidable()) continue;
     CollideAlongAxis(octree_node, obj1);
@@ -277,7 +278,7 @@ void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node) {
   vector<ObjPtr> objs = {};
   shared_ptr<OctreeNode> parent = octree_node->parent;
   while (parent != nullptr) {
-    for (auto [id, obj] : octree_node->moving_objs) {
+    for (auto [id, obj] : parent->moving_objs) {
       if (!obj->IsCollidable()) continue;
       objs.push_back(obj);
     }
@@ -298,6 +299,7 @@ void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node) {
     }
     objs.push_back(obj1);
   }
+  resources_->Unlock();
   
   for (int i = 0; i < 8; i++) {
     find_mutex_.lock();
@@ -755,6 +757,8 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
 void CollisionResolver::TestCollisionsWithTerrain() {
   vector<ColPtr> collisions;
   shared_ptr<Sector> outside = resources_->GetSectorByName("outside");
+
+  resources_->Lock();
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->current_sector || obj1->current_sector->id != outside->id) continue;
     if (!obj1->IsCollidable()) continue;
@@ -769,6 +773,7 @@ void CollisionResolver::TestCollisionsWithTerrain() {
       default: break;
     }
   }
+  resources_->Unlock();
 
   for (auto& c : collisions) {
     TestCollision(c);

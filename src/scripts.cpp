@@ -585,8 +585,9 @@ string ScriptManager::CallStrFn(const string& fn_name) {
 }
 
 string ScriptManager::CallStrFn(const string& fn_name, const string& arg) {
-  PyObject *pFunc;
-  pFunc = PyObject_GetAttrString(module_, fn_name.c_str());
+  if (module_) return "";
+ 
+  PyObject *pFunc = PyObject_GetAttrString(module_, fn_name.c_str());
   if (!pFunc || !PyCallable_Check(pFunc)) return "";
 
   PyObject *pArgs, *pValue;

@@ -11,7 +11,7 @@ class Resources;
 class ScriptManager {
   Resources* resources_;
   std::default_random_engine generator_;
-  PyObject* module_;
+  PyObject* module_ = nullptr;
 
   void LoadScripts();
   void ProcessEvent(shared_ptr<Event> e);
