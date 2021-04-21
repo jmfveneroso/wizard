@@ -106,10 +106,12 @@ void Physics::RunPhysicsInOctreeNode(shared_ptr<OctreeNode> node) {
     }
   }
 
+  resources_->Lock();
   for (auto [id, obj] : node->moving_objs) {
     if (obj->type != GAME_OBJ_DEFAULT) continue;
     RunPhysicsForObject(obj);
   }
+  resources_->Unlock();
   
   for (int i = 0; i < 8; i++) {
     RunPhysicsInOctreeNode(node->children[i]);
@@ -119,10 +121,12 @@ void Physics::RunPhysicsInOctreeNode(shared_ptr<OctreeNode> node) {
 void Physics::RunPhysicsForMissiles(shared_ptr<OctreeNode> node) {
   if (!node) return;
 
+  resources_->Lock();
   for (auto [id, obj] : node->moving_objs) {
     if (obj->type != GAME_OBJ_MISSILE) continue;
     RunPhysicsForObject(obj);
   }
+  resources_->Unlock();
   
   for (int i = 0; i < 8; i++) {
     RunPhysicsForMissiles(node->children[i]);

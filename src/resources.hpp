@@ -74,7 +74,7 @@ struct Configs {
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
   bool disable_attacks = false;
   string edit_terrain = "none";
-  bool levitate = false;
+  bool levitate = true;
   float jump_force = 0.3f;
   int brush_size = 10;
   int selected_tile = 0;
@@ -307,7 +307,7 @@ class Resources {
   void SaveCollisionData();
   void DeleteAsset(shared_ptr<GameAsset> asset);
   void DeleteObject(ObjPtr obj);
-  void UpdateObjectPosition(shared_ptr<GameObject> object);
+  void UpdateObjectPosition(shared_ptr<GameObject> object, bool lock = true);
   GameState GetGameState() { return game_state_; }
   void SetGameState(GameState new_state) { game_state_ = new_state; }
   void Cleanup();

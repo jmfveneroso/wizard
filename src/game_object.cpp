@@ -683,6 +683,26 @@ ObjPtr CreateSkydome(Resources* resources) {
   return obj;
 }
 
+ObjPtr CreateSphere(Resources* resources, float radius, vec3 pos) {
+  string name = resources->GetRandomName();
+  shared_ptr<Mesh> m = resources->AddMesh(name + "-mesh", CreateSphere(radius, 32, 64));
+  m->shader = resources->GetShader("solid");
+
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(resources);
+  game_asset->name = name + "-asset";
+  game_asset->shader = resources->GetShader("solid");
+  game_asset->lod_meshes[0] = name + "-mesh";
+  game_asset->SetCollisionType(COL_NONE);
+  game_asset->physics_behavior = PHYSICS_NONE;
+  resources->AddAsset(game_asset);
+  shared_ptr<GameAssetGroup> asset_group = 
+    CreateAssetGroupForSingleAsset(resources, game_asset);
+
+  ObjPtr obj = CreateGameObjFromAsset(resources, name + "-asset", pos, name);
+  obj->asset_group = asset_group;
+  return obj;
+}
+
 CollisionType GameObject::GetCollisionType() {
   if (collision_type_ != COL_UNDEFINED) {
     return collision_type_;
@@ -1039,6 +1059,9 @@ bool GameObject::IsRegion() {
 }
 
 bool GameObject::IsCollidable() {
+  bool is_spider = asset_group != nullptr;
+  if (is_spider) is_spider = GetAsset()->name == "spider";
+
   switch (type) {
     case GAME_OBJ_DEFAULT:
     case GAME_OBJ_PLAYER:
@@ -1061,5 +1084,6 @@ bool GameObject::IsCollidable() {
 
   if (parent_bone_id != -1) return false;
   if (status == STATUS_DYING) return false;
+
   return true;
 }

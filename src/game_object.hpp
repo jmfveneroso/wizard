@@ -100,6 +100,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   shared_ptr<GameAsset> GetAsset();
   string GetDisplayName();
+  string GetName() { return GetDisplayName(); }
   bool IsLight();
   bool IsExtractable();
   bool IsItem();
@@ -250,6 +251,7 @@ ObjPtr CreateGameObj(Resources* resources, const string& asset_name);
 ObjPtr CreateGameObjFromAsset(Resources* resources,
   string asset_name, vec3 position, const string obj_name = "");
 ObjPtr CreateSkydome(Resources* resources);
+ObjPtr CreateSphere(Resources* resources, float radius, vec3 pos);
 
 
 // ============================================================================

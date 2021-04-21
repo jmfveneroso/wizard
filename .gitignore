@@ -2,3 +2,4 @@ build
 src/*.swp
 resources
 *.swp
+*.swo
