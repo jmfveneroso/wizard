@@ -32,6 +32,7 @@ class AI {
   void ProcessNPC(ObjPtr unit);
 
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
+  bool ProcessRandomMoveAction(ObjPtr spider, shared_ptr<RandomMoveAction> action);
   bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);
   bool ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action);
   bool ProcessChangeStateAction(ObjPtr spider, 

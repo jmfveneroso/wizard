@@ -1,6 +1,6 @@
 #include "physics.hpp"
 
-const float kMinDistance = 200.0f;
+const float kMinDistance = 500.0f;
 
 Physics::Physics(shared_ptr<Resources> asset_catalog) : 
   resources_(asset_catalog) {}

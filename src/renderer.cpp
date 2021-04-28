@@ -342,18 +342,20 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
     throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
   }
 
+  cout << "Testing portal name" << p->name << endl;
+
   for (auto& poly : mesh->polygons) {
     vec3 portal_point = p->position + poly.vertices[0];
     vec3 normal = poly.normals[0];
 
-    if (TestSphereTriangleIntersection(sphere - p->position, poly.vertices)) {
-      in_frustum = true;
-      break;
-    }
+    // if (TestSphereTriangleIntersection(sphere - p->position, poly.vertices)) {
+    //   in_frustum = true;
+    //   break;
+    // }
 
-    if (dot(normalize(camera_.position - portal_point), normal) < 0.000001f) {
-      continue;
-    }
+    // if (dot(normalize(camera_.position - portal_point), normal) < 0.000001f) {
+    //   continue;
+    // }
 
     if (CollideTriangleFrustum(poly.vertices, frustum_planes_,
       camera_.position - p->position)) {
@@ -397,6 +399,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInCaves(
 
     // TODO: cull portal.
     shared_ptr<Portal> p = s->portals[node->sector->id];
+
     if (!p->cave) continue;
 
     vector<ObjPtr> objs = GetVisibleObjectsInStabbingTreeNode(node, frustum_planes);
@@ -474,10 +477,10 @@ void Renderer::DrawOutside() {
 void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   if (obj == nullptr) return;
 
-  if (obj->type == GAME_OBJ_PORTAL) {
-    // TODO: draw portal.
-    return;
-  }
+  // if (obj->type == GAME_OBJ_PORTAL) {
+  //   // TODO: draw portal.
+  //   return;
+  // }
 
   if (obj->GetAsset()->type == ASSET_CREATURE) {
     if (obj->status == STATUS_BURROWED) {
@@ -718,7 +721,8 @@ void Renderer::DrawObjects(vector<ObjPtr> objs) {
     if (!obj) { // Terrain.
       DrawOutside();
     } else if (obj->type == GAME_OBJ_PORTAL) {
-      DrawParticles();
+      // TODO: to display particles inside the sector.
+      // DrawParticles();
       glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
       DrawObject(obj);
       glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);

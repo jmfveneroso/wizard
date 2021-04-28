@@ -1,6 +1,6 @@
 #include "ai.hpp"
 
-const float kMinDistance = 200.0f;
+const float kMinDistance = 500.0f;
 
 AI::AI(shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {
   CreateThreads();
@@ -89,9 +89,11 @@ void AI::Attack(ObjPtr spider) {
     return;
   }
 
+  resources_->Lock();
   spider->actions.push(make_shared<TakeAimAction>());
   spider->actions.push(make_shared<RangedAttackAction>());
-  spider->actions.push(make_shared<ChangeStateAction>(WANDER));
+  resources_->Unlock();
+  // spider->actions.push(make_shared<ChangeStateAction>(WANDER));
 }
 
 void AI::Chase(ObjPtr spider) {
@@ -103,7 +105,7 @@ void AI::Chase(ObjPtr spider) {
   ObjPtr player = resources_->GetObjectByName("player");
   vec3 dir = player->position - spider->position;
 
-  if (spider->GetAsset()->name == "spider" || spider->GetAsset()->name == "demon-vine" || spider->GetAsset()->name == "cephalid") {
+  if (spider->GetAsset()->name == "spider" || spider->GetAsset()->name == "demon-vine" || spider->GetAsset()->name == "cephalid" || spider->GetAsset()->name == "metal-eye") {
     int dice = rand() % 3; 
     if (length(dir) > 100 && dice < 2) {
       vec3 next_pos = spider->position + normalize(dir) * 50.0f;
@@ -143,33 +145,18 @@ void AI::Wander(ObjPtr spider) {
     return;
   }
 
-  ObjPtr player = resources_->GetObjectByName("player");
-  vec3 dir = player->position - spider->position;
-  if (length(dir) < 100) {
-    spider->actions = {};
-    spider->actions.push(make_shared<ChangeStateAction>(CHASE));
-    return;
-  }
-
-  std::normal_distribution<float> distribution(0.0, 25.0);
-  float x = distribution(generator_);
-  float y = distribution(generator_);
-
-  shared_ptr<Waypoint> closest_wp = GetClosestWaypoint(spider->position);
-  vec3 destination = closest_wp->position + vec3(x, 0, y);
-  spider->actions.push(make_shared<MoveAction>(destination));
-  spider->actions.push(make_shared<IdleAction>(5));
+  spider->actions.push(make_shared<RandomMoveAction>());
 }
 
 bool AI::ProcessStatus(ObjPtr spider) {
   // Check status. If taking hit, or dying.
   switch (spider->status) {
     case STATUS_TAKING_HIT: {
-      resources_->ChangeObjectAnimation(spider, "Armature|hit");
+      resources_->ChangeObjectAnimation(spider, "Armature|idle");
 
       if (spider->frame >= 39) {
-        spider->actions = {};
-        spider->actions.push(make_shared<ChangeStateAction>(CHASE));
+        // spider->actions = {};
+        // spider->actions.push(make_shared<ChangeStateAction>(CHASE));
         spider->status = STATUS_NONE;
       }
       return false;
@@ -194,6 +181,7 @@ bool AI::ProcessStatus(ObjPtr spider) {
         resources_->CreateParticleEffect(64, spider->position, 
           vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
         spider->status = STATUS_DEAD;
+        cout << spider->name << " is dead" << endl;
       }
       return false;
     }
@@ -206,9 +194,12 @@ bool AI::ProcessStatus(ObjPtr spider) {
 }
 
 void AI::ProcessNPC(ObjPtr unit) {
+  resources_->Lock();
   if (!unit->actions.empty()) {
+    resources_->Unlock();
     return;
   }
+  resources_->Unlock();
 
   // unit->LookAt(resources_->GetPlayer()->position);
   resources_->ChangeObjectAnimation(unit, "Armature|idle");
@@ -240,6 +231,10 @@ void AI::ProcessMentalState(ObjPtr unit) {
 
 bool AI::ProcessRangedAttackAction(ObjPtr spider, 
   shared_ptr<RangedAttackAction> action) {
+  if (resources_->GetConfigs()->disable_attacks) {
+    return true;
+  }
+
   resources_->ChangeObjectAnimation(spider, "Armature|attack");
 
   if (int(spider->frame) >= 79) {
@@ -272,7 +267,7 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
       dir * 5.0f, vec3(0.0, 1.0, 0.0), -1.0, 40.0f, 3.0f);
 
     // TODO: change this to make the creature choose the best attack.
-    if (spider->GetAsset()->name == "cephalid") {
+    if (spider->GetAsset()->name == "cephalid" || spider->GetAsset()->name == "metal-eye") {
       if (!resources_->SpiderCastPowerMagicMissile(spider, dir)) {
         resources_->SpiderCastMagicMissile(spider, dir);
       }
@@ -347,6 +342,18 @@ bool AI::ProcessCastSpellAction(ObjPtr spider,
     }
   }
   return false;
+}
+
+bool AI::ProcessRandomMoveAction(ObjPtr spider,
+  shared_ptr<RandomMoveAction> action) {
+  std::normal_distribution<float> distribution(0.0, 10.0);
+  float x = distribution(generator_);
+  float y = distribution(generator_);
+
+  shared_ptr<Waypoint> closest_wp = GetClosestWaypoint(spider->position);
+  vec3 destination = closest_wp->position + vec3(x, 0, y);
+  spider->actions.push(make_shared<MoveAction>(destination));
+  return true;
 }
 
 bool AI::ProcessChangeStateAction(ObjPtr spider, 
@@ -453,14 +460,19 @@ bool AI::ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action) {
 void AI::ProcessNextAction(ObjPtr spider) {
   if (spider->actions.empty()) return;
 
+  resources_->Lock();
   shared_ptr<Action> action = spider->actions.front();
+  resources_->Unlock();
 
   switch (action->type) {
     case ACTION_MOVE: {
       shared_ptr<MoveAction> move_action =  
         static_pointer_cast<MoveAction>(action);
       if (ProcessMoveAction(spider, move_action)) {
+
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
 
         shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
           int num_frames = GetNumFramesInAnimation(*mesh, 
@@ -471,11 +483,24 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_RANDOM_MOVE: {
+      shared_ptr<RandomMoveAction> random_move_action =  
+        static_pointer_cast<RandomMoveAction>(action);
+      if (ProcessRandomMoveAction(spider, random_move_action)) {
+        resources_->Lock();
+        spider->actions.pop();
+        resources_->Unlock();
+        spider->frame = 0;
+      }
+      break;
+    }
     case ACTION_IDLE: {
       shared_ptr<IdleAction> idle_action =  
         static_pointer_cast<IdleAction>(action);
       if (ProcessIdleAction(spider, idle_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -484,7 +509,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<TakeAimAction> take_aim_action =  
         static_pointer_cast<TakeAimAction>(action);
       if (ProcessTakeAimAction(spider, take_aim_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -493,7 +520,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<MeeleeAttackAction> meelee_attack_action =  
         static_pointer_cast<MeeleeAttackAction>(action);
       if (ProcessMeeleeAttackAction(spider, meelee_attack_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -502,7 +531,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<RangedAttackAction> ranged_attack_action =  
         static_pointer_cast<RangedAttackAction>(action);
       if (ProcessRangedAttackAction(spider, ranged_attack_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -511,7 +542,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<CastSpellAction> cast_spell_action =  
         static_pointer_cast<CastSpellAction>(action);
       if (ProcessCastSpellAction(spider, cast_spell_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -520,7 +553,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<ChangeStateAction> change_state_action =  
         static_pointer_cast<ChangeStateAction>(action);
       if (ProcessChangeStateAction(spider, change_state_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -529,7 +564,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<StandAction> stand_action =  
         static_pointer_cast<StandAction>(action);
       if (ProcessStandAction(spider, stand_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -538,7 +575,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<TalkAction> talk_action =  
         static_pointer_cast<TalkAction>(action);
       if (ProcessTalkAction(spider, talk_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -547,7 +586,9 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<AnimationAction> animation_action =  
         static_pointer_cast<AnimationAction>(action);
       if (ProcessAnimationAction(spider, animation_action)) {
+        resources_->Lock();
         spider->actions.pop();
+        resources_->Unlock();
         spider->frame = 0;
       }
       break;
@@ -641,7 +682,9 @@ void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
     if (obj->GetAsset()->type != ASSET_CREATURE) continue;
     if (obj->being_placed) continue;
     if (obj->distance > kMinDistance) continue;
+    ai_mutex_.lock();
     ai_tasks_.push(obj);
+    ai_mutex_.unlock();
   }
   resources_->Unlock();
   
@@ -654,8 +697,36 @@ void AI::Run() {
   RunAiInOctreeNode(resources_->GetOctreeRoot());
   ProcessPlayerAction(resources_->GetPlayer());
 
-  while (!ai_tasks_.empty() || running_tasks_ > 0) {
-    this_thread::sleep_for(chrono::microseconds(200));
+  // while (!ai_tasks_.empty() || running_tasks_ > 0) {
+  //   this_thread::sleep_for(chrono::microseconds(200));
+  // }
+
+  // Sync.
+  while (!ai_tasks_.empty()) {
+    auto& obj = ai_tasks_.front();
+    ai_tasks_.pop();
+    running_tasks_++;
+    ai_mutex_.unlock();
+
+    // TODO: maybe should go to physics.
+    // if (dot(obj->up, vec3(0, 1, 0)) < 0) {
+    //   obj->up = vec3(0, 1, 0);
+    // }
+
+    // Check status. If taking hit, dying, poisoned, etc.
+    if (ProcessStatus(obj)) {
+      // ProcessMentalState(obj);
+      ProcessNextAction(obj);
+    }
+
+    string ai_script = obj->GetAsset()->ai_script;
+    if (!ai_script.empty()) {
+      resources_->CallStrFn(ai_script, obj->name);
+    }
+
+    ai_mutex_.lock();
+    running_tasks_--;
+    ai_mutex_.unlock();
   }
 }
 
@@ -674,19 +745,19 @@ void AI::ProcessUnitAiAsync() {
     ai_mutex_.unlock();
 
     // TODO: maybe should go to physics.
-    if (dot(obj->up, vec3(0, 1, 0)) < 0) {
-      obj->up = vec3(0, 1, 0);
-    }
+    // if (dot(obj->up, vec3(0, 1, 0)) < 0) {
+    //   obj->up = vec3(0, 1, 0);
+    // }
 
     // Check status. If taking hit, dying, poisoned, etc.
     if (ProcessStatus(obj)) {
-      ProcessMentalState(obj);
+      // ProcessMentalState(obj);
       ProcessNextAction(obj);
     }
 
     string ai_script = obj->GetAsset()->ai_script;
     if (!ai_script.empty()) {
-      resources_->CallStrFn(ai_script, obj->name);  
+      resources_->CallStrFn(ai_script, obj->name);
     }
 
     ai_mutex_.lock();
@@ -697,6 +768,6 @@ void AI::ProcessUnitAiAsync() {
 
 void AI::CreateThreads() {
   for (int i = 0; i < kMaxThreads; i++) {
-    ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
+    // ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
   }
 }

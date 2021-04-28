@@ -133,21 +133,21 @@ void Engine::RunCommand(string command) {
 }
 
 void Engine::RunPeriodicEventsAsync() {
-  const double min_time_elapsed = 1.0f / 60.0f;
+  // const double min_time_elapsed = 1.0f / 60.0f;
 
-  double last_update = 0;
-  while (!terminate_) {
-    double cur_time = glfwGetTime();
+  // double last_update = 0;
+  // while (!terminate_) {
+  //   double cur_time = glfwGetTime();
 
-    double time_elapsed = cur_time - last_update;
-    if (time_elapsed < min_time_elapsed) {
-      int ms = (min_time_elapsed - time_elapsed) * 1000;
-      this_thread::sleep_for(chrono::milliseconds(ms));
-    }
-    last_update = glfwGetTime();
+  //   double time_elapsed = cur_time - last_update;
+  //   if (time_elapsed < min_time_elapsed) {
+  //     int ms = (min_time_elapsed - time_elapsed) * 1000;
+  //     this_thread::sleep_for(chrono::milliseconds(ms));
+  //   }
+  //   last_update = glfwGetTime();
 
-    resources_->RunPeriodicEvents();
-  }
+  //   resources_->RunPeriodicEvents();
+  // }
 }
 
 bool Engine::ProcessGameInput() {
@@ -396,10 +396,11 @@ void Engine::BeforeFrameDebug() {
 void Engine::BeforeFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   {
-    BeforeFrameDebug();
+    // BeforeFrameDebug();
     physics_->Run();
     collision_resolver_->Collide();
     ai_->Run();
+    resources_->RunPeriodicEvents();
   }
   ProcessGameInput();
 }
@@ -415,7 +416,7 @@ void Engine::Run() {
     << endl;
 
   // Start threads.
-  periodic_events_thread_ = thread(&Engine::RunPeriodicEventsAsync, this);
+  // periodic_events_thread_ = thread(&Engine::RunPeriodicEventsAsync, this);
 
   glfwSetCursorPos(window_, 0, 0);
 

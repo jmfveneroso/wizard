@@ -103,6 +103,7 @@ enum PlayerAction {
 
 enum ActionType {
   ACTION_MOVE = 0,
+  ACTION_RANDOM_MOVE,
   ACTION_IDLE,
   ACTION_MEELEE_ATTACK,
   ACTION_RANGED_ATTACK,
@@ -376,6 +377,8 @@ DoorState StrToDoorState(const std::string& s);
 string DoorStateToStr(const DoorState& state);
 
 AiState StrToAiState(const std::string& s);
+
+string AiStateToStr(const AiState& ai_state);
 
 BoundingSphere GetBoundingSphereFromVertices(
   const vector<vec3>& vertices);

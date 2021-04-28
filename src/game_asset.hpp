@@ -72,7 +72,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   bool extractable = false;
 
   float base_speed = 0.05;
-  float base_turn_rate = 0.01;
+  float base_turn_rate = 0.15;
   float mass = 1.0;
 
   // References to resources related with this asset.
