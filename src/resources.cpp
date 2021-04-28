@@ -42,11 +42,6 @@ void Resources::Init() {
 
   CreateSkydome(this);
 
-  vec3 pos = vec3(12153.9023, 90.87160301, 7136.479);
-  ObjPtr s = CreateSphere(this, 20, pos);
-  s->never_cull = true;
-  UpdateObjectPosition(s);
-
   // TODO: move to particle.
   InitMissiles();
 
@@ -133,7 +128,7 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   for (pugi::xml_node flag_xml = game_flags_xml.child("flag"); flag_xml; 
     flag_xml = flag_xml.next_sibling("flag")) {
     string name = flag_xml.attribute("name").value();
-    int value = boost::lexical_cast<int>(flag_xml.text().get());
+    const string value = flag_xml.text().get();
 
     if (game_flags_.find(name) != game_flags_.end()) {
       ThrowError("Game flag ", name, " already exists.");
@@ -413,7 +408,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     if (delta > 0.0f) index |= (1 << i); // ZYX
   }
 
-  if (!straddle && depth < 8) {
+  if (!straddle && depth < 4) {
     // Fully contained in existing child node; insert in that subtree
     if (octree_node->children[index] == nullptr) {
       octree_node->children[index] = make_shared<OctreeNode>(
@@ -450,6 +445,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
 }
 
 void Resources::AddGameObject(ObjPtr game_obj) {
+  Lock();
   if (objects_.find(game_obj->name) != objects_.end()) {
     throw runtime_error(string("Object with name ") + game_obj->name + 
       string(" already exists."));
@@ -473,6 +469,7 @@ void Resources::AddGameObject(ObjPtr game_obj) {
   if (game_obj->IsLight()) {
     lights_.push_back(game_obj);
   }
+  Unlock();
 }
 
 void Resources::InitMissiles() {
@@ -558,25 +555,27 @@ void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
   }
 
   // Update sector.
-  shared_ptr<Sector> sector = GetSector(obj->position);
+  if (!obj->current_sector) {
+    shared_ptr<Sector> sector = GetSector(obj->position);
 
-  // Check sector events.
-  if (obj->current_sector) {
-    if (sector->name != obj->current_sector->name) {
-      for (shared_ptr<Event> e : sector->on_enter_events) {
-        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
-        if (obj->name != region_event->unit) continue;
-        AddEvent(e);
-      }
+    // Check sector events.
+    if (obj->current_sector) {
+      if (sector->name != obj->current_sector->name) {
+        for (shared_ptr<Event> e : sector->on_enter_events) {
+          shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+          if (obj->name != region_event->unit) continue;
+          AddEvent(e);
+        }
 
-      for (shared_ptr<Event> e : obj->current_sector->on_leave_events) {
-        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
-        if (obj->name != region_event->unit) continue;
-        AddEvent(e);
+        for (shared_ptr<Event> e : obj->current_sector->on_leave_events) {
+          shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+          if (obj->name != region_event->unit) continue;
+          AddEvent(e);
+        }
       }
     }
+    obj->current_sector = sector;
   }
-  obj->current_sector = sector;
 
   // Update region.
   shared_ptr<Region> region = GetRegion(obj->position);
@@ -604,7 +603,8 @@ void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
   obj->current_region = region;
 
   // Update position into octree.
-  InsertObjectIntoOctree(sector->octree_node, obj, 0);
+  // InsertObjectIntoOctree(sector->octree_node, obj, 0);
+  InsertObjectIntoOctree(GetOctreeRoot(), obj, 0);
 
   shared_ptr<OctreeNode> octree_node = obj->octree_node;
   double time = glfwGetTime();
@@ -784,6 +784,10 @@ void Resources::CastMagicMissile(const Camera& camera) {
     }
   }
 
+  if (obj == nullptr) {
+    obj = missiles_[0];
+  }
+
   obj->life = 10000;
   obj->owner = player_;
 
@@ -852,11 +856,15 @@ void Resources::SpiderCastMagicMissile(ObjPtr spider,
     }
   }
 
+  if (!obj) return;
+
   if (paralysis) {
     shared_ptr<GameAsset> asset0 = GetAssetByName("magic-missile-paralysis"); 
     obj = CreateMissileFromAsset(asset0);
     missiles_.push_back(obj);
   }
+
+  if (!obj) return;
 
   obj->life = 10000;
   obj->owner = spider;
@@ -2135,6 +2143,7 @@ void Resources::LoadStabbingTree(const pugi::xml_node& parent_node_xml,
 
     string sector_name = st_node_xml.attribute("sector").value();
     shared_ptr<Sector> to_sector = GetSectorByName(sector_name);
+
     if (!to_sector) {
       ThrowError("Sector with name ", sector_name, " doesn't exist.");
     }
@@ -2170,13 +2179,12 @@ void Resources::LoadPortals(const std::string& xml_filename) {
       CreatePortal(this, sector, portal_xml);
     }
 
-    sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
-
     pugi::xml_node stabbing_tree_xml = sector_xml.child("stabbing-tree");
     if (stabbing_tree_xml) {
+      sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
       LoadStabbingTree(stabbing_tree_xml, sector->stabbing_tree);
-    } else {
-      // throw runtime_error("Sector must have a stabbing tree.");
+    } else if (sector->stabbing_tree == nullptr) {
+      sector->stabbing_tree = make_shared<StabbingTreeNode>(sector);
     }
   }
 }
@@ -2201,20 +2209,26 @@ void Resources::ProcessNpcs() {
   }
 }
 
-void Resources::ProcessPeriodicCallbacks() {
-  double current_time = glfwGetTime();
-  
-  for (auto it = periodic_callbacks_.begin(); 
-    it != periodic_callbacks_.end();) {
-    const auto& [callback, time] = *it;
-    if (current_time < time) { 
-      ++it;
-      continue;
-    }
+void Resources::ProcessCallbacks() {
+  Lock();
 
-    script_manager_->CallStrFn(callback);
-    it = periodic_callbacks_.erase(it);
+  double current_time = glfwGetTime();
+  while (!callbacks_.empty()) {
+    Callback c = callbacks_.top();
+    if (c.next_time > current_time) break;
+
+    Unlock();
+    string s = c.function_name;
+    script_manager_->CallStrFn(s);
+    Lock();
+
+    callbacks_.pop();
+    if (c.periodic) {
+      c.next_time = glfwGetTime() + c.period;
+      callbacks_.push(c);
+    }
   }
+  Unlock();
 }
 
 void Resources::ProcessSpawnPoints() {
@@ -2293,12 +2307,12 @@ void Resources::TalkTo(const string& target_name) {
   current_dialog_->dialog = dialog;
 }
 
-int Resources::GetGameFlag(const string& name) {
+string Resources::GetGameFlag(const string& name) {
   if (game_flags_.find(name) == game_flags_.end()) return 0;
   return game_flags_[name];
 }
 
-void Resources::SetGameFlag(const string& name, int value) {
+void Resources::SetGameFlag(const string& name, const string& value) {
   game_flags_[name] = value;
 }
 
@@ -2306,9 +2320,12 @@ void Resources::RunScriptFn(const string& script_fn_name) {
   script_manager_->CallStrFn(script_fn_name);
 }
 
-void Resources::SetPeriodicCallback(const string& script_name, float seconds) {
+void Resources::SetCallback(string script_name, float seconds, 
+  bool periodic) {
+  Lock();
   double time = glfwGetTime() + seconds;
-  periodic_callbacks_.push_back({ script_name, time });
+  callbacks_.push(Callback(script_name, time, seconds, periodic));
+  Unlock();
 }
 
 void Resources::StartQuest(const string& quest_name) {
@@ -2439,9 +2456,13 @@ void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
   ProcessMessages();
+
   script_manager_->ProcessScripts();
-  ProcessNpcs();
-  ProcessPeriodicCallbacks();
+
+  // TODO: NPCs should have ai like monsters.
+  // ProcessNpcs();
+
+  ProcessCallbacks();
   ProcessSpawnPoints();
   UpdateAnimationFrames();
   UpdateParticles();

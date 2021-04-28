@@ -425,7 +425,8 @@ ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
   ObjPtr obj;
   if (asset_name == "door") {
     obj = make_shared<Door>(resources);
-  } else if (asset_name == "crystal") {
+  // TODO: change to extract from xml.
+  } else if (asset_name == "crystal" || asset_name == "metal-eye-dock") {
     obj = make_shared<Actionable>(resources);
   } else {
     obj = make_shared<GameObject>(resources);
@@ -745,6 +746,21 @@ shared_ptr<Portal> CreatePortal(Resources* resources,
   shared_ptr<Sector> from_sector, pugi::xml_node& xml) {
   shared_ptr<Portal> portal = make_shared<Portal>(resources);
   portal->Load(xml, from_sector);
+
+  shared_ptr<Mesh> m = resources->GetMeshByName(portal->mesh_name);
+  m->shader = resources->GetShader("solid");
+
+  shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(resources);
+  game_asset->name = resources->GetRandomName();
+  game_asset->shader = resources->GetShader("solid");
+  game_asset->lod_meshes[0] = portal->mesh_name;
+  game_asset->SetCollisionType(COL_NONE);
+  game_asset->physics_behavior = PHYSICS_NONE;
+  resources->AddAsset(game_asset);
+  shared_ptr<GameAssetGroup> asset_group = 
+    CreateAssetGroupForSingleAsset(resources, game_asset);
+  portal->asset_group = asset_group;
+
   return portal;
 }
 
@@ -1059,6 +1075,8 @@ bool GameObject::IsRegion() {
 }
 
 bool GameObject::IsCollidable() {
+  if (!collidable) return false;
+
   bool is_spider = asset_group != nullptr;
   if (is_spider) is_spider = GetAsset()->name == "spider";
 

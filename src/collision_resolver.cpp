@@ -1466,7 +1466,7 @@ void CollisionResolver::ResolveCollisions() {
       } else if (obj2 && obj2->IsCreature()) {
         // (obj2->GetAsset()->name == "spider" 
         // || obj2->GetAsset()->name == "cephalid")) {
-        // obj2->life -= 50;
+        obj2->life -= 40;
         resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
           vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
 
@@ -1490,11 +1490,11 @@ void CollisionResolver::ResolveCollisions() {
         // TODO: need another class to take care of units. Like HitUnit(unit);
         // TODO: ChangeStatus(status)
         if (obj2->life <= 0) {
-          // obj2->status = STATUS_DYING;
-          // obj2->frame = 0;
+          obj2->status = STATUS_DYING;
+          obj2->frame = 0;
         } else {
-          // obj2->status = STATUS_TAKING_HIT;
-          // obj2->frame = 0;
+          obj2->status = STATUS_TAKING_HIT;
+          obj2->frame = 0;
         }
       } else {
         if (obj2) {

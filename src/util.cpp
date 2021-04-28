@@ -886,6 +886,20 @@ AiState StrToAiState(const std::string& s) {
   return str_to_ai_state[s];
 }
 
+string AiStateToStr(const AiState& ai_state) {
+  static unordered_map<AiState, string> ai_state_to_str ({
+    { IDLE, "idle" },
+    { MOVE, "move" },
+    { AI_ATTACK, "ai-attack" },
+    { DIE, "die" },
+    { TURN_TOWARD_TARGET, "turn-toward-target" },
+    { WANDER, "wander" },
+    { CHASE, "chase" },
+    { SCRIPT, "script" }
+  });
+  return ai_state_to_str[ai_state];
+}
+
 DoorState StrToDoorState(const std::string& s) {
   static unordered_map<string, DoorState> str_to_door_state ({
     { "closed", DOOR_CLOSED },

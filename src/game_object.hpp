@@ -48,6 +48,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool draw = true;
   bool freeze = false;
   bool never_cull = false;
+  bool collidable = true;
 
   string active_animation = "";
   double frame = 0;
@@ -272,6 +273,10 @@ struct MoveAction : Action {
 
   MoveAction(vec3 destination) 
     : Action(ACTION_MOVE), destination(destination) {}
+};
+
+struct RandomMoveAction : Action {
+  RandomMoveAction() : Action(ACTION_RANDOM_MOVE) {}
 };
 
 struct IdleAction : Action {

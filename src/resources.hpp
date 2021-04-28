@@ -172,6 +172,23 @@ struct Npc {
     : obj(obj), dialog_fn(dialog_fn), schedule_fn(schedule_fn) {}
 };
 
+struct Callback {
+  string function_name;
+  float next_time;
+  float period;
+  bool periodic = false;
+
+  Callback(string function_name, float next_time, float period, bool periodic = false)
+    : function_name(function_name), next_time(next_time), period(period), periodic(periodic) {}
+};
+
+class CompareCallbacks {
+  public:
+    bool operator() (const Callback& a, const Callback& b) {
+      return a.next_time > b.next_time;
+    }
+};
+
 class Resources {
   string directory_;
   string shaders_dir_;
@@ -187,7 +204,7 @@ class Resources {
 
   shared_ptr<CurrentDialog> current_dialog_ = make_shared<CurrentDialog>();
 
-  vector<tuple<string, float>> periodic_callbacks_;
+  priority_queue<Callback, vector<Callback>, CompareCallbacks> callbacks_;
 
   // Sub-classes.
   HeightMap height_map_;
@@ -208,7 +225,7 @@ class Resources {
   unordered_map<string, string> strings_;
   unordered_map<string, shared_ptr<DialogChain>> dialogs_;
   unordered_map<string, shared_ptr<Quest>> quests_;
-  unordered_map<string, int> game_flags_;
+  unordered_map<string, string> game_flags_;
   vector<shared_ptr<Missile>> missiles_;
   unordered_map<string, string> scripts_;
   vector<ObjPtr> effects_;
@@ -278,7 +295,7 @@ class Resources {
   void RemoveDead();
   void UpdateCooldowns();
   void UpdateAnimationFrames();
-  void ProcessPeriodicCallbacks();
+  void ProcessCallbacks();
 
   // TODO: move to particle.
   int last_used_particle_ = 0;
@@ -432,14 +449,15 @@ class Resources {
   int GenerateNewId();
   void AddEvent(shared_ptr<Event> e);
   shared_ptr<CurrentDialog> GetCurrentDialog() { return current_dialog_; }
-  int GetGameFlag(const string& name);
-  void SetGameFlag(const string& name, int value);
+  string GetGameFlag(const string& name);
+  void SetGameFlag(const string& name, const string& value);
 
   void TalkTo(const string& target_name);
   shared_ptr<DialogChain> GetNpcDialog(const string& target_name);
   void RunScriptFn(const string& script_name);
 
-  void SetPeriodicCallback(const string& script_name, float seconds);
+  void SetCallback(string script_name, float seconds, 
+    bool periodic = false);
   void GenerateOptimizedOctree();
   void StartQuest(const string& quest_name);
   void LearnSpell(const unsigned int spell_id);

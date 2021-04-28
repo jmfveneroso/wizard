@@ -24,8 +24,10 @@ static PyObject* get_game_flag(PyObject *self, PyObject *args) {
   if (!c_ptr) return NULL;
 
   string buffer = reinterpret_cast<char*>(c_ptr);
-  int game_flag = gResources->GetGameFlag(buffer);
-  return PyBool_FromLong(game_flag);
+  string game_flag = gResources->GetGameFlag(buffer);
+
+  return PyUnicode_FromString(game_flag.c_str());
+  // return PyLong_FromLong(game_flag);
 }
 
 static PyObject* set_game_flag(PyObject *self, PyObject *args) {
@@ -38,7 +40,7 @@ static PyObject* set_game_flag(PyObject *self, PyObject *args) {
 
   string s1 = reinterpret_cast<char*>(c_ptr1);
   string s2 = reinterpret_cast<char*>(c_ptr2);
-  gResources->SetGameFlag(s1, boost::lexical_cast<int>(s2));
+  gResources->SetGameFlag(s1, s2);
   return PyBool_FromLong(0);
 }
 
@@ -234,6 +236,7 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
     return PyBool_FromLong(0);
   }
 
+  gResources->Lock();
   if (s2 == "move_to_unit") {
     ObjPtr target_obj = gResources->GetObjectByName(s3);
     if (!target_obj) {
@@ -261,7 +264,14 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
       cout << "Change state attack: " << obj->name << endl;
       obj->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
     }
+  } else if (s2 == "take-aim") {
+    obj->actions.push(make_shared<TakeAimAction>());
+  } else if (s2 == "ranged-attack") {
+    obj->actions.push(make_shared<RangedAttackAction>());
+  } else if (s2 == "random-move") {
+    obj->actions.push(make_shared<RandomMoveAction>());
   }
+  gResources->Unlock();
 
   return PyBool_FromLong(1);
 }
@@ -439,13 +449,33 @@ static PyObject* register_callback(PyObject *self, PyObject *args) {
 
   string s1 = reinterpret_cast<char*>(c_ptr1);
   string s2 = reinterpret_cast<char*>(c_ptr2);
+  if (!gResources) return NULL;
+
+  float seconds = boost::lexical_cast<float>(s2);
+  gResources->SetCallback(s1, seconds, false);
+  return PyBool_FromLong(0);
+}
+
+static PyObject* register_periodic(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  char* c_ptr2; 
+  if (!PyArg_ParseTuple(args, "ss", &c_ptr1, &c_ptr2)) {
+    return NULL;
+  }
+
+  if (!c_ptr1 || !c_ptr2) {
+    return NULL;
+  }
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
 
   if (!gResources) {
     return NULL;
   }
 
   float seconds = boost::lexical_cast<float>(s2);
-  gResources->SetPeriodicCallback(s1, seconds);
+  gResources->SetCallback(s1, seconds, true);
 
   return PyBool_FromLong(0);
 }
@@ -485,6 +515,106 @@ static PyObject* issue_move_order(PyObject *self, PyObject *args) {
   return PyBool_FromLong(1);
 }
 
+static PyObject* is_unit_alive(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) {
+    return PyBool_FromLong(0);
+  }
+
+  if (obj->life > 0) {
+    return PyBool_FromLong(1);
+  }
+  return PyBool_FromLong(0);
+}
+
+static PyObject* create_unit(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  char* c_ptr2;
+  if (!PyArg_ParseTuple(args, "ss", &c_ptr1, &c_ptr2)) return NULL;
+  if (!c_ptr1 || !c_ptr2) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
+
+  shared_ptr<Waypoint> wp = gResources->GetWaypointByName(s2);
+  if (!wp) return NULL;
+
+  ObjPtr new_obj = CreateGameObjFromAsset(gResources, s1, wp->position);
+  if (!new_obj) return NULL;
+
+  return PyUnicode_FromString(new_obj->name.c_str());
+}
+
+static PyObject* disable_collision(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  obj->collidable = false;
+  return PyBool_FromLong(0);
+}
+
+static PyObject* enable_collision(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  obj->collidable = true;
+  return PyBool_FromLong(0);
+}
+
+static PyObject* get_ai_state(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  string ai_state = AiStateToStr(obj->ai_state);  
+  return PyUnicode_FromString(ai_state.c_str());
+}
+
+static PyObject* has_unfinished_actions(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  if (!obj->actions.empty()) {
+    return PyBool_FromLong(1);
+  }
+  return PyBool_FromLong(0);
+}
+
 static PyMethodDef EmbMethods[] = {
  { "is_player_inside_region", is_player_inside_region, METH_VARARGS,
   "Tests if player is inside region" },
@@ -514,6 +644,7 @@ static PyMethodDef EmbMethods[] = {
  { "set_game_flag", set_game_flag, METH_VARARGS, "Set game flag" },
  { "set_position", set_position, METH_VARARGS, "Set object position" },
  { "register_callback", register_callback, METH_VARARGS, "Register callback" },
+ { "register_periodic", register_periodic, METH_VARARGS, "Register periodic" },
  { "fade_out", fade_out, METH_VARARGS, "Fade out" },
  { "create_particle_effect", create_particle_effect, METH_VARARGS, 
    "Create particle effect" },
@@ -523,6 +654,13 @@ static PyMethodDef EmbMethods[] = {
  { "learn_spell", learn_spell, METH_VARARGS, "Learn spell" },
  { "override_camera_pos", override_camera_pos, METH_VARARGS, 
    "Override camera pos" },
+ { "is_unit_alive", is_unit_alive, METH_VARARGS, "Is unit alive" },
+ { "create_unit", create_unit, METH_VARARGS, "Create unit" },
+ { "disable_collision", disable_collision, METH_VARARGS, "Disable collision" },
+ { "enable_collision", enable_collision, METH_VARARGS, "Enable collision" },
+ { "get_ai_state", get_ai_state, METH_VARARGS, "Get AI state" },
+ { "has_unfinished_actions", has_unfinished_actions, METH_VARARGS,  
+   "Has unfinished actions" },
  { NULL, NULL, 0, NULL }
 };
 
@@ -572,7 +710,10 @@ void ScriptManager::LoadScripts() {
 }
 
 string ScriptManager::CallStrFn(const string& fn_name) {
+  if (fn_name.empty()) return "";
+
   PyObject *pFunc;
+
   pFunc = PyObject_GetAttrString(module_, fn_name.c_str());
   if (!pFunc || !PyCallable_Check(pFunc)) return "";
 
@@ -585,7 +726,7 @@ string ScriptManager::CallStrFn(const string& fn_name) {
 }
 
 string ScriptManager::CallStrFn(const string& fn_name, const string& arg) {
-  if (module_) return "";
+  if (module_ == NULL) return "";
  
   PyObject *pFunc = PyObject_GetAttrString(module_, fn_name.c_str());
   if (!pFunc || !PyCallable_Check(pFunc)) return "";
