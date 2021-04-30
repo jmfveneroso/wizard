@@ -242,6 +242,7 @@ class Resources {
 
   // Events.
   vector<shared_ptr<Event>> events_;
+  vector<shared_ptr<DieEvent>> on_unit_die_events_;
 
   // Mutexes.
   mutex mutex_;
@@ -296,6 +297,8 @@ class Resources {
   void UpdateCooldowns();
   void UpdateAnimationFrames();
   void ProcessCallbacks();
+  void ProcessOnCollisionEvent(ObjPtr obj);
+  void ProcessEvents();
 
   // TODO: move to particle.
   int last_used_particle_ = 0;
@@ -464,6 +467,8 @@ class Resources {
 
   void CallStrFn(const string& fn);
   void CallStrFn(const string& fn, const string& arg);
+  void RegisterOnUnitDieEvent(const string& fn);
+  void ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2);
 };
 
 #endif // __RESOURCES_HPP__

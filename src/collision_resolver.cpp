@@ -171,6 +171,7 @@ void CollisionResolver::Collide() {
 
   find_mutex_.lock();
   ResolveCollisions();
+  ProcessInContactWith();
   find_mutex_.unlock();
 
   // PrintMetrics();
@@ -212,6 +213,8 @@ void CollisionResolver::UpdateObjectPositions() {
     obj->position = obj->target_position;
 
     resources_->UpdateObjectPosition(obj);
+    obj->old_collisions = obj->collisions;
+    obj->collisions.clear();
   }
 }
 
@@ -760,7 +763,7 @@ void CollisionResolver::TestCollisionsWithTerrain() {
 
   resources_->Lock();
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
-    if (!obj1->current_sector || obj1->current_sector->id != outside->id) continue;
+    if (!obj1->current_sector || obj1->current_sector->name != "outside") continue;
     if (!obj1->IsCollidable()) continue;
     if (obj1->GetPhysicsBehavior() == PHYSICS_FIXED) continue;
 
@@ -1390,6 +1393,119 @@ void CollisionResolver::TestCollision(ColPtr c) {
   }
 }
 
+void CollisionResolver::ResolveMissileCollision(ColPtr c) {
+  ObjPtr obj1 = c->obj1;
+  ObjPtr obj2 = c->obj2;
+
+  // TODO: the object should have a callback function that gets called when it
+  // collides.
+  const vec3& n = c->normal;
+  vec3 d = normalize(obj1->prev_position - obj1->position);
+  vec3 normal = -(d - 2 * dot(d, n) * n);
+
+  obj1->position += c->displacement_vector;
+  if (obj2 && obj2->type == GAME_OBJ_PLAYER) {
+    // TODO: this check shouldn't be placed here. After I have an engine
+    // class, it should be made there.
+
+    obj2->life -= 10;
+    resources_->GetConfigs()->taking_hit = 30.0f;
+    obj2->paralysis_cooldown = 100;
+
+    if (obj2->life <= 0.0f) {
+      obj2->life = 100.0f;
+      obj2->position = resources_->GetConfigs()->respawn_point;
+    }
+  } else if (obj2 && obj2->IsCreature()) {
+    // (obj2->GetAsset()->name == "spider" 
+    // || obj2->GetAsset()->name == "cephalid")) {
+    obj2->life -= 40;
+    resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
+      vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
+
+    // TODO: change.
+    if (obj1->GetAsset()->name == "harpoon-missile" && 
+        obj2->GetAsset()->name == "fish") {
+      obj2->life = -100;
+      resources_->InsertItemInInventory(8);
+
+      const string& item_name = resources_->GetItemData()[8].name;
+      resources_->AddMessage(string("You picked a ") + item_name);
+    } else if (obj1->GetAsset()->name == "harpoon-missile" && 
+        obj2->GetAsset()->name == "white-carp") {
+       obj2->life = -100;
+      resources_->InsertItemInInventory(9);
+
+      const string& item_name = resources_->GetItemData()[9].name;
+      resources_->AddMessage(string("You picked a ") + item_name);
+    }
+
+    // TODO: need another class to take care of units. Like HitUnit(unit);
+    // TODO: ChangeStatus(status)
+    if (obj2->life <= 0) {
+      obj2->status = STATUS_DYING;
+      obj2->frame = 0;
+    } else {
+      obj2->status = STATUS_TAKING_HIT;
+      obj2->frame = 0;
+    }
+  } else {
+    if (obj2) {
+      if (obj2->GetCollisionType() == COL_CONVEX_HULL && 
+        obj2->GetPhysicsBehavior() != PHYSICS_FIXED) {
+        vec3 r = c->point_of_contact - c->obj2->position;
+        vec3 f = -c->displacement_vector;
+        vec3 torque = cross(r, f);
+        if (length(torque) > 5.0f) {
+          torque = normalize(torque) * 5.0f;
+        } 
+
+        obj2->speed += -c->displacement_vector;
+        obj2->torque += torque;
+      } 
+      resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
+        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+    } else {
+      // TODO: Check if collision with water.
+      if (obj1->position.y < 5.0f) {
+        vec3 pos = vec3(obj1->position.x, 5.0f, obj1->position.z);
+        resources_->CreateParticleEffect(1, pos, normal * 1.0f, 
+          vec3(1.0, 1.0, 1.0), 7.0, 32.0f, 3.0f, "splash");
+      } else {
+        resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
+          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+      }
+    }
+  }
+  obj1->life = -1;
+}
+
+void CollisionResolver::ProcessInContactWith() {
+  return;
+
+  vector<ObjPtr>& objs = resources_->GetMovingObjects();
+  for (ObjPtr obj : objs) {
+    if (!obj->in_contact_with) continue;
+    if (obj->in_contact_with->GetPhysicsBehavior() == PHYSICS_FIXED) {
+      continue;
+    }
+
+    vec3 v = obj->in_contact_with->position - obj->in_contact_with->prev_position;
+    obj->position += v;
+
+    float inertia = 1.0f / obj->in_contact_with->GetMass();
+    mat4 rotation_matrix = rotate(
+      mat4(1.0),
+      length(obj->in_contact_with->torque) * inertia,
+      normalize(obj->in_contact_with->torque)
+    );
+
+    vec3 relative_position = obj->position - obj->in_contact_with->position;
+    obj->position = obj->in_contact_with->position + vec3(rotation_matrix * 
+      vec4(relative_position, 1.0f));
+  }
+}
+
 //  For every colliding pair. Resolve collision.
 //    To resolve collision. Apply equal force to both objects.
 // 
@@ -1405,15 +1521,6 @@ void CollisionResolver::TestCollision(ColPtr c) {
 // are movable apply Newton's third law of motion (both objects are displaced,
 // according to their masses).
 void CollisionResolver::ResolveCollisions() {
-  // std::sort(collisions_.begin(), collisions_.end(),
-  //   // A should go before B?
-  //   [](const ColPtr& a, const ColPtr& b) {  
-  //     float min_a = std::min(a->obj1_t, a->obj2_t);
-  //     float min_b = std::min(b->obj1_t, b->obj2_t);
-  //     return (min_a < min_b);
-  //   }
-  // ); 
-
   unordered_set<int> ids;
   while (!collisions_.empty()) {
     ColPtr c = collisions_.front();
@@ -1443,88 +1550,8 @@ void CollisionResolver::ResolveCollisions() {
     const vec3& displacement_vector = c->displacement_vector;
     vec3 normal = c->normal;
 
-    // TODO: the object should have a callback function that gets called when it
-    // collides.
     if (obj1->type == GAME_OBJ_MISSILE) {
-      const vec3& n = normal;
-      vec3 d = normalize(obj1->prev_position - obj1->position);
-      normal = -(d - 2 * dot(d, n) * n);
-
-      obj1->position += displacement_vector;
-      if (obj2 && obj2->type == GAME_OBJ_PLAYER) {
-        // TODO: this check shouldn't be placed here. After I have an engine
-        // class, it should be made there.
-
-        obj2->life -= 10;
-        resources_->GetConfigs()->taking_hit = 30.0f;
-        obj2->paralysis_cooldown = 100;
-
-        if (obj2->life <= 0.0f) {
-          obj2->life = 100.0f;
-          obj2->position = resources_->GetConfigs()->respawn_point;
-        }
-      } else if (obj2 && obj2->IsCreature()) {
-        // (obj2->GetAsset()->name == "spider" 
-        // || obj2->GetAsset()->name == "cephalid")) {
-        obj2->life -= 40;
-        resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
-          vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
-
-        // TODO: change.
-        if (obj1->GetAsset()->name == "harpoon-missile" && 
-            obj2->GetAsset()->name == "fish") {
-          obj2->life = -100;
-          resources_->InsertItemInInventory(8);
-
-          const string& item_name = resources_->GetItemData()[8].name;
-          resources_->AddMessage(string("You picked a ") + item_name);
-        } else if (obj1->GetAsset()->name == "harpoon-missile" && 
-            obj2->GetAsset()->name == "white-carp") {
-           obj2->life = -100;
-          resources_->InsertItemInInventory(9);
-
-          const string& item_name = resources_->GetItemData()[9].name;
-          resources_->AddMessage(string("You picked a ") + item_name);
-        }
-
-        // TODO: need another class to take care of units. Like HitUnit(unit);
-        // TODO: ChangeStatus(status)
-        if (obj2->life <= 0) {
-          obj2->status = STATUS_DYING;
-          obj2->frame = 0;
-        } else {
-          obj2->status = STATUS_TAKING_HIT;
-          obj2->frame = 0;
-        }
-      } else {
-        if (obj2) {
-          if (obj2->GetCollisionType() == COL_CONVEX_HULL && 
-            obj2->GetPhysicsBehavior() != PHYSICS_FIXED) {
-            vec3 r = c->point_of_contact - c->obj2->position;
-            vec3 f = -c->displacement_vector;
-            vec3 torque = cross(r, f);
-            if (length(torque) > 5.0f) {
-              torque = normalize(torque) * 5.0f;
-            } 
-
-            obj2->speed += -c->displacement_vector;
-            obj2->torque += torque;
-          } 
-          resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
-            vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
-        } else {
-          // TODO: Check if collision with water.
-          if (obj1->position.y < 5.0f) {
-            vec3 pos = vec3(obj1->position.x, 5.0f, obj1->position.z);
-            resources_->CreateParticleEffect(1, pos, normal * 1.0f, 
-              vec3(1.0, 1.0, 1.0), 7.0, 32.0f, 3.0f, "splash");
-          } else {
-            resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
-              vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
-          }
-        }
-      }
-      obj1->life = -1;
+      ResolveMissileCollision(c);
       continue;
     }
 
@@ -1533,17 +1560,17 @@ void CollisionResolver::ResolveCollisions() {
       continue;
     }
 
-    if (c->collision_pair == CP_HT) {
-      vec3 r = c->point_of_contact - c->obj1->position;
-      vec3 f = c->displacement_vector;
-      vec3 torque = cross(r, f);
+    // if (c->collision_pair == CP_HT) {
+    //   vec3 r = c->point_of_contact - c->obj1->position;
+    //   vec3 f = c->displacement_vector;
+    //   vec3 torque = cross(r, f);
 
-      float max_torque = 5.0f;
-      if (length(torque) > max_torque) {
-        torque = normalize(torque) * max_torque;
-      } 
-      obj1->torque = torque;
-    }
+    //   float max_torque = 5.0f;
+    //   if (length(torque) > max_torque) {
+    //     torque = normalize(torque) * max_torque;
+    //   } 
+    //   obj1->torque = torque;
+    // }
 
     if (dot(normal, vec3(0, 1, 0)) > 0.85) obj1->can_jump = true;
 
@@ -1567,32 +1594,14 @@ void CollisionResolver::ResolveCollisions() {
       }
     }
 
-    obj1->target_position = obj1->position;
-
-    resources_->UpdateObjectPosition(obj1);
-  }   
-
-  vector<ObjPtr>& objs = resources_->GetMovingObjects();
-  for (ObjPtr obj : objs) {
-    if (!obj->in_contact_with) continue;
-    if (obj->in_contact_with->GetPhysicsBehavior() == PHYSICS_FIXED) {
-      continue;
+    if (obj2) {
+      resources_->ProcessOnCollisionEvent(obj1, obj2);
+      obj1->collisions.insert(obj2->name);
     }
 
-    vec3 v = obj->in_contact_with->position - obj->in_contact_with->prev_position;
-    obj->position += v;
-
-    float inertia = 1.0f / obj->in_contact_with->GetMass();
-    mat4 rotation_matrix = rotate(
-      mat4(1.0),
-      length(obj->in_contact_with->torque) * inertia,
-      normalize(obj->in_contact_with->torque)
-    );
-
-    vec3 relative_position = obj->position - obj->in_contact_with->position;
-    obj->position = obj->in_contact_with->position + vec3(rotation_matrix * 
-      vec4(relative_position, 1.0f));
-  }
+    obj1->target_position = obj1->position;
+    resources_->UpdateObjectPosition(obj1);
+  }   
 }
 
 void CollisionResolver::FindCollisionsAsync() {
