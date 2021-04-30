@@ -1,6 +1,7 @@
 #ifndef __GAME_OBJECT_HPP__
 #define __GAME_OBJECT_HPP__
 
+#include <set>
 #include "game_asset.hpp"
 
 struct OctreeNode;
@@ -92,6 +93,10 @@ class GameObject : public enable_shared_from_this<GameObject> {
   int paralysis_cooldown = 0;
   bool being_placed = false;
 
+  unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
+  set<string> old_collisions;
+  set<string> collisions;
+
   vector<shared_ptr<GameObject>> closest_lights;
 
   GameObject(Resources* resources) : resources_(resources) {}
@@ -154,6 +159,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void ClearActions();
 };
 
+using ObjPtr = shared_ptr<GameObject>;
+
 struct Player : public GameObject {
   PlayerAction player_action = PLAYER_IDLE;
   int selected_spell = 0;
@@ -200,6 +207,7 @@ struct Region : public GameObject {
 struct Sector : public GameObject {
   // Portals inside the sector indexed by the outgoing sector id.
   unordered_map<int, shared_ptr<Portal>> portals;
+  unordered_map<int, ObjPtr> objects;
 
   // Starting from this sector, which sectors are visible?
   shared_ptr<StabbingTreeNode> stabbing_tree;
@@ -218,6 +226,8 @@ struct Sector : public GameObject {
   shared_ptr<Mesh> GetMesh();
 
   void Load(pugi::xml_node& xml);
+  void AddGameObject(ObjPtr obj);
+  void RemoveObject(ObjPtr obj);
 };
 
 struct Door : public GameObject {
@@ -245,8 +255,6 @@ struct Waypoint : public GameObject {
     : GameObject(resources, GAME_OBJ_WAYPOINT) {}
   void ToXml(pugi::xml_node& parent);
 };
-
-using ObjPtr = shared_ptr<GameObject>;
 
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name);
 ObjPtr CreateGameObjFromAsset(Resources* resources,

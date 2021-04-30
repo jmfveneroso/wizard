@@ -615,6 +615,43 @@ static PyObject* has_unfinished_actions(PyObject *self, PyObject *args) {
   return PyBool_FromLong(0);
 }
 
+static PyObject* register_on_unit_die_event(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  gResources->RegisterOnUnitDieEvent(s1);
+  return PyBool_FromLong(0);
+}
+
+static PyObject* register_oncollision_event(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+  char* c_ptr2; 
+  char* c_ptr3; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "sss", &c_ptr1, &c_ptr2, &c_ptr3)) return NULL;
+
+  if (!c_ptr1 || !c_ptr2 || !c_ptr3) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
+  string s3 = reinterpret_cast<char*>(c_ptr3);
+  if (!gResources) {
+    return NULL;
+  }
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  obj->on_collision_events[s2] = make_shared<CollisionEvent>(s1, s2, s3);
+  cout << "Register on collision: " << s1 << s2 << s3 << endl;
+  return PyBool_FromLong(0);
+}
+
 static PyMethodDef EmbMethods[] = {
  { "is_player_inside_region", is_player_inside_region, METH_VARARGS,
   "Tests if player is inside region" },
@@ -661,6 +698,10 @@ static PyMethodDef EmbMethods[] = {
  { "get_ai_state", get_ai_state, METH_VARARGS, "Get AI state" },
  { "has_unfinished_actions", has_unfinished_actions, METH_VARARGS,  
    "Has unfinished actions" },
+ { "register_on_unit_die_event", register_on_unit_die_event, METH_VARARGS,  
+   "Register on unit die event" },
+ { "register_oncollision_event", register_oncollision_event, METH_VARARGS,  
+   "Register on collision event" },
  { NULL, NULL, 0, NULL }
 };
 
@@ -738,42 +779,4 @@ string ScriptManager::CallStrFn(const string& fn_name, const string& arg) {
 
   const char* c_string = PyUnicode_AsUTF8(pValue);
   return string(c_string);
-}
-
-void ScriptManager::ProcessEvent(shared_ptr<Event> e) {
-  string callback;
-  switch (e->type) {
-    case EVENT_ON_INTERACT_WITH_SECTOR: {
-      shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
-      callback = region_event->callback; 
-      break;
-    }
-    case EVENT_ON_INTERACT_WITH_DOOR: {
-      shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
-      callback = door_event->callback; 
-      break;
-    }
-    default: {
-      return;
-    }
-  } 
-
-  PyObject *pFunc;
-  pFunc = PyObject_GetAttrString(module_, callback.c_str());
-
-  if (!pFunc || !PyCallable_Check(pFunc)) return;
-
-  PyObject *pArgs, *pValue;
-  pArgs = PyTuple_New(0);
-
-  pValue = PyObject_CallObject(pFunc, pArgs);
-}
-
-void ScriptManager::ProcessScripts() {
-  vector<shared_ptr<Event>>& events = resources_->GetEvents();
-  for (shared_ptr<Event> event : events) {
-    cout << "Processing event" << endl; 
-    ProcessEvent(event);
-  }
-  events.clear();
 }

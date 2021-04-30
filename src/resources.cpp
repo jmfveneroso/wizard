@@ -408,7 +408,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     if (delta > 0.0f) index |= (1 << i); // ZYX
   }
 
-  if (!straddle && depth < 4) {
+  if (!straddle && depth < 5) {
     // Fully contained in existing child node; insert in that subtree
     if (octree_node->children[index] == nullptr) {
       octree_node->children[index] = make_shared<OctreeNode>(
@@ -555,27 +555,33 @@ void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
   }
 
   // Update sector.
-  if (!obj->current_sector) {
-    shared_ptr<Sector> sector = GetSector(obj->position);
+  shared_ptr<Sector> sector = GetSector(obj->position);
+  if (obj->current_sector) {
+    if (sector->name != obj->current_sector->name) {
+      for (shared_ptr<Event> e : sector->on_enter_events) {
+        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        if (obj->name != region_event->unit) continue;
+        AddEvent(e);
+      }
 
-    // Check sector events.
-    if (obj->current_sector) {
-      if (sector->name != obj->current_sector->name) {
-        for (shared_ptr<Event> e : sector->on_enter_events) {
-          shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
-          if (obj->name != region_event->unit) continue;
-          AddEvent(e);
-        }
+      for (shared_ptr<Event> e : obj->current_sector->on_leave_events) {
+        shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        if (obj->name != region_event->unit) continue;
+        AddEvent(e);
+      }
 
-        for (shared_ptr<Event> e : obj->current_sector->on_leave_events) {
-          shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
-          if (obj->name != region_event->unit) continue;
-          AddEvent(e);
-        }
+      if (obj->current_sector->name != "outside") {
+        obj->current_sector->RemoveObject(obj);
+      }
+
+      if (sector->name != "outside") {
+        sector->AddGameObject(obj);
       }
     }
-    obj->current_sector = sector;
+  } else if (sector->name != "outside") {
+    sector->AddGameObject(obj);
   }
+  obj->current_sector = sector;
 
   // Update region.
   shared_ptr<Region> region = GetRegion(obj->position);
@@ -1107,6 +1113,24 @@ void Resources::RemoveObject(ObjPtr obj) {
 }
 
 void Resources::RemoveDead() {
+  Lock();
+  vector<string> dead_unit_names;
+  for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
+    ObjPtr obj = *it;
+    if (obj->type == GAME_OBJ_PLAYER) continue;
+    if (!obj->IsCreature()) continue;
+    if (obj->status != STATUS_DEAD) continue;
+    dead_unit_names.push_back(obj->name);
+  }
+  Unlock();
+
+  for (const string& name : dead_unit_names) {
+    for (auto& event : on_unit_die_events_) {
+      script_manager_->CallStrFn(event->callback, name);
+    }
+  }
+
+
   Lock();
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
@@ -1817,14 +1841,11 @@ bool Resources::IsPlayerInsideRegion(const string& name) {
 
 void Resources::IssueMoveOrder(const string& unit_name, 
   const string& waypoint_name) {
-  cout << unit_name << endl;
   ObjPtr unit = GetObjectByName(unit_name);
   if (!unit) return;
 
   ObjPtr waypoint = GetWaypointByName(waypoint_name);
   if (!waypoint) return;
-
-  cout << waypoint_name << endl;
 
   unit->actions.push(make_shared<MoveAction>(waypoint->position));
 }
@@ -2068,6 +2089,10 @@ void Resources::LoadSectors(const std::string& xml_filename) {
 
       // TODO: don't recalculate collision. Load collision from file.
       new_game_obj->Load(game_obj_xml);
+
+      if (new_game_obj->GetCollisionType() == COL_PERFECT) {
+        new_sector->AddGameObject(new_game_obj);
+      }
     }
 
     cout << "Loading waypoints from: " << xml_filename << endl;
@@ -2452,12 +2477,42 @@ void Resources::UpdateAnimationFrames() {
   }
 }
 
+void Resources::ProcessEvents() {
+  for (shared_ptr<Event> e : events_) {
+    string callback;
+    switch (e->type) {
+      case EVENT_ON_INTERACT_WITH_SECTOR: {
+        shared_ptr<RegionEvent> region_event = 
+          static_pointer_cast<RegionEvent>(e);
+        callback = region_event->callback; 
+        CallStrFn(callback);
+        break;
+      }
+      case EVENT_ON_INTERACT_WITH_DOOR: {
+        shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
+        callback = door_event->callback; 
+        CallStrFn(callback);
+        break;
+      }
+      case EVENT_COLLISION: {
+        shared_ptr<CollisionEvent> collision_event = 
+          static_pointer_cast<CollisionEvent>(e);
+        callback = collision_event->callback; 
+        CallStrFn(callback, collision_event->obj2);
+        continue;
+      }
+      default: {
+        continue;
+      }
+    } 
+  }
+  events_.clear();
+}
+
 void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
   ProcessMessages();
-
-  script_manager_->ProcessScripts();
 
   // TODO: NPCs should have ai like monsters.
   // ProcessNpcs();
@@ -2468,6 +2523,7 @@ void Resources::RunPeriodicEvents() {
   UpdateParticles();
   UpdateFrameStart();
   UpdateMissiles();
+  ProcessEvents();
 
   // TODO: create time function.
   if (!configs_->stop_time) {
@@ -2498,4 +2554,21 @@ void Resources::CallStrFn(const string& fn) {
 
 void Resources::CallStrFn(const string& fn, const string& arg) {
   script_manager_->CallStrFn(fn, arg);
+}
+
+void Resources::RegisterOnUnitDieEvent(const string& fn) {
+  on_unit_die_events_.push_back(make_shared<DieEvent>(fn));
+}
+
+void Resources::ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2) {
+  if (!obj2) return;
+
+  string name = obj2->name;
+  if (obj1->old_collisions.find(name) != obj1->old_collisions.end()) return;
+  if (obj1->on_collision_events.find(name) == obj1->on_collision_events.end())
+    return;
+
+  shared_ptr<CollisionEvent> e = obj1->on_collision_events[name];
+  events_.push_back(make_shared<CollisionEvent>(obj1->name, 
+    obj2->name, e->callback));
 }

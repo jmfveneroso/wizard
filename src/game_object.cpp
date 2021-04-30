@@ -504,13 +504,13 @@ shared_ptr<Mesh> Sector::GetMesh() {
 
 void Portal::Load(pugi::xml_node& xml, shared_ptr<Sector> from_sector) {
   string sector_name = xml.attribute("to").value();
-  shared_ptr<Sector> to_sector = resources_->GetSectorByName(sector_name);
-  if (!to_sector) {
+  shared_ptr<Sector> to_sector_temp = resources_->GetSectorByName(sector_name);
+  if (!to_sector_temp) {
     throw runtime_error(string("Sector ") + sector_name + " does not exist.");
   }
 
-  from_sector = from_sector;
-  to_sector = to_sector;
+  this->from_sector = from_sector;
+  this->to_sector = to_sector_temp;
 
   // Is this portal the entrance to a cave?
   pugi::xml_attribute is_cave = xml.attribute("cave");
@@ -537,7 +537,7 @@ void Portal::Load(pugi::xml_node& xml, shared_ptr<Sector> from_sector) {
     throw runtime_error("Indoors sector must have a mesh.");
   }
 
-  from_sector->portals[to_sector->id] = 
+  from_sector->portals[to_sector_temp->id] = 
     static_pointer_cast<Portal>(shared_from_this());
 
   const pugi::xml_node& rotation_xml = xml.child("rotation");
@@ -1104,4 +1104,20 @@ bool GameObject::IsCollidable() {
   if (status == STATUS_DYING) return false;
 
   return true;
+}
+
+void Sector::AddGameObject(ObjPtr obj) {
+  if (objects.find(obj->id) != objects.end()) {
+    throw runtime_error(string("Object ") + obj->name + 
+      " already inserted in sector.");
+  }
+  objects[obj->id] = obj;
+}
+
+void Sector::RemoveObject(ObjPtr obj) {
+  if (objects.find(obj->id) != objects.end()) {
+    throw runtime_error(string("Object ") + obj->name + 
+      " does not exist in sector.");
+  }
+  objects.erase(obj->id);
 }

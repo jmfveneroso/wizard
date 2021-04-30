@@ -399,11 +399,19 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInCaves(
 
     // TODO: cull portal.
     shared_ptr<Portal> p = s->portals[node->sector->id];
-
     if (!p->cave) continue;
 
-    vector<ObjPtr> objs = GetVisibleObjectsInStabbingTreeNode(node, frustum_planes);
-    visible_objects.insert(visible_objects.end(), objs.begin(), objs.end()); 
+    // vector<ObjPtr> objs = GetVisibleObjectsInStabbingTreeNode(node, frustum_planes);
+    // visible_objects.insert(visible_objects.end(), objs.begin(), objs.end()); 
+
+    if (!p->to_sector) {
+      throw runtime_error(string("Portal ") + p->name + 
+        " does not have a to sector.");
+    }
+
+    for (const auto& [id, obj] : p->to_sector->objects) {
+      visible_objects.push_back(obj);
+    }
 
     visible_objects.push_back(p);
   }

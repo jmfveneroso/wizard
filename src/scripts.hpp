@@ -14,13 +14,11 @@ class ScriptManager {
   PyObject* module_ = nullptr;
 
   void LoadScripts();
-  void ProcessEvent(shared_ptr<Event> e);
 
  public:
   ScriptManager(Resources* resources);
   ~ScriptManager();
 
-  void ProcessScripts();
   string CallStrFn(const string& fn_name);
   string CallStrFn(const string& fn_name, const string& arg);
 };

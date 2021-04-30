@@ -126,6 +126,8 @@ enum ParticleBehavior {
 enum EventType {
   EVENT_ON_INTERACT_WITH_SECTOR = 0,
   EVENT_ON_INTERACT_WITH_DOOR,
+  EVENT_ON_DIE,
+  EVENT_COLLISION,
   EVENT_NONE 
 };
 
@@ -264,6 +266,24 @@ struct Mesh {
 struct Event {
   EventType type;
   Event(EventType type) : type(type) {}
+};
+
+struct DieEvent : Event {
+  string callback;
+
+  DieEvent() : Event(EVENT_ON_DIE) {}
+  DieEvent(string callback)
+    : Event(EVENT_ON_DIE), callback(callback) {}
+};
+
+struct CollisionEvent : Event {
+  string callback;
+  string obj1;
+  string obj2;
+
+  CollisionEvent() : Event(EVENT_COLLISION) {}
+  CollisionEvent(string obj1, string obj2, string callback)
+    : Event(EVENT_COLLISION), callback(callback), obj1(obj1), obj2(obj2) {}
 };
 
 struct RegionEvent : Event {

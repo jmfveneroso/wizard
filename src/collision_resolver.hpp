@@ -267,7 +267,9 @@ class CollisionResolver {
   void FindCollisions(shared_ptr<OctreeNode> octree_node);
 
   void TestCollisionsWithTerrain();
+  void ResolveMissileCollision(ColPtr c);
   void ResolveCollisions();
+  void ProcessInContactWith();
 
   void ProcessTentativePair(ObjPtr obj1, ObjPtr obj2);
 
