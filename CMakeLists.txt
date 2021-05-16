@@ -81,6 +81,7 @@ set(
   src/game_object.cpp 
   src/scripts.cpp 
   src/height_map.cpp 
+  src/dungeon.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

@@ -1,4 +1,6 @@
 #include "ai.hpp"
+#include <queue>
+#include <iomanip>
 
 const float kMinDistance = 500.0f;
 
@@ -13,6 +15,25 @@ AI::~AI() {
   }
 }
 
+ivec2 GetDungeonTile(const vec3& position) {
+  vec3 offset = vec3(10000 - 5, 300, 10000 - 5);
+  ivec2 tile_pos = ivec2(
+    (position - offset).x / 10,
+    (position - offset).z / 10);
+
+  if (tile_pos.x < 0 || tile_pos.x >= 40 || tile_pos.y < 0 || 
+    tile_pos.y >= 40) {
+    return ivec2(-1, -1);
+  }
+  return tile_pos;
+}
+
+vec3 GetTilePosition(const ivec2& tile) {
+  const vec3 offset = vec3(10000, 300, 10000);
+  // return offset + vec3(tile.x, 0, tile.y) * 10.0f + vec3(0.0f, 0, 0.0f);
+  return offset + vec3(tile.x, 0, tile.y) * 10.0f;
+}
+
 void AI::ChangeState(ObjPtr obj, AiState state) {
   obj->ai_state = state;
   obj->frame = 0;
@@ -20,7 +41,7 @@ void AI::ChangeState(ObjPtr obj, AiState state) {
 }
 
 ObjPtr AI::GetClosestUnit(ObjPtr spider) {
-  float min_distance = 99999.9f;
+  float min_distance = 999.0f;
   ObjPtr closest_unit = nullptr;
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (obj1->GetAsset()->name != "spider") continue;
@@ -173,6 +194,14 @@ bool AI::ProcessStatus(ObjPtr spider) {
         int num_frames = GetNumFramesInAnimation(*mesh, 
           spider->active_animation);
         if (spider->frame >= num_frames - 1) {
+          if (spider->GetAsset()->name == "scorpion") {
+            if (Random(0, 2) == 0) {
+              vec3 position = spider->position + vec3(0, 5.0f, 0);
+              ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+                "open-lock-crystal", position);
+              obj->CalculateCollisionData();
+            }
+          }
           is_dead = true;
         }
       }
@@ -299,16 +328,7 @@ bool AI::ProcessMeeleeAttackAction(ObjPtr spider,
         player->position = resources_->GetConfigs()->respawn_point;
       }
     }
-    spider->actions.push(make_shared<CastSpellAction>("burrow"));
-
-    std::normal_distribution<float> distribution(0.0, 40.0);
-    float x = distribution(generator_);
-    float y = distribution(generator_);
-
-    vec3 destination = spider->position + vec3(x, 0, y);
-    spider->actions.push(make_shared<MoveAction>(destination));
-    spider->actions.push(make_shared<IdleAction>(2));
-    spider->actions.push(make_shared<CastSpellAction>("unburrow"));
+    return true;
   }
   return false;
 }
@@ -346,13 +366,29 @@ bool AI::ProcessCastSpellAction(ObjPtr spider,
 
 bool AI::ProcessRandomMoveAction(ObjPtr spider,
   shared_ptr<RandomMoveAction> action) {
-  std::normal_distribution<float> distribution(0.0, 10.0);
-  float x = distribution(generator_);
-  float y = distribution(generator_);
+  Dungeon& dungeon = resources_->GetDungeon();
 
-  shared_ptr<Waypoint> closest_wp = GetClosestWaypoint(spider->position);
-  vec3 destination = closest_wp->position + vec3(x, 0, y);
-  spider->actions.push(make_shared<MoveAction>(destination));
+  ivec2 spider_tile = dungeon.GetDungeonTile(spider->position);
+  if (!dungeon.IsValidTile(spider_tile)) {
+    return true;
+  }
+
+  ivec2 next_tile = ivec2(-1, -1);
+  for (int i = 0; i < 9; i++) {
+    int x = Random(-1, 2);
+    int y = Random(-1, 2);
+
+    next_tile = spider_tile + ivec2(x, y);
+    if (!dungeon.IsTileClear(next_tile)) continue;
+    break;
+  }
+
+  if (!dungeon.IsValidTile(next_tile)) {
+    return true;
+  }
+
+  vec3 next_pos = dungeon.GetTilePosition(next_tile);
+  spider->actions.push(make_shared<MoveAction>(next_pos));
   return true;
 }
 
@@ -400,7 +436,6 @@ bool AI::ProcessTalkAction(ObjPtr unit, shared_ptr<TalkAction> action) {
 }
 
 bool AI::ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action) {
-  spider->active_textures[1] = 0;
   if (!resources_->ChangeObjectAnimation(spider, "Armature|idle")) {
     resources_->ChangeObjectAnimation(spider, "idle");
   }
@@ -408,8 +443,14 @@ bool AI::ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action) {
 }
 
 bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
-  spider->active_textures[1] = 0;
-  resources_->ChangeObjectAnimation(spider, "Armature|walking");
+  if (glfwGetTime() > action->issued_at + 3.0f) {
+    spider->actions.push(make_shared<RandomMoveAction>());
+    return true;
+  }
+
+  if (spider->GetType() == ASSET_CREATURE) {
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+  }
 
   vec3 to_next_location = action->destination - spider->position;
 
@@ -432,12 +473,14 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
     return true;
   }
 
-  float speed = spider->GetAsset()->base_speed;
-  bool is_rotating = RotateSpider(spider, action->destination);
-  if (is_rotating) {
-    return false;
+  if (spider->GetType() == ASSET_CREATURE) {
+    bool is_rotating = RotateSpider(spider, action->destination);
+    if (is_rotating) {
+      return false;
+    } 
   }
 
+  float speed = spider->GetAsset()->base_speed;
   if (physics_behavior == PHYSICS_FLY) {
     spider->speed += normalize(to_next_location) * speed;
   } else {
@@ -456,6 +499,106 @@ bool AI::ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action) {
   return false;
 }
 
+bool AI::ProcessMoveToPlayerAction(
+  ObjPtr spider, shared_ptr<MoveToPlayerAction> action) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  const vec3& player_pos = resources_->GetPlayer()->position;
+  vec3 next_pos = dungeon.GetNextMove(spider->position, player_pos);
+  if (next_pos.x == 0 && next_pos.z == 0) {
+    spider->actions.push(make_shared<StandAction>());
+    return true;
+  }
+
+  spider->actions.push(make_shared<MoveAction>(next_pos));
+  return true;
+}
+
+bool AI::ProcessMoveAwayFromPlayerAction(
+  ObjPtr spider, shared_ptr<MoveAwayFromPlayerAction> action) {
+  Dungeon& dungeon = resources_->GetDungeon();
+
+  const vec3& player_pos = resources_->GetPlayer()->position;
+  ivec2 player_tile = dungeon.GetDungeonTile(player_pos);
+  ivec2 spider_tile = dungeon.GetDungeonTile(spider->position);
+
+  if (!dungeon.IsValidTile(player_tile) || !dungeon.IsValidTile(spider_tile)) {
+    return true;
+  }
+
+  float max_distance = -999.0f;
+  ivec2 best_tile = ivec2(-1, -1);
+  for (int x = -1; x < 1; x++) {
+    for (int y = -1; y < 1; y++) {
+      if (x == 0 && y == 0) continue;
+
+      ivec2 next_tile = spider_tile + ivec2(x, y);
+      if (!dungeon.IsTileClear(next_tile)) continue;
+     
+      float distance = length(vec2(next_tile) - vec2(player_tile));
+      if (distance > max_distance) {
+        best_tile = next_tile;
+        max_distance = distance;
+      }
+    }
+  }
+
+  if (!dungeon.IsValidTile(best_tile)) {
+    // TODO: set unit stuck.
+    return true;
+  }
+
+  vec3 best_pos = dungeon.GetTilePosition(best_tile);
+  spider->actions.push(make_shared<MoveAction>(best_pos));
+  return true;
+}
+
+bool AI::ProcessUseAbilityAction(ObjPtr spider, 
+  shared_ptr<UseAbilityAction> action) {
+  resources_->ChangeObjectAnimation(spider, "Armature|attack");
+
+  Dungeon& dungeon = resources_->GetDungeon();
+  ivec2 spider_tile = dungeon.GetDungeonTile(spider->position);
+
+  float current_time = glfwGetTime();
+  if (spider->cooldowns.find(action->ability) != spider->cooldowns.end()) {
+    if( spider->cooldowns["summon-spiderling"] > current_time) {
+      return true;
+    }
+  }
+
+  // TODO: maybe call script with ability effect.
+  if (action->ability == "summon-spiderling") {
+    int num_summons = 2;
+    for (int i = 0; i < 100; i++) {
+      int off_x = Random(-2, 2);
+      int off_y = Random(-2, 2);
+      ivec2 tile = spider_tile + ivec2(off_x, off_y);
+      if (!dungeon.IsTileClear(tile)) continue;
+     
+      vec3 tile_pos = dungeon.GetTilePosition(tile);
+      ObjPtr spiderling = CreateGameObjFromAsset(resources_.get(), "spiderling", tile_pos);
+      spiderling->ai_state = AI_ATTACK;
+      resources_->CreateParticleEffect(32, tile_pos, 
+        vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
+      if (--num_summons == 0) break;
+    }
+    spider->cooldowns["summon-spiderling"] = glfwGetTime() + 15;
+  } else if (action->ability == "spider-web") {
+    ObjPtr player = resources_->GetObjectByName("player");
+    vec3 dir = (player->position + vec3(0, -3.0f, 0)) - spider->position;
+
+    vec3 forward = normalize(vec3(dir.x, 0, dir.z));
+    vec3 pos = spider->position;
+    for (int i = 0; i < 5; i++) {
+      ObjPtr web = CreateGameObjFromAsset(resources_.get(), "spider-web", pos);
+      web->life = 100.0f;
+      pos += forward * 10.0f;
+    }
+    spider->cooldowns["spider-web"] = glfwGetTime() + 5;
+  }
+  return true;
+}
+
 // An action should be precise and direct to the point.
 void AI::ProcessNextAction(ObjPtr spider) {
   if (spider->actions.empty()) return;
@@ -472,6 +615,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
 
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = move_action;
         resources_->Unlock();
 
         shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
@@ -489,6 +633,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessRandomMoveAction(spider, random_move_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = random_move_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -500,6 +645,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessIdleAction(spider, idle_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = idle_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -511,6 +657,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessTakeAimAction(spider, take_aim_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = take_aim_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -522,6 +669,31 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessMeeleeAttackAction(spider, meelee_attack_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = meelee_attack_action;
+        resources_->Unlock();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_MOVE_TO_PLAYER: {
+      shared_ptr<MoveToPlayerAction> move_to_player_action =  
+        static_pointer_cast<MoveToPlayerAction>(action);
+      if (ProcessMoveToPlayerAction(spider, move_to_player_action)) {
+        resources_->Lock();
+        spider->actions.pop();
+        spider->prev_action = move_to_player_action;
+        resources_->Unlock();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_MOVE_AWAY_FROM_PLAYER: {
+      shared_ptr<MoveAwayFromPlayerAction> move_away_from_player_action =  
+        static_pointer_cast<MoveAwayFromPlayerAction>(action);
+      if (ProcessMoveAwayFromPlayerAction(spider, move_away_from_player_action)) {
+        resources_->Lock();
+        spider->actions.pop();
+        spider->prev_action = move_away_from_player_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -533,6 +705,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessRangedAttackAction(spider, ranged_attack_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = ranged_attack_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -544,6 +717,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessCastSpellAction(spider, cast_spell_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = cast_spell_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -555,6 +729,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessChangeStateAction(spider, change_state_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = change_state_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -566,6 +741,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessStandAction(spider, stand_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = stand_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -577,6 +753,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessTalkAction(spider, talk_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = talk_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -588,6 +765,19 @@ void AI::ProcessNextAction(ObjPtr spider) {
       if (ProcessAnimationAction(spider, animation_action)) {
         resources_->Lock();
         spider->actions.pop();
+        spider->prev_action = animation_action;
+        resources_->Unlock();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_USE_ABILITY: {
+      shared_ptr<UseAbilityAction> use_ability_action =  
+        static_pointer_cast<UseAbilityAction>(action);
+      if (ProcessUseAbilityAction(spider, use_ability_action)) {
+        resources_->Lock();
+        spider->actions.pop();
+        spider->prev_action = use_ability_action;
         resources_->Unlock();
         spider->frame = 0;
       }
@@ -619,7 +809,7 @@ void AI::ProcessPlayerAction(ObjPtr player) {
       to_next_location.y = 0;
 
       float dist_next_location = length(to_next_location);
-      if (dist_next_location < 15.0f) {
+      if (dist_next_location < 1.0f) {
         player->actions.pop();
       } else {
         player->speed += normalize(to_next_location) * player_speed * d;
@@ -679,7 +869,8 @@ void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
   resources_->Lock();
   for (auto [id, obj] : node->moving_objs) {
     if (obj->type != GAME_OBJ_DEFAULT) continue;
-    if (obj->GetAsset()->type != ASSET_CREATURE) continue;
+    if (obj->GetAsset()->type != ASSET_CREATURE && 
+      obj->GetAsset()->type != ASSET_PLATFORM) continue;
     if (obj->being_placed) continue;
     if (obj->distance > kMinDistance) continue;
     ai_mutex_.lock();
@@ -697,9 +888,13 @@ void AI::Run() {
   RunAiInOctreeNode(resources_->GetOctreeRoot());
   ProcessPlayerAction(resources_->GetPlayer());
 
-  // while (!ai_tasks_.empty() || running_tasks_ > 0) {
-  //   this_thread::sleep_for(chrono::microseconds(200));
-  // }
+  resources_->GetDungeon().CalculateVisibility(
+    resources_->GetPlayer()->position);
+
+  while (!ai_tasks_.empty() || running_tasks_ > 0) {
+    this_thread::sleep_for(chrono::microseconds(200));
+  }
+  return;
 
   // Sync.
   while (!ai_tasks_.empty()) {
@@ -768,6 +963,6 @@ void AI::ProcessUnitAiAsync() {
 
 void AI::CreateThreads() {
   for (int i = 0; i < kMaxThreads; i++) {
-    // ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
+    ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
   }
 }

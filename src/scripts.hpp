@@ -2,6 +2,7 @@
 #define __SCRIPTS_HPP__
 
 #include <random>
+#include <thread>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "util.hpp"
@@ -12,6 +13,7 @@ class ScriptManager {
   Resources* resources_;
   std::default_random_engine generator_;
   PyObject* module_ = nullptr;
+  mutex script_mutex_;
 
   void LoadScripts();
 

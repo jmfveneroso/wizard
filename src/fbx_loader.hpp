@@ -1,5 +1,5 @@
-#ifndef __RENDERER_HPP__
-#define __RENDERER_HPP__
+#ifndef __FBX_LOADER_HPP__
+#define __FBX_LOADER_HPP__
 
 #include <fbxsdk.h>
 #include <stdio.h>
@@ -88,4 +88,4 @@ struct FbxData {
 FbxData FbxLoad(const std::string& filename);
 FbxData LoadFbxData(const std::string& filename, Mesh& m);
 
-#endif // __RENDERER_H__
+#endif // __FBX_LOADER_H__

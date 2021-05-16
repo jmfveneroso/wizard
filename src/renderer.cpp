@@ -1,6 +1,7 @@
 #include "renderer.hpp"
 #include "boost/filesystem.hpp"
 #include <boost/algorithm/string/predicate.hpp>
+#include "fbx_loader.hpp"
 
 namespace {
 
@@ -23,6 +24,8 @@ void ThrowError(First first, Args&& ...args) {
 }
 
 } // End of namespace.
+
+const int kMaxDungeonTiles = 2048;
 
 Renderer::Renderer(shared_ptr<Resources> asset_catalog, 
   shared_ptr<Draw2D> draw_2d, shared_ptr<Project4D> project_4d, 
@@ -77,6 +80,7 @@ void Renderer::Init() {
   terrain_->set_shadow_texture(shadow_textures_[2], 2);
 
   CreateParticleBuffers();
+  CreateDungeonBuffers();
 
   CreateThreads();
 }
@@ -136,7 +140,11 @@ void Renderer::GetVisibleObjects(
     vector<vector<Polygon>> occluder_convex_hulls;
     if (CullObject(obj, occluder_convex_hulls)) continue;
     find_mutex_.lock();
-    visible_objects_.push_back(obj);
+    if (obj->IsDungeonPiece()) { 
+      dungeon_pieces_[obj->dungeon_piece_type].push_back(obj);
+    } else {
+      visible_objects_.push_back(obj);
+    }
     find_mutex_.unlock();
   }
 
@@ -163,7 +171,11 @@ void Renderer::GetVisibleObjects(
     vector<vector<Polygon>> occluder_convex_hulls;
     if (CullObject(obj, occluder_convex_hulls)) continue;
     find_mutex_.lock();
-    visible_objects_.push_back(obj);
+    if (obj->IsDungeonPiece()) { 
+      dungeon_pieces_[obj->dungeon_piece_type].push_back(obj);
+    } else {
+      visible_objects_.push_back(obj);
+    }
     find_mutex_.unlock();
   }
 }
@@ -171,6 +183,7 @@ void Renderer::GetVisibleObjects(
 vector<shared_ptr<GameObject>> 
 Renderer::GetVisibleObjectsFromSector(shared_ptr<Sector> sector) {
   find_mutex_.lock();
+  dungeon_pieces_.clear();
   visible_objects_.clear();
   player_pos_ = camera_.position;
   find_tasks_.push(sector->octree_node);
@@ -182,10 +195,10 @@ Renderer::GetVisibleObjectsFromSector(shared_ptr<Sector> sector) {
   // GetPotentiallyVisibleObjects(sector->octree_node);
 
   // Sort from closest to farthest.
-  std::sort(visible_objects_.begin(), visible_objects_.end(), 
-    [] (const auto& lhs, const auto& rhs) {
-    return lhs->distance < rhs->distance;
-  });
+  // std::sort(visible_objects_.begin(), visible_objects_.end(), 
+  //   [] (const auto& lhs, const auto& rhs) {
+  //   return lhs->distance < rhs->distance;
+  // });
 
   return visible_objects_;
 }
@@ -427,7 +440,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInStabbingTreeNode(
       frustum_planes);
     visible_objects.insert(visible_objects.end(), objs.begin(), objs.end()); 
 
-    visible_objects.push_back(nullptr); // Means draw terrain.
+    // visible_objects.push_back(nullptr); // Means draw terrain.
   }
 
   vector<ObjPtr> objs = GetVisibleObjectsInSector(sector, frustum_planes);
@@ -542,10 +555,23 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
         (float*) &obj->current_sector->lighting_color);
 
-      if (obj->current_sector->name != "outside") {
+      if (configs->render_scene == "dungeon" 
+       || obj->current_sector->name != "outside") {
         glUniform1f(GetUniformId(program_id, "outdoors"), 0);
       }
     }
+
+    glUniform1f(GetUniformId(program_id, "light_radius"), configs->light_radius);
+
+    if (configs->render_scene == "dungeon") {
+      glUniform1f(GetUniformId(program_id, "outdoors"), 0);
+    }
+
+    if (configs->render_scene == "dungeon") {
+    glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
+      (float*) &resources_->GetPlayer()->position);
+    }
+
 
     // vector<ObjPtr> light_points = resources_->GetKClosestLightPoints( 
     //   obj->position, 3);
@@ -744,7 +770,8 @@ void Renderer::DrawObjects(vector<ObjPtr> objs) {
 
 void Renderer::DrawHypercube() {
   glViewport(0, 0, window_width_, window_height_);
-  glClearColor(0.73, 0.81, 0.92, 1.0);
+  // glClearColor(0.73, 0.81, 0.92, 1.0);
+  glClearColor(0.0, 0.0, 0.0, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   static vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
@@ -775,6 +802,11 @@ void Renderer::DrawHypercube() {
 void Renderer::Draw() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
+  if (configs->update_renderer) {
+    configs->update_renderer = false;
+    CreateDungeonBuffers();
+  }
+
   vec3 normal;
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(camera_.position.x, camera_.position.z), &normal);
   float delta_h = camera_.position.y - h;
@@ -799,15 +831,18 @@ void Renderer::Draw() {
     );
   }
 
-  DrawShadows();
+  // DrawShadows();
 
   glViewport(0, 0, window_width_, window_height_);
-  glClearColor(0.73, 0.81, 0.92, 1.0);
+  // glClearColor(0.73, 0.81, 0.92, 1.0);
+  glClearColor(0.0, 0.0, 0.0, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
   clip_terrain_ = false;
   GetFrustumPlanes(frustum_planes_);
   vector<ObjPtr> objects = GetVisibleObjects(frustum_planes_);
+
+  DrawDungeonTiles();
   DrawObjects(objects);
 
   glClear(GL_DEPTH_BUFFER_BIT);
@@ -990,14 +1025,20 @@ void Renderer::DrawSpellbar() {
   vector<ItemData>& item_data = resources_->GetItemData();
   int (&item_matrix)[8][7] = configs->item_matrix;
   int (&spellbar)[8] = configs->spellbar;
+  int (&spellbar_quantities)[8] = configs->spellbar_quantities;
 
   draw_2d_->DrawImage("spell_bar", 400, 730, 600, 600, 1.0);
   for (int x = 0; x < 8; x++) {
     int top = 742;
     int left = 433 + 52 * x;
     int item_id = configs->spellbar[x];
+    int item_quantity = configs->spellbar_quantities[x];
     if (item_id != 0) {
       draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
+
+      string qnty = boost::lexical_cast<string>(item_quantity);
+      draw_2d_->DrawText(qnty, left + 34, window_height_ - (top + 40), 
+            vec4(1), 1.0, false, "avenir_light_oblique");
     }
 
     if (configs->selected_spell == x) {
@@ -1156,39 +1197,39 @@ void Renderer::CreateParticleBuffers() {
 }
 
 void Renderer::UpdateParticleBuffers() {
-  Particle* particle_container = resources_->GetParticleContainer();
+  vector<shared_ptr<Particle>>& particle_container = resources_->GetParticleContainer();
   for (int i = 0; i < kMaxParticles; i++) {
-    Particle& p = particle_container[i];
-    if (!p.type || p.life < 0) {
-      p.camera_distance = -1;
+    shared_ptr<Particle> p = particle_container[i];
+    if (!p->particle_type || p->life < 0) {
+      p->camera_distance = -1;
       continue;
     }
-    if (p.type->behavior == PARTICLE_FIXED) {
-      p.camera_distance = 0;
+    if (p->particle_type->behavior == PARTICLE_FIXED) {
+      p->camera_distance = 0;
       continue;
     }
-    p.camera_distance = length2(p.pos - camera_.position);
+    p->camera_distance = length2(p->position - camera_.position);
   }
-  std::sort(&particle_container[0], &particle_container[kMaxParticles]);
+  std::sort(particle_container.begin(), particle_container.end());
 
   for (auto& [name, prd] : particle_render_data_) {
     prd.count = 0;
   }
 
   for (int i = 0; i < kMaxParticles; i++) {
-    Particle& p = particle_container[i];
-    if (p.life < 0 || !p.type) continue;
+    shared_ptr<Particle> p = particle_container[i];
+    if (p->life < 0 || !p->particle_type) continue;
 
     vec2 uv;
-    int index = p.frame + p.type->first_frame;
-    float tile_size = 1.0f / float(p.type->grid_size);
-    uv.x = int(index % p.type->grid_size) * tile_size + tile_size / 2;
-    uv.y = (p.type->grid_size - int(index / p.type->grid_size) - 1) * tile_size 
+    int index = p->frame + p->particle_type->first_frame;
+    float tile_size = 1.0f / float(p->particle_type->grid_size);
+    uv.x = int(index % p->particle_type->grid_size) * tile_size + tile_size / 2;
+    uv.y = (p->particle_type->grid_size - int(index / p->particle_type->grid_size) - 1) * tile_size 
       + tile_size / 2;
 
-    ParticleRenderData& prd = particle_render_data_[p.type->name];
-    prd.particle_positions[prd.count] = vec4(p.pos, p.size);
-    prd.particle_colors[prd.count] = p.color;
+    ParticleRenderData& prd = particle_render_data_[p->particle_type->name];
+    prd.particle_positions[prd.count] = vec4(p->position, p->size);
+    prd.particle_colors[prd.count] = p->color;
     prd.particle_uvs[prd.count] = uv;
     prd.count++;
   }
@@ -1292,3 +1333,184 @@ void Renderer::CreateThreads() {
     find_threads_.push_back(thread(&Renderer::FindVisibleObjectsAsync, this));
   }
 }
+
+void Renderer::CreateDungeonBuffers() {
+  vector<char> instanced_tiles { ' ', '+', '|', 'o' };
+  vector<string> models { "resources/models_fbx/dungeon_floor.fbx", 
+    "resources/models_fbx/dungeon_corner.fbx", 
+    "resources/models_fbx/dungeon_corner.fbx", 
+    "resources/models_fbx/dungeon_arch.fbx" };
+  vector<string> textures { "resources/textures_png/paving.png", 
+    "resources/textures_png/brick_wall.png", 
+    "resources/textures_png/brick_wall.png", 
+    "resources/textures_png/brick_wall.png" };
+
+  for (int i = 0; i < 4; i++) {
+    char tile = instanced_tiles[i];
+
+    glGenBuffers(1, &dungeon_vbos_[tile]);
+    glGenBuffers(1, &dungeon_uvs_[tile]);
+    glGenBuffers(1, &dungeon_normals_[tile]);
+    glGenBuffers(1, &dungeon_element_buffers_[tile]);
+    glGenBuffers(1, &dungeon_matrix_buffers_[tile]);
+
+    FbxData data = FbxLoad(models[i]);
+    dungeon_textures_[tile] = LoadPng(textures[i].c_str());
+
+    vector<vec3> vertices;
+    vector<unsigned int> indices;
+    for (int i = 0; i < data.indices.size(); i++) {
+      vertices.push_back(data.vertices[data.indices[i]]);
+      indices.push_back(i);
+    }
+    dungeon_num_indices_[tile] = indices.size();
+
+    glBindBuffer(GL_ARRAY_BUFFER, dungeon_vbos_[tile]);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), 
+      &vertices[0], GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ARRAY_BUFFER, dungeon_uvs_[tile]);
+    glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(vec2), 
+      &data.uvs[0], GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ARRAY_BUFFER, dungeon_normals_[tile]);
+    glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(vec3), 
+      &data.normals[0], GL_STATIC_DRAW);
+
+    vector<mat4> dungeon_model_matrices;
+    char** dungeon_map = resources_->GetDungeonMap();
+    vec3 offset = vec3(10000, 300, 10000);
+    float y = 0;
+    for (int x = 0; x < 40; x++) {
+      for (int z = 0; z < 40; z++) {
+        float room_x = 10.0f * x;
+        float room_z = 10.0f * z;
+        vec3 pos = offset + vec3(room_x, y, room_z);
+
+        if (tile == ' ') {
+          mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 25, 0));
+          dungeon_model_matrices.push_back(ModelMatrix);
+        }
+
+        if (tile == '|') {
+          if (dungeon_map[x][z] != '|' && dungeon_map[x][z] != '-') continue;
+        } else if (tile == 'o') {
+          if (dungeon_map[x][z] != 'o' && dungeon_map[x][z] != 'O') continue;
+        } else if (tile == ' ') {
+          if (dungeon_map[x][z] != ' ' && dungeon_map[x][z] != 's' && 
+              dungeon_map[x][z] != 'r' && dungeon_map[x][z] != 'S' && 
+              dungeon_map[x][z] != 'q' && dungeon_map[x][z] != 'w' &&
+              dungeon_map[x][z] != 'L') continue;
+        } else {
+          if (dungeon_map[x][z] != tile) continue;
+        }
+       
+        mat4 ModelMatrix = translate(mat4(1.0), pos);
+        if (dungeon_map[x][z] == '-' || dungeon_map[x][z] == 'O') {
+          ModelMatrix *= rotate(mat4(1.0), 1.57f, vec3(0, 1, 0));
+        }
+
+        dungeon_model_matrices.push_back(ModelMatrix);
+
+        // if (tile == ' ') {
+        //   ModelMatrix = translate(mat4(1.0), pos + vec3(0, 25, 0));
+        //   dungeon_model_matrices.push_back(ModelMatrix);
+        // }
+      }
+    }
+    dungeon_num_objs_[tile] = dungeon_model_matrices.size();
+    cout << ">>>>>>>>>>>>>>>>>> dungeon_num_objs_: " << dungeon_num_objs_[tile] << endl;
+    cout << ">>>>>>>>>>>>>>>>>> dungeon_num_indices_: " << dungeon_num_indices_[tile] << endl;
+
+    glBindBuffer(GL_ARRAY_BUFFER, dungeon_matrix_buffers_[tile]);
+    glBufferData(GL_ARRAY_BUFFER, dungeon_model_matrices.size() * sizeof(mat4), 
+      &dungeon_model_matrices[0], GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dungeon_element_buffers_[tile]); 
+    glBufferData(
+      GL_ELEMENT_ARRAY_BUFFER, 
+      indices.size() * sizeof(unsigned int), 
+      &indices[0], 
+      GL_STATIC_DRAW
+    );
+
+    glGenVertexArrays(1, &dungeon_vaos_[tile]);
+    glBindVertexArray(dungeon_vaos_[tile]);
+
+    int num_slots = 8;
+    BindBuffer(dungeon_vbos_[tile], 0, 3);
+    glVertexAttribDivisor(0, 0); // Always reuse the same vertices.
+    BindBuffer(dungeon_uvs_[tile], 1, 2);
+    glVertexAttribDivisor(1, 0); // Always reuse the same vertices.
+    BindBuffer(dungeon_normals_[tile], 2, 3);
+    glVertexAttribDivisor(2, 0); // Always reuse the same vertices.
+
+    std::size_t vec4_size = sizeof(vec4);
+    glEnableVertexAttribArray(3); 
+    glBindBuffer(GL_ARRAY_BUFFER, dungeon_matrix_buffers_[tile]);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * vec4_size, (void*)0);
+    glVertexAttribDivisor(3, 1);
+    glEnableVertexAttribArray(4); 
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 4 * vec4_size, (void*)(1 * vec4_size));
+    glVertexAttribDivisor(4, 1);
+    glEnableVertexAttribArray(5); 
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, 4 * vec4_size, (void*)(2 * vec4_size));
+    glVertexAttribDivisor(5, 1);
+    glEnableVertexAttribArray(6); 
+    glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, 4 * vec4_size, (void*)(3 * vec4_size));
+    glVertexAttribDivisor(6, 1);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dungeon_element_buffers_[tile]);
+    glVertexAttribDivisor(7, 0);
+
+    glBindVertexArray(0);
+    for (int slot = 0; slot < num_slots; slot++) {
+      glDisableVertexAttribArray(slot);
+    }
+  }
+}
+
+void Renderer::DrawDungeonTiles() {
+  vector<char> instanced_tiles { ' ', '+', '|', 'o' };
+  for (int i = 0; i < 4; i++) {
+    char tile = instanced_tiles[i];
+
+    GLuint program_id = resources_->GetShader("dungeon");
+    glUseProgram(program_id);
+
+    glBindVertexArray(dungeon_vaos_[tile]);
+    glDisable(GL_CULL_FACE);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, dungeon_textures_[tile]);
+    glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+    
+    mat4 VP = projection_matrix_ * view_matrix_;  
+    glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
+    glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
+    glUniformMatrix4fv(GetUniformId(program_id, "P"), 1, GL_FALSE, &projection_matrix_[0][0]);
+
+    shared_ptr<Configs> configs = resources_->GetConfigs();
+    glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
+      (float*) &configs->sun_position);
+
+    vec3 light_color = vec3(1, 1, 1);
+    glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
+      (float*) &light_color);
+
+    glUniform1f(GetUniformId(program_id, "light_radius"), configs->light_radius);
+
+    glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
+      (float*) &resources_->GetPlayer()->position);
+
+    // glDrawArraysInstanced(GL_TRIANGLES, 0, dungeon_num_indices_[' '], 
+    //   dungeon_num_objs_[' ']);
+
+    glDrawElementsInstanced(
+      GL_TRIANGLES, dungeon_num_indices_[tile], GL_UNSIGNED_INT, 0, dungeon_num_objs_[tile]
+    );
+    glBindVertexArray(0);
+  }
+}
+
+

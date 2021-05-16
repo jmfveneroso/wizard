@@ -372,7 +372,7 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
       }
       animation.keyframes.push_back(keyframe);
     }
-    cout << "Extracted animation " << animation.name << endl;
+    // cout << "Extracted animation " << animation.name << endl;
     data->animations.push_back(animation);
   }
 }
@@ -382,8 +382,7 @@ FbxData FbxLoad(const std::string& filename) {
 
   FbxData data;
 
-  // TODO: for each mesh, extract the data.
-  cout << "Extracting FBX: " << filename << endl;
+  // cout << "Extracting FBX: " << filename << endl;
   ExtractMesh(scene, &data);
 
   // Animation.
@@ -391,7 +390,6 @@ FbxData FbxLoad(const std::string& filename) {
   ExtractSkin(scene, &data);
   ExtractAnimations(scene, &data);
 
-  // TODO: ExtractTextures.
   return data;
 }
 

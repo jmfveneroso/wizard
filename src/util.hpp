@@ -36,7 +36,9 @@ using namespace glm;
 
 enum AssetType {
   ASSET_STATIC = 0,
-  ASSET_CREATURE
+  ASSET_CREATURE,
+  ASSET_PLATFORM,
+  ASSET_NONE
 };
 
 enum CollisionType {
@@ -68,6 +70,7 @@ enum GameObjectType {
   GAME_OBJ_PORTAL,
   GAME_OBJ_MISSILE,
   GAME_OBJ_PARTICLE_GROUP,
+  GAME_OBJ_PARTICLE,
   GAME_OBJ_REGION,
   GAME_OBJ_WAYPOINT,
   GAME_OBJ_DOOR,
@@ -114,7 +117,10 @@ enum ActionType {
   ACTION_LOOK_AT,
   ACTION_CAST_SPELL,
   ACTION_WAIT,
-  ACTION_ANIMATION
+  ACTION_ANIMATION,
+  ACTION_MOVE_TO_PLAYER,
+  ACTION_MOVE_AWAY_FROM_PLAYER,
+  ACTION_USE_ABILITY,
 };
 
 enum ParticleBehavior {
@@ -340,6 +346,7 @@ ostream& operator<<(ostream& os, const vec3& v);
 ostream& operator<<(ostream& os, const vec4& v);
 ostream& operator<<(ostream& os, const vector<vec4>& v);
 ostream& operator<<(ostream& os, const ivec3& v);
+ostream& operator<<(ostream& os, const ivec2& v);
 ostream& operator<<(ostream& os, const mat4& m);
 ostream& operator<<(ostream& os, const quat& q);
 ostream& operator<<(ostream& os, const Edge& e);
@@ -400,6 +407,8 @@ AiState StrToAiState(const std::string& s);
 
 string AiStateToStr(const AiState& ai_state);
 
+string ActionTypeToStr(const ActionType& type);
+
 BoundingSphere GetBoundingSphereFromVertices(
   const vector<vec3>& vertices);
 
@@ -439,5 +448,7 @@ void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs,
   vec3 dimensions);
 
 Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle);
+
+int Random(int low, int high);
 
 #endif // __UTIL_HPP__

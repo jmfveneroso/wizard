@@ -165,6 +165,11 @@ ostream& operator<<(ostream& os, const ivec3& v) {
   return os;
 }
 
+ostream& operator<<(ostream& os, const ivec2& v) {
+  os << v.x << " " << v.y;
+  return os;
+}
+
 ostream& operator<<(ostream& os, const vec3& v) {
   os << v.x << " " << v.y << " " << v.z;
   return os;
@@ -419,6 +424,8 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
 
   BindBuffer(m.vertex_buffer_, 0, 3);
   BindBuffer(m.uv_buffer_, 1, 2);
+
+  // TODO: I'm using tangent instead of normal. This is wrong.
   BindBuffer(m.tangent_buffer_, 2, 3);
   BindBuffer(m.bitangent_buffer_, 3, 3);
 
@@ -1221,3 +1228,29 @@ Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle) {
   return CreateMesh(0, vertices, uvs, indices);
 }
 
+int Random(int low, int high) {
+  if (high == 0) return 0;
+  return low + (rand() % (high - low));
+}
+
+string ActionTypeToStr(const ActionType& type) {
+  static unordered_map<ActionType, string> action_type_to_str ({
+    { ACTION_MOVE, "action-move" }, 
+    { ACTION_RANDOM_MOVE, "action-random-move" },
+    { ACTION_IDLE, "action-idle" },
+    { ACTION_MEELEE_ATTACK, "action-meelee-attack" },
+    { ACTION_RANGED_ATTACK, "action-ranged-attack" },
+    { ACTION_CHANGE_STATE, "action-change-state" },
+    { ACTION_TAKE_AIM, "action-take-aim" },
+    { ACTION_STAND, "action-stand" },
+    { ACTION_TALK, "action-talk" },
+    { ACTION_LOOK_AT, "action-look-at" },
+    { ACTION_CAST_SPELL, "action-cast-spell" },
+    { ACTION_WAIT, "action-wait" },
+    { ACTION_ANIMATION, "action-animation" },
+    { ACTION_MOVE_TO_PLAYER, "action-move-to-player" },
+    { ACTION_MOVE_AWAY_FROM_PLAYER, "action-move-away-from-player" },
+    { ACTION_USE_ABILITY, "action-use-ability" },           
+  });
+  return action_type_to_str[type];
+}

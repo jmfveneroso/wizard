@@ -26,6 +26,7 @@ class Inventory {
   int win_y_ = 0;
 
   int selected_item_ = 0;
+  int selected_qnty_ = 0;
   int old_pos_x_ = 0;
   int old_pos_y_ = 0;
   int hold_offset_x_ = 0;

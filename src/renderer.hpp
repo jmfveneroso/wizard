@@ -44,6 +44,9 @@ struct CascadedShadowMap {
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 100);
 };
 
+struct DungeonTileRenderData {
+};
+
 class Renderer {
   shared_ptr<Resources> resources_;
   shared_ptr<Draw2D> draw_2d_;
@@ -75,6 +78,18 @@ class Renderer {
   int running_tasks_ = 0;
   vector<ObjPtr> visible_objects_;
 
+  unordered_map<char, vector<ObjPtr>> dungeon_pieces_;
+  unordered_map<char, GLuint> dungeon_vaos_;
+  unordered_map<char, GLuint> dungeon_vbos_;
+  unordered_map<char, GLuint> dungeon_uvs_;
+  unordered_map<char, GLuint> dungeon_normals_;
+  unordered_map<char, GLuint> dungeon_element_buffers_;
+  unordered_map<char, GLuint> dungeon_matrix_buffers_;
+  unordered_map<char, GLuint> dungeon_textures_;
+  unordered_map<char, unsigned int> dungeon_num_indices_;
+  unordered_map<char, unsigned int> dungeon_num_objs_;
+  mat4 dungeon_model_matrices_[1024];
+
   // http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-16-shadow-mapping/
   // https://devansh.space/cascaded-shadow-maps
   CascadedShadowMap cascade_shadows_[3];
@@ -86,6 +101,9 @@ class Renderer {
   void CreateParticleBuffers();
   void UpdateParticleBuffers();
   void DrawParticles();
+
+  void CreateDungeonBuffers();
+  void DrawDungeonTiles();
 
   bool CullObject(shared_ptr<GameObject> obj, 
     const vector<vector<Polygon>>& occluder_convex_hulls);

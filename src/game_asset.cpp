@@ -25,9 +25,14 @@ void GameAsset::LoadBones(const pugi::xml_node& skeleton_xml) {
 void GameAsset::Load(const pugi::xml_node& asset_xml) {
   name = asset_xml.attribute("name").value();
 
+  // TODO: create field type in XML.
   bool is_unit = string(asset_xml.attribute("unit").value()) == "true";
   if (is_unit) {
     type = ASSET_CREATURE;
+  }
+  bool is_platform = string(asset_xml.attribute("platform").value()) == "true";
+  if (is_platform) {
+    type = ASSET_PLATFORM;
   }
 
   if (asset_xml.attribute("extractable")) {
