@@ -9,6 +9,7 @@
 #include "space_partition.hpp"
 #include "height_map.hpp"
 #include "scripts.hpp"
+#include "dungeon.hpp"
 
 #include <chrono>
 #include <exception>
@@ -89,17 +90,28 @@ struct Configs {
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
   int item_matrix[8][7] = {
-    { 7, 0, 0, 0, 5, 5, 5 },
-    { 7, 0, 0, 0, 0, 6, 0 },
-    { 7, 0, 0, 1, 0, 0, 0 },
-    { 7, 0, 0, 1, 1, 0, 0 },
-    { 0, 0, 0, 2, 3, 0, 0 },
-    { 0, 0, 0, 0, 4, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 8 },
-    { 0, 0, 0, 0, 0, 0, 8 }
+    { 5, 6, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 }
+  };
+  int item_quantities[8][7] = {
+    { 3, 100, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0, 0, 0 }
   };
   int selected_spell = 0;
-  int spellbar[8] = { 7, 7, 7, 7, 1, 1, 1, 1 };
+  int spellbar[8] = { 1, 6, 0, 0, 0, 0, 0, 0 };
+  int spellbar_quantities[8] = { 100, 100, 0, 0, 0, 0, 0, 0 };
   int craft_table[5] = { 0, 0, 0, 0, 0 };
   vector<int> learned_spells { 0, 0, 0, 0, 0, 0, 0, 0 };
   vector<tuple<string, float>> messages;
@@ -108,6 +120,8 @@ struct Configs {
   bool show_spellbook = false;
   bool override_camera_pos = false;
   vec3 camera_pos = vec3(0, 0, 0);
+  bool update_renderer = false;
+  float light_radius = 90.0f;
 };
 
 struct ItemData {
@@ -152,6 +166,59 @@ struct DialogChain {
   vector<Phrase> phrases;
   unordered_map<string, string> on_finish_phrase_events;
 };
+
+// 0  = none
+// 1  = four doors
+// 2  = vertical corridor
+// 3  = horizontal corridor
+// 4  = horizontal diagonal corridor
+// 5  = vertical diagonal corridor
+// 6  = two doors
+// 7  = L door (southwest)
+// 8  = L door (southeast)
+// 9  = L door (northeast)
+// 10 = L door (northwest)
+// 11 = one door (south)
+// 12 = one door (west)
+// 13 = one door (north)
+// 14 = one door (east)
+
+// struct Dungeon {
+//   int dungeon_map[2][15][15] = {
+//     {
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 2, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 5, 3, 1, 3, 1, 3, 4, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 2, 0, 2, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 2, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 6, 0, 0, 11, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 2, 0, 0, 2,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 9, 3, 3, 1,  3, 12, 0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 2,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 }
+//     },
+//     {
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 3, 1, 3, 10, 0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
+//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 }
+//     }
+//   };
+// };
 
 struct CurrentDialog {
   bool enabled = false;
@@ -208,6 +275,7 @@ class Resources {
 
   // Sub-classes.
   HeightMap height_map_;
+  Dungeon dungeon_;
 
   // Indices by name.
   unordered_map<string, GLuint> shaders_;
@@ -252,9 +320,9 @@ class Resources {
     { 1, "Magic Missile", "magic-missile-description", "magic_missile_icon", "spell-crystal" },
     { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot" },
     { 3, "Poison Vial", "poison-description", "poison_icon", "potion" },
-    { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "open-lock-crystal" },
+    { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "tiny-rock" },
     { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock" },
-    { 6, "Dispel Magic", "dispel-magic-description", "dispel_magic_icon", "tiny-rock" },
+    { 6, "Dispel Magic", "dispel-magic-description", "dispel_magic_icon", "open-lock-crystal" },
     { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock" },
     { 8, "Fish", "fish-description", "fish_icon", "fish" },
     { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp" }
@@ -263,7 +331,7 @@ class Resources {
   vector<SpellData> spell_data_ {
     { "", "", "", vec2(0), vec2(0), {}, 0 },
     { "Magic Missile", "magic-missile-description", 
-      "magic_missile_icon", vec2(96, 128), vec2(64, 64), { 5 }, 1 },
+      "magic_missile_icon", vec2(96, 128), vec2(64, 64), { 5, 5 }, 1 },
     { "Minor Open Lock", "minor-open-lock-description", 
       "open_lock_icon", vec2(160, 128), vec2(64, 64), { 2, 3 }, 4 },
     { "Dispel Magic", "dispel-magic-description", 
@@ -296,13 +364,14 @@ class Resources {
   void RemoveDead();
   void UpdateCooldowns();
   void UpdateAnimationFrames();
+  void UpdateExpirables();
   void ProcessCallbacks();
   void ProcessOnCollisionEvent(ObjPtr obj);
   void ProcessEvents();
 
   // TODO: move to particle.
   int last_used_particle_ = 0;
-  Particle particle_container_[kMaxParticles];
+  vector<shared_ptr<Particle>> particle_container_;
 
   // TODO: move to height map.
   unsigned char compressed_height_map_[192000000]; // 192 MB.
@@ -315,6 +384,7 @@ class Resources {
   shared_ptr<OctreeNode> GetDeepestOctreeNodeAtPos(const vec3& pos);
   void ProcessNpcs();
   void ProcessSpawnPoints();
+  ObjPtr CreateBookshelf(const vec3& pos, const ivec2& tile);
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir);
@@ -340,7 +410,7 @@ class Resources {
   // ====================
   // Getters
   double GetFrameStart();
-  Particle* GetParticleContainer();
+  vector<shared_ptr<Particle>>& GetParticleContainer();
   shared_ptr<Player> GetPlayer();
   shared_ptr<Mesh> GetMesh(ObjPtr obj);
   vector<shared_ptr<GameObject>>& GetMovingObjects();
@@ -371,6 +441,7 @@ class Resources {
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
   unordered_map<string, shared_ptr<Npc>>& GetNpcs() { return npcs_; }
   unordered_map<string, shared_ptr<Quest>>& GetQuests() { return quests_; }
+  char** GetDungeonMap() { return dungeon_.GetDungeon(); }
 
   // ====================
 
@@ -385,6 +456,7 @@ class Resources {
 
   // TODO: move to particle / missiles.
   void CastMagicMissile(const Camera& camera);
+  void CastBurningHands(const Camera& camera);
   void CastHarpoon(const Camera& camera);
   void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction, bool paralysis = false);
   bool SpiderCastPowerMagicMissile(ObjPtr spider, const vec3& direction);
@@ -395,6 +467,7 @@ class Resources {
     const string& type = "explosion");
   void CreateChargeMagicMissileEffect();
   void InitMissiles();
+  void InitParticles();
   int FindUnusedParticle();
   shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
 
@@ -423,6 +496,7 @@ class Resources {
   void IssueMoveOrder(const string& unit_name, const string& waypoint_name);
 
   HeightMap& GetHeightMap() { return height_map_; }
+  Dungeon& GetDungeon() { return dungeon_; }
   bool ChangeObjectAnimation(ObjPtr obj, const string& animation_name);
 
   // Events.
@@ -440,7 +514,7 @@ class Resources {
   // Item and actionables.
   void TurnOnActionable(const string& name);
   void TurnOffActionable(const string& name);
-  bool InsertItemInInventory(int item_id);
+  bool InsertItemInInventory(int item_id, int quantity = 1);
 
   void AddTexture(const string& texture_name, const GLuint texture_id);
   void AddAsset(shared_ptr<GameAsset> asset);
@@ -469,6 +543,9 @@ class Resources {
   void CallStrFn(const string& fn, const string& arg);
   void RegisterOnUnitDieEvent(const string& fn);
   void ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2);
+  char** GetCurrentDungeonLevel();
+  void CreateDungeon();
+  void DeleteAllObjects();
 };
 
 #endif // __RESOURCES_HPP__

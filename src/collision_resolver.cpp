@@ -95,12 +95,19 @@ void GetTerrainPolygons(shared_ptr<Resources> resources,
 }
 
 bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
+  if (obj1 == nullptr || obj2 == nullptr) return false;
+
   if (obj1->updated_at < start_time_ && obj2->updated_at < start_time_) {
     return false;
   }
 
   if (obj1->GetPhysicsBehavior() == PHYSICS_FIXED &&
       obj2->GetPhysicsBehavior() == PHYSICS_FIXED) {
+    return false;
+  }
+
+  if (obj1->type == GAME_OBJ_PARTICLE &&
+      obj2->type == GAME_OBJ_PARTICLE) {
     return false;
   }
 
@@ -172,6 +179,7 @@ void CollisionResolver::Collide() {
   find_mutex_.lock();
   ResolveCollisions();
   ProcessInContactWith();
+  CollideParticles();
   find_mutex_.unlock();
 
   // PrintMetrics();
@@ -200,6 +208,10 @@ void CollisionResolver::UpdateObjectPositions() {
 
     // TODO: do we need this?
     if (length2(obj->target_position) < 0.0001f) {
+      continue;
+    }
+
+    if (obj->life < 0.0f) {
       continue;
     }
 
@@ -495,10 +507,20 @@ vector<shared_ptr<CollisionBO>> GetCollisionsBO(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
   BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
 
+  // if (obj1->type == GAME_OBJ_PLAYER) {
+  //   cout << "TEsting here: " << obj1->name << " - " << obj2->GetDisplayName() << endl;
+  //   cout << "s1: " << s1 << endl;
+  //   cout << "s2: " << s2 << endl;
+  // }
+
   vec3 point_of_contact;
   if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
     return {};
   }
+
+  // if (obj1->type == GAME_OBJ_PLAYER) {
+  //   cout << "Yes" << endl;
+  // }
 
   vector<shared_ptr<CollisionBO>> cols;
   for (const auto& [bone_id, bs] : obj1->bones) {
@@ -573,7 +595,7 @@ vector<shared_ptr<CollisionQP>> GetCollisionsQP(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s;
   s.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
   s.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
-    obj1->GetAsset()->bounding_sphere.radius;
+    obj1->GetBoundingSphere().radius;
 
   vector<shared_ptr<CollisionQP>> cols;
   if (obj2->aabb_tree) {
@@ -596,7 +618,7 @@ vector<shared_ptr<CollisionQB>> GetCollisionsQB(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1;
   s1.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
   s1.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
-    obj1->GetAsset()->bounding_sphere.radius;
+    obj1->GetBoundingSphere().radius;
 
   BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
   vec3 displacement_vector, point_of_contact;
@@ -751,6 +773,7 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_HQ: Merge(collisions, GetCollisionsQH(obj2, obj1)); break;
     case CP_OS: Merge(collisions, GetCollisionsSO(obj2, obj1)); break;
     case CP_OP: Merge(collisions, GetCollisionsOP(obj1, obj2)); break;
+    case CP_OB: Merge(collisions, GetCollisionsBO(obj2, obj1)); break;
     default: break;  
   }
   return collisions;
@@ -1410,18 +1433,23 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 
     obj2->life -= 10;
     resources_->GetConfigs()->taking_hit = 30.0f;
-    obj2->paralysis_cooldown = 100;
+    // obj2->paralysis_cooldown = 100;
 
     if (obj2->life <= 0.0f) {
       obj2->life = 100.0f;
-      obj2->position = resources_->GetConfigs()->respawn_point;
+      // obj2->position = resources_->GetConfigs()->respawn_point;
+      obj2->position = resources_->GetDungeon().GetPlatform();
     }
   } else if (obj2 && obj2->IsCreature()) {
+    if (obj2->GetAsset()->name == "spider-web") {
+      return;
+    }
+
     // (obj2->GetAsset()->name == "spider" 
     // || obj2->GetAsset()->name == "cephalid")) {
     obj2->life -= 40;
-    resources_->CreateParticleEffect(32, obj1->position, normal * 2.0f, 
-      vec3(1.0, 0.5, 0.5), 1.0, 40.0f, 5.0f);
+    resources_->CreateParticleEffect(10, obj1->position, normal * 1.0f, 
+      vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
 
     // TODO: change.
     if (obj1->GetAsset()->name == "harpoon-missile" && 
@@ -1550,8 +1578,38 @@ void CollisionResolver::ResolveCollisions() {
     const vec3& displacement_vector = c->displacement_vector;
     vec3 normal = c->normal;
 
+    if (obj1 && obj1->asset_group && obj1->GetAsset()->name == "spider-web") {
+      if (obj2 && obj2->type == GAME_OBJ_PLAYER) {
+        obj1->life = -1.0f;
+        obj1->status = STATUS_DEAD;
+        resources_->GetConfigs()->taking_hit = 30.0f;
+      } else {
+        if (c->collision_pair != CP_SP) {
+          continue;
+        }
+      }
+    }
+
+    if (obj2 && obj2->asset_group && obj2->GetAsset()->name == "spider-web") {
+      continue;
+    }
+
     if (obj1->type == GAME_OBJ_MISSILE) {
       ResolveMissileCollision(c);
+      continue;
+    }
+
+    if (obj1->type == GAME_OBJ_PARTICLE) {
+      obj1->life = -1.0f;
+      if (obj2) {
+        if (obj2->IsCreature()) {
+          obj2->life -= 1.0f;
+          if (obj2->life <= 0) {
+            obj2->status = STATUS_DYING;
+            obj2->frame = 0;
+          }
+        }
+      }
       continue;
     }
 
@@ -1602,6 +1660,29 @@ void CollisionResolver::ResolveCollisions() {
     obj1->target_position = obj1->position;
     resources_->UpdateObjectPosition(obj1);
   }   
+}
+
+void CollisionResolver::CollideParticles() {
+  // for (int i = 0; i < kMaxParticles; i++) {
+  //   Particle& p = particle_container_[i];
+  //   if (--p.life < 0) {
+  //     p.life = -1;
+  //     p.type = nullptr;
+  //     p.frame = 0;
+  //     continue;
+  //   }
+
+  //   if (p.type == nullptr) continue;
+  //   if (int(p.life) % p.type->keep_frame == 0) {
+  //     p.frame++;
+  //   }
+
+  //   if (p.type->behavior == PARTICLE_FALL) {
+  //     // Simulate simple physics : gravity only, no collisions
+  //     p.speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
+  //     p.pos += p.speed * 0.01f;
+  //   }
+  // }
 }
 
 void CollisionResolver::FindCollisionsAsync() {

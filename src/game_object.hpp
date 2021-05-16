@@ -50,6 +50,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool freeze = false;
   bool never_cull = false;
   bool collidable = true;
+  char dungeon_piece_type = '\0';
+  ivec2 dungeon_tile = ivec2(-1, -1);
 
   string active_animation = "";
   double frame = 0;
@@ -76,6 +78,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   AiState ai_state = IDLE;
   float state_changed_at = 0;
   queue<shared_ptr<Action>> actions;
+  shared_ptr<Action> prev_action = nullptr;
 
   // TODO: move to polymorphed class.   
   double extraction_completion = 0.0;
@@ -88,6 +91,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   int cooldown = 0;
   bool loaded_collision = false;
+  unordered_map<string, float> cooldowns;
 
   // TODO: maybe would be better to attach a status.
   int paralysis_cooldown = 0;
@@ -116,6 +120,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsNpc();
   bool IsRegion();
   bool IsCollidable();
+  bool IsDungeonPiece();
+  AssetType GetType();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -350,6 +356,22 @@ struct WaitAction : Action {
   float until;
   WaitAction(float until) 
     : Action(ACTION_WAIT), until(until) {}
+};
+
+struct MoveToPlayerAction : Action {
+  MoveToPlayerAction() 
+    : Action(ACTION_MOVE_TO_PLAYER) {}
+};
+
+struct MoveAwayFromPlayerAction : Action {
+  MoveAwayFromPlayerAction() 
+    : Action(ACTION_MOVE_AWAY_FROM_PLAYER) {}
+};
+
+struct UseAbilityAction : Action {
+  string ability;
+  UseAbilityAction(const string& ability) 
+    : Action(ACTION_USE_ABILITY), ability(ability) {}
 };
 
 shared_ptr<Player> CreatePlayer(Resources* resources);

@@ -36,5 +36,6 @@ void main() {
   // float alpha = blend_factor * tex_color.a;
   float alpha = tex_color.a;
 
-  color = vec4(particle_color.rgb, alpha);
+  // color = vec4(particle_color.rgb, alpha);
+  color = tex_color;
 }

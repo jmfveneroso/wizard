@@ -174,9 +174,19 @@ OBB GameObject::GetOBB() {
 }
 
 bool GameObject::IsMovingObject() {
-  if (type == GAME_OBJ_PLAYER) return true;
-  if (type != GAME_OBJ_DEFAULT && type != GAME_OBJ_MISSILE || 
-      parent_bone_id != -1) {
+  switch (type) {
+    case GAME_OBJ_PLAYER:
+      return true;
+    case GAME_OBJ_DEFAULT:
+    case GAME_OBJ_MISSILE:
+      break;
+    case GAME_OBJ_PARTICLE:
+      return true;
+    default:
+      return false;
+  }
+
+  if (parent_bone_id != -1) {
     return false;
   }
 
@@ -195,6 +205,12 @@ bool GameObject::IsItem() {
   if (!asset_group) return false;
   shared_ptr<GameAsset> asset = GetAsset();
   return asset->item;
+}
+
+bool GameObject::IsDungeonPiece() {
+  return dungeon_piece_type != '\0' && dungeon_piece_type != 'P' && 
+    dungeon_piece_type != 'D' && dungeon_piece_type != 'd' &&
+    dungeon_piece_type != 'G' && dungeon_piece_type != 'g';
 }
 
 bool GameObject::IsExtractable() {
@@ -423,7 +439,7 @@ void Region::ToXml(pugi::xml_node& parent) {
 
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
   ObjPtr obj;
-  if (asset_name == "door") {
+  if (asset_name == "door" || asset_name == "dungeon_door") {
     obj = make_shared<Door>(resources);
   // TODO: change to extract from xml.
   } else if (asset_name == "crystal" || asset_name == "metal-eye-dock") {
@@ -728,7 +744,6 @@ PhysicsBehavior GameObject::GetPhysicsBehavior() {
 
 bool GameObject::IsCreature() {
   if (!asset_group) return false;
-  if (GetAsset()->name == "fish") return true;
   return GetAsset()->type == ASSET_CREATURE;
 }
 
@@ -1081,6 +1096,13 @@ bool GameObject::IsCollidable() {
   if (is_spider) is_spider = GetAsset()->name == "spider";
 
   switch (type) {
+    case GAME_OBJ_PARTICLE: {
+      shared_ptr<Particle> particle = static_pointer_cast<Particle>(shared_from_this());
+      if (particle->particle_type) {
+        return (particle->particle_type->name == "fireball");
+      }
+      return false;
+    }
     case GAME_OBJ_DEFAULT:
     case GAME_OBJ_PLAYER:
     case GAME_OBJ_DOOR:
@@ -1115,9 +1137,14 @@ void Sector::AddGameObject(ObjPtr obj) {
 }
 
 void Sector::RemoveObject(ObjPtr obj) {
-  if (objects.find(obj->id) != objects.end()) {
+  if (objects.find(obj->id) == objects.end()) {
     throw runtime_error(string("Object ") + obj->name + 
       " does not exist in sector.");
   }
   objects.erase(obj->id);
+}
+
+AssetType GameObject::GetType() {
+  if (!asset_group) return ASSET_NONE;
+  return GetAsset()->type;
 }

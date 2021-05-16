@@ -19,6 +19,8 @@ uniform vec3 light_direction;
 uniform vec3 lighting_color;
 uniform float outdoors;
 uniform vec3 camera_pos;
+uniform vec3 player_pos;
+uniform float light_radius;
 
 // struct DirLight {
 //   vec3 direction;
@@ -134,5 +136,11 @@ void main(){
     out_color += CalcPointLight(point_lights[i], n, 
       in_data.position, diffuse_color);    
   }
+
+  float d = distance(player_pos, in_data.position);
+  float depth = clamp(d / light_radius, 0, 1);
+  vec3 fog_color = outdoors * out_color + vec3(0, 0, 0);
+  out_color = mix(out_color, fog_color, depth);
+
   color = vec4(out_color, 1.0);
 }

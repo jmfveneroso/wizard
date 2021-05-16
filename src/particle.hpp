@@ -18,34 +18,35 @@ struct ParticleType {
 };
 
 struct ParticleGroup : GameObject {
-  vector<Particle> particles;
+  vector<shared_ptr<Particle>> particles;
   ParticleGroup(Resources* resources) 
     : GameObject(resources, GAME_OBJ_PARTICLE_GROUP) {}
 };
 
-struct Particle {
-  shared_ptr<ParticleType> type = nullptr;
+struct Particle : GameObject {
+  shared_ptr<ParticleType> particle_type = nullptr;
 
   float size;
   vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
 
-  vec3 pos;
-  vec3 speed;
-  int life = -1;
   int frame = 0;
 
   float camera_distance;
-  bool operator<(const Particle& that) const {
-    if (!this->type) return false;
-    if (!that.type) return true;
+  bool operator<(const shared_ptr<Particle>& that) const {
+    if (!this->particle_type) return false;
+    if (!that->particle_type) return true;
 
     // Sort in reverse order : far particles drawn first.
-    if (this->type->id == that.type->id) {
-      return this->camera_distance > that.camera_distance;
+    if (this->particle_type->id == that->particle_type->id) {
+      return this->camera_distance > that->camera_distance;
     }
 
     // Particles with the smaller particle type id first.
-    return this->type->id < that.type->id;
+    return this->particle_type->id < that->particle_type->id;
+  }
+
+  Particle(Resources* resources) : GameObject(resources, GAME_OBJ_PARTICLE) {
+    life = -1;
   }
 };
 

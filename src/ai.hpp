@@ -20,6 +20,10 @@ class AI {
   queue<ObjPtr> ai_tasks_;
   int running_tasks_ = 0;
 
+  int dungeon_visibility_[40][40];
+  ivec2 last_player_pos = ivec2(-1, -1);
+
+
   shared_ptr<Waypoint> GetClosestWaypoint(const vec3& position);
   void ChangeState(ObjPtr obj, AiState state);
   ObjPtr GetClosestUnit(ObjPtr spider);
@@ -46,6 +50,12 @@ class AI {
   bool ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action);
   bool ProcessAnimationAction(ObjPtr spider, shared_ptr<AnimationAction> action);
   bool ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action);
+  bool ProcessMoveToPlayerAction(ObjPtr spider, 
+    shared_ptr<MoveToPlayerAction> action);
+  bool ProcessMoveAwayFromPlayerAction(ObjPtr spider, 
+    shared_ptr<MoveAwayFromPlayerAction> action);
+  bool ProcessUseAbilityAction(ObjPtr spider, 
+    shared_ptr<UseAbilityAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessMentalState(ObjPtr spider);

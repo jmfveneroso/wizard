@@ -4,6 +4,7 @@
 const int kWindowWidth = 1280;
 const int kWindowHeight = 800;
 const int kTileSize = 52;
+const int kMaxStash = 100;
 
 Inventory::Inventory(shared_ptr<Resources> asset_catalog, 
   shared_ptr<Draw2D> draw_2d) : resources_(asset_catalog), 
@@ -77,6 +78,7 @@ void Inventory::DrawItemMatrix() {
   vector<ItemData>& item_data = resources_->GetItemData();
   shared_ptr<Configs> configs = resources_->GetConfigs();
   int (&item_matrix)[8][7] = configs->item_matrix;
+  int (&item_quantities)[8][7] = configs->item_quantities;
 
   for (int x = 0; x < 8; x++) {
     for (int y = 0; y < 7; y++) {
@@ -88,7 +90,9 @@ void Inventory::DrawItemMatrix() {
       if (IsMouseInRectangle(left, right, bottom, top)) {
         if (lft_click_ && selected_item_ == 0) {
           selected_item_ = item_matrix[x][y];
+          selected_qnty_ = item_quantities[x][y];
           item_matrix[x][y] = 0;
+          item_quantities[x][y] = 0;
           old_pos_x_ = x;
           old_pos_y_ = y;
           hold_offset_x_ = mouse_x_ - left;
@@ -100,16 +104,34 @@ void Inventory::DrawItemMatrix() {
         if (IsMouseInRectangle(left, right, bottom, top)) {
           if (item_matrix[x][y] == 0) {
             item_matrix[x][y] = selected_item_;
+            item_quantities[x][y] = selected_qnty_;
+            selected_item_ = 0;
+            selected_qnty_ = 0;
+            old_pos_x_ = 0;
+            old_pos_y_ = 0;
+          } else if (item_matrix[x][y] == selected_item_) {
+            if (item_quantities[x][y] < kMaxStash) {
+              if (item_quantities[x][y] + selected_qnty_ <= kMaxStash) {
+                item_quantities[x][y] += selected_qnty_;
+                selected_item_ = 0;
+                selected_qnty_ = 0;
+              } else {
+                selected_qnty_ = item_quantities[x][y] + selected_qnty_ - kMaxStash;
+                item_quantities[x][y] = kMaxStash;
+              }
+            }
           }
-          selected_item_ = 0;
-          old_pos_x_ = 0;
-          old_pos_y_ = 0;
         }
       }
 
       const int item_id = item_matrix[x][y];
+      const int item_quantity = item_quantities[x][y];
       if (item_id != 0) {
         draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
+
+        string qnty = boost::lexical_cast<string>(item_quantity);
+        draw_2d_->DrawText(qnty, left + 34, kWindowHeight - (top + 40), 
+              vec4(1), 1.0, false, "avenir_light_oblique");
       }
 
       if (rgt_click_) {
@@ -128,7 +150,9 @@ void Inventory::DrawSpellbar() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   vector<ItemData>& item_data = resources_->GetItemData();
   int (&item_matrix)[8][7] = configs->item_matrix;
+  int (&item_quantities)[8][7] = configs->item_quantities;
   int (&spellbar)[8] = configs->spellbar;
+  int (&spellbar_quantities)[8] = configs->spellbar_quantities;
 
   for (int x = 0; x < 8; x++) {
     int top = 738;
@@ -139,6 +163,7 @@ void Inventory::DrawSpellbar() {
     if (IsMouseInRectangle(left, right, bottom, top)) {
       if (lft_click_ && selected_item_ == 0) {
         selected_item_ = spellbar[x];
+        selected_qnty_ = spellbar_quantities[x];
         spellbar[x] = 0;
         old_pos_x_ = x;
         old_pos_y_ = -1;
@@ -147,12 +172,21 @@ void Inventory::DrawSpellbar() {
       } else if (!lft_click_ && selected_item_ != 0) {
         if (spellbar[x] == 0) {
           spellbar[x] = selected_item_;
-        } else {
-          item_matrix[old_pos_x_][old_pos_y_] = selected_item_;
+          spellbar_quantities[x] = selected_qnty_;
+          selected_item_ = 0;
+          selected_qnty_ = 0;
+        } else if (spellbar[x] == selected_item_) {
+          if (spellbar[x] < kMaxStash) {
+            if (spellbar_quantities[x] + selected_qnty_ <= kMaxStash) {
+              spellbar_quantities[x] += selected_qnty_;
+              selected_item_ = 0;
+              selected_qnty_ = 0;
+            } else {
+              selected_qnty_ = spellbar_quantities[x] + selected_qnty_ - kMaxStash;
+              spellbar_quantities[x] = kMaxStash;
+            }
+          }
         }
-        selected_item_ = 0;
-        old_pos_x_ = 0;
-        old_pos_y_ = 0;
       }
     }
   }
@@ -161,30 +195,34 @@ void Inventory::DrawSpellbar() {
 void Inventory::MoveItemBack() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   int (&item_matrix)[8][7] = configs->item_matrix;
+  int (&item_quantities)[8][7] = configs->item_quantities;
   int (&spellbar)[8] = configs->spellbar;
+  int (&spellbar_quantities)[8] = configs->spellbar_quantities;
   vector<ItemData>& item_data = resources_->GetItemData();
 
   int top = win_y_ + 16;
-  int bottom = bottom + 464;
+  int bottom = top + 800;
   int left = win_x_ + 16;
   int right = left + 784;
   if (IsMouseInRectangle(left, right, bottom, top)) {
     if (old_pos_y_ == -1) {
       spellbar[old_pos_x_] = selected_item_;
+      spellbar_quantities[old_pos_x_] = selected_qnty_;
     } else if (old_pos_x_ == -1) {
     } else {
       item_matrix[old_pos_x_][old_pos_y_] = selected_item_;
+      item_quantities[old_pos_x_][old_pos_y_] = selected_qnty_;
     }
   } else {
-    vec3 position = camera_.position + camera_.direction * 10.0f;
-
-    // TODO: if the item is another item, drop it instead.
-    ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-      item_data[selected_item_].asset_name, position);
-    obj->CalculateCollisionData();
+    // // TODO: drop item with quantity.
+    // vec3 position = camera_.position + camera_.direction * 10.0f;
+    // ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+    //   item_data[selected_item_].asset_name, position);
+    // obj->CalculateCollisionData();
   }
 
   selected_item_ = 0;
+  selected_qnty_ = 0;
   old_pos_x_ = 0;
   old_pos_y_ = 0;
 }
@@ -193,7 +231,6 @@ void Inventory::DrawInventory(const Camera& camera, int win_x, int win_y,
   GLFWwindow* window) {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   vector<ItemData>& item_data = resources_->GetItemData();
-  int (&item_matrix)[8][7] = configs->item_matrix;
   draw_2d_->DrawImage("inventory", win_x, win_y, 800, 800, 1.0);
   
   DrawItemMatrix(); 
@@ -289,6 +326,7 @@ void Inventory::DrawCraftTable(const Camera& camera, int win_x, int win_y,
     if (IsMouseInRectangle(left, right, bottom, top)) {
       if (lft_click_ && selected_item_ == 0) {
         selected_item_ = craft_table[i];
+        selected_qnty_ = 1;
         craft_table[i] = 0;
         old_pos_x_ = -1;
         old_pos_y_ = i;
@@ -298,10 +336,11 @@ void Inventory::DrawCraftTable(const Camera& camera, int win_x, int win_y,
         if (IsMouseInRectangle(left, right, bottom, top)) {
           if (craft_table[i] == 0) {
             craft_table[i] = selected_item_;
+            selected_qnty_--;
+            if (selected_qnty_ == 0) {
+              selected_item_ = 0;
+            }
           }
-          selected_item_ = 0;
-          old_pos_x_ = 0;
-          old_pos_y_ = 0;
         }
       }
     }
@@ -335,7 +374,7 @@ void Inventory::DrawCraftTable(const Camera& camera, int win_x, int win_y,
         if (too_many_items) continue;
 
         if (formula.size() == 0) {
-          resources_->InsertItemInInventory(spell.item_id);
+          resources_->InsertItemInInventory(spell.item_id, 100);
           resources_->AddMessage(string("You crafted " + spell.name));
           for (int i = 0; i < 5; i++) {
             craft_table[i] = 0;
@@ -532,14 +571,13 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
   switch (state_) {
     case INVENTORY_ITEMS:
       DrawInventory(camera, win_x, win_y, window);
+      DrawCraftTable(camera, win_x, win_y, window);
       break;
     case INVENTORY_SPELLBOOK:
       DrawSpellbook();
-      DrawSpellbar(); 
       break;
     case INVENTORY_QUEST_LOG:
       DrawQuestLog(window);
-      DrawSpellbar(); 
       break;
     case INVENTORY_CRAFT:
       DrawInventory(camera, win_x, win_y, window);

@@ -270,6 +270,7 @@ class CollisionResolver {
   void ResolveMissileCollision(ColPtr c);
   void ResolveCollisions();
   void ProcessInContactWith();
+  void CollideParticles();
 
   void ProcessTentativePair(ObjPtr obj1, ObjPtr obj2);
 

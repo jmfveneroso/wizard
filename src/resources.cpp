@@ -41,9 +41,11 @@ void Resources::Init() {
   hand_obj->Load("hand-001", "hand", player_->position);
 
   CreateSkydome(this);
+  CreateDungeon();
 
   // TODO: move to particle.
   InitMissiles();
+  InitParticles();
 
   script_manager_ = make_shared<ScriptManager>(this);
 }
@@ -490,6 +492,15 @@ void Resources::InitMissiles() {
   }
 }
 
+void Resources::InitParticles() {
+  for (int i = 0; i < kMaxParticles; i++) {
+    shared_ptr<Particle> p = make_shared<Particle>(this);
+    p->name = "particle-" + boost::lexical_cast<string>(i);
+    particle_container_.push_back(p);
+    AddGameObject(p);
+  }
+}
+
 void Resources::Cleanup() {
   // TODO: cleanup VBOs.
   for (auto it : shaders_) {
@@ -560,7 +571,9 @@ void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
     if (sector->name != obj->current_sector->name) {
       for (shared_ptr<Event> e : sector->on_enter_events) {
         shared_ptr<RegionEvent> region_event = static_pointer_cast<RegionEvent>(e);
+        cout << "Entered my man" << endl;
         if (obj->name != region_event->unit) continue;
+        cout << "Entered my man 2" << endl;
         AddEvent(e);
       }
 
@@ -682,15 +695,13 @@ shared_ptr<Region> Resources::GetRegion(vec3 position) {
 // TODO: move to particle file.
 int Resources::FindUnusedParticle(){
   for (int i = last_used_particle_; i < kMaxParticles; i++) {
-    if (particle_container_[i].life < 0) {
-      last_used_particle_ = i;
+    if (particle_container_[i]->life < 0) {
       return i;
     }
   }
 
   for (int i = 0; i < kMaxParticles; i++) {
-    if (particle_container_[i].life < 0) {
-      last_used_particle_ = i;
+    if (particle_container_[i]->life < 0) {
       return i;
     }
   }
@@ -703,7 +714,7 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
   vec3 color, float size, float life, float spread, const string& type) {
   for (int i = 0; i < num_particles; i++) {
     int particle_index = FindUnusedParticle();
-    Particle& p = particle_container_[particle_index];
+    shared_ptr<Particle> p = particle_container_[particle_index];
 
     if (type == "splash") {
       ObjPtr ripple = CreateGameObjFromAsset(this, "z-quad", pos + vec3(0, 1.0f, 0));
@@ -712,16 +723,17 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
       pos += vec3(0, 3.5f, 0);
     }
 
-    p.frame = 0;
-    p.life = life;
-    p.pos = pos;
-    p.color = vec4(color, 0.0f);
+    p->frame = 0;
+    p->life = life;
+    p->position = pos;
+    p->target_position = pos;
+    p->color = vec4(color, 0.0f);
 
-    p.type = GetParticleTypeByName(type);
+    p->particle_type = GetParticleTypeByName(type);
     if (size < 0) {
-      p.size = (rand() % 1000) / 500.0f + 0.1f;
+      p->size = (rand() % 1000) / 500.0f + 0.1f;
     } else {
-      p.size = size;
+      p->size = size;
     }
     
     vec3 main_direction = normal * 5.0f;
@@ -730,20 +742,31 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
       (rand() % 2000 - 1000.0f) / 1000.0f,
       (rand() % 2000 - 1000.0f) / 1000.0f
     );
-    p.speed = main_direction + rand_direction * spread;
+    p->speed = main_direction + rand_direction * spread;
+
+    int r = Random(0, 4);
+    if (type == "fireball" && r == 0) {
+      p->collision_type_ = COL_QUICK_SPHERE;
+      p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
+      UpdateObjectPosition(p);
+      p->physics_behavior = PHYSICS_NORMAL;
+    } else {
+      p->collision_type_ = COL_NONE;
+      p->physics_behavior = PHYSICS_NONE;
+    }
   }
 } 
 
 // TODO: this should definitely go elsewhere. 
 void Resources::CreateChargeMagicMissileEffect() {
   int particle_index = FindUnusedParticle();
-  Particle& p = particle_container_[particle_index];
-  p.frame = 0;
-  p.life = 40;
-  p.pos = vec3(0.35, -0.436, 0.2);
-  p.color = vec4(1.0f, 1.0f, 1.0f, 0.0f);
-  p.type = GetParticleTypeByName("charge-magic-missile");
-  p.size = 0.5;
+  shared_ptr<Particle> p = particle_container_[particle_index];
+  p->frame = 0;
+  p->life = 40;
+  p->position = vec3(0.35, -0.436, 0.2);
+  p->color = vec4(1.0f, 1.0f, 1.0f, 0.0f);
+  p->particle_type = GetParticleTypeByName("charge-magic-missile");
+  p->size = 0.5;
 
   // Create object.
   shared_ptr<ParticleGroup> new_particle_group = make_shared<ParticleGroup>(
@@ -758,26 +781,36 @@ void Resources::CreateChargeMagicMissileEffect() {
 
 // TODO: move to particle file. Maybe physics.
 void Resources::UpdateParticles() {
+  Lock();
   for (int i = 0; i < kMaxParticles; i++) {
-    Particle& p = particle_container_[i];
-    if (--p.life < 0) {
-      p.life = -1;
-      p.type = nullptr;
-      p.frame = 0;
+    shared_ptr<Particle> p = particle_container_[i];
+    if (--p->life < 0) {
+      p->life = -1;
+      p->particle_type = nullptr;
+      p->frame = 0;
+      p->collision_type_ = COL_NONE;
+      p->physics_behavior = PHYSICS_NONE;
       continue;
     }
 
-    if (p.type == nullptr) continue;
-    if (int(p.life) % p.type->keep_frame == 0) {
-      p.frame++;
+    if (p->particle_type == nullptr) continue;
+    if (int(p->life) % p->particle_type->keep_frame == 0) {
+      p->frame++;
     }
 
-    if (p.type->behavior == PARTICLE_FALL) {
+    if (p->particle_type->behavior == PARTICLE_FALL) {
       // Simulate simple physics : gravity only, no collisions
-      p.speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
-      p.pos += p.speed * 0.01f;
+      p->speed += vec3(0.0f, -9.81f, 0.0f) * 0.01f;
+   
+      if (p->particle_type->name == "fireball") {
+        p->target_position = p->position + p->speed * 0.01f;
+      } else {
+        p->position += p->speed * 0.01f;
+        p->target_position = p->position;
+      }
     }
   }
+  Unlock();
 }
 
 // TODO: this should probably go to main.
@@ -816,6 +849,28 @@ void Resources::CastMagicMissile(const Camera& camera) {
   );
   obj->rotation_matrix = rotation_matrix;
   UpdateObjectPosition(obj);
+}
+
+void Resources::CastBurningHands(const Camera& camera) {
+  vec3 right = normalize(cross(camera.direction, camera.up));
+  vec3 up = cross(right, camera.direction);
+
+  vec3 pos = camera.position + camera.direction * 0.5f + right * 1.21f +  
+    up * -2.256f;
+
+  vec3 p2 = camera.position + camera.direction * 3000.0f;
+  vec3 normal = normalize(p2 - pos);
+  pos += normal * 5.0f;
+  normal *= 20.0f;
+
+  float rand_x = Random(-10, 11) / 40.0f;
+  float rand_y = Random(-10, 11) / 40.0f;
+  pos += up * rand_y + right * rand_x;
+
+  float size = Random(1, 51) / 20.0f;
+
+  CreateParticleEffect(2, pos, normal,
+    vec3(1.0, 1.0, 1.0), size, 48.0f, 15.0f, "fireball");
 }
 
 void Resources::CastHarpoon(const Camera& camera) {
@@ -959,7 +1014,8 @@ vector<ObjPtr> Resources::GenerateOptimizedOctreeAux(
   vector<ObjPtr> all_objs = top_objs;
   vector<ObjPtr> bot_objs;
   for (auto [id, obj] : octree_node->objects) {
-    if ((obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_DOOR) || 
+    if ((obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_ACTIONABLE
+         && obj->type != GAME_OBJ_DOOR) || 
       obj->GetAsset()->physics_behavior != PHYSICS_FIXED) {
       continue;
     }
@@ -1020,6 +1076,28 @@ void PrintOctree(shared_ptr<OctreeNode> octree_node) {
       cout << so.obj->name << "[" << so.start << ", " << so.end << "], "; 
     }
     cout << endl;
+  }
+}
+
+void ClearOctree(shared_ptr<OctreeNode> octree_node) {
+  queue<tuple<shared_ptr<OctreeNode>, int, int>> q;
+  q.push({ octree_node, 0, 0 });
+
+  int counter = 0;
+  while (!q.empty()) {
+    auto& [current, depth, child_index] = q.front();
+    q.pop();
+
+    for (int i = 0; i < 8; i++) {
+      if (!current->children[i]) continue;
+      q.push({ current->children[i], depth + 1, i });
+    }
+
+    current->static_objects.clear();
+    current->moving_objs.clear();
+    current->objects.clear();
+    current->lights.clear();
+    current->items.clear();
   }
 }
 
@@ -1118,6 +1196,7 @@ void Resources::RemoveDead() {
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
     if (obj->type == GAME_OBJ_PLAYER) continue;
+    if (obj->type == GAME_OBJ_PARTICLE) continue;
     if (!obj->IsCreature()) continue;
     if (obj->status != STATUS_DEAD) continue;
     dead_unit_names.push_back(obj->name);
@@ -1135,6 +1214,7 @@ void Resources::RemoveDead() {
   for (auto it = moving_objects_.begin(); it < moving_objects_.end(); it++) {
     ObjPtr obj = *it;
     if (obj->type == GAME_OBJ_PLAYER) continue;
+    if (obj->type == GAME_OBJ_PARTICLE) continue;
     if (obj->GetAsset()->type != ASSET_CREATURE) continue;
     if (obj->status != STATUS_DEAD) continue;
     RemoveObject(obj);
@@ -1217,6 +1297,7 @@ bool Resources::CollideRayAgainstTerrain(vec3 start, vec3 end, ivec2& tile) {
   return false;
 }
 
+// TODO: move to collision or collision resolver.
 ObjPtr CollideRayAgainstObjectsAux(
   shared_ptr<OctreeNode> node, vec3 position, vec3 direction
 ) {
@@ -1532,6 +1613,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     if (item->status == STATUS_DEAD) continue;
     if (item->name == "hand-001") continue;
  
+    // float distance = std::max(length(position - item->position) - item->GetBoundingSphere().radius, 0.0f);
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
 
@@ -1726,7 +1808,7 @@ vector<ObjPtr>& Resources::GetExtractables() {
   return extractables_; 
 }
 
-Particle* Resources::GetParticleContainer() { return particle_container_; }
+vector<shared_ptr<Particle>>& Resources::GetParticleContainer() { return particle_container_; }
 
 shared_ptr<Player> Resources::GetPlayer() { return player_; }
 unordered_map<string, ObjPtr>& Resources::GetObjects() { 
@@ -1868,8 +1950,10 @@ bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) 
 
 void Resources::RegisterOnEnterEvent(const string& region_name, 
   const string& unit_name, const string& callback) {
+  cout << region_name << " -> " << unit_name << endl;
   shared_ptr<Sector> sector = GetSectorByName(region_name);
   if (sector) {
+    cout << "XXX" << endl;
     sector->on_enter_events.push_back(
       make_shared<RegionEvent>("enter", region_name, unit_name, callback)
     );
@@ -1979,11 +2063,27 @@ void Resources::TurnOffActionable(const string& name) {
   }
 }
 
-bool Resources::InsertItemInInventory(int item_id) {
+bool Resources::InsertItemInInventory(int item_id, int quantity) {
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 7; j++) {
+      if (configs_->item_matrix[j][i] == item_id) {
+        if (configs_->item_quantities[j][i] < 100) {
+          configs_->item_quantities[j][i] += quantity;
+          if (configs_->item_quantities[j][i] > 100) {
+            quantity = configs_->item_quantities[j][i] = 100;
+          } else {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 7; j++) {
       if (configs_->item_matrix[j][i] == 0) {
         configs_->item_matrix[j][i] = item_id;
+        configs_->item_quantities[j][i] = quantity;
         return true;
       }
     }
@@ -2509,6 +2609,17 @@ void Resources::ProcessEvents() {
   events_.clear();
 }
 
+void Resources::UpdateExpirables() {
+  for (auto& [name, obj] : objects_) {
+    if (!obj->asset_group) continue;
+    if (obj->GetAsset()->name != "spider-web") continue;
+    obj->life -= 0.1;
+    if (obj->life < 0) {
+      obj->status = STATUS_DEAD;
+    }
+  }
+}
+
 void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
@@ -2520,6 +2631,7 @@ void Resources::RunPeriodicEvents() {
   ProcessCallbacks();
   ProcessSpawnPoints();
   UpdateAnimationFrames();
+  UpdateExpirables();
   UpdateParticles();
   UpdateFrameStart();
   UpdateMissiles();
@@ -2544,7 +2656,7 @@ void Resources::RunPeriodicEvents() {
   if (configs_->taking_hit < 0.0) {
     configs_->player_speed = configs_->target_player_speed;
   } else {
-    configs_->player_speed = configs_->target_player_speed / 6.0f;
+    configs_->player_speed = configs_->target_player_speed / 5.0f;
   }
 }
 
@@ -2571,4 +2683,230 @@ void Resources::ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2) {
   shared_ptr<CollisionEvent> e = obj1->on_collision_events[name];
   events_.push_back(make_shared<CollisionEvent>(obj1->name, 
     obj2->name, e->callback));
+}
+
+void Resources::DeleteAllObjects() {
+  Lock();
+  auto it = objects_.begin();
+  while (it != objects_.end()) {
+    auto& [name, obj] = *it;
+    if (name == "hand-001" || name == "skydome" || name == "player") {
+      ++it;
+      continue;
+    }
+    ++it;
+    objects_.erase(name);
+  }
+  moving_objects_.clear();
+  items_.clear();
+  extractables_.clear();
+  lights_.clear();
+  missiles_.clear();
+  particle_container_.clear();
+
+  ClearOctree(GetOctreeRoot());
+  moving_objects_.push_back(GetPlayer());
+  UpdateObjectPosition(GetPlayer(), false);
+  Unlock();
+
+  InitMissiles();
+  InitParticles();
+}
+
+ObjPtr CreateDungeonRoom(Resources* resources, const string& asset_name, 
+  vec3 position, int rotation) {
+  ObjPtr room = CreateGameObjFromAsset(resources, asset_name, position);
+
+  if (rotation > 0) {
+    room->rotation_matrix = rotate(mat4(1.0), rotation * 1.57f, vec3(0, 1, 0));
+    room->cur_rotation = quat_cast(room->rotation_matrix);
+    room->dest_rotation = quat_cast(room->rotation_matrix);
+    resources->UpdateObjectPosition(room);
+  }
+  room->CalculateCollisionData();
+  return room;
+}
+
+ObjPtr Resources::CreateBookshelf(const vec3& pos, const ivec2& tile) {
+  char** dungeon_map = dungeon_.GetDungeon();
+
+  int rotation = 0;
+  static vector<ivec2> offsets { ivec2(0, -1), ivec2(-1, 0), ivec2(0, 1), ivec2(1, 0) };
+  for (int i = 0; i < 4; i++) {
+    ivec2 off = offsets[i];
+    if (!dungeon_.IsTileClear(tile + off)) {
+      rotation = i;
+      break;
+    }
+  }
+
+  int book_num = Random(0, 4);
+  switch (book_num) {
+    case 1:
+      CreateDungeonRoom(this, "book_1", pos, rotation);
+      break;
+    case 2:
+      CreateDungeonRoom(this, "book_2", pos, rotation);
+      break;
+    case 3:
+      CreateDungeonRoom(this, "book_1", pos, rotation);
+      CreateDungeonRoom(this, "book_2", pos, rotation);
+      break;
+    default:
+      break;
+  }
+
+  return CreateDungeonRoom(this, "bookshelf", pos, rotation);
+}
+
+void Resources::CreateDungeon() {
+  vec3 offset = vec3(10000, 300, 10000);
+
+  dungeon_.GenerateDungeon();
+  char** dungeon_map = dungeon_.GetDungeon();
+
+  float y = 0;
+  for (int x = 0; x < 40; x++) {
+    for (int z = 0; z < 40; z++) {
+      float room_x = 10.0f * x;
+      float room_z = 10.0f * z;
+
+      ObjPtr tile = nullptr;
+      ObjPtr tile2 = nullptr;
+      vec3 pos = offset + vec3(room_x, y, room_z);
+      switch (dungeon_map[x][z]) { 
+        case '+': {
+          tile = CreateDungeonRoom(this, "dungeon_corner", pos, 0);
+          break;
+        }
+        case 'r':
+          CreateGameObjFromAsset(this, "tiny-rock", pos + vec3(0, 0.1, 0));
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        case 'q':
+          CreateBookshelf(pos + vec3(0, 0.1, 0), ivec2(x, z));
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        case 'w': {
+          CreateGameObjFromAsset(this, "altar", pos);
+          int crystal_type = Random(0, 2);
+          switch (crystal_type) {
+            case 0:
+              CreateGameObjFromAsset(this, "spell-crystal", pos + vec3(0, 3, 0));
+              break;
+            case 1:
+              CreateGameObjFromAsset(this, "open-lock-crystal", pos + vec3(0, 3, 0));
+              break;
+          }
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        }
+        case 'L': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "spider", pos + vec3(0, 3, 0));
+          obj->life = Random(500, 700);
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        }
+        case 's': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "spiderling", pos + vec3(0, 3, 0));
+          obj->life = Random(30, 70);
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        }
+        case 'S': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "scorpion", pos + vec3(0, 3, 0));
+          obj->life = Random(60, 160);
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        }
+        case '@':
+        case ' ': {
+          tile = CreateDungeonRoom(this, "dungeon_floor", pos, 0);
+          break;
+        }
+        case '|': {
+          tile = CreateDungeonRoom(this, "dungeon_corner", pos, 0);
+          // tile = CreateDungeonRoom(this, "dungeon_wall", pos, 0);
+          break;
+        }
+        case '-': {
+          tile = CreateDungeonRoom(this, "dungeon_corner", pos, 0);
+          // tile = CreateDungeonRoom(this, "dungeon_wall", pos, 1);
+          break;
+        }
+        case 'o': {
+          tile = CreateDungeonRoom(this, "dungeon_arch", pos, 0);
+          break;
+        }
+        case 'O': {
+          tile = CreateDungeonRoom(this, "dungeon_arch", pos, 1);
+          break;
+        }
+        case 'P': {
+          tile = CreateDungeonRoom(this, "dungeon_pillar", pos, 1);
+          break;
+        }
+        case 'd': {
+          tile = CreateDungeonRoom(this, "dungeon_door_frame", pos, 0);
+          tile2 = CreateDungeonRoom(this, "dungeon_door", pos, 0);
+          break;
+        }
+        case 'D': {
+          tile = CreateDungeonRoom(this, "dungeon_door_frame", pos, 1);
+          tile2 = CreateDungeonRoom(this, "dungeon_door", pos, 1);
+          break;
+        }
+        case 'g': {
+          tile = CreateDungeonRoom(this, "dungeon_arch_gate", pos, 0);
+          break;
+        }
+        case 'G': {
+          tile = CreateDungeonRoom(this, "dungeon_arch_gate", pos, 1);
+          break;
+        }
+        case 'X': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_platform_up", pos + vec3(5, 0, 5));
+          obj->CalculateCollisionData();
+          break;
+        }
+        case 'x': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_platform_down", pos+ vec3(5, 0, 5));
+          obj->CalculateCollisionData();
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+
+      if (tile) {
+        tile->dungeon_piece_type = dungeon_map[x][z];
+        tile->dungeon_tile = ivec2(x, z);
+      }
+
+      if (tile2) {
+        tile2->dungeon_piece_type = dungeon_map[x][z];
+        tile2->dungeon_tile = ivec2(x, z);
+      }
+    }
+  }
+
+  // for (int x = 0; x < 40; x++) {
+  //   for (int z = 0; z < 40; z++) {
+  //     if (dungeon_map[x][z] != 's') continue;
+  //     float room_x = 10.0f * x;
+  //     float room_z = 10.0f * z;
+
+  //     vec3 pos = offset + vec3(room_x, y + 5.0f, room_z);
+  //     ObjPtr new_obj = CreateGameObjFromAsset(this, "metal-eye", pos);
+  //     new_obj->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+  //   }
+  // }
+
+  GenerateOptimizedOctree();
+  configs_->update_renderer = true;
+}
+
+char** GetCurrentDungeonLevel() {
+  return nullptr;
 }

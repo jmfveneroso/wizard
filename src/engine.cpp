@@ -48,8 +48,11 @@ void Engine::RunCommand(string command) {
     player->position = vec3(x, y, z);
   } else if (result[0] == "speed") {
     if (result.size() == 2) {
-      float speed = boost::lexical_cast<float>(result[1]);
-      configs->target_player_speed = speed;
+      try {
+        float speed = boost::lexical_cast<float>(result[1]);
+        configs->target_player_speed = speed;
+      } catch(boost::bad_lexical_cast const& e) {
+      }
     }
   } else if (result[0] == "raise-factor") {
     float raise_factor = boost::lexical_cast<float>(result[1]);
@@ -129,6 +132,11 @@ void Engine::RunCommand(string command) {
     resources_->SaveObjects();
   } else if (result[0] == "save-collision") {
     resources_->SaveCollisionData();
+  } else if (result[0] == "create-dungeon") {
+    resources_->CreateDungeon();
+  } else if (result[0] == "delete-all") {
+    cout << "im here" << endl;
+    resources_->DeleteAllObjects();
   }
 }
 
@@ -211,6 +219,12 @@ bool Engine::ProcessGameInput() {
           }
         }
         throttle_counter_ = 4;
+      } else if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          configs->selected_spell++;
+          if (configs->selected_spell > 7) configs->selected_spell = 0;
+        }
+        throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           configs->selected_tile = 0;
@@ -332,65 +346,65 @@ void Engine::AfterFrame() {
 void Engine::BeforeFrameDebug() {
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
-  // for (auto& [name, obj] : objs) {
-  //   if (obj->type != GAME_OBJ_DOOR) continue;
-
-  //   string obb_name = obj->name + "-obb";
-  //   OBB obb = obj->GetTransformedOBB();
-
-  //   vec3 w = obb.axis[0] * obb.half_widths[0];
-  //   vec3 h = obb.axis[1] * obb.half_widths[1];
-  //   vec3 d = obb.axis[2] * obb.half_widths[2];
-
-  //   const vector<vec3> offsets {
-  //     // Back face.
-  //     vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
-  //     // Front face.
-  //     vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
-  //   };
-
-  //   vector<vec3> v;
-  //   const vec3& c = obb.center;
-  //   for (const auto& o : offsets) {
-  //     v.push_back(c + w * o.x + h * o.y + d * o.z);
-  //   }
-
-  //   vector<vec3> vertices;
-  //   vector<vec2> uvs;
-  //   vector<unsigned int> indices(36);
-  //   Mesh mesh = CreateCube(v, vertices, uvs, indices);
-
-  //   if (door_obbs_.find(obb_name) == door_obbs_.end()) {
-  //     shared_ptr<GameObject> obb_obj = 
-  //       CreateGameObjFromPolygons(resources_.get(), mesh.polygons, obb_name,
-  //         obj->position);
-  //     door_obbs_[obb_name] = obb_obj;
-  //   } else {
-  //     ObjPtr obb_obj = door_obbs_[obb_name];
-  //     MeshPtr mesh = resources_->GetMesh(obb_obj);
-  //     UpdateMesh(*mesh, vertices, uvs, indices);
-  //   }
-  // }
-
   for (auto& [name, obj] : objs) {
-    if (!obj->IsCreature()) continue;
+    if (obj->type != GAME_OBJ_DOOR) continue;
 
-    for (auto& [id, bone] : obj->bones) {
-      string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
-    
-      BoundingSphere bs = obj->GetBoneBoundingSphere(id);
-      if (door_obbs_.find(obb_name) == door_obbs_.end()) {
-        ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
-        bone_obj->never_cull = true;
-        door_obbs_[obb_name] = bone_obj;
-        resources_->UpdateObjectPosition(bone_obj);
-      } else {
-        ObjPtr bone_obj = door_obbs_[obb_name];
-        bone_obj->position = bs.center;
-        resources_->UpdateObjectPosition(bone_obj);
-      }
+    string obb_name = obj->name + "-obb";
+    OBB obb = obj->GetTransformedOBB();
+
+    vec3 w = obb.axis[0] * obb.half_widths[0];
+    vec3 h = obb.axis[1] * obb.half_widths[1];
+    vec3 d = obb.axis[2] * obb.half_widths[2];
+
+    const vector<vec3> offsets {
+      // Back face.
+      vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
+      // Front face.
+      vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
+    };
+
+    vector<vec3> v;
+    const vec3& c = obb.center;
+    for (const auto& o : offsets) {
+      v.push_back(c + w * o.x + h * o.y + d * o.z);
+    }
+
+    vector<vec3> vertices;
+    vector<vec2> uvs;
+    vector<unsigned int> indices(36);
+    Mesh mesh = CreateCube(v, vertices, uvs, indices);
+
+    if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+      shared_ptr<GameObject> obb_obj = 
+        CreateGameObjFromPolygons(resources_.get(), mesh.polygons, obb_name,
+          obj->position);
+      door_obbs_[obb_name] = obb_obj;
+    } else {
+      ObjPtr obb_obj = door_obbs_[obb_name];
+      MeshPtr mesh = resources_->GetMesh(obb_obj);
+      UpdateMesh(*mesh, vertices, uvs, indices);
     }
   }
+
+  // for (auto& [name, obj] : objs) {
+  //   if (!obj->IsCreature()) continue;
+
+  //   for (auto& [id, bone] : obj->bones) {
+  //     string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
+  //   
+  //     BoundingSphere bs = obj->GetBoneBoundingSphere(id);
+  //     if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+  //       ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
+  //       bone_obj->never_cull = true;
+  //       door_obbs_[obb_name] = bone_obj;
+  //       resources_->UpdateObjectPosition(bone_obj);
+  //     } else {
+  //       ObjPtr bone_obj = door_obbs_[obb_name];
+  //       bone_obj->position = bs.center;
+  //       resources_->UpdateObjectPosition(bone_obj);
+  //     }
+  //   }
+  // }
 }
 
 void Engine::BeforeFrame() {
@@ -444,10 +458,12 @@ void Engine::Run() {
     Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
 
-    if (configs->render_scene == "default") {
+    if (configs->render_scene == "default" || configs->render_scene == "dungeon") {
       renderer_->Draw();
     } else if (configs->render_scene == "hypercube") {
       renderer_->DrawHypercube();
+    } else if (configs->render_scene == "dungeon") {
+      // renderer_->DrawDungeon();
     }
     resources_->Unlock();
 

@@ -261,8 +261,9 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
     obj->actions.push(make_shared<WaitAction>(current_time + seconds));
   } else if (s2 == "change-state") {
     if (s3 == "attack") {
-      cout << "Change state attack: " << obj->name << endl;
       obj->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+    } else if (s3 == "idle") {
+      obj->actions.push(make_shared<ChangeStateAction>(IDLE));
     }
   } else if (s2 == "take-aim") {
     obj->actions.push(make_shared<TakeAimAction>());
@@ -270,6 +271,14 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
     obj->actions.push(make_shared<RangedAttackAction>());
   } else if (s2 == "random-move") {
     obj->actions.push(make_shared<RandomMoveAction>());
+  } else if (s2 == "meelee-attack") {
+    obj->actions.push(make_shared<MeeleeAttackAction>());
+  } else if (s2 == "move-to-player") {
+    obj->actions.push(make_shared<MoveToPlayerAction>());
+  } else if (s2 == "move-away-from-player") {
+    obj->actions.push(make_shared<MoveAwayFromPlayerAction>());
+  } else if (s2 == "use-ability") {
+    obj->actions.push(make_shared<UseAbilityAction>(s3));
   }
   gResources->Unlock();
 
@@ -652,9 +661,97 @@ static PyObject* register_oncollision_event(PyObject *self, PyObject *args) {
   return PyBool_FromLong(0);
 }
 
+static PyObject* distance_to_player(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  ObjPtr player = gResources->GetPlayer();
+
+  double distance = length(player->position - obj->position);
+  return PyFloat_FromDouble(distance);
+}
+
+static PyObject* enter_dungeon(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr player = gResources->GetPlayer();
+  if (!player) return NULL;
+
+  Dungeon& dungeon = gResources->GetDungeon();
+  vec3 pos = dungeon.GetPlatform();
+  player->ChangePosition(pos);
+  gResources->GetConfigs()->render_scene = "dungeon";
+
+  return PyFloat_FromDouble(0);
+}
+
+static PyObject* unit_is_visible(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) {
+    return PyBool_FromLong(0);
+  }
+
+  Dungeon& dungeon = gResources->GetDungeon();
+  bool visible = dungeon.IsTileVisible(obj->position);
+  if (visible) {
+    return PyBool_FromLong(1);
+  }
+  return PyBool_FromLong(0);
+}
+
+static PyObject* random_number(PyObject *self, PyObject *args) {
+  cout << "I am here" << endl;
+  long low, high;
+  if (!PyArg_ParseTuple(args, "ll", &low, &high)) return NULL;
+  cout << "I am there" << endl;
+
+  long num = Random(low, high);
+  cout << "But where" << endl;
+  return PyLong_FromLong(num);
+}
+
+static PyObject* get_prev_action(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  string prev_action = "none";
+  if (obj->prev_action) {
+    prev_action = ActionTypeToStr(obj->prev_action->type);
+  }
+  return PyUnicode_FromString(prev_action.c_str());
+}
+
 static PyMethodDef EmbMethods[] = {
  { "is_player_inside_region", is_player_inside_region, METH_VARARGS,
   "Tests if player is inside region" },
+ { "distance_to_player", distance_to_player, METH_VARARGS,
+  "Distance to player" },
  { "issue_move_order", issue_move_order, METH_VARARGS,
   "Issue move order for unit to move to waypoint" },
  { "push_action", push_action, METH_VARARGS,
@@ -702,6 +799,10 @@ static PyMethodDef EmbMethods[] = {
    "Register on unit die event" },
  { "register_oncollision_event", register_oncollision_event, METH_VARARGS,  
    "Register on collision event" },
+ { "enter_dungeon", enter_dungeon, METH_VARARGS, "Enter dungeon" },
+ { "unit_is_visible", unit_is_visible, METH_VARARGS, "Unit is visible" },
+ { "random_number", random_number, METH_VARARGS, "Random number" },
+ { "get_prev_action", get_prev_action, METH_VARARGS, "Get previous action" },
  { NULL, NULL, 0, NULL }
 };
 
@@ -767,16 +868,23 @@ string ScriptManager::CallStrFn(const string& fn_name) {
 }
 
 string ScriptManager::CallStrFn(const string& fn_name, const string& arg) {
-  if (module_ == NULL) return "";
+  script_mutex_.lock();
+  if (module_ == NULL) { 
+    script_mutex_.unlock();
+    return "";
+  }
  
   PyObject *pFunc = PyObject_GetAttrString(module_, fn_name.c_str());
-  if (!pFunc || !PyCallable_Check(pFunc)) return "";
+  if (!pFunc || !PyCallable_Check(pFunc)) {
+    script_mutex_.unlock();
+    return "";
+  }
 
   PyObject *pArgs, *pValue;
-
   pArgs = Py_BuildValue("(s)", arg.c_str());
   pValue = PyObject_CallObject(pFunc, pArgs);
 
   const char* c_string = PyUnicode_AsUTF8(pValue);
+  script_mutex_.unlock();
   return string(c_string);
 }
