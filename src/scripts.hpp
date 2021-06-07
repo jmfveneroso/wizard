@@ -15,14 +15,13 @@ class ScriptManager {
   PyObject* module_ = nullptr;
   mutex script_mutex_;
 
-  void LoadScripts();
-
  public:
   ScriptManager(Resources* resources);
   ~ScriptManager();
 
   string CallStrFn(const string& fn_name);
   string CallStrFn(const string& fn_name, const string& arg);
+  void LoadScripts();
 };
 
 #endif // __SCRIPTS_HPP__

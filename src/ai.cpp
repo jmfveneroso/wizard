@@ -15,19 +15,6 @@ AI::~AI() {
   }
 }
 
-ivec2 GetDungeonTile(const vec3& position) {
-  vec3 offset = vec3(10000 - 5, 300, 10000 - 5);
-  ivec2 tile_pos = ivec2(
-    (position - offset).x / 10,
-    (position - offset).z / 10);
-
-  if (tile_pos.x < 0 || tile_pos.x >= 40 || tile_pos.y < 0 || 
-    tile_pos.y >= 40) {
-    return ivec2(-1, -1);
-  }
-  return tile_pos;
-}
-
 vec3 GetTilePosition(const ivec2& tile) {
   const vec3 offset = vec3(10000, 300, 10000);
   // return offset + vec3(tile.x, 0, tile.y) * 10.0f + vec3(0.0f, 0, 0.0f);
@@ -170,6 +157,9 @@ void AI::Wander(ObjPtr spider) {
 }
 
 bool AI::ProcessStatus(ObjPtr spider) {
+  unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+  Dungeon& dungeon = resources_->GetDungeon();
+
   // Check status. If taking hit, or dying.
   switch (spider->status) {
     case STATUS_TAKING_HIT: {
@@ -191,31 +181,48 @@ bool AI::ProcessStatus(ObjPtr spider) {
       } else {
         resources_->ChangeObjectAnimation(spider, "Armature|death");
 
+        // TODO: move drop logic to another class.
         int num_frames = GetNumFramesInAnimation(*mesh, 
           spider->active_animation);
         if (spider->frame >= num_frames - 1) {
-          if (spider->GetAsset()->name == "scorpion") {
-            if (Random(0, 2) == 0) {
-              vec3 position = spider->position + vec3(0, 5.0f, 0);
-              ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-                "open-lock-crystal", position);
-              obj->CalculateCollisionData();
-            }
+          ivec2 adj_tile = dungeon.GetRandomAdjTile(spider->position);
+          vec3 drop_pos = dungeon.GetTilePosition(adj_tile);
+
+          for (const auto& drop : spider->GetAsset()->drops) {
+            int r = Random(0, 1000);
+            r = 0;
+            if (r >= drop.chance) continue;
+
+            const int item_id = drop.item_id;
+            const int quantity = ProcessDiceFormula(drop.quantity);
+            ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+              item_data[item_id].asset_name, drop_pos + vec3(0, 5.0f, 0));
+            obj->CalculateCollisionData();
+            obj->quantity = quantity;
           }
           is_dead = true;
         }
       }
 
       if (is_dead) {
-        resources_->CreateParticleEffect(64, spider->position, 
-          vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
+        // resources_->CreateParticleEffect(64, spider->position, 
+        //   vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
         spider->status = STATUS_DEAD;
         cout << spider->name << " is dead" << endl;
       }
       return false;
     }
+    case STATUS_DEAD: {
+      shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+      if (MeshHasAnimation(*mesh, "Armature|death")) {
+        resources_->ChangeObjectAnimation(spider, "Armature|death");
+      }
+
+      int num_frames = GetNumFramesInAnimation(*mesh, spider->active_animation);
+      spider->frame = num_frames - 1;
+      return false;
+    }
     case STATUS_NONE:
-    case STATUS_DEAD:
     default:
       break;
   }
@@ -266,9 +273,7 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
 
   resources_->ChangeObjectAnimation(spider, "Armature|attack");
 
-  if (int(spider->frame) >= 79) {
-    return true;
-  }
+  if (int(spider->frame) >= 79) return true;
 
   if (int(spider->frame) == 44) {
     ObjPtr player = resources_->GetObjectByName("player");
@@ -310,25 +315,22 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
 
 bool AI::ProcessMeeleeAttackAction(ObjPtr spider, 
   shared_ptr<MeeleeAttackAction> action) {
-  resources_->ChangeObjectAnimation(spider, "Armature|attack");
-
-  if (spider->frame >= 31) {
+  if (resources_->GetConfigs()->disable_attacks) {
     return true;
   }
 
-  if (spider->frame == 30) {
+  resources_->ChangeObjectAnimation(spider, "Armature|attack");
+
+  if (int(spider->frame) >= 79) return true;
+
+  // if (int(spider->frame) == 44) {
+  if (int(spider->frame) == 1) {
+    cout << "Attacking player" << endl;
     ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = player->position - spider->position;
-
-    if (length(dir) < 10.0f) {
-      player->life -= 10;
-      resources_->GetConfigs()->taking_hit = 30.0f;
-      if (player->life <= 0.0f) {
-        player->life = 100.0f;
-        player->position = resources_->GetConfigs()->respawn_point;
-      }
+    if (length(dir) < 20.0f) {
+      spider->MeeleeAttack(player, normalize(dir));
     }
-    return true;
   }
   return false;
 }
@@ -480,7 +482,7 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
     } 
   }
 
-  float speed = spider->GetAsset()->base_speed;
+  float speed = spider->current_speed;
   if (physics_behavior == PHYSICS_FLY) {
     spider->speed += normalize(to_next_location) * speed;
   } else {
@@ -554,6 +556,9 @@ bool AI::ProcessMoveAwayFromPlayerAction(
 
 bool AI::ProcessUseAbilityAction(ObjPtr spider, 
   shared_ptr<UseAbilityAction> action) {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
+  cout << spider->GetName() << " is using " << action->ability << endl;
   resources_->ChangeObjectAnimation(spider, "Armature|attack");
 
   Dungeon& dungeon = resources_->GetDungeon();
@@ -561,13 +566,14 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
 
   float current_time = glfwGetTime();
   if (spider->cooldowns.find(action->ability) != spider->cooldowns.end()) {
-    if( spider->cooldowns["summon-spiderling"] > current_time) {
+    if (spider->cooldowns[action->ability] > current_time) {
       return true;
     }
   }
 
   // TODO: maybe call script with ability effect.
   if (action->ability == "summon-spiderling") {
+    if (configs->summoned_creatures > 10) return true;
     int num_summons = 2;
     for (int i = 0; i < 100; i++) {
       int off_x = Random(-2, 2);
@@ -578,11 +584,34 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
       vec3 tile_pos = dungeon.GetTilePosition(tile);
       ObjPtr spiderling = CreateGameObjFromAsset(resources_.get(), "spiderling", tile_pos);
       spiderling->ai_state = AI_ATTACK;
+      spiderling->summoned = true;
       resources_->CreateParticleEffect(32, tile_pos, 
         vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
+      configs->summoned_creatures++;
       if (--num_summons == 0) break;
     }
     spider->cooldowns["summon-spiderling"] = glfwGetTime() + 15;
+  } else if (action->ability == "haste") {
+    spider->AddTemporaryStatus(make_shared<HasteStatus>(2.0, 5.0f, 1));
+    spider->cooldowns["haste"] = glfwGetTime() + 10;
+  } else if (action->ability == "summon-worm") {
+    return true;
+    if (configs->summoned_creatures > 10) return true;
+    for (int tries = 0; tries < 100; tries++) {
+      int off_x = Random(-1, 1);
+      int off_y = Random(-1, 1);
+      ivec2 tile = spider_tile + ivec2(off_x, off_y);
+      if (!dungeon.IsTileClear(tile)) continue;
+     
+      vec3 tile_pos = dungeon.GetTilePosition(tile);
+      ObjPtr spiderling = CreateGameObjFromAsset(resources_.get(), "worm", tile_pos);
+      spiderling->ai_state = AI_ATTACK;
+      spiderling->summoned = true;
+      resources_->CreateParticleEffect(32, tile_pos, 
+        vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
+      configs->summoned_creatures++;
+    }
+    spider->cooldowns["summon-worm"] = glfwGetTime() + 20;
   } else if (action->ability == "spider-web") {
     ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = (player->position + vec3(0, -3.0f, 0)) - spider->position;
@@ -595,6 +624,18 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
       pos += forward * 10.0f;
     }
     spider->cooldowns["spider-web"] = glfwGetTime() + 5;
+  } else if (action->ability == "string-attack") {
+    ObjPtr player = resources_->GetObjectByName("player");
+    vec3 dir = normalize((player->position + vec3(0, -3.0f, 0)) - spider->position);
+    resources_->CastStringAttack(spider, spider->position + vec3(0, 2, 0), dir);
+    // spider->cooldowns["string-attack"] = glfwGetTime() + 1;
+
+    // TODO: set duration for cast ability.
+    if (glfwGetTime() > action->issued_at + 2) {
+      return true;
+    } else {
+      return false;
+    }
   }
   return true;
 }
@@ -885,16 +926,19 @@ void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
 }
 
 void AI::Run() {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  if (configs->disable_ai) return;
+ 
   RunAiInOctreeNode(resources_->GetOctreeRoot());
   ProcessPlayerAction(resources_->GetPlayer());
 
   resources_->GetDungeon().CalculateVisibility(
     resources_->GetPlayer()->position);
 
-  while (!ai_tasks_.empty() || running_tasks_ > 0) {
-    this_thread::sleep_for(chrono::microseconds(200));
-  }
-  return;
+  // while (!ai_tasks_.empty() || running_tasks_ > 0) {
+  //   this_thread::sleep_for(chrono::microseconds(200));
+  // }
+  // return;
 
   // Sync.
   while (!ai_tasks_.empty()) {
@@ -963,6 +1007,6 @@ void AI::ProcessUnitAiAsync() {
 
 void AI::CreateThreads() {
   for (int i = 0; i < kMaxThreads; i++) {
-    ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
+    // ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
   }
 }

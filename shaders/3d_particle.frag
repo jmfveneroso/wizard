@@ -1,0 +1,29 @@
+#version 330 core
+
+in VertexData {
+  vec3 position;
+  vec2 UV;
+  vec3 normal;
+  vec3 light_dir_tangentspace;
+  vec3 eye_dir_tangentspace;
+} in_data;
+
+// Output data
+layout(location = 0) out vec4 color;
+
+uniform mat4 V;
+uniform sampler2D texture_sampler;
+uniform sampler2D bump_map_sampler;
+uniform int enable_bump_map;
+uniform vec3 light_direction;
+uniform vec3 lighting_color;
+uniform float outdoors;
+uniform vec3 camera_pos;
+uniform vec3 player_pos;
+uniform float light_radius;
+
+void main(){
+  vec4 out_color = vec4(0.0);
+  out_color = texture(texture_sampler, in_data.UV).rgba;
+  color = out_color;
+}

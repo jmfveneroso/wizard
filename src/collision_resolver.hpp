@@ -28,7 +28,7 @@ enum CollisionPair {
   CP_QP,     // QUICK_SPHERE -> PERFECT
   CP_QT,     // QUICK_SPHERE -> TERRAIN
   CP_QH,     // QUICK_SPHERE -> C. HULL
-  CP_QO,     // QUICK_SPHERE -> OBB (Not implemented)
+  CP_QO,     // QUICK_SPHERE -> OBB
   CP_PS,     // PERFECT -> SPHERE
   CP_PB,     // PERFECT -> BONES
   CP_PQ,     // PERFECT -> QUICK_SPHERE
@@ -52,7 +52,7 @@ enum CollisionPair {
   CP_HO,     // C. HULL -> OBB (Not implemented)             
   CP_OS,     // OBB -> SPHERE (Not implemented)
   CP_OB,     // OBB -> BONES (Not implemented)
-  CP_OQ,     // OBB -> QUICK_SPHERE (Not implemented)
+  CP_OQ,     // OBB -> QUICK_SPHERE
   CP_OP,     // OBB -> PERFECT
   CP_OT,     // OBB -> TERRAIN
   CP_OH,     // OBB -> C. HULL (Not implemented)             
@@ -177,6 +177,12 @@ struct CollisionQB : Collision {
     : Collision(CP_QB, o1, o2), bone(bone) {}
 };
 
+struct CollisionQO : Collision {
+  CollisionQO() {}
+  CollisionQO(ObjPtr o1, ObjPtr o2)
+    : Collision(CP_QO, o1, o2) {}
+};
+
 struct CollisionQT : Collision {
   CollisionQT() {}
   CollisionQT(ObjPtr o1) : Collision(CP_QT, o1, nullptr) {}
@@ -215,6 +221,8 @@ class CollisionResolver {
 
   queue<ColPtr> collisions_;
 
+  bool in_dungeon_ = false;
+
   // Statistics.
   double start_time_ = 0;
   int num_objects_tested_ = 0;
@@ -222,7 +230,7 @@ class CollisionResolver {
 
   // Parallelism.
   bool terminate_ = false;
-  const int kMaxThreads = 16;
+  const int kMaxThreads = 1; // 16.
   vector<thread> find_threads_;
   vector<thread> test_threads_;
 
@@ -256,6 +264,7 @@ class CollisionResolver {
   void TestCollisionQB(shared_ptr<CollisionQB> c);
   void TestCollisionQT(shared_ptr<CollisionQT> c);
   void TestCollisionQH(shared_ptr<CollisionQH> c);
+  void TestCollisionQO(shared_ptr<CollisionQO> c);
   void TestCollisionHT(shared_ptr<CollisionHT> c);
   void TestCollisionOP(shared_ptr<CollisionOP> c);
   void TestCollisionOT(shared_ptr<CollisionOT> c);
@@ -268,9 +277,9 @@ class CollisionResolver {
 
   void TestCollisionsWithTerrain();
   void ResolveMissileCollision(ColPtr c);
+  void ResolveParticleCollision(ColPtr c);
   void ResolveCollisions();
   void ProcessInContactWith();
-  void CollideParticles();
 
   void ProcessTentativePair(ObjPtr obj1, ObjPtr obj2);
 

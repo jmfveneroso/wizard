@@ -12,7 +12,26 @@ enum InventoryState {
   INVENTORY_SPELLBOOK,
   INVENTORY_CRAFT,
   INVENTORY_DIALOG,
-  INVENTORY_QUEST_LOG
+  INVENTORY_QUEST_LOG,
+  INVENTORY_STATS,
+  INVENTORY_STORE
+};
+
+enum ItemOrigin {
+  ITEM_ORIGIN_INVENTORY = 0,
+  ITEM_ORIGIN_SPELLBAR,
+  ITEM_ORIGIN_STORE,
+  ITEM_ORIGIN_NONE
+};
+
+struct DraggedItem {
+  ItemOrigin origin = ITEM_ORIGIN_NONE;
+  int item_id = 0;
+  int quantity = 0;
+  int old_pos_x = 0;
+  int old_pos_y = 0;
+  int hold_offset_x = 0;
+  int hold_offset_y = 0;
 };
 
 class Inventory {
@@ -20,10 +39,12 @@ class Inventory {
   shared_ptr<Resources> resources_;
 
   InventoryState state_ = INVENTORY_ITEMS;
+  DraggedItem dragged_item;
 
   Camera camera_;
   int win_x_ = 0;
   int win_y_ = 0;
+  int debounce_ = 0;
 
   int selected_item_ = 0;
   int selected_qnty_ = 0;
@@ -50,11 +71,15 @@ class Inventory {
     GLFWwindow* window);
   void DrawSpellPage();
   void DrawSpellbook();
+  void DrawStore(const Camera& camera, int win_x, int win_y, 
+    GLFWwindow* window);
   void DrawCraftTable(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
   void DrawDialog(GLFWwindow* window);
   void DrawQuestLog(GLFWwindow* window);
   void NextPhrase(GLFWwindow* window, const string& next_phrase_name = "");
+  void DrawStats(const Camera& camera, int win_x, int win_y, GLFWwindow* window);
+  void TryToCombineCrystals(int x, int y);
 
  public:
   bool enabled;

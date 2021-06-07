@@ -391,6 +391,11 @@ void TextEditor::SetContent(string text) {
     content_.push_back("");
 }
 
+void TextEditor::SetCursorPos(int x, int y) {
+  cursor_col_ = x;
+  cursor_row_ = y;
+}
+
 void TextEditor::Draw(int win_x, int win_y) {
   if (!enabled)
     return;

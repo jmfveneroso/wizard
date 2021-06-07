@@ -16,6 +16,16 @@
 
 class Resources;
 
+struct Drop {
+  int item_id = 0;
+  int chance = 0; // In 1000.
+  DiceFormula quantity;
+
+  Drop(int item_id, int chance, string s) : item_id(item_id), chance(chance),
+    quantity(ParseDiceFormula(s)) {
+  }
+};
+
 class GameAsset : public enable_shared_from_this<GameAsset> {
   Resources* resources_;
 
@@ -30,7 +40,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   string display_name;
   int item_id = -1;
   string item_icon;
-  AssetType type = ASSET_STATIC;
+  AssetType type = ASSET_DEFAULT;
   bool loaded_collision = false;
   string ai_script;
 
@@ -71,9 +81,16 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   bool item = false;
   bool extractable = false;
 
-  float base_speed = 0.05;
+  DiceFormula base_life { 0, 0, 100 };
+  DiceFormula base_attack { 0, 0, 1 };
+  DiceFormula base_ranged_attack { 0, 0, 1 };
+
+  float base_speed = 0.05f;
   float base_turn_rate = 0.15;
   float mass = 1.0;
+  int experience = 0;
+
+  vector<Drop> drops;
 
   // References to resources related with this asset.
   // unordered_map<int, MeshPtr> ptr_lod_meshes;
@@ -85,7 +102,9 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
 
   vector<vec3> vertices;
 
-  GameAsset(Resources* resources);
+  GameAsset(Resources* resources) : resources_(resources) {}
+  GameAsset(Resources* resources, AssetType type) : resources_(resources), 
+    type(type) {}
   void Load(const pugi::xml_node& asset_xml);
   vector<vec3> GetVertices();
   string GetDisplayName();
@@ -95,6 +114,57 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   void CalculateCollisionData();
   void CollisionDataToXml(pugi::xml_node& parent);
   void LoadCollisionData(pugi::xml_node& xml);
+};
+
+class CreatureAsset : public GameAsset {
+  int base_attack = 0;
+  int max_life = 100.0f;
+  int armor_class = 0;
+  float cooldown_reduction = 0.0f;
+  float critical = 0.0f;
+  float armor_penetration = 0.0f;
+
+  // Magical attributes.
+  int arcane = 0;
+  int natural = 0;
+  int spiritual = 0;
+  int arcane_resistance = 0;
+  int natural_resistance = 0;
+  int spiritual_resistance = 0;
+
+  // Physics attributes.
+  float base_speed = 0.05f;
+  float base_turn_rate = 0.15;
+  float mass = 1.0;
+
+  // For monsters.
+  int life_range; // Base life can increase by any value in this amount.
+  int atk_range; // Atk can increase by any value in this amount.
+  int armor_class_range;
+
+  // For players.
+  int experience;
+  int level;
+
+ public:
+  CreatureAsset(Resources* resources) : 
+    GameAsset(resources, ASSET_CREATURE) {}
+};
+
+class ItemAsset : public GameAsset {
+ public:
+  ItemAsset(Resources* resources) : GameAsset(resources, ASSET_ITEM) {}
+};
+
+class PlatformAsset : public GameAsset {
+ public:
+  PlatformAsset(Resources* resources) : GameAsset(resources, ASSET_PLATFORM) {}
+};
+
+class DestructibleAsset : public GameAsset {
+ public:
+  DestructibleAsset(Resources* resources) 
+    : GameAsset(resources, ASSET_DESTRUCTIBLE) {}
 };
 
 class GameAssetGroup {

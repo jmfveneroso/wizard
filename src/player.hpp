@@ -19,6 +19,11 @@ class PlayerInput {
   bool creating_spell_ = false;
   shared_ptr<Sector> old_sector = nullptr;
   ObjPtr active_harpoon = nullptr;
+  shared_ptr<ArcaneSpellData> current_spell_ = nullptr;
+  Camera camera_;
+  int debounce_ = 0;
+  int animation_frame_ = 0;
+  GLFWwindow* window_ = nullptr;
 
   void Extract(const Camera& c);
   void InteractWithItem(GLFWwindow* window, const Camera& c, 
@@ -27,6 +32,8 @@ class PlayerInput {
   void Build(GLFWwindow* window, const Camera& c);
   void PlaceObject(GLFWwindow* window, const Camera& c);
   void EditObject(GLFWwindow* window, const Camera& c);
+  void CastSpellOrUseItem();
+  void ProcessPlayerCasting();
 
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 

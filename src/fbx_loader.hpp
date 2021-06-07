@@ -86,6 +86,6 @@ struct FbxData {
 };
 
 FbxData FbxLoad(const std::string& filename);
-FbxData LoadFbxData(const std::string& filename, Mesh& m);
+FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs = false);
 
 #endif // __FBX_LOADER_H__

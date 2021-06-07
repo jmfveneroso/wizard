@@ -23,7 +23,6 @@ class AI {
   int dungeon_visibility_[40][40];
   ivec2 last_player_pos = ivec2(-1, -1);
 
-
   shared_ptr<Waypoint> GetClosestWaypoint(const vec3& position);
   void ChangeState(ObjPtr obj, AiState state);
   ObjPtr GetClosestUnit(ObjPtr spider);

@@ -62,6 +62,7 @@ class TextEditor {
   void Enable() { enabled = true; cursor_row_ = 0; cursor_col_ = 0; }
   void Disable() { enabled = false; cursor_row_ = 0; cursor_col_ = 0; }
   bool Close() { return !enabled; }
+  void SetCursorPos(int x, int y);
 
   void set_run_command_fn(function<void(string)> run_command_fn) {
     run_command_fn_ = run_command_fn;

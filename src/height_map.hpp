@@ -1,9 +1,6 @@
 #ifndef __HEIGHT_MAP_HPP__
 #define __HEIGHT_MAP_HPP__
 
-const int kHeightMapSize = 8000;
-const vec3 kWorldCenter = vec3(10000, 0, 10000);
-
 struct TerrainPoint {
   float height = 0.0;
   int tile = 0;
@@ -18,7 +15,7 @@ struct TerrainPoint {
 
 class HeightMap {
   const string filename_;
-  unsigned char compressed_height_map_[192000000]; // 192 MB.
+  unsigned char compressed_height_map_[48000000]; // 48 MB.
 
   void Load();
 

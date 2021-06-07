@@ -9,6 +9,7 @@ struct StabbingTreeNode;
 struct Sector;
 struct Waypoint;
 struct Action;
+struct TemporaryStatus;
 class Resources;
 class Region;
 
@@ -50,6 +51,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool freeze = false;
   bool never_cull = false;
   bool collidable = true;
+  bool summoned = false;
   char dungeon_piece_type = '\0';
   ivec2 dungeon_tile = ivec2(-1, -1);
 
@@ -69,6 +71,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   // TODO: Stuff that should polymorph to something that depends on GameObject.
   float life = 50.0f;
+  float max_life = 50.0f;
+  float current_speed = 0.0f;
   vec3 speed = vec3(0);
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
@@ -97,11 +101,16 @@ class GameObject : public enable_shared_from_this<GameObject> {
   int paralysis_cooldown = 0;
   bool being_placed = false;
 
+  int quantity = 1;
+  bool trapped = false;
+
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
   set<string> collisions;
 
   vector<shared_ptr<GameObject>> closest_lights;
+
+  unordered_map<Status, shared_ptr<TemporaryStatus>> temp_status;
 
   GameObject(Resources* resources) : resources_(resources) {}
   GameObject(Resources* resources, GameObjectType type) 
@@ -112,6 +121,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   string GetDisplayName();
   string GetName() { return GetDisplayName(); }
   bool IsLight();
+  bool IsDarkness();
   bool IsExtractable();
   bool IsItem();
   bool IsMovingObject();
@@ -121,6 +131,9 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsRegion();
   bool IsCollidable();
   bool IsDungeonPiece();
+  bool Is3dParticle();
+  bool IsPlayer() { return type == GAME_OBJ_PLAYER; }
+  bool IsDestructible();
   AssetType GetType();
 
   // mat4 GetBoneTransform();
@@ -163,6 +176,10 @@ class GameObject : public enable_shared_from_this<GameObject> {
   int GetNumFramesInCurrentAnimation();
   void ChangePosition(const vec3& pos);
   void ClearActions();
+  void AddTemporaryStatus(shared_ptr<TemporaryStatus> temp_status);
+  void DealDamage(shared_ptr<GameObject> attacker, float damage, vec3 normal = vec3(0, 1, 0), bool take_hit_animation = true);
+  void MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
+  void RangedAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -170,6 +187,7 @@ using ObjPtr = shared_ptr<GameObject>;
 struct Player : public GameObject {
   PlayerAction player_action = PLAYER_IDLE;
   int selected_spell = 0;
+
   vec3 rotation = vec3(-0.6139, -0.0424196, -0.78824);
   string talking_to;
   void LookAt(vec3 direction);
@@ -182,6 +200,7 @@ struct Player : public GameObject {
 
 struct Missile : public GameObject {
   shared_ptr<GameObject> owner = nullptr;
+  MissileType type = MISSILE_MAGIC_MISSILE;
 
   Missile(Resources* resources) 
     : GameObject(resources, GAME_OBJ_MISSILE) {}
@@ -268,6 +287,42 @@ ObjPtr CreateGameObjFromAsset(Resources* resources,
 ObjPtr CreateSkydome(Resources* resources);
 ObjPtr CreateSphere(Resources* resources, float radius, vec3 pos);
 
+
+// ============================================================================
+// STATUS
+// ============================================================================
+
+struct TemporaryStatus {
+  Status status = STATUS_NONE;
+  float issued_at;
+  float duration;
+  int strength;
+
+  TemporaryStatus(Status status, float duration, int strength) : 
+    status(status), duration(duration), strength(strength) {
+    issued_at = glfwGetTime();
+  }
+};
+
+struct SlowStatus : TemporaryStatus {
+  float slow_magnitude;
+  SlowStatus(float slow_magnitude, float duration, int strength) 
+    : TemporaryStatus(STATUS_SLOW, duration, strength), slow_magnitude(slow_magnitude) {
+  }
+};
+
+struct HasteStatus : TemporaryStatus {
+  float magnitude;
+  HasteStatus(float magnitude, float duration, int strength) 
+    : TemporaryStatus(STATUS_HASTE, duration, strength), magnitude(magnitude) {
+  }
+};
+
+struct DarkvisionStatus : TemporaryStatus {
+  DarkvisionStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_DARKVISION, duration, strength) {
+  }
+};
 
 // ============================================================================
 // AI,

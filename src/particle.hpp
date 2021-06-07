@@ -14,6 +14,7 @@ struct ParticleType {
   int first_frame;
   int num_frames;
   int keep_frame = 1;
+  string mesh = "";
   GLuint texture_id = 0;
 };
 
@@ -30,6 +31,21 @@ struct Particle : GameObject {
   vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
 
   int frame = 0;
+
+  vec2 tile_pos = vec2(0.5, 0.5);
+  float tile_size = 0.167f;
+
+  string mesh_name;
+  string existing_mesh_name = "";
+  int animation_frame = 0;
+  GLuint texture_id = 0;
+
+  // TODO: will need to keep track of types of damage. And on hit effects. Do
+  // the same thing for missiles.
+  float damage;
+  bool hit_once = true;
+  unordered_set<int> hit_list;
+  ObjPtr owner = nullptr;
 
   float camera_distance;
   bool operator<(const shared_ptr<Particle>& that) const {

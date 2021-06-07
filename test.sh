@@ -6,4 +6,5 @@ if make; then
   for filename in *_test; do
     ./$filename
   done 
+  ./dungeon_main
 fi
