@@ -24,6 +24,8 @@
 using namespace std;
 using namespace glm;
 
+class Resources;
+
 void ExtractFrustumPlanes(const mat4& MVP, vec4 planes[6]);
 
 bool CollideSphereFrustum(const BoundingSphere& bounding_sphere, 
@@ -112,7 +114,19 @@ bool TestAABBPlane(const AABB& aabb, const Plane& p,
 bool TestTriangleAABB(const Polygon& polygon, const AABB& aabb,
   vec3& displacement_vector, vec3& point_of_contact);
 
+bool TestMovingSphereAABB(BoundingSphere s, const AABB& aabb, vec3 d, float& t);
+
+bool IntersectRaySphere(const Ray& ray, BoundingSphere s, float &t, vec3 &q);
+
+bool IntersectSegmentCapsule(const Segment& seg, const Capsule& capsule, 
+  float& t);
+
 // bool IntersectMovingSphereAABB(Sphere s, Vector d, AABB b, float &t);
 // https://github.com/vancegroup-mirrors/hapi/blob/master/src/CollisionObjects.cpp
+
+
+// ObjPtr IntersectRayObjects(const vec3& position, 
+//   const vec3& direction, float max_distance=50.0f, 
+//   IntersectMode mode = INTERSECT_ITEMS);
 
 #endif // __COLLISION_HPP__.

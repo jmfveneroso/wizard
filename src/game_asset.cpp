@@ -2,8 +2,6 @@
 #include "resources.hpp"
 #include "pugixml.hpp"
 
-GameAsset::GameAsset(Resources* resources) : resources_(resources) {}
-
 void GameAsset::LoadBones(const pugi::xml_node& skeleton_xml) {
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(lod_meshes[0]);
   int num_bones = mesh->bones_to_ids.size();
@@ -24,24 +22,6 @@ void GameAsset::LoadBones(const pugi::xml_node& skeleton_xml) {
 
 void GameAsset::Load(const pugi::xml_node& asset_xml) {
   name = asset_xml.attribute("name").value();
-
-  // TODO: create field type in XML.
-  bool is_unit = string(asset_xml.attribute("unit").value()) == "true";
-  if (is_unit) {
-    type = ASSET_CREATURE;
-  }
-  bool is_platform = string(asset_xml.attribute("platform").value()) == "true";
-  if (is_platform) {
-    type = ASSET_PLATFORM;
-  }
-
-  if (asset_xml.attribute("extractable")) {
-    extractable = true;
-  }
-
-  if (asset_xml.attribute("item")) {
-    item = true;
-  }
 
   const pugi::xml_node& display_name_xml = asset_xml.child("display-name");
   if (display_name_xml) {
@@ -176,7 +156,41 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     }
   }
 
-  // Speed - Turn Rate.
+  // Attributes.
+  const pugi::xml_node& base_life_xml = asset_xml.child("base-life");
+  if (base_life_xml) {
+    base_life = ParseDiceFormula(base_life_xml.text().get());
+  }
+
+  const pugi::xml_node& base_attack_xml = asset_xml.child("base-attack");
+  if (base_attack_xml) {
+    base_attack = ParseDiceFormula(base_attack_xml.text().get());
+  }
+
+  const pugi::xml_node& base_ranged_attack_xml = 
+    asset_xml.child("base-ranged-attack");
+  if (base_ranged_attack_xml) {
+    base_ranged_attack = ParseDiceFormula(base_ranged_attack_xml.text().get());
+  }
+
+  const pugi::xml_node& experience_xml = asset_xml.child("experience");
+  if (experience_xml) {
+    experience = boost::lexical_cast<float>(experience_xml.text().get());
+    cout << "Loading exp: " << experience << endl;
+  }
+
+  const pugi::xml_node& drops_xml = asset_xml.child("drops");
+  if (drops_xml) {
+    for (pugi::xml_node item_xml = drops_xml.child("item"); item_xml; 
+      item_xml = item_xml.next_sibling("item")) {
+      string quantity_s = item_xml.text().get();
+      int item_id = boost::lexical_cast<int>(item_xml.attribute("id").value());
+      int chance = boost::lexical_cast<int>(item_xml.attribute("chance").value());
+      drops.push_back(Drop(item_id, chance, quantity_s));
+    }
+  }
+
+  // Physics: Speed - Turn Rate.
   const pugi::xml_node& base_speed_xml = asset_xml.child("base-speed");
   if (base_speed_xml) {
     base_speed = boost::lexical_cast<float>(base_speed_xml.text().get());
@@ -259,7 +273,32 @@ string GameAsset::GetDisplayName() {
 
 shared_ptr<GameAsset> CreateAsset(Resources* resources, 
   const pugi::xml_node& xml) {
-  shared_ptr<GameAsset> asset = CreateAsset(resources);
+  const pugi::xml_node& type_xml = xml.child("type");
+
+  shared_ptr<GameAsset> asset;
+  if (type_xml) {
+    switch (StrToAssetType(type_xml.text().get())) {
+      case ASSET_CREATURE:
+        asset = make_shared<CreatureAsset>(resources);
+        break;
+      case ASSET_ITEM:
+        asset = make_shared<ItemAsset>(resources);
+        break;
+      case ASSET_PLATFORM:
+        asset = make_shared<PlatformAsset>(resources);
+        break;
+      case ASSET_DESTRUCTIBLE:
+        asset = make_shared<DestructibleAsset>(resources);
+        break;
+      case ASSET_DEFAULT:
+      default:
+        asset = CreateAsset(resources);
+        break;
+    }
+  } else {
+    asset = CreateAsset(resources);
+  }
+
   asset->Load(xml);
   return asset;
 }

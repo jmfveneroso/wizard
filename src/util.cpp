@@ -1,4 +1,5 @@
 #include "util.hpp"
+#include <boost/algorithm/string/replace.hpp>
 
 GLuint GetUniformId(GLuint program_id, string name) {
   return glGetUniformLocation(program_id, name.c_str());
@@ -440,8 +441,8 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
 void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices) {
   glBindVertexArray(m.vao_);
-  glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  // glEnable(GL_BLEND);
+  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
@@ -491,12 +492,13 @@ void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs,
 
   BindBuffer(m.vertex_buffer_, 0, 3);
   BindBuffer(m.uv_buffer_, 1, 2);
-  BindBuffer(m.tangent_buffer_, 2, 3);
-  BindBuffer(m.bitangent_buffer_, 3, 3);
+  BindBuffer(m.tangent_buffer_, 3, 3);
+  BindBuffer(m.bitangent_buffer_, 4, 3);
 
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
   glBindVertexArray(0);
-  for (int slot = 0; slot < 2; slot++) {
+
+  for (int slot = 0; slot < 4; slot++) {
     glDisableVertexAttribArray(slot);
   }
 }
@@ -980,6 +982,10 @@ float LoadFloatFromXml(const pugi::xml_node& node) {
   return boost::lexical_cast<float>(node.text().get());
 }
 
+string LoadStringFromXml(const pugi::xml_node& node) {
+  return node.text().get();
+}
+
 mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
   int bone_id, int frame) {
   if (mesh.animations.find(animation_name) == mesh.animations.end()) {
@@ -1230,7 +1236,12 @@ Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle) {
 
 int Random(int low, int high) {
   if (high == 0) return 0;
+  if (low == high) return low;
   return low + (rand() % (high - low));
+}
+
+int RandomEven(int low, int high) {
+  return (Random(low, high) & 0xFFFFFFFE);
 }
 
 string ActionTypeToStr(const ActionType& type) {
@@ -1254,3 +1265,275 @@ string ActionTypeToStr(const ActionType& type) {
   });
   return action_type_to_str[type];
 }
+
+string AssetTypeToStr(const AssetType& type) {
+  static unordered_map<AssetType, string> asset_type_to_str ({
+    { ASSET_DEFAULT, "default" }, 
+    { ASSET_CREATURE, "creature" },
+    { ASSET_ITEM, "item" },
+    { ASSET_PLATFORM, "platform" },
+    { ASSET_DESTRUCTIBLE, "destructible" },
+    { ASSET_NONE, "none" }
+  });
+  return asset_type_to_str[type];
+}
+
+AssetType StrToAssetType(const string& s) {
+  static unordered_map<string, AssetType> str_to_asset_type ({
+    { "default", ASSET_DEFAULT },
+    { "creature", ASSET_CREATURE },
+    { "item", ASSET_ITEM },
+    { "platform", ASSET_PLATFORM },
+    { "destructible", ASSET_DESTRUCTIBLE },
+    { "none", ASSET_NONE }
+  });
+  return str_to_asset_type[s];
+}
+
+bool IsNaN(const vec3& v) {
+  for (int i = 0; i < 3; i++) {
+    if (isnan(v[i])) return true;
+  }
+  return false;
+}
+
+void CreateLine(const vec3& source, const vec3& dest, vector<vec3>& vertices, 
+  vector<vec2>& uvs, vector<unsigned int>& indices, vector<Polygon>& polygons) {
+  vec3 v = dest - source;
+  vec3 up = vec3(0, 1, 0);
+  vec3 right = normalize(cross(v, up));
+  up = normalize(cross(right, v));
+
+  const float k = 0.5f;
+  vector<vec3> verts {
+    // v[0], v[4], v[1], v[1], v[4], v[5], // Top.
+    source - right * k, source + right * k,
+    dest - right * k, dest + right * k,
+    source - up * k, source + up * k,
+    dest - up * k, dest + up * k
+  };
+
+  vertices = {
+    verts[0], verts[1], verts[2], verts[2], verts[1], verts[3],
+    verts[4], verts[5], verts[6], verts[6], verts[5], verts[7],
+  };
+
+  vector<vec2> u = {
+    vec2(0.45, 0), vec2(0.55, 0), vec2(0.45, 1), vec2(0.55, 1)
+    // vec2(0, 0), vec2(0, 1), vec2(1, 0), vec2(1, 1)
+  };
+
+  uvs = {
+    u[0], u[1], u[2], u[2], u[1], u[3],  // Top.
+    u[0], u[1], u[2], u[2], u[1], u[3]  // Top.
+    // u[4], u[5], u[6],  u[6],  u[5], u[7],  // Back.
+    // u[8], u[9], u[10], u[10], u[9], u[11], // Left.
+    // u[8], u[9], u[10], u[10], u[9], u[11], // Right.
+    // u[4], u[5], u[6],  u[6],  u[5], u[7],  // Front.
+    // u[0], u[1], u[2],  u[2],  u[1], u[3]   // Bottom.
+  };
+
+  indices = vector<unsigned int>(12);
+  for (int i = 0; i < 12; i++) { indices[i] = i; }
+
+  // Mesh mesh = CreateMesh(0, vertices, uvs, indices);
+  for (int i = 0; i < 4; i++) {
+    Polygon p;
+    p.vertices.push_back(vertices[i*3]);
+    p.vertices.push_back(vertices[i*3+1]);
+    p.vertices.push_back(vertices[i*3+2]);
+    polygons.push_back(p);
+  }
+}
+
+void CreateCylinder(const vec3& source, const vec3& dest, float radius,
+  vector<vec3>& vertices, vector<vec2>& uvs, vector<unsigned int>& indices, 
+  vector<Polygon>& polygons) {
+  int num_points_in_circle = 6;
+  float angle_step = (3.141592f * 2) / num_points_in_circle;
+
+  vertices = vector<vec3>(num_points_in_circle * 6);
+  vector<vec3> verts;
+  vector<vec2> uvs_;
+
+  float angle = 0;
+  float y = 0;
+  float uv_x = 0;
+  float uv_y = 0;
+  for (int i = 0; i < num_points_in_circle; i++) {
+    float x = radius * cos(angle);
+    float z = radius * sin(angle);
+    verts.push_back(vec3(x, y, z));
+    uvs_.push_back(vec2(uv_x, uv_y));
+    angle += angle_step;
+    uv_x += 1.0f / float(num_points_in_circle);
+  }
+
+  angle = 0;
+  y = length(dest - source);
+  uv_x = 0;
+  uv_y = 1;
+  for (int i = 0; i < num_points_in_circle; i++) {
+    float x = radius * cos(angle);
+    float z = radius * sin(angle);
+    verts.push_back(glm::vec3(x, y, z));
+    uvs_.push_back(vec2(uv_x, uv_y));
+    angle += angle_step;
+    uv_x += 1.0f / float(num_points_in_circle);
+  }
+
+  quat quat_rotation = RotationBetweenVectors(vec3(0, 1, 0), 
+    normalize(dest - source));
+  mat4 rotation_matrix = mat4_cast(quat_rotation);
+  for (int i = 0; i < verts.size(); i++) {
+    verts[i] = vec3(rotation_matrix * vec4(verts[i], 1.0));
+  }
+
+  for (int i = 0; i < num_points_in_circle; i++) {
+    int j = i + 1;
+    if (j >= num_points_in_circle) j = 0;
+
+    vertices.push_back(verts[i]);
+    vertices.push_back(verts[num_points_in_circle + i]);
+    vertices.push_back(verts[j]);
+    vertices.push_back(verts[j]);
+    vertices.push_back(verts[num_points_in_circle + i]);
+    vertices.push_back(verts[num_points_in_circle + j]);
+    uvs.push_back(uvs_[i]);
+    uvs.push_back(uvs_[num_points_in_circle + i]);
+    uvs.push_back(uvs_[j]);
+    uvs.push_back(uvs_[j]);
+    uvs.push_back(uvs_[num_points_in_circle + i]);
+    uvs.push_back(uvs_[num_points_in_circle + j]);
+  }
+
+  indices = vector<unsigned int>(vertices.size());
+  for (int i = 0; i < vertices.size(); i++) { indices[i] = i; }
+
+  for (int i = 0; i < vertices.size() / 3; i++) {
+    Polygon p;
+    p.vertices.push_back(vertices[i*3]);
+    p.vertices.push_back(vertices[i*3+1]);
+    p.vertices.push_back(vertices[i*3+2]);
+    polygons.push_back(p);
+  }
+}
+
+bool IsNumber(char c) {
+  return ((c >= 48u && c <= 57u) || c == 46u);
+}
+
+DiceFormula ParseDiceFormula(string s) {
+  DiceFormula dice_formula; 
+
+  s.erase(remove(s.begin(), s.end(), ' '), s.end());
+  if (s.empty()) return dice_formula;
+
+  int i = 0; 
+  string symbol;
+  for (; i < s.size(); i++) {
+    if (!IsNumber(s[i])) break;
+    symbol += s[i];
+  }
+  if (symbol.empty()) throw runtime_error(string("Invalid dice formula: ") + s);
+
+  int num = boost::lexical_cast<int>(symbol);
+  if (i == s.size()) {
+    dice_formula.bonus = num;
+    return dice_formula;
+  }
+
+  dice_formula.num_die = num;
+  if (s[i++] != 'd') throw runtime_error(string("Invalid dice formula: ") + s);
+
+  string symbol2;
+  for (; i < s.size(); i++) {
+    if (!IsNumber(s[i])) break;
+    symbol2 += s[i];
+  }
+  if (symbol2.empty()) throw runtime_error(string("Invalid dice formula: ") + s);
+  dice_formula.dice = boost::lexical_cast<int>(symbol2);
+
+  if (i == s.size()) return dice_formula;
+
+  if (s[i++] != '+') throw runtime_error(string("Invalid dice formula: ") + s);
+
+  string symbol3;
+  for (; i < s.size(); i++) {
+    if (!IsNumber(s[i])) break;
+    symbol3 += s[i];
+  }
+  if (symbol3.empty()) throw runtime_error(string("Invalid dice formula: ") + s);
+  dice_formula.bonus = boost::lexical_cast<int>(symbol3);
+  return dice_formula;
+}
+
+int ProcessDiceFormula(const DiceFormula& dice_formula) {
+  int result = 0;
+  for (int j = 0; j < dice_formula.num_die; j++) {
+    result += Random(1, dice_formula.dice + 1);
+  }
+  return result + dice_formula.bonus;
+}
+
+string DiceFormulaToStr(const DiceFormula& dice_formula) {
+  if (dice_formula.num_die == 0) {
+    return boost::lexical_cast<string>(dice_formula.bonus);
+  }
+
+  string s = boost::lexical_cast<string>(dice_formula.num_die) + "d" +
+             boost::lexical_cast<string>(dice_formula.dice);
+
+  if (dice_formula.bonus == 0) return s;
+  return s + "+" + boost::lexical_cast<string>(dice_formula.bonus);
+}
+
+int Combination(int n, int k) {
+  int result = 1;
+  for (int i = n; i > n-k; i--) result *= i;
+  for (int i = 0; i < k; i++) result /= i + 1;
+  return result;
+}
+
+// Taken from here: https://math.stackexchange.com/questions/1227409/indexing-all-combinations-without-making-list
+vector<int> GetCombinationFromIndex(int i, int n, int k) {
+  if (i >= Combination(n, k)) return {};
+
+  vector<int> c;
+  int r = i+1;
+  int j = 0;
+  for (int s = 1; s < k + 1; s++) {
+    int cs = j + 1;
+    while (r - Combination(n - cs, k - s) > 0) {
+      r -= Combination(n - cs, k - s);
+      cs += 1;
+    }
+    c.push_back(cs-1);
+    j = cs;
+  }
+  return c;
+}
+
+int GetIndexFromCombination(vector<int> combination, int n, int k) {
+  sort(combination.begin(), combination.end()); 
+
+  const int num_combinations = Combination(n, k);
+  for (int i = 0; i < num_combinations; i++) {
+    vector<int> cur_combination = GetCombinationFromIndex(i, n, k);
+
+    bool found = true;
+    for (int j = 0; j < k; j++) {
+      if (cur_combination[j] != combination[j]) {
+        found = false;
+        break;
+      }
+    }
+    if (found) return i;
+  }
+  return -1;    
+}
+
+// void CreateSphere(int dome_radius, int num_circles, int num_points_in_circle,
+//   vector<vec3>& vertices, vector<vec2>& uvs, 
+//   vector<unsigned int>& indices, vector<Polygon>& polygons) {
+// }

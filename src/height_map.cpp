@@ -12,25 +12,21 @@ void HeightMap::Load() {
     throw runtime_error("Couldn't open height map " + string(filename_));
   }
 
+  int num_points = kHeightMapSize * kHeightMapSize;
   int num_bytes = fread(compressed_height_map_, sizeof(unsigned char), 
-    192000000, f);
-  for (int i = 0; i < 64000000; i++) {
-    unsigned short h2;
-    unsigned char b1 = compressed_height_map_[3*i];
-    unsigned char b2 = compressed_height_map_[3*i+1];
-    unsigned char b3 = compressed_height_map_[3*i+2];
-    h2 = (b1 << 8) + b2;
-  }
+    num_points * 3, f);
   cout << "Ended loading height map" << endl;
 }
 
 void HeightMap::Save() {
-  FILE* f = fopen(filename_.c_str(), "wb");
+  string s = filename_;
+  FILE* f = fopen(s.c_str(), "wb");
   if (!f) {
     throw runtime_error(string("File ") + filename_ + " does not exist.");
   }
 
-  fwrite(compressed_height_map_, sizeof(unsigned char), 192000000, f);
+  // fwrite(compressed_height_map_, sizeof(unsigned char), 192000000, f);
+  fwrite(compressed_height_map_, sizeof(unsigned char), 48000000, f);
   fclose(f);
 }
 
@@ -117,7 +113,7 @@ TerrainPoint HeightMap::GetTerrainPoint(int x, int y, bool calculate_normal) {
   p.tile = b3;
 
   p.blending = vec3(0, 0, 0);
-  if (p.tile > 0) {
+  if (p.tile > 0 && p.tile < 4) {
     p.blending[p.tile-1] = 1.0f;
   }
 

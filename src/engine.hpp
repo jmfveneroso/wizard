@@ -27,6 +27,7 @@ class Engine {
   shared_ptr<AI> ai_ = nullptr;
   shared_ptr<Physics> physics_ = nullptr;
   shared_ptr<PlayerInput> player_input_ = nullptr;
+  ObjPtr line_obj_ = nullptr;
 
   float delta_time_ = 0.0f;
   int window_width_ = WINDOW_WIDTH;
@@ -49,6 +50,7 @@ class Engine {
 
   // Debug.
   unordered_map<string, ObjPtr> door_obbs_;
+  ObjPtr my_box_;
   void RunBeforeFrameDebugFunctions();
 
  public:

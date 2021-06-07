@@ -1,6 +1,6 @@
 #include "physics.hpp"
 
-const float kMinDistance = 500.0f;
+const float kMinDistance = 300.0f;
 
 Physics::Physics(shared_ptr<Resources> asset_catalog) : 
   resources_(asset_catalog) {}
@@ -49,11 +49,8 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   } else if (physics_behavior == PHYSICS_FLY) { 
     obj->speed.y *= 0.95f;
   } else if (physics_behavior == PHYSICS_SWIM) { 
-    if (obj->position.y > 0.0f) {
-      obj->speed += vec3(0, -GRAVITY, 0);
-    } else {
-      obj->speed.y *= 0.6f;
-    }
+    obj->speed = vec3(0);
+    return;
   } else {
     obj->speed += vec3(0, -GRAVITY, 0);
   }

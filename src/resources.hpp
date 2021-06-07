@@ -43,6 +43,10 @@
 #define GRAVITY 0.016
 
 const int kMaxParticles = 1000;
+const int kMax3dParticles = 20;
+const int kArcaneSpellItemOffset = 5000;
+const int kArcaneWhiteOffset = 5015;
+const int kArcaneBlackOffset = 5117;
 
 class GameObject;
 
@@ -64,18 +68,18 @@ struct Quest {
 };
 
 struct Configs {
-  vec3 world_center = vec3(10000, 0, 10000);
+  vec3 world_center = kWorldCenter;
   vec3 initial_player_pos = vec3(10947.5, 172.5, 7528);
   vec3 respawn_point = vec3(10045, 500, 10015);
-  float target_player_speed = 0.04f; 
-  float player_speed = 0.03f; 
+  float max_player_speed = 0.04f; 
+  float player_speed = 0.04f; 
   float taking_hit = 0.0f; 
   float fading_out = -60.0f; 
   float time_of_day = 7.0f;
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
   bool disable_attacks = false;
   string edit_terrain = "none";
-  bool levitate = true;
+  bool levitate = false;
   float jump_force = 0.3f;
   int brush_size = 10;
   int selected_tile = 0;
@@ -90,38 +94,79 @@ struct Configs {
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
   int item_matrix[8][7] = {
-    { 5, 6, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 }
+    { 13, 14, 15, 10, 0, 0, 0 },
+    { 13, 14, 15, 12, 0, 0, 0 },
+    { 13, 14, 15, 12, 0, 0, 0 },
+    {  0,  0,  0,  0, 0, 0, 0 },
+    {  0,  0,  0,  0, 0, 0, 0 },
+    {  0,  0,  0,  0, 0, 0, 0 },
+    {  0,  0,  0,  0, 0, 0, 0 },
+    {  0,  0,  0,  0, 0, 0, 0 },
   };
   int item_quantities[8][7] = {
-    { 3, 100, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0, 0, 0 }
+    { 1, 1, 1, 100, 0, 0, 0 },
+    { 1, 1, 1, 1,   0, 0, 0 },
+    { 1, 1, 1, 1,   0, 0, 0 },
+    { 0, 0, 0, 0,   0, 0, 0 },
+    { 0, 0, 0, 0,   0, 0, 0 },
+    { 0, 0, 0, 0,   0, 0, 0 },
+    { 0, 0, 0, 0,   0, 0, 0 },
+    { 0, 0, 0, 0,   0, 0, 0 },
   };
   int selected_spell = 0;
-  int spellbar[8] = { 1, 6, 0, 0, 0, 0, 0, 0 };
-  int spellbar_quantities[8] = { 100, 100, 0, 0, 0, 0, 0, 0 };
+  int spellbar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+  int spellbar_quantities[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   int craft_table[5] = { 0, 0, 0, 0, 0 };
   vector<int> learned_spells { 0, 0, 0, 0, 0, 0, 0, 0 };
   vector<tuple<string, float>> messages;
   string overlay;
-  string render_scene = "default";
+  string render_scene = "town";
   bool show_spellbook = false;
+  bool show_store = false;
   bool override_camera_pos = false;
   vec3 camera_pos = vec3(0, 0, 0);
   bool update_renderer = false;
   float light_radius = 90.0f;
+  bool darkvision = false;
+  int summoned_creatures = 0;
+
+  int store_items[4][7] = { 
+    { 13, 5001, 0, 0, 0, 0, 0 },
+    { 14, 5005, 0, 0, 0, 0, 0 },
+    { 15,    3, 0, 0, 0, 0, 0 },
+    { 5000,  0, 0, 0, 0, 0, 0 }
+  };
+
+  // Player stats
+  // ----------------------
+  int max_life = 10;
+  int armor_class = 0;
+  int experience = 0;
+  int level = 0;
+  int skill_points = 5;
+  DiceFormula base_damage;
+  DiceFormula base_hp_dice;
+
+  // Magical attributes.
+  int arcane_level = 1;
+  int arcane_resistance = 0;
+
+  // Later.
+  // int natural_level = 0;
+  // int spiritual_level = 0;
+  // int natural_resistance = 0;
+  // int spiritual_resistance = 0;
+
+  int dungeon_level = 0;
+
+  bool disable_collision = false;
+  bool disable_ai = false;
+
+  // Arcane spells.
+  vector<int> complex_spells { 0, 1, 5 }; // 3 possible combinations.
+  vector<int> layered_spells { 2, 4, 8, 9, 11, 3 }; // 12 possible combinations.
+  vector<int> white_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8 }; // 105 possible combinations.
+  vector<int> black_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }; // 5460 possible combinations.
 };
 
 struct ItemData {
@@ -130,25 +175,37 @@ struct ItemData {
   string description;
   string icon;
   string asset_name;
-  ItemData(int id, string name, string description, string icon, string asset_name) 
-    : id(id), name(name), description(description), icon(icon), asset_name(asset_name) {
-  }
+  int price;
+  int max_stash;
+  int spell_id = -1;
+  bool insert_in_spellbar = false;
+
+  ItemData() {}
+  ItemData(int id, string name, string description, string icon, 
+    string asset_name, int price, int max_stash, bool insert_in_spellbar) 
+    : id(id), name(name), description(description), icon(icon), 
+      asset_name(asset_name), price(price), max_stash(max_stash),
+      insert_in_spellbar(insert_in_spellbar) {}
 };
 
-struct SpellData {
+struct ArcaneSpellData {
   string name;
   string description;
-  vector<int> formula;
   string image_name;
-  vec2 image_position;
-  vec2 image_size;
+
+  int type = 0; // 0 - complex, 1 - layered, 2 - white, 3 - black.
+  int spell_id = 0;
   int item_id;
-  SpellData(string name, string description, string image_name,
-    vec2 image_position, vec2 image_size, vector<int> formula, int item_id) 
-    : name(name), description(description), image_name(image_name),
-      image_position(image_position), image_size(image_size), 
-      formula(formula), item_id(item_id) {
-  }
+  int index;
+  int price;
+  int max_stash;
+
+  ArcaneSpellData() {}
+  ArcaneSpellData(string name, string description, string image_name, int type,
+    int item_id, int spell_id, int price, int max_stash) 
+    : name(name), description(description), image_name(image_name), 
+      type(type), item_id(item_id), spell_id(spell_id), price(price), 
+      max_stash(max_stash) {}
 };
 
 struct Phrase {
@@ -166,59 +223,6 @@ struct DialogChain {
   vector<Phrase> phrases;
   unordered_map<string, string> on_finish_phrase_events;
 };
-
-// 0  = none
-// 1  = four doors
-// 2  = vertical corridor
-// 3  = horizontal corridor
-// 4  = horizontal diagonal corridor
-// 5  = vertical diagonal corridor
-// 6  = two doors
-// 7  = L door (southwest)
-// 8  = L door (southeast)
-// 9  = L door (northeast)
-// 10 = L door (northwest)
-// 11 = one door (south)
-// 12 = one door (west)
-// 13 = one door (north)
-// 14 = one door (east)
-
-// struct Dungeon {
-//   int dungeon_map[2][15][15] = {
-//     {
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 2, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 5, 3, 1, 3, 1, 3, 4, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 2, 0, 2, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 2, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 6, 0, 0, 11, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 2, 0, 0, 2,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 9, 3, 3, 1,  3, 12, 0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 2,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 13, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0,  0, 0, 0, 0 }
-//     },
-//     {
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 3, 1, 3, 10, 0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 },
-//       { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  0, 0, 0, 0 }
-//     }
-//   };
-// };
 
 struct CurrentDialog {
   bool enabled = false;
@@ -259,12 +263,16 @@ class CompareCallbacks {
 class Resources {
   string directory_;
   string shaders_dir_;
+  string resources_dir_;
   int id_counter_ = 0;
   double frame_start_ = 0;
   double delta_time_ = 0;
+  int max_octree_depth_ = 7;
   shared_ptr<ScriptManager> script_manager_ = nullptr;
   unordered_map<string, shared_ptr<Npc>> npcs_;
   std::default_random_engine generator_;
+  bool use_quadtree_ = true;
+  GLFWwindow* window_;
 
   shared_ptr<Configs> configs_;
   GameState game_state_ = STATE_EDITOR;
@@ -301,9 +309,11 @@ class Resources {
   // GameObject indices.
   vector<shared_ptr<GameObject>> new_objects_;
   vector<shared_ptr<GameObject>> moving_objects_;
+  vector<shared_ptr<GameObject>> destructibles_;
   vector<shared_ptr<GameObject>> lights_;
   vector<shared_ptr<GameObject>> items_;
   vector<shared_ptr<GameObject>> extractables_;
+  vector<shared_ptr<Particle>> particles_3d_;
 
   shared_ptr<Player> player_;
   shared_ptr<OctreeNode> outside_octree_;
@@ -315,30 +325,30 @@ class Resources {
   // Mutexes.
   mutex mutex_;
 
-  vector<ItemData> item_data_ {
-    { 0, "", "", "", "" },
-    { 1, "Magic Missile", "magic-missile-description", "magic_missile_icon", "spell-crystal" },
-    { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot" },
-    { 3, "Poison Vial", "poison-description", "poison_icon", "potion" },
-    { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "tiny-rock" },
-    { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock" },
-    { 6, "Dispel Magic", "dispel-magic-description", "dispel_magic_icon", "open-lock-crystal" },
-    { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock" },
-    { 8, "Fish", "fish-description", "fish_icon", "fish" },
-    { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp" }
+  unordered_map<int, ItemData> item_data_ {
+    { 0, { 0, "", "", "", "", 0, 0, false } },
+    { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true } },
+    { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true } },
+    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true } },
+    { 4, { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true } },
+    { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true } },
+    { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true } },
+    { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true } },
+    { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true } },
+    { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true } },
+    { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false } },
+    { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true } },
+    { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true } },
+    { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true } },
+    { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true } },
+    { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true } }
   };
 
-  vector<SpellData> spell_data_ {
-    { "", "", "", vec2(0), vec2(0), {}, 0 },
-    { "Magic Missile", "magic-missile-description", 
-      "magic_missile_icon", vec2(96, 128), vec2(64, 64), { 5, 5 }, 1 },
-    { "Minor Open Lock", "minor-open-lock-description", 
-      "open_lock_icon", vec2(160, 128), vec2(64, 64), { 2, 3 }, 4 },
-    { "Dispel Magic", "dispel-magic-description", 
-      "dispel_magic_icon", vec2(224, 128), vec2(64, 64), { 2, 3 }, 6 },
-    { "Harpoon", "harpoon-description", 
-      "harpoon_icon", vec2(288, 128), vec2(64, 64), { 2, 3 }, 6 }
-  };
+  vector<shared_ptr<ArcaneSpellData>> arcane_spell_data_;
+  unordered_map<int, int> complex_to_spell_id_;
+  unordered_map<int, int> layered_to_spell_id_;
+  unordered_map<int, int> white_to_spell_id_;
+  unordered_map<int, int> black_to_spell_id_;
 
   // Aux loading functions.
   shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
@@ -350,13 +360,13 @@ class Resources {
   // XML loading functions.
   void LoadShaders(const string& directory);
   void LoadMeshes(const string& directory);
+  void LoadNpcs(const string& xml_filename);
   void LoadAssetFile(const string& xml_filename);
   void LoadAssets(const string& directory);
   void LoadConfig(const string& xml_filename);
   void LoadObjects(const string& directory);
   void LoadPortals(const string& xml_filename);
   void LoadSectors(const string& xml_filename);
-  void LoadScripts(const string& directory);
 
   void CreateOutsideSector();
   void Init();
@@ -373,9 +383,6 @@ class Resources {
   int last_used_particle_ = 0;
   vector<shared_ptr<Particle>> particle_container_;
 
-  // TODO: move to height map.
-  unsigned char compressed_height_map_[192000000]; // 192 MB.
-
   // TODO: move to space partition.
   vector<shared_ptr<GameObject>> GenerateOptimizedOctreeAux(
     shared_ptr<OctreeNode> octree_node, 
@@ -384,10 +391,19 @@ class Resources {
   shared_ptr<OctreeNode> GetDeepestOctreeNodeAtPos(const vec3& pos);
   void ProcessNpcs();
   void ProcessSpawnPoints();
+  void ProcessTempStatus();
   ObjPtr CreateBookshelf(const vec3& pos, const ivec2& tile);
 
+  void CreateArcaneSpellCrystal(int item_id, string name, 
+    string display_name, string icon_name, string description, 
+    string texture_name);
+  void CreateArcaneSpellCrystals();
+  void LoadArcaneSpells();
+  void CalculateArcaneSpells();
+
  public:
-  Resources(const string& resources_dir, const string& shaders_dir);
+  Resources(const string& resources_dir, const string& shaders_dir, 
+    GLFWwindow* window_);
 
   // Just right.
   void RemoveObject(ObjPtr obj);
@@ -412,6 +428,7 @@ class Resources {
   double GetFrameStart();
   vector<shared_ptr<Particle>>& GetParticleContainer();
   shared_ptr<Player> GetPlayer();
+  shared_ptr<ScriptManager> GetScriptManager() { return script_manager_; }
   shared_ptr<Mesh> GetMesh(ObjPtr obj);
   vector<shared_ptr<GameObject>>& GetMovingObjects();
   vector<shared_ptr<GameObject>>& GetLights();
@@ -435,8 +452,8 @@ class Resources {
   GLuint GetShader(const string& name);
   shared_ptr<Configs> GetConfigs();
   string GetString(string name);
-  vector<ItemData>& GetItemData();
-  vector<SpellData>& GetSpellData();
+  unordered_map<int, ItemData>& GetItemData();
+  vector<shared_ptr<ArcaneSpellData>>& GetArcaneSpellData();
   double GetDeltaTime() { return delta_time_; }
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
   unordered_map<string, shared_ptr<Npc>>& GetNpcs() { return npcs_; }
@@ -457,7 +474,17 @@ class Resources {
   // TODO: move to particle / missiles.
   void CastMagicMissile(const Camera& camera);
   void CastBurningHands(const Camera& camera);
+  void CastStringAttack(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
+  void CastLightningRay(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
+  void CastHeal(ObjPtr owner);
+  void CastDarkvision();
   void CastHarpoon(const Camera& camera);
+  void CastFireExplosion(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
+  void CastFireball(const Camera& camera);
+
   void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction, bool paralysis = false);
   bool SpiderCastPowerMagicMissile(ObjPtr spider, const vec3& direction);
   void UpdateMissiles();
@@ -473,7 +500,8 @@ class Resources {
 
   // TODO: move to space partition.
   ObjPtr IntersectRayObjects(const vec3& position, 
-    const vec3& direction, float max_distance=50.0f, bool only_items=true);
+    const vec3& direction, float max_distance, 
+    IntersectMode mode = INTERSECT_ITEMS);
   vector<ObjPtr> GetKClosestLightPoints(const vec3& position, int k, 
     float max_distance=50);
   shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 
@@ -544,8 +572,22 @@ class Resources {
   void RegisterOnUnitDieEvent(const string& fn);
   void ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2);
   char** GetCurrentDungeonLevel();
-  void CreateDungeon();
+  void CreateDungeon(bool generate_dungeon = true);
+  void CreateTown();
   void DeleteAllObjects();
+
+  bool UseQuadtree() { return use_quadtree_; }
+  void SaveGame();
+  void LoadGame(const string& config_filename, bool calculate_crystals = true);
+  int CountGold();
+  bool TakeGold(int quantity);
+  void CountOctreeNodes();
+  shared_ptr<ArcaneSpellData> WhichArcaneSpell(int item_id);
+  int GetArcaneSpellType(int item_id);
+  int CrystalCombination(int item_id1, int item_id2);
+
+  void GiveExperience(int exp_points);
+  void AddSkillPoint();
 };
 
 #endif // __RESOURCES_HPP__

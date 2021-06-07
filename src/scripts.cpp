@@ -269,6 +269,8 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
     obj->actions.push(make_shared<TakeAimAction>());
   } else if (s2 == "ranged-attack") {
     obj->actions.push(make_shared<RangedAttackAction>());
+  } else if (s2 == "meelee-attack") {
+    obj->actions.push(make_shared<MeeleeAttackAction>());
   } else if (s2 == "random-move") {
     obj->actions.push(make_shared<RandomMoveAction>());
   } else if (s2 == "meelee-attack") {
@@ -351,6 +353,15 @@ static PyObject* show_spellbook(PyObject *self, PyObject *args) {
   }
 
   gResources->GetConfigs()->show_spellbook = true;
+  return PyBool_FromLong(1);
+}
+
+static PyObject* show_store(PyObject *self, PyObject *args) {
+  if (!gResources) {
+    return NULL;
+  }
+
+  gResources->GetConfigs()->show_store = true;
   return PyBool_FromLong(1);
 }
 
@@ -689,10 +700,13 @@ static PyObject* enter_dungeon(PyObject *self, PyObject *args) {
   ObjPtr player = gResources->GetPlayer();
   if (!player) return NULL;
 
+  gResources->DeleteAllObjects();
+  gResources->CreateDungeon();
   Dungeon& dungeon = gResources->GetDungeon();
   vec3 pos = dungeon.GetPlatform();
   player->ChangePosition(pos);
   gResources->GetConfigs()->render_scene = "dungeon";
+  gResources->SaveGame();
 
   return PyFloat_FromDouble(0);
 }
@@ -785,6 +799,7 @@ static PyMethodDef EmbMethods[] = {
  { "start_scene", start_scene, METH_VARARGS, "Start scene" },
  { "start_quest", start_quest, METH_VARARGS, "Start quest" },
  { "show_spellbook", show_spellbook, METH_VARARGS, "Show spellbook" },
+ { "show_store", show_store, METH_VARARGS, "Show store" },
  { "learn_spell", learn_spell, METH_VARARGS, "Learn spell" },
  { "override_camera_pos", override_camera_pos, METH_VARARGS, 
    "Override camera pos" },
@@ -820,7 +835,6 @@ ScriptManager::ScriptManager(Resources* resources)
   gResources = resources_;
   PyImport_AppendInittab("wizard", &PyInit_emb);
   Py_Initialize();
-  LoadScripts();
 }
 
 ScriptManager::~ScriptManager() {

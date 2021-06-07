@@ -22,6 +22,10 @@ void GameObject::Load(const string& in_name, const string& asset_name,
     active_animation = mesh->animations.begin()->first;
   }
 
+  // Attributes.
+  max_life = ProcessDiceFormula(game_asset->base_life);
+  life = ProcessDiceFormula(game_asset->base_life);
+
   resources_->AddGameObject(shared_from_this());
 }
 
@@ -177,11 +181,11 @@ bool GameObject::IsMovingObject() {
   switch (type) {
     case GAME_OBJ_PLAYER:
       return true;
+    case GAME_OBJ_PARTICLE:
+      return true;
     case GAME_OBJ_DEFAULT:
     case GAME_OBJ_MISSILE:
       break;
-    case GAME_OBJ_PARTICLE:
-      return true;
     default:
       return false;
   }
@@ -196,15 +200,15 @@ bool GameObject::IsMovingObject() {
 
 bool GameObject::IsItem() {
   if (type != GAME_OBJ_DEFAULT
-    && type != GAME_OBJ_PLAYER 
     && type != GAME_OBJ_MISSILE
+    && type != GAME_OBJ_ACTIONABLE
     && type != GAME_OBJ_DOOR) {
     return false;
   }
 
   if (!asset_group) return false;
   shared_ptr<GameAsset> asset = GetAsset();
-  return asset->item;
+  return asset->type == ASSET_ITEM || type == GAME_OBJ_ACTIONABLE;
 }
 
 bool GameObject::IsDungeonPiece() {
@@ -235,6 +239,24 @@ bool GameObject::IsLight() {
   if (!asset_group) return false;
   shared_ptr<GameAsset> asset = GetAsset();
   return asset->emits_light;
+}
+
+bool GameObject::IsDarkness() {
+  if (type != GAME_OBJ_DEFAULT
+    && type != GAME_OBJ_PLAYER 
+    && type != GAME_OBJ_MISSILE) {
+    return false;
+  }
+
+  if (!asset_group) return false;
+  shared_ptr<GameAsset> asset = GetAsset();
+  return asset->name == "darkness";
+}
+
+bool GameObject::Is3dParticle() {
+  if (type != GAME_OBJ_PARTICLE) return false;
+  if (!asset_group) return false;
+  return GetAsset()->name == "line";
 }
 
 // mat4 GameObject::GetBoneTransform() {
@@ -294,7 +316,10 @@ ObjPtr GameObject::GetParent() {
 // }
 
 string GameObject::GetDisplayName() {
-  if (asset_group == nullptr) return "";
+  if (!asset_group) {
+    if (type == GAME_OBJ_PLAYER) return "player";
+    return "";
+  }
   return GetAsset()->GetDisplayName();
 }
 
@@ -365,6 +390,7 @@ void GameObject::ToXml(pugi::xml_node& parent) {
   AppendXmlAttr(node, "name", name);
   AppendXmlNode(node, "position", position);
   AppendXmlTextNode(node, "asset", asset_group->name);
+  AppendXmlTextNode(node, "life", life);
 
   vec3 v = vec3(rotation_matrix * vec4(1, 0, 0, 1));
   v.y = 0;
@@ -442,8 +468,14 @@ ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
   if (asset_name == "door" || asset_name == "dungeon_door") {
     obj = make_shared<Door>(resources);
   // TODO: change to extract from xml.
-  } else if (asset_name == "crystal" || asset_name == "metal-eye-dock") {
+  } else if (asset_name == "crystal" || asset_name == "metal-eye-dock" || asset_name == "chest") {
+    cout << "Create actionable: " << asset_name << endl;
     obj = make_shared<Actionable>(resources);
+  } else if (asset_name == "line") {
+    shared_ptr<Particle> particle = make_shared<Particle>(resources);
+    particle->particle_type = resources->GetParticleTypeByName("string-attack");
+    obj = particle;
+    // obj->never_cull = true;
   } else {
     obj = make_shared<GameObject>(resources);
   }
@@ -648,7 +680,7 @@ BoundingSphere GameObject::GetBoneBoundingSphere(int bone_id) {
 
 shared_ptr<Player> CreatePlayer(Resources* resources) {
   shared_ptr<Player> player = make_shared<Player>(resources);
-  player->life = 100.0f;
+  player->life = 10;
   player->name = "player";
   player->physics_behavior = PHYSICS_NORMAL;
 
@@ -662,6 +694,9 @@ shared_ptr<Player> CreatePlayer(Resources* resources) {
 
   player->position = resources->GetConfigs()->initial_player_pos;
   resources->AddGameObject(player);
+
+  resources->GetConfigs()->base_damage = ParseDiceFormula("1d6");
+  resources->GetConfigs()->base_hp_dice = ParseDiceFormula("1d8+2");
   return player;
 }
 
@@ -816,7 +851,7 @@ ObjPtr CreateGameObjFromPolygons(Resources* resources,
 
   game_asset->lod_meshes[0] = mesh_name;
 
-  game_asset->shader = resources->GetShader("region");
+  game_asset->shader = resources->GetShader("solid");
   game_asset->aabb = GetAABBFromPolygons(m.polygons);
   game_asset->bounding_sphere = GetAssetBoundingSphere(polygons);
   game_asset->SetCollisionType(COL_NONE);
@@ -1092,13 +1127,12 @@ bool GameObject::IsRegion() {
 bool GameObject::IsCollidable() {
   if (!collidable) return false;
 
-  bool is_spider = asset_group != nullptr;
-  if (is_spider) is_spider = GetAsset()->name == "spider";
-
   switch (type) {
     case GAME_OBJ_PARTICLE: {
       shared_ptr<Particle> particle = static_pointer_cast<Particle>(shared_from_this());
-      if (particle->particle_type) {
+      if (!particle->existing_mesh_name.empty()) {
+        return true;
+      } else if (particle->particle_type) {
         return (particle->particle_type->name == "fireball");
       }
       return false;
@@ -1123,7 +1157,7 @@ bool GameObject::IsCollidable() {
   }
 
   if (parent_bone_id != -1) return false;
-  if (status == STATUS_DYING) return false;
+  // if (status == STATUS_DYING) return false;
 
   return true;
 }
@@ -1147,4 +1181,78 @@ void Sector::RemoveObject(ObjPtr obj) {
 AssetType GameObject::GetType() {
   if (!asset_group) return ASSET_NONE;
   return GetAsset()->type;
+}
+
+void GameObject::AddTemporaryStatus(shared_ptr<TemporaryStatus> new_status) {
+  if (temp_status.find(new_status->status) == temp_status.end()) {
+    temp_status[new_status->status] = new_status;
+    return;
+  }
+
+  if (temp_status[new_status->status]->strength > new_status->strength) {
+    return;
+  }
+
+  temp_status[new_status->status] = new_status;
+}
+
+bool GameObject::IsDestructible(){
+  if (!asset_group) return false;
+  return GetAsset()->type == ASSET_DESTRUCTIBLE;
+}
+
+void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, bool take_hit_animation) {
+  life -= damage;
+  if (IsPlayer()) {
+    resources_->GetConfigs()->taking_hit = 30.0f;
+  }
+
+  resources_->CreateParticleEffect(10, position, normal * 1.0f, 
+    vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
+  if (life <= 0) {
+    status = STATUS_DYING; // This status is irreversible.
+    
+    if (attacker && attacker->IsPlayer()) {
+      cout << "Killed a unit, giving experience: " << GetAsset()->experience << endl;
+      resources_->GiveExperience(GetAsset()->experience);
+    }
+
+    // Drop.
+    if (IsDestructible()) {
+      unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+
+      status = STATUS_DEAD;
+      int r = Random(0, 3);
+      vec3 pos = position + vec3(0, 5.0f, 0);
+      ObjPtr obj = CreateGameObjFromAsset(resources_, 
+        item_data[13 + r].asset_name, pos);
+      obj->CalculateCollisionData();
+    } else if (IsPlayer()) {
+      status = STATUS_DEAD;
+      frame = 0;
+    }
+  } else if (take_hit_animation) {
+    status = STATUS_TAKING_HIT;
+    frame = 0;
+  }
+}
+
+void GameObject::MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal) {
+  if (!asset_group) {
+    return;
+  }
+
+  float damage = ProcessDiceFormula(GetAsset()->base_attack);
+  obj->DealDamage(shared_from_this(), damage, normal);
+}
+
+void GameObject::RangedAttack(shared_ptr<GameObject> obj, vec3 normal) {
+  float damage = 1;
+  if (!asset_group) {
+    // TODO: associate damage with missile.
+    damage = ProcessDiceFormula(ParseDiceFormula("1d20+5"));
+  } else {
+    damage = ProcessDiceFormula(GetAsset()->base_ranged_attack);
+  }
+  obj->DealDamage(shared_from_this(), damage, normal);
 }

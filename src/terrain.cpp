@@ -707,8 +707,8 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   glBindVertexArray(vao_);
   glUseProgram(program_id_);
   glDisable(GL_BLEND);
-  glEnable(GL_CULL_FACE);
-  glEnable(GL_STENCIL_TEST);
+  // glEnable(GL_CULL_FACE);
+  // glEnable(GL_STENCIL_TEST);
 
   // Remove this PURE_TILE_SIZE / TILE_SIZE mess.
   // These uniforms can probably be bound with the VAO.

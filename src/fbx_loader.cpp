@@ -393,7 +393,7 @@ FbxData FbxLoad(const std::string& filename) {
   return data;
 }
 
-FbxData LoadFbxData(const std::string& filename, Mesh& m) {
+FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   FbxData data = FbxLoad(filename);
   m.polygons = data.polygons;
 
@@ -434,9 +434,9 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
   BindBuffer(buffers[2], 2, 3);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]);
 
+  vector<ivec3> bone_ids;
+  vector<vec3> bone_weights;
   if (!data.bone_ids.empty()) {
-    vector<ivec3> bone_ids;
-    vector<vec3> bone_weights;
     for (int i = 0; i < data.indices.size(); i++) {
       bone_ids.push_back(data.bone_ids[data.indices[i]]);
       bone_weights.push_back(data.bone_weights[data.indices[i]]);
@@ -459,6 +459,8 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
     glDisableVertexAttribArray(slot);
   }
 
+  m.bounding_sphere = GetAssetBoundingSphere(m.polygons);
+
   // Animations.
   if (data.animations.empty()) {
     return data;
@@ -466,6 +468,33 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m) {
 
   for (const Animation& animation : data.animations) {
     m.animations[animation.name] = animation;
+
+    if (!calculate_bs) continue;
+    for (int frame = 0; frame < m.animations[animation.name].keyframes.size(); frame++) {
+      vector<vec3> vertices;
+
+      for (int j = 0; j < m.polygons.size(); j++) {
+        Polygon& p = m.polygons[j];
+        for (int k = 0; k < 3; k++) {
+          vec3 pos = p.vertices[k];
+          vec3 vertex = vec3(0);
+          unsigned int index = p.indices[k];
+          for (int n = 0; n < 3; n++) {
+            int bone_id = bone_ids[index][n];
+            if (bone_id == -1) continue;
+            float weight = bone_weights[index][n];
+
+            mat4 joint_transform = animation.keyframes[frame].transforms[bone_id];
+            vertex += vec3(joint_transform * vec4(pos, 1.0)) * weight;
+          }
+          vertices.push_back(vertex);
+        }
+      }
+      m.animations[animation.name].keyframes[frame].bounding_sphere =
+        GetBoundingSphereFromVertices(vertices);
+
+      cout << m.animations[animation.name].keyframes[frame].bounding_sphere << endl;
+    }
     // cout << "Extracted animation 2: " << animation.name << endl;
   }
 

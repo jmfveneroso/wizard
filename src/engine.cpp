@@ -50,7 +50,7 @@ void Engine::RunCommand(string command) {
     if (result.size() == 2) {
       try {
         float speed = boost::lexical_cast<float>(result[1]);
-        configs->target_player_speed = speed;
+        configs->max_player_speed = speed;
       } catch(boost::bad_lexical_cast const& e) {
       }
     }
@@ -71,6 +71,14 @@ void Engine::RunCommand(string command) {
     configs->stop_time = true;
   } else if (result[0] == "disable-attacks") {
     configs->disable_attacks = true;
+  } else if (result[0] == "disable-collision") {
+    configs->disable_collision = true;
+  } else if (result[0] == "enable-collision") {
+    configs->disable_collision = false;
+  } else if (result[0] == "disable-ai") {
+    configs->disable_ai = true;
+  } else if (result[0] == "enable-ai") {
+    configs->disable_ai = false;
   } else if (result[0] == "allow-attacks") {
     configs->disable_attacks = false;
   } else if (result[0] == "edit-tile") {
@@ -82,15 +90,29 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "noedit") {
     configs->edit_terrain = "none";
   } else if (result[0] == "s") {
-    configs->target_player_speed = 0.2;
+    configs->max_player_speed = 0.2;
     configs->levitate = true;
   } else if (result[0] == "nos") {
-    configs->target_player_speed = 0.04;
+    configs->max_player_speed = 0.04;
     configs->levitate = false;
   } else if (result[0] == "overlay") {
     configs->overlay = "wizard-farm-concept";
   } else if (result[0] == "nooverlay") {
     configs->overlay = "";
+  } else if (result[0] == "level-up") {
+    resources_->GiveExperience(10);
+  } else if (result[0] == "level-down") {
+    configs->level--;
+    configs->experience = 0;
+  } else if (result[0] == "arcane-level-up") {
+    configs->arcane_level++;
+  } else if (result[0] == "arcane-level-down") {
+    configs->arcane_level--;
+  } else if (result[0] == "full-life") {
+    player->life = configs->max_life;
+    player->status = STATUS_NONE;
+  } else if (result[0] == "count-octree") {
+    resources_->CountOctreeNodes();
   } else if (result[0] == "create") {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
@@ -98,12 +120,9 @@ void Engine::RunCommand(string command) {
 
       Camera c = player_input_->GetCamera();
       vec3 position = c.position + c.direction * 10.0f;
+
       configs->new_building = CreateGameObjFromAsset(resources_.get(), 
         asset_name, position);
-
-      if (asset_name == "fish") {
-        configs->new_building->active_animation = "Armature|jump";
-      }
 
       configs->new_building->being_placed = true;
       configs->place_object = true;
@@ -137,6 +156,34 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "delete-all") {
     cout << "im here" << endl;
     resources_->DeleteAllObjects();
+  } else if (result[0] == "save-game") {
+    resources_->SaveGame();
+  } else if (result[0] == "load-game") {
+    resources_->LoadGame("config.xml", false);
+  } else if (result[0] == "new-game") {
+    resources_->LoadGame("start_config.xml", false);
+    resources_->SaveGame();
+  } else if (result[0] == "create-cylinder") {
+    Camera c = player_input_->GetCamera();
+    vector<vec3> vertices;
+    vector<vec2> uvs;
+    vector<unsigned int> indices;
+    vector<Polygon> polygons;
+
+    CreateCylinder(vec3(0), vec3(100.0f, 100.0f, 100.0f), 10.0f, vertices, uvs, indices,
+      polygons);
+
+    Mesh mesh = CreateMesh(0, vertices, uvs, indices);
+    mesh.polygons = polygons;
+
+    vec3 position = c.position + c.direction * 10.0f;
+    ObjPtr obj = CreateGameObjFromPolygons(resources_.get(), 
+      mesh.polygons, resources_->GetRandomName(), position);
+
+    configs->new_building = obj;
+    configs->place_object = true;
+    configs->place_axis = 1;
+    resources_->AddNewObject(configs->new_building);
   }
 }
 
@@ -167,6 +214,10 @@ bool Engine::ProcessGameInput() {
     configs->show_spellbook = false;
     inventory_->Enable(window, INVENTORY_SPELLBOOK);
     resources_->SetGameState(STATE_INVENTORY);
+  } else if (configs->show_store) {
+    configs->show_store = false;
+    inventory_->Enable(window, INVENTORY_STORE);
+    resources_->SetGameState(STATE_INVENTORY);
   }
 
   switch (resources_->GetGameState()) {
@@ -177,17 +228,34 @@ bool Engine::ProcessGameInput() {
       if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           text_editor_->Enable();
-      
+    
           stringstream ss;
+
+          Dungeon& dungeon = resources_->GetDungeon(); 
+          ivec2 player_pos = dungeon.GetDungeonTile(player->position);
+
+          char** dungeon_map = dungeon.GetDungeon();
+          char** monsters_and_objs = dungeon.GetMonstersAndObjs();
+          for (int y = 0; y < kDungeonSize; y++) {
+            for (int x = 0; x < kDungeonSize; x++) {
+              if (x == player_pos.x && y == player_pos.y) {
+                ss << "@ ";
+                text_editor_->SetCursorPos(x*2, y);
+                continue;
+              }
+              char code = dungeon_map[x][y];
+              if (code == ' ') { 
+                code = monsters_and_objs[x][y];
+              }
+              ss << code << " ";
+            }
+            ss << endl;
+          }
+
+          ss << "=============================" << endl;
           ss << "Player pos: " << player->position << endl;
-
-          shared_ptr<Sector> s = resources_->GetSector(player->position + vec3(0, 0.75, 0));
-          ss << "Sector: " << s->name << endl;
-
-          ss << "Life: " << player->life << endl;
-
+          ss << "Dungeon level: " << configs->dungeon_level << endl;
           ss << "Time of day: " << configs->time_of_day << endl;
-
           if (configs->place_object) {
             ss << "Name: " << configs->new_building->name << endl;
           }
@@ -324,6 +392,7 @@ bool Engine::ProcessGameInput() {
 
 void Engine::AfterFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
+  ProcessGameInput();
   switch (resources_->GetGameState()) {
     case STATE_GAME: {
       renderer_->DrawScreenEffects();
@@ -373,7 +442,6 @@ void Engine::BeforeFrameDebug() {
     vector<vec2> uvs;
     vector<unsigned int> indices(36);
     Mesh mesh = CreateCube(v, vertices, uvs, indices);
-
     if (door_obbs_.find(obb_name) == door_obbs_.end()) {
       shared_ptr<GameObject> obb_obj = 
         CreateGameObjFromPolygons(resources_.get(), mesh.polygons, obb_name,
@@ -385,6 +453,7 @@ void Engine::BeforeFrameDebug() {
       UpdateMesh(*mesh, vertices, uvs, indices);
     }
   }
+
 
   // for (auto& [name, obj] : objs) {
   //   if (!obj->IsCreature()) continue;
@@ -405,6 +474,77 @@ void Engine::BeforeFrameDebug() {
   //     }
   //   }
   // }
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  Camera c = player_input_->GetCamera();
+  for (auto& [name, obj] : objs) {
+    if (obj->type != GAME_OBJ_PARTICLE) continue;
+    if (!obj->Is3dParticle()) continue;
+    if (!configs->levitate) continue;
+
+    vector<vec3> vertices;
+    vector<vec2> uvs;
+    vector<unsigned int> indices(12);
+    Mesh m;
+    // Mesh m = CreateLine(vec3(0), c.direction * 40.0f, vertices, uvs, indices);
+
+    // vec3 w = vec3(1, 0, 0);
+    // vec3 h = vec3(0, 1, 0);
+    // vec3 d = vec3(0, 0, 1);
+
+    // const vector<vec3> offsets {
+    //   // Back face.
+    //   vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
+    //   // Front face.
+    //   vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
+    // };
+
+    // static float bla = 0.01f;
+    // bla += 0.01;
+    // mat4 rotation_matrix = rotate(
+    //   mat4(1.0),
+    //   bla,
+    //   vec3(0.0f, 1.0f, 0.0f)
+    // );
+
+    // vector<vec3> v;
+    // const vec3& c = vec3(0, 0, 0);
+    // for (const auto& o : offsets) {
+    //   vec3 a = c + w * o.x + h * o.y + d * o.z;
+    //  a = vec3(rotation_matrix * vec4(a, 1.0));
+    //   v.push_back(a);
+    // }
+
+    // vector<vec3> vertices;
+    // vector<vec2> uvs;
+    // vector<unsigned int> indices(36);
+    // Mesh m = CreateCube(v, vertices, uvs, indices);
+
+    shared_ptr<Particle> p = static_pointer_cast<Particle>(obj);
+
+    // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+    if (p->mesh_name.empty()) {
+      cout << "never should" << endl;
+      // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+
+      p->mesh_name = resources_->GetRandomName();
+      resources_->AddMesh(p->mesh_name, m);
+      
+      // my_box_ = CreateGameObjFromPolygons(resources_.get(), m.polygons, "my-box",
+      //     obj->position + vec3(0, 10, 0));
+    } else {
+      // MeshPtr mesh = resources_->GetMesh(my_box_);
+      MeshPtr mesh = resources_->GetMesh(obj);
+      UpdateMesh(*mesh, vertices, uvs, indices);
+    }
+
+    // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+    // UpdateMesh(*mesh, vertices, uvs, indices);
+
+    // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+    // MeshPtr mesh = resources_->GetMesh(obj);
+    // configs->levitate = false;
+  }
 }
 
 void Engine::BeforeFrame() {
@@ -416,7 +556,6 @@ void Engine::BeforeFrame() {
     ai_->Run();
     resources_->RunPeriodicEvents();
   }
-  ProcessGameInput();
 }
 
 void Engine::Run() {
@@ -458,7 +597,7 @@ void Engine::Run() {
     Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
 
-    if (configs->render_scene == "default" || configs->render_scene == "dungeon") {
+    if (configs->render_scene == "town" || configs->render_scene == "dungeon") {
       renderer_->Draw();
     } else if (configs->render_scene == "hypercube") {
       renderer_->DrawHypercube();

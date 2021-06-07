@@ -35,9 +35,11 @@ using namespace std;
 using namespace glm;
 
 enum AssetType {
-  ASSET_STATIC = 0,
+  ASSET_DEFAULT = 0,
   ASSET_CREATURE,
+  ASSET_ITEM,
   ASSET_PLATFORM,
+  ASSET_DESTRUCTIBLE,
   ASSET_NONE
 };
 
@@ -50,6 +52,11 @@ enum CollisionType {
   COL_OBB,
   COL_NONE ,
   COL_UNDEFINED
+};
+
+enum MissileType {
+  MISSILE_MAGIC_MISSILE = 0,
+  MISSILE_FIREBALL
 };
 
 enum PhysicsBehavior {
@@ -84,7 +91,10 @@ enum Status {
   STATUS_DEAD,
   STATUS_BEING_EXTRACTED,
   STATUS_PARALYZED,
-  STATUS_BURROWED
+  STATUS_BURROWED,
+  STATUS_SLOW,
+  STATUS_HASTE,
+  STATUS_DARKVISION
 };
 
 enum AiState {
@@ -145,6 +155,13 @@ enum DoorState {
   DOOR_WEAK_LOCK
 };
 
+enum IntersectMode {
+  INTERSECT_ITEMS = 0,
+  INTERSECT_ALL,
+  INTERSECT_EDIT,
+  INTERSECT_PLAYER
+};
+
 struct Camera {
   vec3 position; 
   vec3 up; 
@@ -169,6 +186,25 @@ struct AABB {
   vec3 dimensions;
   AABB() {}
   AABB(vec3 point, vec3 dimensions) : point(point), dimensions(dimensions) {}
+};
+
+struct Segment {
+  vec3 a;
+  vec3 b;
+  Segment(vec3 a, vec3 b) : a(a), b(b) {}
+};
+
+struct Ray {
+  vec3 origin;
+  vec3 direction;
+  Ray(vec3 origin, vec3 direction) : origin(origin), direction(direction) {}
+};
+
+struct Capsule {
+  vec3 a;
+  vec3 b;
+  float radius;
+  Capsule(vec3 a, vec3 b, float radius) : a(a), b(b), radius(radius) {}
 };
 
 struct BoundingSphere {
@@ -215,6 +251,7 @@ struct Polygon {
 
 struct Keyframe {
   int time;
+  BoundingSphere bounding_sphere;
   vector<mat4> transforms;
 };
 
@@ -254,6 +291,7 @@ struct Mesh {
   vector<Polygon> polygons;
   unordered_map<string, Animation> animations;
   unordered_map<string, int> bones_to_ids;
+  BoundingSphere bounding_sphere;
 
   Mesh() {}
   // Mesh(const Mesh& mesh) {
@@ -317,6 +355,19 @@ struct DoorEvent : Event {
 
 using MeshPtr = shared_ptr<Mesh>;
 using ConvexHull = vector<Polygon>;
+
+// const int kHeightMapSize = 8000;
+const int kHeightMapSize = 4000;
+// const vec3 kWorldCenter = vec3(10000, 0, 10000);
+const vec3 kWorldCenter = vec3(12000, 0, 8000);
+// const vec3 kDungeonOffset = vec3(10000, 300, 10000);
+const vec3 kDungeonOffset = vec3(11600, 500, 7600);
+
+// const int kDungeonSize = 42;
+// const int kDungeonCells = 3;
+const vector<int> kLevelUps { 10, 25, 45, 70, 100, 140, 200, 280, 380, 500 };
+const int kDungeonSize = 84;
+const int kDungeonCells = 6;
 
 GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
@@ -409,6 +460,10 @@ string AiStateToStr(const AiState& ai_state);
 
 string ActionTypeToStr(const ActionType& type);
 
+string AssetTypeToStr(const AssetType& type);
+
+AssetType StrToAssetType(const string& s);
+
 BoundingSphere GetBoundingSphereFromVertices(
   const vector<vec3>& vertices);
 
@@ -416,6 +471,7 @@ BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons);
 
 vec3 LoadVec3FromXml(const pugi::xml_node& node);
 vec4 LoadVec4FromXml(const pugi::xml_node& node);
+string LoadStringFromXml(const pugi::xml_node& node);
 
 float LoadFloatFromXml(const pugi::xml_node& node);
 
@@ -447,8 +503,36 @@ void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs,
   vector<unsigned int>& indices, vector<Polygon>& polygons,
   vec3 dimensions);
 
+int Random(int low, int high);
+int RandomEven(int low, int high);
+bool IsNaN(const vec3& v);
+
+void CreateLine(const vec3& source, const vec3& dest, vector<vec3>& vertices, 
+  vector<vec2>& uvs, vector<unsigned int>& indices, 
+  vector<Polygon>& polygons);
+
 Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle);
 
-int Random(int low, int high);
+// void CreateSphere(int dome_radius, int num_circles, int num_points_in_circle,
+//   vector<vec3>& vertices, vector<vec2>& uvs, 
+//   vector<unsigned int>& indices, vector<Polygon>& polygons);
+
+void CreateCylinder(const vec3& source, const vec3& dest, float radius,
+  vector<vec3>& vertices, vector<vec2>& uvs, 
+  vector<unsigned int>& indices, vector<Polygon>& polygons);
+
+struct DiceFormula {
+  int num_die = 0;
+  int dice = 0;
+  int bonus = 0;
+};
+
+DiceFormula ParseDiceFormula(string s);
+int ProcessDiceFormula(const DiceFormula& dice_formula);
+string DiceFormulaToStr(const DiceFormula& dice_formula);
+
+int Combination(int n, int k);
+vector<int> GetCombinationFromIndex(int i, int n, int k);
+int GetIndexFromCombination(vector<int> combination, int n, int k);
 
 #endif // __UTIL_HPP__

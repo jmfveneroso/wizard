@@ -80,7 +80,7 @@ int main() {
   const string resources_dir = "resources";
   const string shaders_dir = "shaders";
 
-  resources = make_shared<Resources>(resources_dir, shaders_dir);
+  resources = make_shared<Resources>(resources_dir, shaders_dir, window_);
   draw_2d = make_shared<Draw2D>(resources, resources_dir);
   project_4d = make_shared<Project4D>(resources);
   renderer = make_shared<Renderer>(resources, draw_2d, project_4d, window_, 

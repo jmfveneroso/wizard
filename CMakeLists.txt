@@ -87,7 +87,7 @@ set(
 include_directories(${INCLUDE_DIRS})
 link_directories(${LINK_DIRS})
 
-# Create sybil library.
+# Create wizard library.
 add_library(wizard_lib ${SRC})
 target_link_libraries(wizard_lib ${ALL_LIBS})
 

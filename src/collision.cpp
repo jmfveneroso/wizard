@@ -418,6 +418,10 @@ bool IntersectRaySphere(vec3 p, vec3 d, BoundingSphere s, float &t, vec3 &q) {
   return true;
 }
 
+bool IntersectRaySphere(const Ray& ray, BoundingSphere s, float &t, vec3 &q) {
+  return IntersectRaySphere(ray.origin, ray.direction, s, t, q);
+}
+
 bool IntersectRayAABB(vec3 p, vec3 d, AABB a, float &tmin, vec3 &q) {
   const int RIGHT = 0;
   const int LEFT = 1;
@@ -935,4 +939,243 @@ bool TestTriangleAABB(const Polygon& polygon, const AABB& aabb,
   p.normal = polygon.normals[0];
   p.d = dot(p.normal, v0_);
   return TestAABBPlane(aabb, p, displacement_vector, point_of_contact);
+}
+
+bool IntersectRaySphereAux(const Ray& ray, const BoundingSphere& sphere, 
+  float& tmin, float& tmax) {
+  vec3 co = ray.origin - sphere.center;
+
+  float a = dot(ray.direction, ray.direction);
+  float b = 2.0f * dot(co, ray.direction);
+  float c = dot(co, co) - (sphere.radius * sphere.radius);
+
+  float discriminant = b * b - 4.0f * a * c;
+  if (discriminant < 0.0f) return false;
+
+  tmin = (-b - sqrt(discriminant)) / (2.0f * a);
+  tmax = (-b + sqrt(discriminant)) / (2.0f * a);
+  if (tmin > tmax) {
+    float temp = tmin;
+    tmin = tmax;
+    tmax = temp;
+  }
+  return true;
+}
+
+// Reference: https://gist.github.com/jdryg/ecde24d34aa0ce2d4d87
+bool IntersectRayCapsule(const Ray& ray, const Capsule& capsule, 
+  vec3& p1, vec3& p2, vec3& n1, vec3& n2) {
+
+  vec3 ab = capsule.b - capsule.a;
+  vec3 ao = ray.origin - capsule.a;
+
+  float ab_d = dot(ab, ray.direction);
+  float ab_ao = dot(ab, ao);
+  float ab_ab = dot(ab, ab);
+  
+  float m = ab_d / ab_ab;
+  float n = ab_ao / ab_ab;
+  vec3 q = ray.direction - (ab * m);
+  vec3 r = ao - (ab * n);
+
+  float a = dot(q, q);
+  float b = 2.0f * dot(q, r);
+  float c = dot(r, r) - (capsule.radius * capsule.radius);
+
+  if (a == 0.0f) {
+    BoundingSphere sphere_a, sphere_b;
+    sphere_a.center = capsule.a;
+    sphere_a.radius = capsule.radius;
+    sphere_b.center = capsule.b;
+    sphere_b.radius = capsule.radius;
+
+    float atmin, atmax, btmin, btmax;
+    if (!IntersectRaySphereAux(ray, sphere_a, atmin, atmax) ||
+      !IntersectRaySphereAux(ray, sphere_a, btmin, btmax)) {
+      return false;
+    }
+
+    if (atmin < btmin) {
+      p1 = ray.origin + (ray.direction * atmin);
+      n1 = normalize(p1 - capsule.a);
+    } else {
+      p1 = ray.origin + (ray.direction * btmin);
+      n1 = normalize(p1 - capsule.b);
+    }
+
+    if (atmax > btmax) {
+      p2 = ray.origin + (ray.direction * atmax);
+      n2 = normalize(p2 - capsule.a);
+    } else {
+      p2 = ray.origin + (ray.direction * btmax);
+      n2 = normalize(p2 - capsule.b);
+    }
+    return true;
+  }
+
+  float discriminant = b * b - 4.0f * a * c;
+  if (discriminant < 0.0f) return false;
+
+  float tmin = (-b - sqrt(discriminant)) / (2.0f * a);
+  float tmax = (-b + sqrt(discriminant)) / (2.0f * a);
+  if (tmin > tmax) {
+    float temp = tmin;
+    tmin = tmax;
+    tmax = temp;
+  }
+
+  float t_k1 = tmin * m + n;
+  if (t_k1 < 0.0f) {
+    BoundingSphere s;
+    s.center = capsule.a;
+    s.radius = capsule.radius;
+
+    float stmin, stmax;
+    if (IntersectRaySphereAux(ray, s, stmin, stmax)) {
+      p1 = ray.origin + (ray.direction * stmin);
+      n1 = normalize(p1 - capsule.a);
+    } else {
+      return false;
+    }
+  } else if (t_k1 > 1.0f) {
+    BoundingSphere s;
+    s.center = capsule.b;
+    s.radius = capsule.radius;
+
+    float stmin, stmax;
+    if (IntersectRaySphereAux(ray, s, stmin, stmax)) {
+      p1 = ray.origin + (ray.direction * stmin);
+      n1 = p1 - capsule.b;
+      n1 = normalize(n1);
+    } else {
+      return false;
+    }
+  } else {
+    p1 = ray.origin + (ray.direction * tmin);
+    vec3 k1 = capsule.a + ab * t_k1;
+    n1 = normalize(p1 - k1);
+  }
+
+  float t_k2 = tmax * m + n;
+  if (t_k2 < 0.0f) {
+    BoundingSphere s;
+    s.center = capsule.a;
+    s.radius = capsule.radius;
+
+    float t;
+    vec3 q;
+    float stmin, stmax;
+    if (IntersectRaySphereAux(ray, s, stmin, stmax)) {
+      p2 = ray.origin + (ray.direction * stmax);
+      n2 = normalize(p2 - capsule.a);
+    } else {
+      return false;
+    }
+  } else if (t_k2 > 1.0f) {
+    BoundingSphere s;
+    s.center = capsule.b;
+    s.radius = capsule.radius;
+
+    float stmin, stmax;
+    if (IntersectRaySphereAux(ray, s, stmin, stmax)) {
+      p2 = ray.origin + (ray.direction * stmax);
+      n2 = normalize(p2 - capsule.b);
+    } else {
+      return false;
+    }
+  } else {
+    p2 = ray.origin + (ray.direction * tmax);
+    vec3 k2 = capsule.a + ab * t_k2;
+    n2 = normalize(p2 - k2);
+  }
+  return true;
+}
+
+// Support function that returns the AABB vertex with index n.
+vec3 Corner(const AABB& aabb, int n) {
+  const vec3 aabb_min = aabb.point;
+  const vec3 aabb_max = aabb.point + aabb.dimensions;
+
+  vec3 p;
+  p.x = ((n & 1) ? aabb_max.x : aabb_min.x);
+  p.y = ((n & 1) ? aabb_max.y : aabb_min.y);
+  p.z = ((n & 1) ? aabb_max.z : aabb_min.z);
+  return p;
+}
+
+bool IntersectSegmentCapsule(const Segment& seg, const Capsule& capsule, 
+  float& t) {
+
+  vec3 p1, p2, n1, n2;
+  if (!IntersectRayCapsule(Ray(seg.a, seg.b - seg.a), capsule, 
+    p1, p2, n1, n2)) {
+    return false;
+  }
+
+  t = std::max(length(p1 - seg.a), length(p2 - seg.a)) / length(seg.b - seg.a);
+  if (t >= 0.0f && t < 1.0f) return true;
+  return false;
+}
+
+bool TestMovingSphereAABB(BoundingSphere s, const AABB& aabb, vec3 d,
+  float &t) {
+  // Compute the AABB resulting from expanding b by sphere radius r.
+  AABB e = aabb;
+  e.point -= vec3(s.radius, s.radius, s.radius); 
+  e.dimensions += vec3(s.radius, s.radius, s.radius) * 2.0f; 
+
+  const vec3 aabb_min = aabb.point - vec3(s.radius, s.radius, s.radius);
+  const vec3 aabb_max = aabb.point + aabb.dimensions + vec3(s.radius, s.radius, s.radius);
+
+  // Intersect ray against expanded AABB e. Exit with no intersection if ray
+  // misses e, else get intersection point p and time t as result
+  vec3 p;
+  if (!IntersectRayAABB(s.center, d, e, t, p) || t > 1.0f) return false;
+
+  // Compute which min and max faces of b the intersection point p lies
+  // outside of. Note, u and v cannot have the same bits set and
+  // they must have at least one bit set among them
+  int u = 0, v = 0;
+  if (p.x < aabb_min.x) u |= 1;
+  if (p.x > aabb_max.x) v |= 1;
+  if (p.y < aabb_min.y) u |= 2;
+  if (p.y > aabb_max.y) v |= 2;
+  if (p.z < aabb_min.z) u |= 4;
+  if (p.z > aabb_max.z) v |= 4;
+
+  // ‘Or’ all set bits together into a bit mask (note: here u + v == u | v)
+  int m = u + v;
+
+  // Define line segment [c, c+d] specified by the sphere movement
+  Segment seg(s.center, s.center + d);
+  
+  // If all 3 bits set (m == 7) then p is in a vertex region
+  if (m == 7) {
+    // Must now intersect segment [c, c+d] against the capsules of the three
+    // edges meeting at the vertex and return the best time, if one or more hit
+    float tmin = FLT_MAX;
+    if (IntersectSegmentCapsule(seg, Capsule(Corner(aabb, v), Corner(aabb, v & 1), s.radius), t))
+      tmin = std::min(t, tmin);
+
+    if (IntersectSegmentCapsule(seg, Capsule(Corner(aabb, v), Corner(aabb, v & 2), s.radius), t))
+      tmin = std::min(t, tmin);
+
+    if (IntersectSegmentCapsule(seg, Capsule(Corner(aabb, v), Corner(aabb, v & 4), s.radius), t))
+      tmin = std::min(t, tmin);
+
+    if (tmin == FLT_MAX) return 0; // No intersection
+
+    t = tmin;
+    return true; // Intersection at time t == tmin
+  }
+
+  // If only one bit set in m, then p is in a face region
+  if ((m & (m - 1)) == 0) {
+    // Do nothing. Time t from intersection with
+    // expanded box is correct intersection time
+    return true;
+  }
+
+  // p is in an edge region. Intersect against the capsule at the edge
+  return IntersectSegmentCapsule(seg, Capsule(Corner(aabb, u & 7), Corner(aabb, v), s.radius), t);
 }

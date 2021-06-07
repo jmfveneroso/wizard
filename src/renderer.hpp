@@ -44,7 +44,17 @@ struct CascadedShadowMap {
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 100);
 };
 
-struct DungeonTileRenderData {
+struct DungeonRenderData {
+  unordered_map<char, GLuint> vaos;
+  unordered_map<char, GLuint> vbos;
+  unordered_map<char, GLuint> uvs;
+  unordered_map<char, GLuint> normals;
+  unordered_map<char, GLuint> element_buffers;
+  unordered_map<char, GLuint> matrix_buffers;
+  unordered_map<char, GLuint> textures;
+  unordered_map<char, unsigned int> num_indices;
+  unordered_map<char, unsigned int> num_objs;
+  mat4 model_matrices[1024];
 };
 
 class Renderer {
@@ -78,17 +88,7 @@ class Renderer {
   int running_tasks_ = 0;
   vector<ObjPtr> visible_objects_;
 
-  unordered_map<char, vector<ObjPtr>> dungeon_pieces_;
-  unordered_map<char, GLuint> dungeon_vaos_;
-  unordered_map<char, GLuint> dungeon_vbos_;
-  unordered_map<char, GLuint> dungeon_uvs_;
-  unordered_map<char, GLuint> dungeon_normals_;
-  unordered_map<char, GLuint> dungeon_element_buffers_;
-  unordered_map<char, GLuint> dungeon_matrix_buffers_;
-  unordered_map<char, GLuint> dungeon_textures_;
-  unordered_map<char, unsigned int> dungeon_num_indices_;
-  unordered_map<char, unsigned int> dungeon_num_objs_;
-  mat4 dungeon_model_matrices_[1024];
+  DungeonRenderData dungeon_render_data[kDungeonCells][kDungeonCells];
 
   // http://www.opengl-tutorial.org/intermediate-tutorials/tutorial-16-shadow-mapping/
   // https://devansh.space/cascaded-shadow-maps
@@ -108,6 +108,7 @@ class Renderer {
   bool CullObject(shared_ptr<GameObject> obj, 
     const vector<vector<Polygon>>& occluder_convex_hulls);
   void DrawObjectShadow(ObjPtr obj, int level);
+  void Draw3dParticle(shared_ptr<Particle> obj);
   void DrawObject(ObjPtr obj);
 
   void GetVisibleObjects(shared_ptr<OctreeNode> octree_node);
