@@ -257,6 +257,7 @@ void Inventory::MoveItemBack() {
   int (&item_quantities)[8][7] = configs->item_quantities;
   int (&spellbar)[8] = configs->spellbar;
   int (&spellbar_quantities)[8] = configs->spellbar_quantities;
+  int (&equipment)[7] = configs->equipment;
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
   int top = win_y_ + 16;
@@ -264,7 +265,10 @@ void Inventory::MoveItemBack() {
   int left = win_x_ + 16;
   int right = left + 784;
   if (IsMouseInRectangle(left, right, bottom, top)) {
-    if (old_pos_y_ == -1) {
+    if (dragged_item.origin == ITEM_ORIGIN_EQUIPMENT) {
+      const ItemData& item_data = resources_->GetItemData()[selected_item_];
+      equipment[old_pos_x_] = selected_item_;
+    } else if (old_pos_y_ == -1) {
       spellbar[old_pos_x_] = selected_item_;
       spellbar_quantities[old_pos_x_] = selected_qnty_;
     } else if (old_pos_x_ == -1) {
@@ -432,88 +436,54 @@ void Inventory::DrawStore(const Camera& camera, int win_x, int win_y,
   }
 }
 
-void Inventory::DrawCraftTable(const Camera& camera, int win_x, int win_y, 
+void Inventory::DrawEquipment(const Camera& camera, int win_x, int win_y, 
   GLFWwindow* window) {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  int (&craft_table)[5] = configs->craft_table;
+  int (&equipment)[7] = configs->equipment;
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
   draw_2d_->DrawImage("craft", win_x_ + 600, win_y_ + 30, 512, 512, 1.0);
 
-  vector<int> tile_y { 0, 0, 207, 279, 0 };
-  
-  for (int i = 0; i < tile_y.size(); i++) {
-    int left = win_x_ + 717;
-    int right = left + 46;
-    int top = win_y_ + tile_y[i];
-    int bottom = top + 46;
-    
-    const int item_id = craft_table[i];
-    if (item_id != 0) {
-      draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
-    }
+  vector<tuple<ivec2, ItemType>> slots { 
+    { ivec2(win_x_ + 631, win_y_ + 76),  ITEM_AMULET }, // Amulet.
+    { ivec2(win_x_ + 631, win_y_ + 320), ITEM_RING   }, // Ring 1.
+    { ivec2(win_x_ + 631, win_y_ + 378), ITEM_RING   }, // Ring 2.
+    { ivec2(win_x_ + 655, win_y_ + 158), ITEM_WEAPON }, // Weapon.
+    { ivec2(win_x_ + 749, win_y_ + 77),  ITEM_HELMET }, // Helmet.
+    { ivec2(win_x_ + 749, win_y_ + 183), ITEM_ARMOR  }, // Armor.
+    { ivec2(win_x_ + 749, win_y_ + 381), ITEM_BOOTS  }, // Boots.
+  };
 
+  for (int i = 0; i < 7; i++) {
+    const auto& [slot, type] = slots[i];
+
+    int left = slot.x;
+    int right = left + 46;
+    int top = slot.y;
+    int bottom = top + 46;
+
+    int equipment_id = equipment[i];
     if (IsMouseInRectangle(left, right, bottom, top)) {
-      if (lft_click_ && selected_item_ == 0) {
-        selected_item_ = craft_table[i];
+      if (!lft_click_ && selected_item_ != 0) { // Drop.
+        const ItemData& item_data = resources_->GetItemData()[selected_item_];
+        if (item_data.type != type) continue;
+        equipment[i] = selected_item_;
+        selected_item_ = 0;
+        selected_qnty_ = 0;
+      } else if (lft_click_ && equipment_id != 0) { // Drag.
+        dragged_item.origin = ITEM_ORIGIN_EQUIPMENT;
+        selected_item_ = equipment_id;
         selected_qnty_ = 1;
-        craft_table[i] = 0;
-        old_pos_x_ = -1;
-        old_pos_y_ = i;
-        hold_offset_x_ = mouse_x_ - left;
-        hold_offset_y_ = mouse_y_ - top;
-      } else if (!lft_click_ && selected_item_ != 0) {
-        if (IsMouseInRectangle(left, right, bottom, top)) {
-          if (craft_table[i] == 0) {
-            craft_table[i] = selected_item_;
-            selected_qnty_--;
-            if (selected_qnty_ == 0) {
-              selected_item_ = 0;
-            }
-          }
-        }
+        equipment[i] = 0;
+        old_pos_x_ = i;
       }
     }
+
+    if (equipment_id == 0) continue;
+
+    const ItemData& item_data = resources_->GetItemData()[equipment_id];
+    draw_2d_->DrawImage(item_data.icon, left, top, 64, 64, 1.0); 
   }
-
-  // const vector<ArcaneSpellData>& spell_data = resources_->GetArcaneSpellData();
-  // int left = win_x_ + 681;
-  // int right = left + 107;
-  // int top = win_y + 415;
-  // int bottom = top + 28;
-  // if (lft_click_ && selected_item_ == 0 && throttle_ <= 0) {
-  //   if (IsMouseInRectangle(left, right, bottom, top)) {
-  //     throttle_ = 20;
-  //     for (const auto& spell : spell_data) {
-  //       vector<int> formula = spell.formula;
-  //       if (formula.size() == 0) continue;
-
-  //       bool too_many_items = false;
-  //       for (int i = 0; i < 5; i++) {
-  //         int item_id = craft_table[i];
-  //         if (item_id == 0) continue;
-
-  //         auto it = std::find(formula.begin(), formula.end(), item_id);
-  //         if (it != formula.end()) {
-  //           formula.erase(it);
-  //           continue;
-  //         }
-  //         too_many_items = true;
-  //         break;
-  //       }
-  //       if (too_many_items) continue;
-
-  //       if (formula.size() == 0) {
-  //         resources_->InsertItemInInventory(spell.item_id, 100);
-  //         resources_->AddMessage(string("You crafted " + spell.name));
-  //         for (int i = 0; i < 5; i++) {
-  //           craft_table[i] = 0;
-  //         }
-  //         break;
-  //       }
-  //     }
-  //   }
-  // }
 }
 
 void Inventory::DrawQuestLog(GLFWwindow* window) {
@@ -781,7 +751,7 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
   switch (state_) {
     case INVENTORY_ITEMS:
       DrawInventory(camera, win_x, win_y, window);
-      DrawCraftTable(camera, win_x, win_y, window);
+      DrawEquipment(camera, win_x, win_y, window);
       break;
     case INVENTORY_STORE:
       DrawInventory(camera, win_x, win_y, window);
@@ -795,7 +765,7 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
       break;
     case INVENTORY_CRAFT:
       DrawInventory(camera, win_x, win_y, window);
-      DrawCraftTable(camera, win_x, win_y, window);
+      DrawEquipment(camera, win_x, win_y, window);
       break;
     case INVENTORY_STATS:
       DrawStats(camera, win_x, win_y, window);

@@ -17,7 +17,10 @@ void PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
   vec3 d = normalize(c.direction);
 
   configs->interacting_item = nullptr;
-  ObjPtr item = resources_->IntersectRayObjects(p, d, 20.0f);
+
+  float t;
+  vec3 q;
+  ObjPtr item = resources_->IntersectRayObjects(p, d, 20.0f, INTERSECT_ITEMS, t, q);
   bool hit = false;
   if (item) {
     if (interact) {
@@ -201,7 +204,10 @@ void PlayerInput::EditTerrain(GLFWwindow* window, const Camera& c) {
 void PlayerInput::EditObject(GLFWwindow* window, const Camera& c) {
   vec3 p = c.position;
   vec3 d = normalize(c.direction);
-  ObjPtr obj = resources_->IntersectRayObjects(p, d, 50.0f, INTERSECT_EDIT);
+
+  float t;
+  vec3 q;
+  ObjPtr obj = resources_->IntersectRayObjects(p, d, 50.0f, INTERSECT_EDIT, t, q);
   // ObjPtr obj = resources_->CollideRayAgainstObjects(c.position, c.direction);
   if (!obj) {
     cout << "No object" << endl;
@@ -426,7 +432,10 @@ void PlayerInput::CastSpellOrUseItem() {
   } else if (item_id == 4) {
     vec3 p = camera_.position;
     vec3 d = normalize(camera_.direction);
-    ObjPtr item = resources_->IntersectRayObjects(p, d, 10.0f);
+
+    float t;
+    vec3 q;
+    ObjPtr item = resources_->IntersectRayObjects(p, d, 10.0f, INTERSECT_ITEMS, t, q);
     if (item && item->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(item);
       if (door->state == 4) {
@@ -496,7 +505,10 @@ void PlayerInput::ProcessPlayerCasting() {
     if (!current_spell_) {
       vec3 p = camera_.position;
       vec3 d = normalize(camera_.direction);
-      ObjPtr obj = resources_->IntersectRayObjects(p, d, 20.0f, INTERSECT_EDIT);
+
+      float t;
+      vec3 q;
+      ObjPtr obj = resources_->IntersectRayObjects(p, d, 20.0f, INTERSECT_EDIT, t, q);
       if (obj && (obj->IsCreature() || obj->IsDestructible())) {
         float dmg = ProcessDiceFormula(configs->base_damage);
         obj->DealDamage(player, dmg);

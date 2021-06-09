@@ -787,6 +787,10 @@ float ScalarTriple(vec3 a, vec3 b, vec3 c) {
   return dot(a, cross(b, c));
 }
 
+bool SameSign(float a, float b) {
+  return ((a >= 0 && b >= 0) || (a < 0) && (b < 0));
+}
+
 // Given line pq and ccw quadrilateral abcd, return whether the line
 // pierces the triangle. If so, also return the point r of intersection
 bool IntersectLineQuad(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, vec3 d,
@@ -1178,4 +1182,131 @@ bool TestMovingSphereAABB(BoundingSphere s, const AABB& aabb, vec3 d,
 
   // p is in an edge region. Intersect against the capsule at the edge
   return IntersectSegmentCapsule(seg, Capsule(Corner(aabb, u & 7), Corner(aabb, v), s.radius), t);
+}
+
+// // Given segment pq and triangle abc, returns whether segment intersects
+// // triangle and if so, also returns the barycentric coordinates (u,v,w)
+// // of the intersection point
+// bool IntersectSegmentTriangle(vec3 p, vec3 q, vec3 a, vec3 b, vec3 c, 
+//   vec3 normal, float &u, float &v, float &w, float &t) {
+//   vec3 ab = b - a;
+//   vec3 ac = c - a;
+//   vec3 qp = p - q;
+// 
+//   // Compute triangle normal. Can be precalculated or cached if
+//   // intersecting multiple segments against the same triangle
+//   vec3 n = cross(ab, ac);
+//   // vec3 n = normal;
+// 
+//   // Compute denominator d. If d <= 0, segment is parallel to or points
+//   // away from triangle, so exit early
+//   float d = dot(qp, n);
+//   if (d <= 0.0f) return false;
+// 
+//   // Compute intersection t value of pq with plane of triangle. A ray
+//   // intersects iff 0 <= t. Segment intersects iff 0 <= t <= 1. Delay
+//   // dividing by d until intersection has been found to pierce triangle
+// 
+//   vec3 ap = p - a;
+//   t = dot(ap, n);
+//   if (t < 0.0f) return false;
+//   // if (t > d) return false; // For segment; exclude this code line for a ray test
+// 
+//   // Compute barycentric coordinate components and test if within bounds
+//   vec3 e = cross(qp, ap);
+//   v = dot(ac, e);
+//   if (v < 0.0f || v > d) return false;
+// 
+//   w = -dot(ab, e);
+//   if (w < 0.0f || v + w > d) return false;
+// 
+//   // Segment/ray intersects triangle. Perform delayed division and
+//   // compute the last barycentric coordinate component
+//   float ood = 1.0f / d;
+//   t *= ood;
+//   v *= ood;
+//   w *= ood;
+//   u = 1.0f - v - w;
+//   return true;
+// }
+
+//Given line pd and ccw triangle abc, return whether line pierces triangle. If
+//so, also return the barycentric coordinates (u,v,w) of the intersection point
+bool IntersectLineTriangle(vec3 p, vec3 d, vec3 a, vec3 b, vec3 c, vec3& q) {
+  vec3 pd = d - p;
+  vec3 pa = a - p;
+  vec3 pb = b - p;
+  vec3 pc = c - p;
+
+  vec3 m = cross(pd, pc);
+  float u = dot(pb, m); // ScalarTriple(pd, pc, pb);
+  float v = -dot(pa, m); // ScalarTriple(pd, pa, pc);
+  if (!SameSign(u, v)) return false;
+  float w = ScalarTriple(pd, pb, pa);
+  if (!SameSign(u, w)) return false;
+
+  // Compute the barycentric coordinates (u, v, w) determining the
+  // intersection point r, r = u*a + v*b + w*c
+  float denom = 1.0f / (u + v + w);
+  u *= denom;
+  v *= denom;
+  w *= denom; // w = 1.0f - u - v;
+
+  q = a * u + b * v + c * w;
+  return true;
+}
+
+bool IntersectRayAABBTree(vec3 p, vec3 d, shared_ptr<AABBTreeNode> node, 
+  float& t, vec3& q, const vec3& base_position) {
+  if (!node) return false;
+
+  float closest_t = numeric_limits<float>::max();
+  vec3 closest_q = vec3(0);
+
+  if (!IntersectRayAABB(p, d, node->aabb + base_position, t, q)) return false;
+
+  bool intersected = false;
+  if (!node->has_polygon) {
+    if (IntersectRayAABBTree(p, d, node->lft, t, q, base_position)) {
+      intersected = true;
+      if (t < closest_t) {
+        closest_t = t;
+        closest_q = q;
+      }
+    }
+
+    if (IntersectRayAABBTree(p, d, node->rgt, t, q, base_position)) {
+      intersected = true;
+      if (t < closest_t) {
+        closest_t = t;
+        closest_q = q;
+      }
+    }
+
+    t = closest_t;
+    q = closest_q;
+    return intersected;
+  }
+
+  float u, v, w;
+  vec3 a = base_position + node->polygon.vertices[0];
+  vec3 b = base_position + node->polygon.vertices[1];
+  vec3 c = base_position + node->polygon.vertices[2];
+  vec3 normal = node->polygon.normals[0];
+  // if (!IntersectSegmentTriangle(p, p + d * 100.0f, a, b, c, normal,
+  //   u, v, w, t)) {
+  if (!IntersectLineTriangle(p, p + d * 100.0f, a, b, c, q)) {
+    return false;
+  }
+
+  // q = p + d * t;
+  t = length(q - p);
+  if (t < closest_t) {
+    closest_t = t;
+    closest_q = q;
+  }
+
+  t = closest_t;
+  q = closest_q;
+  return true;
 }

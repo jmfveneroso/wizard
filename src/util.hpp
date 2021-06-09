@@ -162,6 +162,18 @@ enum IntersectMode {
   INTERSECT_PLAYER
 };
 
+enum ItemType {
+  ITEM_DEFAULT = 0,
+  ITEM_WEAPON,
+  ITEM_HELMET,
+  ITEM_ARMOR,
+  ITEM_BOOTS,
+  ITEM_RING,
+  ITEM_AMULET,
+  ITEM_CONSUMABLE,
+  ITEM_SPELL
+};
+
 struct Camera {
   vec3 position; 
   vec3 up; 
@@ -525,6 +537,20 @@ struct DiceFormula {
   int num_die = 0;
   int dice = 0;
   int bonus = 0;
+  DiceFormula() {}
+  DiceFormula(int num_die, int dice, int bonus) : num_die(num_die), dice(dice), 
+    bonus(bonus) {}
+  DiceFormula(const DiceFormula& a) { 
+    num_die = a.num_die;
+    dice = a.dice;
+    bonus = a.bonus;
+  } 
+  DiceFormula& operator=(const DiceFormula& a) {
+    num_die = a.num_die;
+    dice = a.dice;
+    bonus = a.bonus;
+    return *this;
+  } 
 };
 
 DiceFormula ParseDiceFormula(string s);
