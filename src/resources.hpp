@@ -140,12 +140,14 @@ struct Configs {
   // Player stats
   // ----------------------
   int max_life = 10;
-  int armor_class = 0;
   int experience = 0;
   int level = 0;
   int skill_points = 5;
   DiceFormula base_damage;
   DiceFormula base_hp_dice;
+
+  int base_armor_class = 0;
+  int armor_class = 0;
 
   // Magical attributes.
   int arcane_level = 1;
@@ -167,10 +169,13 @@ struct Configs {
   vector<int> layered_spells { 2, 4, 8, 9, 11, 3 }; // 12 possible combinations.
   vector<int> white_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8 }; // 105 possible combinations.
   vector<int> black_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }; // 5460 possible combinations.
+
+  int equipment[7] = { 0, 0, 0, 16, 0, 0, 0 };
 };
 
 struct ItemData {
   int id;
+  ItemType type = ITEM_DEFAULT;
   string name;
   string description;
   string icon;
@@ -182,10 +187,23 @@ struct ItemData {
 
   ItemData() {}
   ItemData(int id, string name, string description, string icon, 
-    string asset_name, int price, int max_stash, bool insert_in_spellbar) 
+    string asset_name, int price, int max_stash, bool insert_in_spellbar,
+    ItemType type) 
     : id(id), name(name), description(description), icon(icon), 
       asset_name(asset_name), price(price), max_stash(max_stash),
-      insert_in_spellbar(insert_in_spellbar) {}
+      insert_in_spellbar(insert_in_spellbar), type(type) {}
+};
+
+struct EquipmentData {
+  int item_id;
+  DiceFormula damage;
+  int armor_class_bonus;
+  ItemType type = ITEM_DEFAULT;
+
+  EquipmentData() {}
+  EquipmentData(int item_id, DiceFormula damage, int armor_class_bonus)
+    : item_id(item_id), damage(damage), armor_class_bonus(armor_class_bonus) {
+  }
 };
 
 struct ArcaneSpellData {
@@ -272,7 +290,7 @@ class Resources {
   unordered_map<string, shared_ptr<Npc>> npcs_;
   std::default_random_engine generator_;
   bool use_quadtree_ = true;
-  GLFWwindow* window_;
+  GLFWwindow* window_  ;
 
   shared_ptr<Configs> configs_;
   GameState game_state_ = STATE_EDITOR;
@@ -326,22 +344,29 @@ class Resources {
   mutex mutex_;
 
   unordered_map<int, ItemData> item_data_ {
-    { 0, { 0, "", "", "", "", 0, 0, false } },
-    { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true } },
-    { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true } },
-    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true } },
-    { 4, { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true } },
-    { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true } },
-    { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true } },
-    { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true } },
-    { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true } },
-    { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true } },
-    { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false } },
-    { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true } },
-    { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true } },
-    { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true } },
-    { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true } },
-    { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true } }
+    { 0, { 0, "", "", "", "", 0, 0, false, ITEM_DEFAULT } },
+    { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT } },
+    { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT } },
+    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_DEFAULT } },
+    { 4, { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
+    { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
+    { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT } },
+    { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
+    { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true, ITEM_DEFAULT } },
+    { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true, ITEM_DEFAULT } },
+    { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false, ITEM_DEFAULT } },
+    { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true, ITEM_DEFAULT } },
+    { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true, ITEM_DEFAULT } },
+    { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true, ITEM_DEFAULT } },
+    { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT } },
+    { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT } },
+    { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_WEAPON } },
+    { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "helmet", 1, 1, true, ITEM_HELMET } }
+  };
+
+  unordered_map<int, EquipmentData> equipment_data_ {
+    { 16, { 16, DiceFormula(1, 10, 0), 0 } },
+    { 17, { 17, DiceFormula(), 10 } }
   };
 
   vector<shared_ptr<ArcaneSpellData>> arcane_spell_data_;
@@ -453,6 +478,7 @@ class Resources {
   shared_ptr<Configs> GetConfigs();
   string GetString(string name);
   unordered_map<int, ItemData>& GetItemData();
+  unordered_map<int, EquipmentData>& GetEquipmentData();
   vector<shared_ptr<ArcaneSpellData>>& GetArcaneSpellData();
   double GetDeltaTime() { return delta_time_; }
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
@@ -501,7 +527,7 @@ class Resources {
   // TODO: move to space partition.
   ObjPtr IntersectRayObjects(const vec3& position, 
     const vec3& direction, float max_distance, 
-    IntersectMode mode = INTERSECT_ITEMS);
+    IntersectMode mode, float& t, vec3& q);
   vector<ObjPtr> GetKClosestLightPoints(const vec3& position, int k, 
     float max_distance=50);
   shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 

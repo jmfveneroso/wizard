@@ -1055,6 +1055,7 @@ void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
 }
 
 unordered_map<int, ItemData>& Resources::GetItemData() { return item_data_; }
+unordered_map<int, EquipmentData>& Resources::GetEquipmentData() { return equipment_data_; }
 vector<shared_ptr<ArcaneSpellData>>& Resources::GetArcaneSpellData() { return arcane_spell_data_; }
 
 void Resources::DeleteObject(ObjPtr obj) {
@@ -1504,10 +1505,6 @@ void Resources::SaveCollisionData() {
 bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction, 
   float& tmin, vec3& q
 ) {
-  if (obj->IsPlayer()) {
-    cout << "(1) Testing player" << endl;
-  }
-
   switch (obj->GetCollisionType()) {
     case COL_OBB: {
       OBB obb = obj->GetTransformedOBB();
@@ -1522,16 +1519,40 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
       vec3 p_in_obb_space = from_world_space * position;
       vec3 d_in_obb_space = from_world_space * direction;
 
-      return IntersectRayAABB(p_in_obb_space, d_in_obb_space, 
-        aabb_in_obb_space, tmin, q);
+      if (IntersectRayAABB(p_in_obb_space, d_in_obb_space, 
+        aabb_in_obb_space, tmin, q)) {
+        q = to_world_space * q;
+        tmin = length(q - position);
+        return true;
+      }
+      return false;
     }
     case COL_BONES: {
-      if (obj->IsPlayer())
-        cout << "(2) Testing player" << endl;
       for (const auto& [bone_id, bs] : obj->bones) {
         BoundingSphere s = obj->GetBoneBoundingSphere(bone_id);
         if (IntersectRaySphere(position, direction, s, tmin, q)) {
+          cout << "Intersected bone t: " << tmin << endl;
+          cout << "Intersected bone q: " << q << endl;
           return true;
+        }
+      }
+      return false;
+    }
+    case COL_PERFECT: {
+      if (obj->aabb_tree) {
+        if (IntersectRayAABBTree(position, direction, obj->aabb_tree, tmin, 
+          q, obj->position)) {
+          return true;
+        }
+      } else {
+        if (!obj->asset_group) return false;
+        for (int i = 0; i < obj->asset_group->assets.size(); i++) {
+          shared_ptr<GameAsset> asset = obj->asset_group->assets[i];
+          if (!asset) continue;
+          if (IntersectRayAABBTree(position, direction, asset->aabb_tree, tmin, 
+            q, obj->position)) {
+            return true;
+          }
         }
       }
       return false;
@@ -1546,24 +1567,24 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
 
 ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
   const vec3& position, const vec3& direction, float max_distance, 
-  IntersectMode mode) {
+  IntersectMode mode, float& t, vec3& q) {
   if (!node) return nullptr;
 
   AABB aabb = AABB(node->center - node->half_dimensions, 
     node->half_dimensions * 2.0f);
 
   // // Checks if the ray intersect the current node.
-  float tmin;
-  vec3 q;
-  if (!IntersectRayAABB(position, direction, aabb, tmin, q)) {
+  if (!IntersectRayAABB(position, direction, aabb, t, q)) {
     return nullptr;
   }
 
-  if (tmin > max_distance) return nullptr;
+  if (t > max_distance) return nullptr;
 
   // TODO: maybe items should be called interactables instead.
   ObjPtr closest_item = nullptr;
   float closest_distance = 9999999.9f;
+  float closest_t = 0;
+  vec3 closest_q = vec3(0);
 
   unordered_map<int, ObjPtr>* objs;
   if (mode == INTERSECT_ITEMS) objs = &node->items;
@@ -1578,15 +1599,17 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
 
-    if (!IntersectRayObject(item, position, direction, tmin, q)) continue;
+    if (!IntersectRayObject(item, position, direction, t, q)) continue;
 
+    distance = length(q - position);
     if (!closest_item || distance < closest_distance) { 
       closest_item = item;
       closest_distance = distance;
+      closest_t = t;
+      closest_q = q;
     }
   }
 
-  // TODO: maybe index npcs?
   if (mode == INTERSECT_ALL || mode == INTERSECT_EDIT || 
     mode == INTERSECT_PLAYER || mode == INTERSECT_ITEMS) {
     for (auto& [id, item] : node->moving_objs) {
@@ -1605,53 +1628,64 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
       float distance = length(position - item->position);
       if (distance > max_distance) continue;
 
-      if (!IntersectRayObject(item, position, direction, tmin, q)) continue;
+      if (!IntersectRayObject(item, position, direction, t, q)) continue;
 
+      distance = length(q - position);
       if (!closest_item || distance < closest_distance) { 
+        cout << "Intersected " << item->GetName() << endl;
+        cout << "t: " << t << endl;
+        cout << "q: " << q << endl;
         closest_item = item;
         closest_distance = distance;
+        closest_t = t;
+        closest_q = q;
       }
     }
   }
 
-  if (mode == INTERSECT_ALL) {
+  if (mode == INTERSECT_ALL || mode == INTERSECT_PLAYER) {
     for (const auto& sorted_obj : node->static_objects) {
       ObjPtr item = sorted_obj.obj;
-      if (item->status == STATUS_DEAD) continue;
-      if (item->name == "hand-001") continue;
-
       float distance = length(position - item->position);
       if (distance > max_distance) continue;
 
-      if (!IntersectRayObject(item, position, direction, tmin, q)) continue;
+      if (!IntersectRayObject(item, position, direction, t, q)) continue;
 
+      distance = length(q - position);
       if (!closest_item || distance < closest_distance) { 
         closest_item = item;
         closest_distance = distance;
+        closest_t = t;
+        closest_q = q;
       }
     }
   }
 
   for (int i = 0; i < 8; i++) {
     ObjPtr new_item = IntersectRayObjectsAux(node->children[i], position, 
-      direction, max_distance, mode);
+      direction, max_distance, mode, t, q);
     if (!new_item) continue;
 
-    float distance = length(position - new_item->position);
+    float distance = length(q - position);
     if (!closest_item || distance < closest_distance) { 
       closest_item = new_item;
       closest_distance = distance;
+      closest_t = t;
+      closest_q = q;
     }
   }
 
+  t = closest_t;
+  q = closest_q;
   return closest_item;
 }
 
 ObjPtr Resources::IntersectRayObjects(const vec3& position, 
-  const vec3& direction, float max_distance, IntersectMode mode) {
+  const vec3& direction, float max_distance, IntersectMode mode, float& t, 
+  vec3& q) {
   shared_ptr<OctreeNode> root = GetSectorByName("outside")->octree_node;
   return IntersectRayObjectsAux(root, position, direction, max_distance, 
-    mode);
+    mode, t, q);
 }
 
 struct CompareLightPoints { 
@@ -2696,6 +2730,20 @@ void Resources::ProcessTempStatus() {
         break;
     } 
   }
+
+  // Player equipment. 
+  configs_->base_damage = DiceFormula(1, 6, 0);
+  configs_->armor_class = configs_->base_armor_class;
+  for (int i = 0; i < 7; i++) {
+    int item_id = configs_->equipment[i];
+    if (item_id == 0) continue;
+
+    EquipmentData& data = equipment_data_[item_id];
+    if (data.damage.num_die > 0 || data.damage.bonus > 0) {
+      configs_->base_damage = data.damage;
+    }
+    configs_->armor_class += data.armor_class_bonus;
+  }
 }
 
 void Resources::RunPeriodicEvents() {
@@ -2888,19 +2936,31 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'd': {
           tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
           tile2 = CreateRoom(this, "dungeon_door", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         case 'D': {
           tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
           tile2 = CreateRoom(this, "dungeon_door", pos, 1);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         case 'g': {
           tile = CreateRoom(this, "dungeon_arch_gate", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         case 'G': {
           tile = CreateRoom(this, "dungeon_arch_gate", pos, 1);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         case '<': {
@@ -3401,27 +3461,48 @@ void Resources::CastStringAttack(ObjPtr owner, const vec3& position,
   vec3 p2 = position + direction * 3000.0f;
   vec3 normal = normalize(p2 - pos);
   pos += normal * 5.0f;
-  normal *= 20.0f;
 
-  float rand_x = Random(-10, 11) / 10.0f;
-  float rand_y = Random(-10, 11) / 10.0f;
-  normal += up * rand_y + right * rand_x;
-  normal = normalize(normal);
+  // Random variation.
+  // normal *= 20.0f;
+  // float rand_x = Random(-10, 11) / 10.0f;
+  // float rand_y = Random(-10, 11) / 10.0f;
+  // normal += up * rand_y + right * rand_x;
+  // normal = normalize(normal);
 
+  float t;
+  vec3 q;
   ObjPtr obj;
   if (owner->IsPlayer()) {
-    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL);
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL, t, q);
   } else {
-    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER);
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER, t, q);
   }
 
+  vec3 end = normal * 500.0f;
   if (obj) {
     if (obj->IsCreature() || obj->IsPlayer()) {
       obj->AddTemporaryStatus(make_shared<SlowStatus>(0.5, 10.0f, 1));
+      cout << "Position: " << position << endl;
+      cout << "Dir: " << direction << endl;
+      cout << "Intersected creature: " << q << endl;
+    } else {
+      cout << "Intersected static: " << q << endl;
+    }
+
+    // end = q - pos;
+    end = t * normal;
+    // CreateParticleEffect(1, pos + end, -normal, vec3(1.0, 1.0, 1.0), 0.5, 32.0f, 
+    //   3.0f);
+    CreateParticleEffect(1, pos + end, -normal, vec3(1.0, 1.0, 1.0), 0.25, 32.0f, 
+      3.0f);
+  } else {
+    if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
+      Plane(vec3(0, 1, 0), kDungeonOffset.y), t, q)) {
+      end = t * 100.0f * normal;
+      CreateParticleEffect(1, q, vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 0.25, 32.0f, 
+        3.0f);
     }
   }
-
-  normal *= 100.0f;
   
   Lock();
   int index = 0;
@@ -3443,8 +3524,7 @@ void Resources::CastStringAttack(ObjPtr owner, const vec3& position,
   vector<unsigned int> indices(12);
 
   mesh->polygons.clear();
-  // CreateLine(vec3(0), normal, vertices, uvs, indices, mesh->polygons);
-  CreateCylinder(vec3(0), normal * 50.0f, 0.05f, vertices, uvs, indices,
+  CreateCylinder(vec3(0), end, 0.05f, vertices, uvs, indices,
     mesh->polygons);
   
   UpdateMesh(*mesh, vertices, uvs, indices);
@@ -3501,16 +3581,31 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vec3 normal = normalize(p2 - pos);
   pos += normal * 5.0f;
 
+  float t;
+  vec3 q;
   ObjPtr obj;
   if (owner->IsPlayer()) {
-    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL);
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL, t, q);
   } else {
-    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER);
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER, t, q);
   }
 
+  vec3 end = normal * 50.0f;
   if (obj) {
     if (obj->IsCreature() || obj->IsPlayer()) {
-      obj->DealDamage(owner, 1.0f, vec3(0, 1, 0), /*take_hit_animation=*/false);
+      obj->DealDamage(owner, 0.1f, vec3(0, 1, 0), /*take_hit_animation=*/false);
+    }
+
+    // end = q - pos;
+    end = t * normal;
+    CreateParticleEffect(1, pos + end, -normal, vec3(1.0, 1.0, 1.0), 0.5, 32.0f, 
+      3.0f);
+  } else {
+    if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
+      Plane(vec3(0, 1, 0), kDungeonOffset.y), t, q)) {
+      end = t * 100.0f * normal;
+      CreateParticleEffect(1, q, vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 0.25, 32.0f, 
+        3.0f);
     }
   }
 
@@ -3534,7 +3629,7 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vector<unsigned int> indices(12);
 
   mesh->polygons.clear();
-  CreateCylinder(vec3(0), normal * 50.0f, 0.25f, vertices, uvs, indices,
+  CreateCylinder(vec3(0), end, 0.25f, vertices, uvs, indices,
     mesh->polygons);
   
   UpdateMesh(*mesh, vertices, uvs, indices);
@@ -3716,7 +3811,7 @@ void Resources::CreateArcaneSpellCrystal(int item_id, string name,
   string texture_name) {
   item_data_[kArcaneSpellItemOffset + item_id] = 
     { kArcaneSpellItemOffset + item_id, display_name, description, 
-      icon_name, name, 10, 0, true };
+      icon_name, name, 10, 0, true, ITEM_DEFAULT };
 
   pugi::xml_document doc;
   pugi::xml_node asset_xml = doc.append_child("asset");

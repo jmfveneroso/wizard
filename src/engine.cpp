@@ -184,6 +184,13 @@ void Engine::RunCommand(string command) {
     configs->place_object = true;
     configs->place_axis = 1;
     resources_->AddNewObject(configs->new_building);
+  } else if (result[0] == "add-item") {
+    try {
+      int item_id = boost::lexical_cast<int>(result[1]);
+      const ItemData& item_data = resources_->GetItemData()[item_id];
+      resources_->InsertItemInInventory(item_id, item_data.max_stash);
+    } catch(boost::bad_lexical_cast const& e) {
+    }
   }
 }
 

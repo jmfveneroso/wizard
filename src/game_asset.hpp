@@ -117,6 +117,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
 };
 
 class CreatureAsset : public GameAsset {
+ public:
   int base_attack = 0;
   int max_life = 100.0f;
   int armor_class = 0;
@@ -146,7 +147,6 @@ class CreatureAsset : public GameAsset {
   int experience;
   int level;
 
- public:
   CreatureAsset(Resources* resources) : 
     GameAsset(resources, ASSET_CREATURE) {}
 };

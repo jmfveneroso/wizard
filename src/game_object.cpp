@@ -1202,10 +1202,16 @@ bool GameObject::IsDestructible(){
 }
 
 void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, bool take_hit_animation) {
-  life -= damage;
+  // Reduce damage using armor class.
   if (IsPlayer()) {
     resources_->GetConfigs()->taking_hit = 30.0f;
+    damage *= 30 / (30 + resources_->GetConfigs()->armor_class);
+  } else if (IsCreature()) {
+    shared_ptr<CreatureAsset> creature =
+      static_pointer_cast<CreatureAsset>(GetAsset());
+    damage *= 30 / (30 + creature->armor_class);
   }
+  life -= damage;
 
   resources_->CreateParticleEffect(10, position, normal * 1.0f, 
     vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");

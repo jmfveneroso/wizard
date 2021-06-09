@@ -21,6 +21,7 @@ enum ItemOrigin {
   ITEM_ORIGIN_INVENTORY = 0,
   ITEM_ORIGIN_SPELLBAR,
   ITEM_ORIGIN_STORE,
+  ITEM_ORIGIN_EQUIPMENT,
   ITEM_ORIGIN_NONE
 };
 
@@ -34,13 +35,27 @@ struct DraggedItem {
   int hold_offset_y = 0;
 };
 
+// struct ItemSlot {
+//   int x;
+//   int y;
+//   string callback;
+// };
+// 
+// struct UiLayout {
+//   string background;
+//   vector<ItemSlot> item_slots;
+// };
+
+class Inventory;
+typedef void (Inventory::*CallbackFunction)(void); // function pointer type
+typedef unordered_map<string, CallbackFunction> CallbackMap;
+
 class Inventory {
   shared_ptr<Draw2D> draw_2d_;
   shared_ptr<Resources> resources_;
 
   InventoryState state_ = INVENTORY_ITEMS;
   DraggedItem dragged_item;
-
   Camera camera_;
   int win_x_ = 0;
   int win_y_ = 0;
@@ -60,6 +75,8 @@ class Inventory {
   int throttle_ = 0;
   int cursor_pos_ = 0;
 
+  CallbackMap callback_map_;
+
   void UpdateMouse(GLFWwindow* window);
   bool IsMouseInRectangle(int left, int right, int bottom, int top);
   void DrawItemMatrix();
@@ -73,7 +90,7 @@ class Inventory {
   void DrawSpellbook();
   void DrawStore(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
-  void DrawCraftTable(const Camera& camera, int win_x, int win_y, 
+  void DrawEquipment(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
   void DrawDialog(GLFWwindow* window);
   void DrawQuestLog(GLFWwindow* window);
