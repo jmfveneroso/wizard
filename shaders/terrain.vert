@@ -13,6 +13,7 @@ out VertexData {
   vec3 position_cameraspace;
   vec3 blending;
   vec3 coarser_blending;
+  vec3 light_dir_tangentspace;
   float alpha;
   vec4 shadow_coord; 
   vec4 shadow_coord1; 
@@ -40,6 +41,7 @@ uniform float MAX_HEIGHT;
 uniform ivec2 buffer_top_left;
 uniform vec3 player_pos;
 uniform sampler2DShadow shadow_map;
+uniform vec3 light_direction;
 
 void main(){
   out_data.position = position_modelspace;
@@ -84,4 +86,23 @@ void main(){
   float half_clipmap_size = ((CLIPMAP_SIZE + 1) * TILE_SIZE) / 2;
   float alpha = ((clamp((abs(out_data.position.x - player_pos.x)) / half_clipmap_size, w, 1.0) - w) / (1 - w));
   out_data.alpha = max(alpha, (clamp((abs(out_data.position.z - player_pos.z)) / half_clipmap_size, w, 1.0) - w) / (1 - w));
+
+  vec3 normal_cameraspace = out_data.normal_cameraspace;
+  vec3 tangent_cameraspace = (V * M * vec4(vec3(1, 0, 0), 0)).xyz;
+  vec3 bitangent_cameraspace = (V * M * vec4(vec3(0, 0, 1), 0)).xyz;
+
+  mat3 TBN = transpose(mat3(
+    tangent_cameraspace,
+    bitangent_cameraspace,
+    normal_cameraspace
+  ));
+
+  vec3 light_pos_worldspace = out_data.position + light_direction;
+
+  vec3 vertex_pos_cameraspace = (V * vec4(out_data.position, 1)).xyz;
+  vec3 eye_dir_cameraspace = vec3(0, 0, 0) - vertex_pos_cameraspace;
+
+  vec3 light_pos_cameraspace = (V * vec4(light_pos_worldspace, 1)).xyz;
+  vec3 light_dir_cameraspace = light_pos_cameraspace + eye_dir_cameraspace;
+  out_data.light_dir_tangentspace = normalize(TBN * light_dir_cameraspace);
 }

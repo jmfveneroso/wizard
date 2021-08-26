@@ -36,27 +36,23 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     return;
   }
 
-  if (obj->asset_group) {
-    if (obj->GetAsset()->name == "fish") {
-      return;
-    }
-  }
-
   // Gravity.
   if (obj->name == "player" && configs->levitate) {
     obj->can_jump = true;
     obj->speed.y *= 0.95f;
-  } else if (physics_behavior == PHYSICS_FLY) { 
+  } else if (physics_behavior == PHYSICS_FLY || obj->levitating) { 
     obj->speed.y *= 0.95f;
   } else if (physics_behavior == PHYSICS_SWIM) { 
     obj->speed = vec3(0);
     return;
+  } else if (physics_behavior == PHYSICS_NO_FRICTION_FLY) { 
   } else {
     obj->speed += vec3(0, -GRAVITY, 0);
   }
 
   // Friction.
-  if (physics_behavior == PHYSICS_NO_FRICTION) {
+  if (physics_behavior == PHYSICS_NO_FRICTION || 
+      physics_behavior == PHYSICS_NO_FRICTION_FLY) {
     // obj->speed.x *= 0.99;
     // obj->speed.y *= 0.99;
     // obj->speed.z *= 0.99;
@@ -65,7 +61,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     obj->speed.y *= 0.99;
     obj->speed.z *= 0.9;
 
-    obj->torque *= 0.96;
+    // obj->torque *= 0.96;
   }
 
   float d = resources_->GetDeltaTime() / 0.016666f;
@@ -82,12 +78,15 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     // obj->cur_rotation = obj->cur_rotation * new_rotation;
     // obj->rotation_matrix = mat4_cast(obj->cur_rotation);
 
-    float inertia = 1.0f / obj->GetAsset()->mass;
-    obj->rotation_matrix = rotate(
-      mat4(1.0),
-      length(obj->torque) * inertia,
-      normalize(obj->torque)
-    ) * obj->rotation_matrix;
+    // float inertia = 1.0f / obj->GetAsset()->mass;
+    // obj->rotation_matrix = rotate(
+    //   mat4(1.0),
+    //   length(obj->torque) * inertia,
+    //   normalize(obj->torque)
+    // ) * obj->rotation_matrix;
+
+    // obj->prev_position = obj->position;
+    // obj->position = obj->target_position;
   }
   obj->updated_at = glfwGetTime();
 }

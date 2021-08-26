@@ -40,6 +40,7 @@ enum AssetType {
   ASSET_ITEM,
   ASSET_PLATFORM,
   ASSET_DESTRUCTIBLE,
+  ASSET_PARTICLE_3D,
   ASSET_NONE
 };
 
@@ -56,7 +57,10 @@ enum CollisionType {
 
 enum MissileType {
   MISSILE_MAGIC_MISSILE = 0,
-  MISSILE_FIREBALL
+  MISSILE_FIREBALL,
+  MISSILE_BOUNCYBALL,
+  MISSILE_HOOK,
+  MISSILE_ACID_ARROW
 };
 
 enum PhysicsBehavior {
@@ -67,7 +71,8 @@ enum PhysicsBehavior {
   PHYSICS_NO_FRICTION,
   PHYSICS_FIXED,
   PHYSICS_FLY,
-  PHYSICS_SWIM
+  PHYSICS_SWIM,
+  PHYSICS_NO_FRICTION_FLY
 };
 
 enum GameObjectType {
@@ -84,6 +89,11 @@ enum GameObjectType {
   GAME_OBJ_ACTIONABLE
 };
 
+enum ItemBonusType {
+  ITEM_BONUS_TYPE_UNDEFINED = 0,
+  ITEM_BONUS_TYPE_PROTECTION
+};
+
 enum Status {
   STATUS_NONE = 0,
   STATUS_TAKING_HIT,
@@ -94,7 +104,12 @@ enum Status {
   STATUS_BURROWED,
   STATUS_SLOW,
   STATUS_HASTE,
-  STATUS_DARKVISION
+  STATUS_DARKVISION,
+  STATUS_TRUE_SEEING,
+  STATUS_TELEKINESIS,
+  STATUS_POISON,
+  STATUS_INVISIBILITY,
+  STATUS_BLINDNESS
 };
 
 enum AiState {
@@ -105,7 +120,8 @@ enum AiState {
   TURN_TOWARD_TARGET = 4,
   WANDER = 5,
   CHASE = 6,
-  SCRIPT = 7
+  SCRIPT = 7,
+  AMBUSH = 8
 };
 
 enum PlayerAction {
@@ -144,6 +160,7 @@ enum EventType {
   EVENT_ON_INTERACT_WITH_DOOR,
   EVENT_ON_DIE,
   EVENT_COLLISION,
+  EVENT_ON_PLAYER_MOVE,
   EVENT_NONE 
 };
 
@@ -363,6 +380,17 @@ struct DoorEvent : Event {
   DoorEvent(string interaction, string door, string callback)
     : Event(EVENT_ON_INTERACT_WITH_DOOR), interaction(interaction),
       door(door), callback(callback) {}
+};
+
+struct PlayerMoveEvent : Event {
+  string type = "height_below";
+  float h;
+  string callback;
+  bool active = true;
+
+  PlayerMoveEvent () : Event(EVENT_ON_PLAYER_MOVE) {}
+  PlayerMoveEvent(string type, float h, string callback)
+    : Event(EVENT_ON_PLAYER_MOVE), type(type), h(h), callback(callback) {}
 };
 
 using MeshPtr = shared_ptr<Mesh>;

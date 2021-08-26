@@ -12,6 +12,7 @@ in VertexData {
   vec3 position_cameraspace;
   vec3 blending;
   vec3 coarser_blending;
+  vec3 light_dir_tangentspace;
   float alpha;
   vec4 shadow_coord; 
   vec4 shadow_coord1; 
@@ -28,6 +29,7 @@ out FragData {
   vec3 barycentric;
   vec3 blending;
   vec3 coarser_blending;
+  vec3 light_dir_tangentspace;
   float alpha;
   vec4 shadow_coord; 
   vec4 shadow_coord1; 
@@ -50,6 +52,7 @@ void main() {
     out_data.shadow_coord1 = in_data[i].shadow_coord1;
     out_data.shadow_coord2 = in_data[i].shadow_coord2;
     out_data.coarser_blending = in_data[i].coarser_blending;
+    out_data.light_dir_tangentspace = in_data[i].light_dir_tangentspace;
     out_data.alpha = in_data[i].alpha;
     EmitVertex();
   }

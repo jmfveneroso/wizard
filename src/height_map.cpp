@@ -88,43 +88,80 @@ float HeightMap::GetTerrainHeight(vec2 pos, vec3* normal) {
   }
 }
 
+float HeightMap::GetHeightNoise(float x, float y) {
+  // Gaussian.
+  float h = -500.0f;
+  if (abs(x + y) > 0.1f) {
+    h += 100.0f * exp(-((x * x) / 2 + (y * y) / 2));
+  }
+
+  return h + 100.0f * noise_.noise(x * 0.001f, y * 0.001f) +
+           2.0f * noise_.noise(2000 + x * 0.01, 2000 + y * 0.01) +
+           100.0f * noise_.noise(1000 + x * 0.0001, 1000 + y * 0.0001);
+}
+
+
 TerrainPoint HeightMap::GetTerrainPoint(int x, int y, bool calculate_normal) {
   int hm_x = x - kWorldCenter.x;
   int hm_y = y - kWorldCenter.z;
+
+  float x_ = x - 11768;
+  float y_ = y - 7687;
+  float alpha_noise = sqrt(x_ * x_ + y_ * y_ + 1.0f) / (kHeightMapSize / 2.0f);
+  const float min_k = 0.5f;
+  const float max_k = 1.0f;
+
+  alpha_noise = (clamp(alpha_noise, min_k, max_k) - min_k) / (max_k - min_k);
+  // alpha_noise = 0;
+
+  float h_noise = GetHeightNoise(x_, y_);
+
   hm_x += kHeightMapSize / 2;
   hm_y += kHeightMapSize / 2;
 
-  if (hm_x < 0 || hm_y < 0 || hm_x >= kHeightMapSize-1 || hm_y >= kHeightMapSize-1) {
-    TerrainPoint point(-100);
-    point.normal = vec3(0, 1, 0);
-    return point;
-  }
-
-  int index = hm_x + hm_y * kHeightMapSize;
-
-  unsigned short h;
-  unsigned char b1 = compressed_height_map_[3*index];
-  unsigned char b2 = compressed_height_map_[3*index+1];
-  unsigned char b3 = compressed_height_map_[3*index+2];
-  h = (b1 << 8) + b2;
 
   TerrainPoint p;
-  p.height = float(h - 8192) / 32.0f;
-  p.tile = b3;
+  if (hm_x < 0 || hm_y < 0 || hm_x >= kHeightMapSize || 
+      hm_y >= kHeightMapSize) {
+    float n = 10; 
+    vec3 v_1 = vec3(hm_x + 0, GetHeightNoise(x + 0, y + 0), y + 0);
+    vec3 v_2 = vec3(hm_x + 0, GetHeightNoise(x + 0, y + n), y + n);
+    vec3 v_3 = vec3(hm_x + n, GetHeightNoise(x + n, y + n), y + n);
+    vec3 v_4 = vec3(hm_x + n, GetHeightNoise(x + n, y + 0), y + 0);
 
-  p.blending = vec3(0, 0, 0);
-  if (p.tile > 0 && p.tile < 4) {
-    p.blending[p.tile-1] = 1.0f;
+    vec3 a = v_2 - v_1;
+    vec3 b = v_3 - v_1;
+    p.normal = cross(a, b);
+    p.blending = vec3(1.0f, 0, 0);
+  } else {
+    int index = hm_x + hm_y * kHeightMapSize;
+
+    unsigned short h;
+    unsigned char b1 = compressed_height_map_[3*index];
+    unsigned char b2 = compressed_height_map_[3*index+1];
+    unsigned char b3 = compressed_height_map_[3*index+2];
+    h = (b1 << 8) + b2;
+
+    p.height = float(h - 8192) / 32.0f;
+    p.tile = b3;
+
+    p.blending = vec3(0, 0, 0);
+    if (p.tile > 0 && p.tile < 4) {
+      p.blending[p.tile-1] = 1.0f;
+    }
+
+    if (!calculate_normal) {
+      return p;
+    }
+
+    vec3 a = vec3(x    , p.height, y    );
+    vec3 b = vec3(x + 1, GetTerrainPoint(x+1, y, false).height, y    );
+    vec3 c = vec3(x    , GetTerrainPoint(x, y+1, false).height, y + 1);
+    p.normal = normalize(cross(c - a, b - a));
   }
 
-  if (!calculate_normal) {
-    return p;
-  }
-
-  vec3 a = vec3(x    , p.height, y    );
-  vec3 b = vec3(x + 1, GetTerrainPoint(x+1, y, false).height, y    );
-  vec3 c = vec3(x    , GetTerrainPoint(x, y+1, false).height, y + 1);
-  p.normal = normalize(cross(c - a, b - a));
+  p.height = alpha_noise * h_noise + (1 - alpha_noise) * p.height;
+  // p.height = alpha_noise * 50.0f;
   return p;
 }
 

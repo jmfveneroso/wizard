@@ -39,6 +39,11 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     item_icon = item_icon_xml.text().get();
   }
 
+  const pugi::xml_node& invisibility_xml = asset_xml.child("invisibility");
+  if (invisibility_xml) {
+    invisibility = string(invisibility_xml.text().get()) == "true";
+  }
+
   const string& shader_name = asset_xml.child("shader").text().get();
   if (shader_name.size() > 0) {
     shader = resources_->GetShader(shader_name);
@@ -122,7 +127,7 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     textures.push_back(texture_id);
   }
 
-  // Bump map.
+  // Normal map.
   const pugi::xml_node& bump_map_xml = asset_xml.child("bump-map");
   if (bump_map_xml) {
     const string& texture_filename = bump_map_xml.text().get();
@@ -133,6 +138,31 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
       resources_->AddTexture(texture_filename, texture_id);
     }
     bump_map_id = texture_id;
+  }
+
+  // Specular.
+  const pugi::xml_node& specular_xml = asset_xml.child("specular");
+  if (specular_xml) {
+    const string& texture_filename = specular_xml.text().get();
+    GLuint texture_id = resources_->GetTextureByName(texture_filename);
+    if (texture_id == 0) {
+      bool poor_filtering = specular_xml.attribute("poor-filtering");
+      texture_id = LoadPng(texture_filename.c_str(), poor_filtering);
+      resources_->AddTexture(texture_filename, texture_id);
+    }
+    specular_id = texture_id;
+  }
+
+  const pugi::xml_node& specular_component_xml = 
+    asset_xml.child("specular-component");
+  if (specular_component_xml) {
+    specular_component = LoadFloatFromXml(specular_component_xml);
+  }
+
+  const pugi::xml_node& normal_strength_xml = 
+    asset_xml.child("normal-strength");
+  if (normal_strength_xml) {
+    normal_strength = LoadFloatFromXml(normal_strength_xml);
   }
 
   const pugi::xml_node& light_xml = asset_xml.child("light");
@@ -209,6 +239,36 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
   const pugi::xml_node& ai_script_xml = asset_xml.child("ai-script");
   if (ai_script_xml) {
     ai_script = ai_script_xml.text().get();
+  }
+
+  const pugi::xml_node& default_animation_xml = asset_xml.child("default-animation");
+  if (default_animation_xml) {
+    default_animation = default_animation_xml.text().get();
+  }
+
+  if (type == ASSET_PARTICLE_3D) {
+    shared_ptr<Particle3dAsset> particle_asset = 
+      static_pointer_cast<Particle3dAsset>(shared_from_this());
+
+    const pugi::xml_node& texture_xml = asset_xml.child("texture");
+    if (texture_xml) {
+      particle_asset->texture = texture_xml.text().get();
+    }
+
+    const pugi::xml_node& particle_type_xml = asset_xml.child("particle-type");
+    if (particle_type_xml) {
+      particle_asset->particle_type = particle_type_xml.text().get();
+    }
+
+    const pugi::xml_node& existing_mesh_xml = asset_xml.child("existing-mesh");
+    if (existing_mesh_xml) {
+      particle_asset->existing_mesh = existing_mesh_xml.text().get();
+    }
+
+    const pugi::xml_node& life_xml = asset_xml.child("life");
+    if (life_xml) {
+      particle_asset->life = boost::lexical_cast<float>(life_xml.text().get());
+    }
   }
 
   resources_->AddAsset(shared_from_this());
@@ -289,6 +349,9 @@ shared_ptr<GameAsset> CreateAsset(Resources* resources,
         break;
       case ASSET_DESTRUCTIBLE:
         asset = make_shared<DestructibleAsset>(resources);
+        break;
+      case ASSET_PARTICLE_3D:
+        asset = make_shared<Particle3dAsset>(resources);
         break;
       case ASSET_DEFAULT:
       default:

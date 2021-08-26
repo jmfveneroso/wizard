@@ -102,6 +102,12 @@ void Renderer::GetVisibleObjects(
   aabb.point = octree_node->center - octree_node->half_dimensions;
   aabb.dimensions = octree_node->half_dimensions * 2.0f;
 
+  vec3 closest = ClosestPtPointAABB(player_pos_, aabb);
+  if (resources_->GetConfigs()->render_scene == "dungeon" && 
+      length(closest - player_pos_) > resources_->GetConfigs()->light_radius + 5) {
+    return;
+  }
+
   // TODO: find better name for this function.
   if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos_)) {
     return;
@@ -221,6 +227,10 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   if (obj->name == "hand-001") return true;
   if (obj->name == "skydome") return true;
   if (obj->never_cull) return false;
+  if (obj->IsInvisible() && !resources_->GetConfigs()->see_invisible) 
+    return true;
+  if (obj->IsSecret() && resources_->GetConfigs()->see_invisible) 
+    return true;
   // TODO: draw hand without object.
 
   if (!obj->draw) {
@@ -239,6 +249,11 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
 
   // Distance cull.
   obj->distance = length(camera_.position - obj->position);
+  if (resources_->GetConfigs()->render_scene == "dungeon" && 
+      obj->distance > resources_->GetConfigs()->light_radius + 5) { 
+    return true;
+  }
+
   float size_in_camera = bounding_sphere.radius / obj->distance;
   if (obj->type != GAME_OBJ_MISSILE && size_in_camera < 0.005f) {
     return true;
@@ -328,10 +343,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
     //   continue;
     // }
 
-    if (obj->GetAsset()->shader == transparent_shader || 
-        obj->GetAsset()->shader == lake_shader || 
-        obj->GetAsset()->shader == animated_transparent_shader || 
-        obj->GetAsset()->shader == region_shader) {
+    if (obj->IsPartiallyTransparent()) { 
       transparent_objs.push_back(obj);
     } else if (obj->Is3dParticle()) {
       particle_3d_objs.push_back(obj);
@@ -681,6 +693,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
         (float*) &obj->current_sector->lighting_color);
 
+      vec3 light_color = vec3(0.3);
+      glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
+        (float*) &light_color);
+
       if (configs->render_scene == "dungeon" 
        || obj->current_sector->name != "outside") {
         glUniform1f(GetUniformId(program_id, "outdoors"), 0);
@@ -693,11 +709,14 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform1f(GetUniformId(program_id, "outdoors"), 0);
     }
 
-    if (configs->render_scene == "dungeon") {
     glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
       (float*) &resources_->GetPlayer()->position);
-    }
 
+    glUniform1f(GetUniformId(program_id, "normal_strength"), 
+      asset->normal_strength);
+
+    glUniform1f(GetUniformId(program_id, "specular_component"), 
+      asset->specular_component);
 
     // vector<ObjPtr> light_points = resources_->GetKClosestLightPoints( 
     //   obj->position, 3);
@@ -755,6 +774,26 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glBindTexture(GL_TEXTURE_2D, texture_id);
       glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
 
+      if (asset->bump_map_id == 0) {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
+
+        glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
+      } else {
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, asset->bump_map_id);
+        glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
+
+        glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
+      }
+
+      if (asset->specular_id != 0) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, asset->specular_id);
+        glUniform1i(GetUniformId(program_id, "specular_sampler"), 2);
+      }
+
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("animated_transparent_object")) {
       glDisable(GL_CULL_FACE);
@@ -804,6 +843,13 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
         glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
       }
+
+      if (asset->specular_id != 0) {
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, asset->specular_id);
+        glUniform1i(GetUniformId(program_id, "specular_sampler"), 2);
+      }
+
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
     } else if (program_id == resources_->GetShader("transparent_object")) {
       glEnable(GL_BLEND);
@@ -1483,28 +1529,77 @@ void Renderer::CreateThreads() {
 
 void Renderer::CreateDungeonBuffers() {
   vector<char> instanced_tiles { ' ', '+', '|', 'o' };
-  vector<string> models { "resources/models_fbx/dungeon_floor.fbx", 
+  vector<string> model_names { "resources/models_fbx/dungeon_floor.fbx", 
     "resources/models_fbx/dungeon_corner.fbx", 
     "resources/models_fbx/dungeon_corner.fbx", 
     "resources/models_fbx/dungeon_arch.fbx" };
-  vector<string> textures { "resources/textures_png/paving.png", 
+
+  vector<string> texture_names { "resources/textures_png/paving.png", 
     "resources/textures_png/brick_wall.png", 
     "resources/textures_png/brick_wall.png", 
     "resources/textures_png/brick_wall.png" };
+
+  vector<string> normal_texture_names { "resources/textures_png/paving_normal.png", 
+    "resources/textures_png/paving_normal.png", 
+    "resources/textures_png/paving_normal.png", 
+    "resources/textures_png/paving_normal.png" };
+
+  vector<string> specular_texture_names { "resources/textures_png/paving_roughness.png", 
+    "resources/textures_png/paving_roughness.png", 
+    "resources/textures_png/paving_roughness.png", 
+    "resources/textures_png/paving_roughness.png" };
+
+  vector<FbxData> models;
+  vector<GLuint> textures;
+  vector<GLuint> normal_textures;
+  vector<GLuint> specular_textures;
+  for (int tile = 0; tile < 4; tile++) {
+    models.push_back(FbxLoad(model_names[tile]));
+    textures.push_back(LoadPng(texture_names[tile].c_str()));
+    normal_textures.push_back(LoadPng(normal_texture_names[tile].c_str()));
+    specular_textures.push_back(LoadPng(specular_texture_names[tile].c_str()));
+  }
 
   for (int cx = 0; cx < kDungeonCells; cx++) {
     for (int cz = 0; cz < kDungeonCells; cz++) {
       for (int i = 0; i < 4; i++) {
         char tile = instanced_tiles[i];
 
-        glGenBuffers(1, &dungeon_render_data[cx][cz].vbos[tile]);
-        glGenBuffers(1, &dungeon_render_data[cx][cz].uvs[tile]);
-        glGenBuffers(1, &dungeon_render_data[cx][cz].normals[tile]);
-        glGenBuffers(1, &dungeon_render_data[cx][cz].element_buffers[tile]);
-        glGenBuffers(1, &dungeon_render_data[cx][cz].matrix_buffers[tile]);
+        if (!created_dungeon_buffers) {
+          glGenBuffers(1, &dungeon_render_data[cx][cz].vbos[tile]);
+          glGenBuffers(1, &dungeon_render_data[cx][cz].uvs[tile]);
+          glGenBuffers(1, &dungeon_render_data[cx][cz].normals[tile]);
+          glGenBuffers(1, &dungeon_render_data[cx][cz].element_buffers[tile]);
+          glGenBuffers(1, &dungeon_render_data[cx][cz].matrix_buffers[tile]);
+          glGenBuffers(1, &dungeon_render_data[cx][cz].tangent_buffers[tile]);
+          glGenBuffers(1, &dungeon_render_data[cx][cz].bitangent_buffers[tile]);
+        }
 
-        FbxData data = FbxLoad(models[i]);
-        dungeon_render_data[cx][cz].textures[tile] = LoadPng(textures[i].c_str());
+        // Buffer orphaning.
+        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].vbos[tile]);
+        // glBufferData(GL_ARRAY_BUFFER, 6400 * sizeof(vec3), NULL,
+        //   GL_STREAM_DRAW);
+
+        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].uvs[tile]);
+        // glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(vec2), NULL,
+        //   GL_STREAM_DRAW);
+
+        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].normals[tile]);
+        // glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(vec3), NULL,
+        //   GL_STREAM_DRAW);
+
+        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].matrix_buffers[tile]);
+        // glBufferData(GL_ARRAY_BUFFER, model_matrices.size() * sizeof(mat4), 
+        //   NULL, GL_STREAM_DRAW);
+
+        // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dungeon_render_data[cx][cz].element_buffers[tile]); 
+        // glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), 
+        //   NULL, GL_STREAM_DRAW);
+
+        const FbxData& data = models[i];
+        dungeon_render_data[cx][cz].textures[tile] = textures[i];
+        dungeon_render_data[cx][cz].normal_textures[tile] = normal_textures[i];
+        dungeon_render_data[cx][cz].specular_textures[tile] = specular_textures[i];
 
         vector<vec3> vertices;
         vector<unsigned int> indices;
@@ -1513,6 +1608,25 @@ void Renderer::CreateDungeonBuffers() {
           indices.push_back(i);
         }
         dungeon_render_data[cx][cz].num_indices[tile] = indices.size();
+
+        vector<vec3> tangents(vertices.size());
+        vector<vec3> bitangents(vertices.size());
+        for (int i = 0; i < vertices.size(); i += 3) {
+          vec3 delta_pos1 = vertices[i+1] - vertices[i+0];
+          vec3 delta_pos2 = vertices[i+2] - vertices[i+0];
+          vec2 delta_uv1 = data.uvs[i+1] - data.uvs[i+0];
+          vec2 delta_uv2 = data.uvs[i+2] - data.uvs[i+0];
+
+          float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+          vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+          vec3 bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+          tangents[i+0] = tangent;
+          tangents[i+1] = tangent;
+          tangents[i+2] = tangent;
+          bitangents[i+0] = bitangent;
+          bitangents[i+1] = bitangent;
+          bitangents[i+2] = bitangent;
+        }
 
         glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].vbos[tile]);
         glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), 
@@ -1550,11 +1664,7 @@ void Renderer::CreateDungeonBuffers() {
             } else if (tile == 'o') {
               if (dungeon_map[x][z] != 'o' && dungeon_map[x][z] != 'O') continue;
             } else if (tile == ' ') {
-              if (dungeon_map[x][z] != ' ' && dungeon_map[x][z] != 's' && 
-                  dungeon_map[x][z] != 'r' && dungeon_map[x][z] != 'S' && 
-                  dungeon_map[x][z] != 'q' && dungeon_map[x][z] != 'w' &&
-                  dungeon_map[x][z] != 'K' && dungeon_map[x][z] != 'L')
-                  continue;
+              if (dungeon_map[x][z] != ' ') continue;
             } else {
               if (dungeon_map[x][z] != tile) continue;
             }
@@ -1572,6 +1682,14 @@ void Renderer::CreateDungeonBuffers() {
         glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].matrix_buffers[tile]);
         glBufferData(GL_ARRAY_BUFFER, model_matrices.size() * sizeof(mat4), 
           &model_matrices[0], GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].tangent_buffers[tile]);
+        glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
+          &tangents[0], GL_STATIC_DRAW);
+
+        glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].bitangent_buffers[tile]);
+        glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
+          &bitangents[0], GL_STATIC_DRAW);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dungeon_render_data[cx][cz].element_buffers[tile]); 
         glBufferData(
@@ -1607,7 +1725,13 @@ void Renderer::CreateDungeonBuffers() {
         glVertexAttribDivisor(6, 1);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dungeon_render_data[cx][cz].element_buffers[tile]);
-        glVertexAttribDivisor(7, 0);
+        glVertexAttribDivisor(7, 0); // Always reuse the same vertices.
+
+        BindBuffer(dungeon_render_data[cx][cz].tangent_buffers[tile], 8, 3);
+        glVertexAttribDivisor(8, 0); // Always reuse the same vertices.
+
+        BindBuffer(dungeon_render_data[cx][cz].bitangent_buffers[tile], 9, 3);
+        glVertexAttribDivisor(9, 0); // Always reuse the same vertices.
 
         glBindVertexArray(0);
         int num_slots = 8;
@@ -1617,6 +1741,7 @@ void Renderer::CreateDungeonBuffers() {
       }
     }
   }
+  created_dungeon_buffers = true;
 }
 
 void Renderer::DrawDungeonTiles() {
@@ -1658,11 +1783,22 @@ void Renderer::DrawDungeonTiles() {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].textures[tile]);
         glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].normal_textures[tile]);
+        glUniform1i(GetUniformId(program_id, "normal_sampler"), 1);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].specular_textures[tile]);
+        glUniform1i(GetUniformId(program_id, "specular_sampler"), 2);
         
         mat4 VP = projection_matrix_ * view_matrix_;  
         glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
         glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &view_matrix_[0][0]);
         glUniformMatrix4fv(GetUniformId(program_id, "P"), 1, GL_FALSE, &projection_matrix_[0][0]);
+
+        glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
+          (float*) &camera_.position);
 
         glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
           (float*) &configs->sun_position);

@@ -194,6 +194,20 @@ void CollisionResolver::Collide() {
   find_mutex_.lock();
   ResolveCollisions();
   ProcessInContactWith();
+
+  if (resources_->GetConfigs()->render_scene == "town") {
+    shared_ptr<Player> player = resources_->GetPlayer();
+    vec3 player_pos = player->position;
+
+    vec3 normal;
+    float h = resources_->GetHeightMap().GetTerrainHeight(
+      vec2(player_pos.x, player_pos.z), &normal);
+    if (player_pos.y < h + 6.0f) {
+      player->position.y = h + 6.0f;
+      player->target_position = player->position;
+      resources_->UpdateObjectPosition(player);
+    }
+  }
   find_mutex_.unlock();
 
   // PrintMetrics();
@@ -236,7 +250,7 @@ void CollisionResolver::UpdateObjectPositions() {
       obj->position = obj->target_position;
       continue;
     }
-
+    
     obj->prev_position = obj->position;
     obj->position = obj->target_position;
 
@@ -512,6 +526,11 @@ vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
 
 vector<shared_ptr<CollisionBP>> GetCollisionsBP(ObjPtr obj1, ObjPtr obj2) {
   vector<shared_ptr<CollisionBP>> collisions;
+
+  if (obj1->IsCreature() && obj2->GetAsset()->name == "dungeon_web_wall") {
+    return collisions;
+  }
+
   if (obj2->aabb_tree) {
     vector<shared_ptr<CollisionBP>> cols = 
       GetCollisionsBPAux(obj2->aabb_tree, obj1, obj2);
@@ -888,10 +907,17 @@ void CollisionResolver::TestCollisionsWithTerrain() {
   //   return;
   // } 
 
+  Dungeon& dungeon = resources_->GetDungeon();
   resources_->Lock();
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->current_sector || obj1->current_sector->name != "outside") continue;
     if (!obj1->IsCollidable()) continue;
+
+    if (in_dungeon_) {
+      ivec2 obj_tile = dungeon.GetDungeonTile(obj1->position);
+      if (dungeon.IsChasm(obj_tile)) continue;
+    }
+
     switch (obj1->GetCollisionType()) {
       case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1, resources_, in_dungeon_)); break;
       case COL_BONES:        Merge(collisions, GetCollisionsBT(obj1, resources_, in_dungeon_)); break;
@@ -953,7 +979,7 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
     return displacement_vector;
   }
  
-  if (flatness < 0.98f) {
+  if (flatness < 0.9f) {
     vec3 left = normalize(cross(up, penetration)); 
     vec3 tan_upwards = normalize(cross(penetration, left));
 
@@ -977,7 +1003,6 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
     }
 
     vec3 projection = v_penetration * tan_upwards;
-
     displacement_vector += projection;
   }
 
@@ -1155,6 +1180,19 @@ void CollisionResolver::TestCollisionBO(shared_ptr<CollisionBO> c) {
   if (c->collided) {
     c->displacement_vector = to_world_space * c->displacement_vector;
     c->normal = normalize(c->displacement_vector);
+
+    bool in_contact;
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    // c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+    //   c->displacement_vector, c->normal, v, in_contact);
+
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, c->normal, v, in_contact);
+
+    if (in_contact) {
+      c->obj1->in_contact_with = c->obj2;
+    }
+
     FillCollisionBlankFields(c);
   }
 }
@@ -1328,9 +1366,14 @@ void CollisionResolver::TestCollisionQO(shared_ptr<CollisionQO> c) {
     c->collided = IntersectSphereAABB(s_in_obb_space, aabb_in_obb_space, 
       c->displacement_vector, c->point_of_contact);
     if (c->collided) {
-      c->displacement_vector = prev_pos - c->obj1->position;
+      c->point_of_contact = to_world_space * c->point_of_contact;
+      c->displacement_vector = to_world_space * c->displacement_vector;
       c->normal = normalize(c->displacement_vector);
       FillCollisionBlankFields(c);
+
+      // c->displacement_vector = prev_pos - c->obj1->position;
+      // c->normal = normalize(c->displacement_vector);
+      // FillCollisionBlankFields(c);
       break;
     }
     t += step;
@@ -1603,12 +1646,61 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
   vec3 d = normalize(obj1->prev_position - obj1->position);
   vec3 normal = -(d - 2 * dot(d, n) * n);
 
-  if (missile->type == MISSILE_FIREBALL) {
-    resources_->CreateParticleEffect(16, missile->position, normal * 1.0f, 
-      vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
-    resources_->CastFireExplosion(missile->owner, missile->position, vec3(0));
-    obj1->life = -1;
-    return;
+  switch (missile->type) {
+    case MISSILE_FIREBALL: {
+      resources_->CreateParticleEffect(16, missile->position, normal * 1.0f, 
+        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+      resources_->CastFireExplosion(missile->owner, missile->position, vec3(0));
+      obj1->life = -1;
+      return;
+    }
+    case MISSILE_BOUNCYBALL: {
+      if (obj2 && (obj2->IsPlayer() || obj2->IsCreature())) {
+        obj1->life = 0.0f;
+        obj2->DealDamage(missile->owner, 10.0f, normal, 
+          /*take_hit_animation=*/false);
+        return;
+      }
+
+      resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
+        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
+
+      obj1->position = obj1->prev_position;
+      obj1->speed += dot(obj1->speed, c->normal) * c->normal * -1.9f;
+      return;
+    }
+    case MISSILE_HOOK: {
+      obj1->life = -1.0f;
+      if (obj2 && (obj2->IsPlayer() || obj2->IsCreature())) {
+        vec3 v = missile->owner->position - obj2->position;
+        if (length(v) < 4.0f) {
+          obj2->speed += v;
+        } else {
+          obj2->speed += normalize(v) * 4.0f;
+        }
+
+        resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
+          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
+        return;
+      }
+
+      resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
+        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
+      return;
+    }
+    case MISSILE_ACID_ARROW: {
+      if (obj2 && (obj2->IsPlayer() || obj2->IsCreature())) {
+        obj2->DealDamage(missile->owner, 10.0f, normal, 
+          /*take_hit_animation=*/false);
+        obj2->AddTemporaryStatus(make_shared<PoisonStatus>(1.0f, 20.0f, 1));
+      }
+      resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
+        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
+      return;
+    }
+    default: {
+      break;
+    }
   }
 
   obj1->position += c->displacement_vector;
@@ -1616,67 +1708,15 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
     if (missile->owner) {
       missile->owner->RangedAttack(obj2);
     }
-
-    // TODO: this check shouldn't be placed here. After I have an engine
-    // class, it should be made there.
-
-
-    // obj2->life -= 10;
-    // resources_->GetConfigs()->taking_hit = 30.0f;
-    // obj2->paralysis_cooldown = 100;
-
-    // if (obj2->life <= 0.0f) {
-    //   obj2->status = STATUS_DEAD;
-    //   // obj2->life = 100.0f;
-    //   // obj2->position = resources_->GetConfigs()->respawn_point;
-    //   // obj2->position = resources_->GetDungeon().GetPlatform();
-    // }
   } else if (obj2 && obj2->IsCreature()) {
-    if (missile->owner && !missile->owner->IsPlayer()) {
-      return;
-    }
-
-    // (obj2->GetAsset()->name == "spider" 
-    // || obj2->GetAsset()->name == "cephalid")) {
+    if (missile->owner && !missile->owner->IsPlayer()) return;
 
     if (obj2->status != STATUS_DEAD && obj2->status != STATUS_DYING) {
       missile->owner->RangedAttack(obj2, normal);
-
-      // obj2->life -= ProcessDiceFormula(ParseDiceFormula("1d10+5"));
-
-      // resources_->CreateParticleEffect(10, obj1->position, normal * 1.0f, 
-      //   vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
-      // if (obj2->life <= 0) {
-      //   obj2->status = STATUS_DYING;
-      //   obj2->frame = 0;
-      // } else {
-      //   obj2->status = STATUS_TAKING_HIT;
-      //   obj2->frame = 0;
-      // }
     } else {
       resources_->CreateParticleEffect(10, obj1->position, normal * 1.0f, 
         vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
     }
-
-    // // TODO: change.
-    // if (obj1->GetAsset()->name == "harpoon-missile" && 
-    //     obj2->GetAsset()->name == "fish") {
-    //   obj2->life = -100;
-    //   resources_->InsertItemInInventory(8);
-
-    //   const string& item_name = resources_->GetItemData()[8].name;
-    //   resources_->AddMessage(string("You picked a ") + item_name);
-    // } else if (obj1->GetAsset()->name == "harpoon-missile" && 
-    //     obj2->GetAsset()->name == "white-carp") {
-    //    obj2->life = -100;
-    //   resources_->InsertItemInInventory(9);
-
-    //   const string& item_name = resources_->GetItemData()[9].name;
-    //   resources_->AddMessage(string("You picked a ") + item_name);
-    // }
-
-    // TODO: need another class to take care of units. Like HitUnit(unit);
-    // TODO: ChangeStatus(status)
   } else {
     if (obj2) {
       if (obj2->IsDestructible()) {
@@ -1711,17 +1751,22 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
             }
           }
         }
-      } else if (obj2->GetCollisionType() == COL_CONVEX_HULL && 
-        obj2->GetPhysicsBehavior() != PHYSICS_FIXED) {
-        vec3 r = c->point_of_contact - c->obj2->position;
-        vec3 f = -c->displacement_vector;
-        vec3 torque = cross(r, f);
-        if (length(torque) > 5.0f) {
-          torque = normalize(torque) * 5.0f;
-        } 
+      // } else if (obj2->GetCollisionType() == COL_OBB && 
+      //   obj2->GetPhysicsBehavior() != PHYSICS_FIXED && obj2->IsAsset("plank")) {
+      //   vec3 r = c->point_of_contact - c->obj2->position;
+      //   vec3 f = -c->displacement_vector * 10.0f;
+      //   // f -= dot(f, vec3(1, 0, 0)) * vec3(1, 0, 0);
 
-        obj2->speed += -c->displacement_vector;
-        obj2->torque += torque;
+      //   vec3 torque = cross(r, f);
+      //   torque = dot(torque, vec3(0, 0, 1)) * vec3(0, 0, 1);
+
+      //   float max_torque = 5.0f;
+      //   if (length(torque) > max_torque) {
+      //     torque = normalize(torque) * max_torque;
+      //   } 
+
+      //   // obj2->speed += -c->displacement_vector;
+      //   obj2->torque += torque;
       } 
       resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
         vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
@@ -1741,19 +1786,19 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 }
 
 void CollisionResolver::ProcessInContactWith() {
-  return;
-
   vector<ObjPtr>& objs = resources_->GetMovingObjects();
   for (ObjPtr obj : objs) {
     if (!obj->in_contact_with) continue;
     if (obj->in_contact_with->GetPhysicsBehavior() == PHYSICS_FIXED) {
       continue;
     }
+    if (!obj->IsPlayer()) continue;
 
     vec3 v = obj->in_contact_with->position - obj->in_contact_with->prev_position;
     obj->position += v;
 
-    float inertia = 1.0f / obj->in_contact_with->GetMass();
+    float inertia = 1.0f;
+    // float inertia = 1.0f / obj->in_contact_with->GetMass();
     mat4 rotation_matrix = rotate(
       mat4(1.0),
       length(obj->in_contact_with->torque) * inertia,
@@ -1778,6 +1823,10 @@ void CollisionResolver::ResolveParticleCollision(ColPtr c) {
     // TODO: consider particles from other owners, like missiles.
     if (obj2->IsCreature()) obj2->DealDamage(resources_->GetPlayer(), 0.2f,
       vec3(0, 1, 0), /*take_hit_animation=*/false);
+
+    if (obj2->asset_group && obj2->GetAsset()->name == "dungeon_web_wall") {
+      obj2->life = -1.0f;
+    }
   } else if (particle->particle_type->name == "fire-explosion") {
     cout << "Trying: " << obj2->GetName() << endl;
     if (!obj2) return;
@@ -1835,24 +1884,13 @@ void CollisionResolver::ResolveCollisions() {
       ids.insert(obj2->id);
     }
 
+
+
+
+
+    // Resolve.
     const vec3& displacement_vector = c->displacement_vector;
     vec3 normal = c->normal;
-
-    if (obj1 && obj1->asset_group && obj1->GetAsset()->name == "spider-web") {
-      if (obj2 && obj2->type == GAME_OBJ_PLAYER) {
-        obj1->life = -1.0f;
-        obj1->status = STATUS_DEAD;
-        resources_->GetConfigs()->taking_hit = 30.0f;
-      } else {
-        if (c->collision_pair != CP_SP) {
-          continue;
-        }
-      }
-    }
-
-    if (obj2 && obj2->asset_group && obj2->GetAsset()->name == "spider-web") {
-      continue;
-    }
 
     if (obj1->type == GAME_OBJ_MISSILE) {
       ResolveMissileCollision(c);
@@ -1864,53 +1902,57 @@ void CollisionResolver::ResolveCollisions() {
       continue;
     }
 
+    // TODO: replace all of these by collision events.
+    if (c->obj1->asset_group && c->obj1->GetAsset()->name == "dungeon_web_floor") {
+      if (c->collision_pair == CP_SB) {
+        if (c->obj2->IsPlayer()) {
+          c->obj2->AddTemporaryStatus(make_shared<SlowStatus>(0.5, 1.0f, 1));
+        }
+      }
+      continue;
+    }
+
     float magnitude2 = length2(displacement_vector);
     if (magnitude2 < 0.0001f) {
       continue;
     }
 
-    // if (c->collision_pair == CP_HT) {
-    //   vec3 r = c->point_of_contact - c->obj1->position;
-    //   vec3 f = c->displacement_vector;
-    //   vec3 torque = cross(r, f);
-
-    //   float max_torque = 5.0f;
-    //   if (length(torque) > max_torque) {
-    //     torque = normalize(torque) * max_torque;
-    //   } 
-    //   obj1->torque = torque;
-    // }
-
-    if (dot(normal, vec3(0, 1, 0)) > 0.85) obj1->can_jump = true;
-
-    if (dot(normal, vec3(0, 1, 0)) > 0.6f) {
-      if (dot(obj1->speed, vec3(0, -1, 0)) > 50.0f * GRAVITY) {
-        obj1->life -= 10;
-      }
-    }
-
     if (IsNaN(displacement_vector)) continue;
-    obj1->position += displacement_vector;
-
-    vec3 v = normalize(displacement_vector);
-    float k = dot(obj1->speed, v);
-    if (!isnan(k)) {
-      obj1->speed += abs(k) * v;
-    }
-
-    if (dot(normal, vec3(0, 1, 0)) > 0.6) {
-      if (obj1->IsAsset("spider")) {
-        obj1->up = normal;
-      }
-    }
 
     if (obj2) {
       resources_->ProcessOnCollisionEvent(obj1, obj2);
       obj1->collisions.insert(obj2->name);
     }
 
-    obj1->target_position = obj1->position;
-    resources_->UpdateObjectPosition(obj1);
+    // ObjPtr displaced_obj = (!obj2 || obj1->GetMass() > obj2->GetMass()) ? obj1 : obj2;
+    ObjPtr displaced_obj = obj1;
+    if (displaced_obj->IsAsset("plank")) continue;
+
+    displaced_obj->position += displacement_vector;
+
+    if (dot(normal, vec3(0, 1, 0)) > 0.85) displaced_obj->can_jump = true;
+
+    vec3 v = normalize(displacement_vector);
+    float k = dot(displaced_obj->speed, v);
+    if (!isnan(k)) {
+      displaced_obj->speed += abs(k) * v;
+    }
+
+    if (dot(normal, vec3(0, 1, 0)) > 0.6) {
+      if (displaced_obj->IsAsset("spider")) {
+        displaced_obj->up = normal;
+      }
+    }
+
+    displaced_obj->target_position = displaced_obj->position;
+    resources_->UpdateObjectPosition(displaced_obj);
+
+    // Fall damage.
+    // if (dot(normal, vec3(0, 1, 0)) > 0.6f) {
+    //   if (dot(obj1->speed, vec3(0, -1, 0)) > 50.0f * GRAVITY) {
+    //     obj1->life -= 10;
+    //   }
+    // }
   }   
 }
 

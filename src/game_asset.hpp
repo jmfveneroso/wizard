@@ -38,11 +38,14 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   int index = 0;
   string name;
   string display_name;
+  string default_animation;
   int item_id = -1;
   string item_icon;
   AssetType type = ASSET_DEFAULT;
   bool loaded_collision = false;
   string ai_script;
+
+  bool invisibility = false;
 
   // Mesh.
   // unordered_map<int, Mesh> lod_meshes;
@@ -52,6 +55,10 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   vector<GLuint> textures;
 
   GLuint bump_map_id = 0;
+  GLuint specular_id = 0;
+
+  float specular_component = 0.0f;
+  float normal_strength = 1.0f;
 
   // Rendering.
   GLuint shader;
@@ -165,6 +172,17 @@ class DestructibleAsset : public GameAsset {
  public:
   DestructibleAsset(Resources* resources) 
     : GameAsset(resources, ASSET_DESTRUCTIBLE) {}
+};
+
+class Particle3dAsset : public GameAsset {
+ public:
+  string texture;
+  string particle_type;
+  string existing_mesh;
+  int life;
+
+  Particle3dAsset(Resources* resources) 
+    : GameAsset(resources, ASSET_PARTICLE_3D) {}
 };
 
 class GameAssetGroup {

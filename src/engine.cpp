@@ -108,6 +108,8 @@ void Engine::RunCommand(string command) {
     configs->arcane_level++;
   } else if (result[0] == "arcane-level-down") {
     configs->arcane_level--;
+  } else if (result[0] == "invincible") {
+    configs->invincible = true;
   } else if (result[0] == "full-life") {
     player->life = configs->max_life;
     player->status = STATUS_NONE;
@@ -127,6 +129,18 @@ void Engine::RunCommand(string command) {
       configs->new_building->being_placed = true;
       configs->place_object = true;
       resources_->AddNewObject(configs->new_building);
+    }
+  } else if (result[0] == "create-particle") {
+    string asset_name = result[1];
+    if (resources_->GetAssetGroupByName(asset_name)) {
+      configs->place_axis = 1;
+
+      Camera c = player_input_->GetCamera();
+      vec3 position = c.position + c.direction * 10.0f;
+
+      configs->new_building = resources_->Create3dParticleEffect(asset_name, position);
+      configs->new_building->being_placed = true;
+      configs->place_object = true;
     }
   } else if (result[0] == "create-region") {
     Camera c = player_input_->GetCamera();
@@ -151,8 +165,19 @@ void Engine::RunCommand(string command) {
     resources_->SaveObjects();
   } else if (result[0] == "save-collision") {
     resources_->SaveCollisionData();
-  } else if (result[0] == "create-dungeon") {
-    resources_->CreateDungeon();
+  } else if (result[0] == "dungeon") {
+    try {
+      int dungeon_level = boost::lexical_cast<int>(result[1]);
+      configs->dungeon_level = dungeon_level;
+      resources_->DeleteAllObjects();
+      resources_->CreateDungeon();
+      Dungeon& dungeon = resources_->GetDungeon();
+      vec3 pos = dungeon.GetPlatform();
+      resources_->GetPlayer()->ChangePosition(pos);
+      resources_->GetConfigs()->render_scene = "dungeon";
+      resources_->SaveGame();
+    } catch(boost::bad_lexical_cast const& e) {
+    }
   } else if (result[0] == "delete-all") {
     cout << "im here" << endl;
     resources_->DeleteAllObjects();
@@ -247,14 +272,17 @@ bool Engine::ProcessGameInput() {
             for (int x = 0; x < kDungeonSize; x++) {
               if (x == player_pos.x && y == player_pos.y) {
                 ss << "@ ";
-                text_editor_->SetCursorPos(x*2, y);
+                text_editor_->SetCursorPos(x, y);
                 continue;
               }
               char code = dungeon_map[x][y];
               if (code == ' ') { 
                 code = monsters_and_objs[x][y];
+                if (code == ' ' && dungeon.IsWebFloor(ivec2(x, y))) {
+                  code = '#';
+                }
               }
-              ss << code << " ";
+              ss << code;
             }
             ss << endl;
           }
@@ -423,7 +451,8 @@ void Engine::BeforeFrameDebug() {
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
   for (auto& [name, obj] : objs) {
-    if (obj->type != GAME_OBJ_DOOR) continue;
+    // if (obj->type != GAME_OBJ_DOOR) continue;
+    if (obj->GetCollisionType() != COL_OBB) continue;
 
     string obb_name = obj->name + "-obb";
     OBB obb = obj->GetTransformedOBB();
@@ -462,25 +491,29 @@ void Engine::BeforeFrameDebug() {
   }
 
 
-  // for (auto& [name, obj] : objs) {
-  //   if (!obj->IsCreature()) continue;
+  for (auto& [name, obj] : objs) {
+    if (!obj->IsCreature()) continue;
 
-  //   for (auto& [id, bone] : obj->bones) {
-  //     string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
-  //   
-  //     BoundingSphere bs = obj->GetBoneBoundingSphere(id);
-  //     if (door_obbs_.find(obb_name) == door_obbs_.end()) {
-  //       ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
-  //       bone_obj->never_cull = true;
-  //       door_obbs_[obb_name] = bone_obj;
-  //       resources_->UpdateObjectPosition(bone_obj);
-  //     } else {
-  //       ObjPtr bone_obj = door_obbs_[obb_name];
-  //       bone_obj->position = bs.center;
-  //       resources_->UpdateObjectPosition(bone_obj);
-  //     }
-  //   }
-  // }
+    cout << "Obj: " << obj->GetName() << endl;
+
+    for (auto& [id, bone] : obj->bones) {
+      string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
+      cout << "obb: " << obb_name << endl;
+    
+      BoundingSphere bs = obj->GetBoneBoundingSphere(id);
+      if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+      cout << "bs: " << bs << endl;
+        ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
+        bone_obj->never_cull = true;
+        door_obbs_[obb_name] = bone_obj;
+        resources_->UpdateObjectPosition(bone_obj);
+      } else {
+        ObjPtr bone_obj = door_obbs_[obb_name];
+        bone_obj->position = bs.center;
+        resources_->UpdateObjectPosition(bone_obj);
+      }
+    }
+  }
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   Camera c = player_input_->GetCamera();
@@ -604,12 +637,10 @@ void Engine::Run() {
     Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
 
-    if (configs->render_scene == "town" || configs->render_scene == "dungeon") {
+    if (configs->render_scene != "hypercube") {
       renderer_->Draw();
     } else if (configs->render_scene == "hypercube") {
       renderer_->DrawHypercube();
-    } else if (configs->render_scene == "dungeon") {
-      // renderer_->DrawDungeon();
     }
     resources_->Unlock();
 

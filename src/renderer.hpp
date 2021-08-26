@@ -51,7 +51,11 @@ struct DungeonRenderData {
   unordered_map<char, GLuint> normals;
   unordered_map<char, GLuint> element_buffers;
   unordered_map<char, GLuint> matrix_buffers;
+  unordered_map<char, GLuint> tangent_buffers;
+  unordered_map<char, GLuint> bitangent_buffers;
   unordered_map<char, GLuint> textures;
+  unordered_map<char, GLuint> normal_textures;
+  unordered_map<char, GLuint> specular_textures;
   unordered_map<char, unsigned int> num_indices;
   unordered_map<char, unsigned int> num_objs;
   mat4 model_matrices[1024];
@@ -75,6 +79,7 @@ class Renderer {
   vec3 terrain_clipping_point_;
   vec3 terrain_clipping_normal_;
   vec3 player_pos_;
+  bool created_dungeon_buffers = false;
 
   vector<GLuint> shadow_framebuffers_ { 0, 0, 0 };
   vector<GLuint> shadow_textures_ { 0, 0, 0 };

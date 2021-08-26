@@ -148,11 +148,24 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glGenVertexArrays(1, &vao_);
   glBindVertexArray(vao_);
 
-  texture_ = LoadPng("resources/textures_png/grass.png");
-  texture1_ = LoadPng("resources/textures_png/dirt.png");
-  texture2_ = LoadPng("resources/textures_png/gravel.png");
-  texture3_ = LoadPng("resources/textures_png/mossy_stone.png");
-  texture4_ = LoadPng("resources/textures_png/leaves.png");
+  // texture_ = LoadPng("resources/textures_png/grass.png");
+  // texture1_ = LoadPng("resources/textures_png/dirt.png");
+  // texture2_ = LoadPng("resources/textures_png/gravel.png");
+  // texture3_ = LoadPng("resources/textures_png/mossy_stone.png");
+  // texture4_ = LoadPng("resources/textures_png/leaves.png");
+
+  texture_ = LoadPng("resources/textures_png/grass_diffuse.png");
+  texture4_ = LoadPng("resources/textures_png/grass_normal.png");
+
+  texture1_ = LoadPng("resources/textures_png/dirt_diffuse.png");
+  texture5_ = LoadPng("resources/textures_png/dirt_normal.png");
+
+  texture2_ = LoadPng("resources/textures_png/gravel_diffuse.png");
+  texture6_ = LoadPng("resources/textures_png/gravel_normal.png");
+
+  texture3_ = LoadPng("resources/textures_png/cliff_rock_diffuse.png");
+  texture7_ = LoadPng("resources/textures_png/cliff_rock_normal.png");
+
   water_texture_ = LoadPng("resources/textures_png/water_dudv.png");
   water_normal_texture_ = LoadPng("resources/textures_png/water_normal.png");
   // texture_ = resources_->GetTextureByName("tiles");
@@ -740,6 +753,9 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   glUniform3fv(GetUniformId(program_id_, "light_direction"), 1,
     (float*) &configs->sun_position);
 
+  glUniform3fv(GetUniformId(program_id_, "camera_position"), 1, 
+    (float*) &player_pos);
+
   vec3 normal;
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
@@ -846,6 +862,18 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glBindTexture(GL_TEXTURE_2D, texture4_);
     glUniform1i(GetUniformId(program_id, "texture4_sampler"), 11);
 
+    glActiveTexture(GL_TEXTURE12);
+    glBindTexture(GL_TEXTURE_2D, texture5_);
+    glUniform1i(GetUniformId(program_id, "texture5_sampler"), 12);
+
+    glActiveTexture(GL_TEXTURE13);
+    glBindTexture(GL_TEXTURE_2D, texture6_);
+    glUniform1i(GetUniformId(program_id, "texture6_sampler"), 13);
+
+    glActiveTexture(GL_TEXTURE14);
+    glBindTexture(GL_TEXTURE_2D, texture7_);
+    glUniform1i(GetUniformId(program_id, "texture7_sampler"), 14);
+
 
     ivec2 offset = ivec2(0, 0);
     ivec2 grid_coords = WorldToGridCoordinates(player_pos);
@@ -889,7 +917,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
 
   glBindVertexArray(0);
 
-  DrawWater(camera, ViewMatrix, player_pos);
+  // DrawWater(camera, ViewMatrix, player_pos);
 }
 
 void Terrain::InvalidatePoint(ivec2 tile) {

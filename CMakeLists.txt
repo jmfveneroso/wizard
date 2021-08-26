@@ -82,6 +82,7 @@ set(
   src/scripts.cpp 
   src/height_map.cpp 
   src/dungeon.cpp 
+  src/simplex_noise.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

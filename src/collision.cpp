@@ -572,7 +572,8 @@ bool IntersectSphereAABB(const BoundingSphere& s, const AABB& aabb,
 
   float t = length(point_of_contact - s.center);
   if (t < s.radius) {
-    displacement_vector = normalize(s.center - point_of_contact) * (s.radius - t);
+    displacement_vector = normalize(s.center - point_of_contact) *  
+      (s.radius - t);
     return true;
   }
   return false;
