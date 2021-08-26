@@ -402,9 +402,9 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
     tangents.push_back(tangent);
     tangents.push_back(tangent);
     tangents.push_back(tangent);
-    tangents.push_back(bitangent);
-    tangents.push_back(bitangent);
-    tangents.push_back(bitangent);
+    bitangents.push_back(bitangent);
+    bitangents.push_back(bitangent);
+    bitangents.push_back(bitangent);
   }
 
   glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer_);
@@ -467,9 +467,9 @@ void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs,
     tangents.push_back(tangent);
     tangents.push_back(tangent);
     tangents.push_back(tangent);
-    tangents.push_back(bitangent);
-    tangents.push_back(bitangent);
-    tangents.push_back(bitangent);
+    bitangents.push_back(bitangent);
+    bitangents.push_back(bitangent);
+    bitangents.push_back(bitangent);
   }
 
   glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer_);
@@ -874,6 +874,7 @@ PhysicsBehavior StrToPhysicsBehavior(const std::string& s) {
     { "normal", PHYSICS_NORMAL },
     { "low-gravity", PHYSICS_LOW_GRAVITY },
     { "no-friction", PHYSICS_NO_FRICTION },
+    { "no-friction-fly", PHYSICS_NO_FRICTION_FLY },
     { "fixed", PHYSICS_FIXED },
     { "fly", PHYSICS_FLY },
     { "swim", PHYSICS_SWIM }
@@ -886,6 +887,7 @@ AiState StrToAiState(const std::string& s) {
     { "idle", IDLE },
     { "move", MOVE },
     { "ai-attack", AI_ATTACK },
+    { "ambush", AMBUSH },
     { "die", DIE },
     { "turn-toward-target", TURN_TOWARD_TARGET },
     { "wander", WANDER },
@@ -900,6 +902,7 @@ string AiStateToStr(const AiState& ai_state) {
     { IDLE, "idle" },
     { MOVE, "move" },
     { AI_ATTACK, "ai-attack" },
+    { AMBUSH, "ambush" },
     { DIE, "die" },
     { TURN_TOWARD_TARGET, "turn-toward-target" },
     { WANDER, "wander" },
@@ -1273,6 +1276,7 @@ string AssetTypeToStr(const AssetType& type) {
     { ASSET_ITEM, "item" },
     { ASSET_PLATFORM, "platform" },
     { ASSET_DESTRUCTIBLE, "destructible" },
+    { ASSET_PARTICLE_3D, "3d_particle" },
     { ASSET_NONE, "none" }
   });
   return asset_type_to_str[type];
@@ -1285,6 +1289,7 @@ AssetType StrToAssetType(const string& s) {
     { "item", ASSET_ITEM },
     { "platform", ASSET_PLATFORM },
     { "destructible", ASSET_DESTRUCTIBLE },
+    { "3d_particle", ASSET_PARTICLE_3D },
     { "none", ASSET_NONE }
   });
   return str_to_asset_type[s];

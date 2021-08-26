@@ -333,7 +333,7 @@ void Resources::LoadObjects(const std::string& directory) {
   }
 
   cout << "Loading collision data" << endl;
-  LoadCollisionData(directory + "/collision_data.xml");
+  // LoadCollisionData(directory + "/collision_data.xml");
   cout << "Calculating collision data" << endl;
   CalculateCollisionData();
   cout << "Finished calculating collision data" << endl;
@@ -480,18 +480,11 @@ void Resources::AddGameObject(ObjPtr game_obj) {
 
 void Resources::InitMissiles() {
   // Set a higher number of missiles. Maybe 256.
-  for (int i = 0; i < 10; i++) {
-    shared_ptr<GameAsset> asset0 = GetAssetByName("magic-missile-000");
-    shared_ptr<Missile> new_missile = CreateMissileFromAsset(asset0);
+  for (int i = 0; i < 64; i++) {
+    // shared_ptr<GameAssetGroup> asset_group = GetAssetGroupByName("magic-missile-000");
+    shared_ptr<Missile> new_missile = CreateMissile(this, "magic-missile-000");
     new_missile->life = 0;
     // missiles_[new_missile->name] = new_missile;
-    missiles_.push_back(new_missile);
-  }
-
-  for (int i = 0; i < 10; i++) {
-    shared_ptr<GameAsset> asset0 = GetAssetByName("harpoon-missile");
-    shared_ptr<Missile> new_missile = CreateMissileFromAsset(asset0);
-    new_missile->life = 0;
     missiles_.push_back(new_missile);
   }
 }
@@ -529,19 +522,33 @@ void Resources::Cleanup() {
   }
 }
 
+shared_ptr<Missile> Resources::CreateMissileFromAssetGroup(
+  shared_ptr<GameAssetGroup> asset_group) {
+  shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
+
+  // new_game_obj->position = vec3(0, 0, 0);
+  // new_game_obj->asset_group = asset_group;
+
+  // shared_ptr<Sector> outside = GetSectorByName("outside");
+  // new_game_obj->current_sector = outside;
+
+  // new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
+  // AddGameObject(new_game_obj);
+  return new_game_obj;
+}
 
 shared_ptr<Missile> Resources::CreateMissileFromAsset(
   shared_ptr<GameAsset> game_asset) {
   shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
 
-  new_game_obj->position = vec3(0, 0, 0);
-  new_game_obj->asset_group = CreateAssetGroupForSingleAsset(this, game_asset);
+  // new_game_obj->position = vec3(0, 0, 0);
+  // new_game_obj->asset_group = CreateAssetGroupForSingleAsset(this, game_asset);
 
-  shared_ptr<Sector> outside = GetSectorByName("outside");
-  new_game_obj->current_sector = outside;
+  // shared_ptr<Sector> outside = GetSectorByName("outside");
+  // new_game_obj->current_sector = outside;
 
-  new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
-  AddGameObject(new_game_obj);
+  // new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
+  // AddGameObject(new_game_obj);
   return new_game_obj;
 }
 
@@ -846,15 +853,19 @@ void Resources::UpdateParticles() {
     shared_ptr<Particle> p = particles_3d_[i];
     p->life -= 1.0f;
     if (p->life < 0) {
-      p->life = -1;
-      p->particle_type = nullptr;
-      p->frame = 0;
-      p->collision_type_ = COL_NONE;
-      p->physics_behavior = PHYSICS_NONE;
-      p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
-      p->owner = nullptr;
-      p->hit_list.clear();
-      continue;
+      if (configs_->new_building && configs_->new_building->id == p->id) {
+        p->life = p->max_life;
+      } else {
+        p->life = -1;
+        p->particle_type = nullptr;
+        p->frame = 0;
+        p->collision_type_ = COL_NONE;
+        p->physics_behavior = PHYSICS_NONE;
+        p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
+        p->owner = nullptr;
+        p->hit_list.clear();
+        continue;
+      }
     }
     if (p->particle_type == nullptr) continue;
 
@@ -894,7 +905,16 @@ void Resources::UpdateParticles() {
 void Resources::UpdateMissiles() {
   // TODO: maybe could be part of physics.
   for (const auto& missile : missiles_) {
+    if (missile->life < 0) continue;
+
     missile->life -= 1;
+    if (missile->life < 0) {
+      // Dieded.
+      if (missile->type == MISSILE_BOUNCYBALL) {
+        CreateParticleEffect(15, missile->position, vec3(0, 3, 0), 
+          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.5f);
+      }
+    }
   }
 
   for (const auto& effect : effects_) {
@@ -2016,6 +2036,13 @@ void Resources::RegisterOnFinishPhraseEvent(const string& dialog_name,
   dialogs_[dialog_name]->on_finish_phrase_events[phrase_name] = callback;
 }
 
+void Resources::RegisterOnHeightBelowEvent(float h, const string& callback) {
+  cout << "Register on height below" << endl;
+  player_move_events_.push_back(
+    make_shared<PlayerMoveEvent>("height_below", h, callback)
+  );
+}
+
 vector<shared_ptr<Event>>& Resources::GetEvents() {
   return events_;
 }
@@ -2374,6 +2401,21 @@ void Resources::ProcessCallbacks() {
 
     Unlock();
     string s = c.function_name;
+
+    if (s == "fall_floor") {
+      cout << "falling floor" << endl;
+      ObjPtr hanging_floor = GetObjectByName(c.args[0]);
+      hanging_floor->physics_behavior = PHYSICS_NORMAL;
+      SetCallback("restore_floor", c.args, 10, false);
+    } else if (s == "restore_floor") {
+      cout << "restoring floor" << endl;
+      ObjPtr hanging_floor = GetObjectByName(c.args[0]);
+      hanging_floor->physics_behavior = PHYSICS_FLY;
+      hanging_floor->speed = vec3(0);
+      hanging_floor->position.y = kDungeonOffset.y;
+      hanging_floor->interacted_with_falling_floor = false;
+    }
+
     script_manager_->CallStrFn(s);
     Lock();
 
@@ -2475,11 +2517,11 @@ void Resources::RunScriptFn(const string& script_fn_name) {
   script_manager_->CallStrFn(script_fn_name);
 }
 
-void Resources::SetCallback(string script_name, float seconds, 
-  bool periodic) {
+void Resources::SetCallback(string script_name, vector<string> args, 
+  float seconds, bool periodic) {
   Lock();
   double time = glfwGetTime() + seconds;
-  callbacks_.push(Callback(script_name, time, seconds, periodic));
+  callbacks_.push(Callback(script_name, args, time, seconds, periodic));
   Unlock();
 }
 
@@ -2610,6 +2652,8 @@ void Resources::UpdateAnimationFrames() {
 }
 
 void Resources::ProcessEvents() {
+  ProcessOnPlayerMoveEvent();
+
   for (shared_ptr<Event> e : events_) {
     string callback;
     switch (e->type) {
@@ -2631,6 +2675,13 @@ void Resources::ProcessEvents() {
           static_pointer_cast<CollisionEvent>(e);
         callback = collision_event->callback; 
         CallStrFn(callback, collision_event->obj2);
+        continue;
+      }
+      case EVENT_ON_PLAYER_MOVE: {
+        shared_ptr<PlayerMoveEvent> player_move_event = 
+          static_pointer_cast<PlayerMoveEvent>(e);
+        callback = player_move_event->callback; 
+        CallStrFn(callback);
         continue;
       }
       default: {
@@ -2658,6 +2709,7 @@ void Resources::ProcessTempStatus() {
     if (!obj->IsCreature()) continue;
 
     obj->current_speed = obj->GetAsset()->base_speed;
+    obj->invisibility = false;
     for (auto& [status_type, temp_status] : obj->temp_status) {
       if (temp_status->duration == 0) continue;
       if (cur_time > temp_status->issued_at + temp_status->duration) {
@@ -2682,6 +2734,12 @@ void Resources::ProcessTempStatus() {
           }
           break;
         }
+        case STATUS_INVISIBILITY: {
+          shared_ptr<InvisibilityStatus> invisibility_status = 
+            static_pointer_cast<InvisibilityStatus>(temp_status);
+          obj->invisibility = true;
+          break;
+        }
         default:
           break;
       } 
@@ -2697,7 +2755,9 @@ void Resources::ProcessTempStatus() {
     configs_->player_speed = configs_->max_player_speed / 5.0f;
   }
   configs_->light_radius = 90.0f;
+  configs_->reach = 20.0f;
   configs_->darkvision = false;
+  configs_->see_invisible = false;
 
   for (auto& [status_type, temp_status] : player->temp_status) {
     if (temp_status->duration == 0) continue;
@@ -2713,17 +2773,45 @@ void Resources::ProcessTempStatus() {
         configs_->player_speed *= slow_status->slow_magnitude;
         break;
       }
-        case STATUS_HASTE: {
-          shared_ptr<HasteStatus> haste_status = 
-            static_pointer_cast<HasteStatus>(temp_status);
-          configs_->player_speed *= haste_status->magnitude;
-          break;
-        }
+      case STATUS_HASTE: {
+        shared_ptr<HasteStatus> haste_status = 
+          static_pointer_cast<HasteStatus>(temp_status);
+        configs_->player_speed *= haste_status->magnitude;
+        break;
+      }
       case STATUS_DARKVISION: {
         shared_ptr<DarkvisionStatus> darkvision_status = 
           static_pointer_cast<DarkvisionStatus>(temp_status);
         configs_->light_radius = 120.0f;
         configs_->darkvision = true;
+        break;
+      }
+      case STATUS_TRUE_SEEING: {
+        shared_ptr<TrueSeeingStatus> true_seeing_status = 
+          static_pointer_cast<TrueSeeingStatus>(temp_status);
+        configs_->see_invisible = true;
+        break;
+      }
+      case STATUS_TELEKINESIS: {
+        shared_ptr<TelekinesisStatus> telekinesis_status = 
+          static_pointer_cast<TelekinesisStatus>(temp_status);
+        configs_->reach = 100.0f;
+        break;
+      }
+      case STATUS_POISON: {
+        shared_ptr<PoisonStatus> poison_status = 
+          static_pointer_cast<PoisonStatus>(temp_status);
+        if (poison_status->counter-- <= 0) {
+          player->DealDamage(nullptr, poison_status->damage, vec3(0, 1, 0), 
+            true);
+          poison_status->counter = 60;
+        }
+        break;
+      }
+      case STATUS_BLINDNESS: {
+        shared_ptr<BlindnessStatus> blindness_status = 
+          static_pointer_cast<BlindnessStatus>(temp_status);
+        configs_->light_radius = 20.0f;
         break;
       }
       default:
@@ -2746,6 +2834,42 @@ void Resources::ProcessTempStatus() {
   }
 }
 
+void Resources::ProcessRotatingPlanksOrientation() {
+  if (configs_->render_scene != "dungeon") return;
+
+  ivec2 player_tile = dungeon_.GetDungeonTile(player_->position);
+  if (!dungeon_.IsValidTile(player_tile)) return;
+
+  char** dungeon_map = dungeon_.GetDungeon();
+  char code = dungeon_map[player_tile.x][player_tile.y];
+
+  bool invert = true;
+  if (code == '2' || code == '3') {
+    invert = true;
+  } else if (code == '1' || code == '4') {
+    invert = false;
+  } else {
+    return;
+  }
+
+  for (ObjPtr obj : rotating_planks_) {
+    float magnitude = length(obj->torque);
+    if (obj->dungeon_piece_type == '/') { // Horizontal.
+      if (invert) {
+        obj->torque = vec3(0, 0, magnitude);
+      } else {
+        obj->torque = vec3(0, 0, -magnitude);
+      }
+    } else if (obj->dungeon_piece_type == '\\') { // Vertical.
+      if (invert) {
+        obj->torque = vec3(magnitude, 0, 0);
+      } else {
+        obj->torque = vec3(-magnitude, 0, 0);
+      }
+    }
+  }
+}
+
 void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
@@ -2762,6 +2886,7 @@ void Resources::RunPeriodicEvents() {
   UpdateMissiles();
   ProcessEvents();
   ProcessTempStatus();
+  ProcessRotatingPlanksOrientation();
 
   // TODO: create time function.
   if (!configs_->stop_time) {
@@ -2803,6 +2928,17 @@ void Resources::ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2) {
     obj2->name, e->callback));
 }
 
+void Resources::ProcessOnPlayerMoveEvent() {
+  for (auto& e : player_move_events_) {
+    if (e->active && player_->position.y < e->h) {
+      events_.push_back(make_shared<PlayerMoveEvent>(e->type, e->h, e->callback));
+      e->active = false;
+    } else {
+      e->active = true;
+    }
+  }
+}
+
 void Resources::DeleteAllObjects() {
   Lock();
   auto it = objects_.begin();
@@ -2818,6 +2954,7 @@ void Resources::DeleteAllObjects() {
   moving_objects_.clear();
   items_.clear();
   extractables_.clear();
+  rotating_planks_.clear();
   lights_.clear();
   missiles_.clear();
   particle_container_.clear();
@@ -2880,6 +3017,38 @@ ObjPtr Resources::CreateBookshelf(const vec3& pos, const ivec2& tile) {
   return CreateRoom(this, "bookshelf", pos, rotation);
 }
 
+void Resources::CreateRandomMonster(const vec3& pos) {
+  ObjPtr obj;
+
+  int r = Random(0, 6);
+  switch (r) {
+    case 0: {
+      obj = CreateGameObjFromAsset(this, "worm", pos + vec3(0, 3, 0));
+      break;
+    }
+    case 1: {
+      obj = CreateGameObjFromAsset(this, "scorpion", pos + vec3(0, 3, 0));
+      break;
+    }
+    case 2: {
+      obj = CreateGameObjFromAsset(this, "spiderling", pos + vec3(0, 3, 0));
+      break;
+    }
+    case 3: {
+      obj = CreateGameObjFromAsset(this, "dragonfly", pos + vec3(0, 3, 0));
+      break;
+    }
+    case 4: {
+      obj = CreateGameObjFromAsset(this, "speedling", pos + vec3(0, 3, 0));
+      break;
+    }
+    case 5: {
+      obj = CreateGameObjFromAsset(this, "lancet_spider", pos + vec3(0, 3, 0));
+      break;
+    }
+  }
+}
+
 void Resources::CreateDungeon(bool generate_dungeon) {
   if (generate_dungeon) {
     double time = glfwGetTime();
@@ -2906,9 +3075,27 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           tile = CreateRoom(this, "dungeon_corner", pos, 0);
           break;
         }
+        case '&': {
+          tile = CreateRoom(this, "dungeon_secret_wall", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
+          break;
+        }
         case '@':
         case ' ': {
           tile = CreateRoom(this, "dungeon_floor", pos, 0);
+          break;
+        }
+        case '1': 
+        case '2': 
+        case '3': 
+        case '4': {
+          tile = CreateRoom(this, "dungeon_pre_platform", pos, 0);
+          break;
+        }
+        case '^': {
+          tile = CreateRoom(this, "dungeon_hanging_floor", pos, 0);
           break;
         }
         case '|': {
@@ -2923,10 +3110,16 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         case 'o': {
           tile = CreateRoom(this, "dungeon_arch", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         case 'O': {
           tile = CreateRoom(this, "dungeon_arch", pos, 1);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         case 'P': {
@@ -2936,6 +3129,11 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'd': {
           tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
           tile2 = CreateRoom(this, "dungeon_door", pos, 0);
+          if (Random(0, 4) == 0) {
+            shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
+            d->state = DOOR_WEAK_LOCK;
+          }
+
           ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
           tile3->dungeon_piece_type = dungeon_map[x][z];
           tile3->dungeon_tile = ivec2(x, z);
@@ -2944,6 +3142,11 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'D': {
           tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
           tile2 = CreateRoom(this, "dungeon_door", pos, 1);
+          if (Random(0, 4) == 0) {
+            shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
+            d->state = DOOR_WEAK_LOCK;
+          }
+
           ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
           tile3->dungeon_piece_type = dungeon_map[x][z];
           tile3->dungeon_tile = ivec2(x, z);
@@ -2973,6 +3176,47 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           obj->CalculateCollisionData();
           break;
         }
+        case '(': {
+          tile = CreateRoom(this, "dungeon_web_wall", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
+          break;
+        }
+        case ')': {
+          tile = CreateRoom(this, "dungeon_web_wall", pos, 1);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
+          break;
+        }
+        case '/': {
+          tile = CreateRoom(this, "dungeon_plank", pos, 0);
+          tile->torque = vec3(0, 0, 1) * float(Random(3, 6)) * 0.002f;
+          tile->dungeon_piece_type = '/';
+          rotating_planks_.push_back(tile);
+          break;
+        }
+        case '\\': {
+          tile = CreateRoom(this, "dungeon_plank", pos, 1);
+          tile->torque = vec3(1, 0, 0) * float(Random(3, 6)) * 0.002f;
+          tile->dungeon_piece_type = '\\';
+          rotating_planks_.push_back(tile);
+          break;
+        }
+        case '%': {
+          tile = CreateRoom(this, "lolth_statue", pos, 0);
+          tile = CreateRoom(this, "dungeon_long_plank", pos, 0);
+          tile->torque = vec3(0, 1, 0) * float(Random(3, 6)) * 0.002f;
+          break;
+        }
+        case 'X': {
+          tile = CreateRoom(this, "statue", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
+          break;
+        }
         default: {
           break;
         }
@@ -2995,30 +3239,17 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           }
           break;
         }
-        case 'L': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "spider", pos + vec3(0, 3, 0));
-          obj->life = Random(500, 700);
+        case 'e': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "exploding_pod", pos);
           break;
         }
-        case 'w': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "worm", pos + vec3(0, 3, 0));
+        case 'I': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "green_mold", pos + vec3(0, 0, 0));
+          obj->life = Random(100, 110);
           break;
         }
-        case 's': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "spiderling", pos + vec3(0, 3, 0));
-          break;
-        }
-        case 'S': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "scorpion", pos + vec3(0, 3, 0));
-          break;
-        }
-        case 'J': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "speedling", pos + vec3(0, 3, 0));
-          break;
-        }
-        case 'K': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "lancet_spider", pos + vec3(0, 3, 0));
-          obj->life = Random(100, 200);
+        case ',': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "mushroom", pos);
           break;
         }
         case 'M': {
@@ -3034,9 +3265,43 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           obj->trapped = true;
           break;
         }
-        case 'I': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "green_mold", pos + vec3(0, 0, 0));
-          obj->life = Random(100, 110);
+        case 'm': {
+          CreateRandomMonster(pos + vec3(0, 3, 0));
+          break;
+        }
+        case 't': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "spiderling", pos + vec3(0, 20, 0));
+          obj->levitating = true;
+          obj->ai_state = AMBUSH;
+          break;
+        }
+        case 'L': case 'w': case 's': case 'S': case 'V': case 'Y':
+        case 'J': case 'K': case 'W': case 'r': case 'E': case 'Q': { // Is Monster.
+          static unordered_map<char, string> monster_assets { 
+            { 'L', "spider" },
+            { 'w', "worm" },
+            { 's', "spiderling" },
+            { 'S', "scorpion" },
+            { 't', "spiderling" },
+            { 'V', "demon-vine" },
+            { 'Y', "dragonfly" },
+            { 'J', "speedling" },
+            { 'K', "lancet_spider" },
+            { 'W', "worm_king" },
+            { 'r', "drider" },
+            { 'E', "metal-eye" },
+            { 'Q', "spider_queen" },
+          };
+   
+          char code = monsters_and_objs[x][z];
+
+          if (monster_assets.find(code) == monster_assets.end()) {
+            ThrowError("Could not find monster asset: : ", code);
+          }
+
+          // TODO: level based on dungeon level. Some asset change for heroes?
+          int level = (Random(0, 50) == 0) ? 2 : 1;
+          CreateMonster(this, monster_assets[code], pos + vec3(0, 3, 0), level);  
           break;
         }
       }
@@ -3048,6 +3313,10 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         default: 
           break;
+      }
+
+      if (dungeon_.IsWebFloor(ivec2(x, z))) {
+        ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_web_floor", pos + vec3(0, 0, 0));
       }
 
       if (tile) {
@@ -3196,7 +3465,7 @@ void Resources::LoadGame(const string& config_filename,
   LoadConfig(directory_ + "/" + config_filename);
 
   cout << "Loading collision data" << endl;
-  LoadCollisionData(directory_ + "/objects/collision_data.xml");
+  // LoadCollisionData(directory_ + "/objects/collision_data.xml");
   cout << "Calculating collision data" << endl;
   CalculateCollisionData();
   cout << "Finished calculating collision data" << endl;
@@ -3208,6 +3477,11 @@ void Resources::LoadGame(const string& config_filename,
 void Resources::CreateTown() {
   LoadObjects(directory_ + "/objects");
   LoadNpcs(directory_ + "/assets/npc.xml");
+}
+
+void Resources::CreateSafeZone() {
+  LoadObjects(directory_ + "/safe_zone_objects");
+  // LoadNpcs(directory_ + "/assets/npc2.xml");
 }
 
 void Resources::LoadConfig(const std::string& xml_filename) {
@@ -3266,6 +3540,8 @@ void Resources::LoadConfig(const std::string& xml_filename) {
 
   if (configs_->render_scene == "town") {
     CreateTown();
+  } else if (configs_->render_scene == "safe-zone") {
+    CreateSafeZone();
   } else {
     dungeon_.Clear();
     dungeon_.ClearDungeonPaths();
@@ -3281,11 +3557,11 @@ void Resources::LoadConfig(const std::string& xml_filename) {
         if (!text.empty()) tile = boost::lexical_cast<char>(text);
 
         dungeon_map[x][y] = tile;
+        if (tile == '^' || tile == '_') dungeon_.SetChasm(ivec2(x, y));
       }
       CreateDungeon(false);
       configs_->update_renderer = true;
       dungeon_.PrintMap();
-      // dungeon_.CalculateAllPaths();
     }
 
     const pugi::xml_node& dungeon_path_xml = xml.child("dungeon-path");
@@ -3354,7 +3630,7 @@ void Resources::LoadConfig(const std::string& xml_filename) {
 void Resources::CastFireball(const Camera& camera) {
   shared_ptr<Missile> obj = nullptr;
   for (const auto& missile : missiles_) {
-    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
+    if (missile->life <= 0 && missile->GetAssetGroup()->name == "magic-missile-000") {
       obj = missile;
       break;
     }
@@ -3367,6 +3643,7 @@ void Resources::CastFireball(const Camera& camera) {
   obj->life = 10000;
   obj->owner = player_;
   obj->type = MISSILE_FIREBALL;
+  obj->physics_behavior = PHYSICS_UNDEFINED;
 
   vec3 left = normalize(cross(camera.up, camera.direction));
   obj->position = camera.position + camera.direction * 0.5f + left * -0.81f +  
@@ -3389,6 +3666,97 @@ void Resources::CastFireball(const Camera& camera) {
   UpdateObjectPosition(obj);
 }
 
+void Resources::CastAcidArrow(ObjPtr owner, const vec3& position, 
+    const vec3& direction) {
+  cout << "Casting acid arrow!" << endl;
+
+  shared_ptr<Missile> obj = nullptr;
+  for (const auto& missile : missiles_) {
+    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
+      obj = missile;
+      break;
+    }
+  }
+
+  if (obj == nullptr) {
+    obj = missiles_[0];
+  }
+
+  obj->life = 10000;
+  obj->owner = owner;
+  obj->type = MISSILE_ACID_ARROW;
+  obj->physics_behavior = PHYSICS_UNDEFINED;
+
+  vec3 p2 = position + direction * 3000.0f;
+
+  vec3 dir = normalize(p2 - obj->position);
+  obj->speed = dir * 4.0f;
+  obj->position = position + dir * 4.0f;
+
+  UpdateObjectPosition(obj);
+}
+
+void Resources::CastHook(ObjPtr owner, const vec3& position, 
+  const vec3& direction) {
+  shared_ptr<Missile> obj = nullptr;
+  for (const auto& missile : missiles_) {
+    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
+      obj = missile;
+      break;
+    }
+  }
+
+  if (obj == nullptr) {
+    obj = missiles_[0];
+  }
+
+  obj->life = 10000;
+  obj->owner = owner;
+  obj->type = MISSILE_HOOK;
+
+  obj->position = position + direction * 3.0f;
+  obj->speed = normalize(direction) * 4.0f;
+  UpdateObjectPosition(obj);
+}
+
+void Resources::CastBouncyBall(ObjPtr owner, const vec3& position, 
+    const vec3& direction) {
+  vector<vec3> directions;
+  directions.push_back(direction);
+
+  float spread = 0.075f;
+  for (int i = 1; i <= 4; i++) {
+    vec3 l = vec3(rotate(mat4(1.0), -spread * i, vec3(0.0f, 1.0f, 0.0f)) * vec4(direction, 1.0f));
+    vec3 r = vec3(rotate(mat4(1.0), spread * i, vec3(0.0f, 1.0f, 0.0f)) * vec4(direction, 1.0f));
+    directions.push_back(l);
+    directions.push_back(r);
+  }
+
+  for (const auto& dir : directions) {
+    shared_ptr<Missile> obj = nullptr;
+    for (const auto& missile : missiles_) {
+      if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
+        obj = missile;
+        break;
+      }
+    }
+    if (obj == nullptr) obj = missiles_[0];
+
+    obj->life = 300;
+    obj->owner = owner;
+    obj->type = MISSILE_BOUNCYBALL;
+    obj->physics_behavior = PHYSICS_UNDEFINED;
+
+    vec3 left = normalize(cross(vec3(0, 1, 0), dir));
+    obj->position = position + dir * 0.5f + left * -0.81f +  
+      vec3(0, 1, 0) * -0.556f;
+
+    vec3 p2 = obj->position + dir * 3000.0f;
+    obj->speed = normalize(p2 - obj->position) * 0.5f;
+    UpdateObjectPosition(obj);
+  }
+}
+
 // TODO: this should probably go to spells.cc.
 void Resources::CastMagicMissile(const Camera& camera) {
   shared_ptr<Missile> obj = nullptr;
@@ -3406,6 +3774,7 @@ void Resources::CastMagicMissile(const Camera& camera) {
   obj->life = 10000;
   obj->owner = player_;
   obj->type = MISSILE_MAGIC_MISSILE;
+  obj->physics_behavior = PHYSICS_UNDEFINED;
 
   vec3 left = normalize(cross(camera.up, camera.direction));
   obj->position = camera.position + camera.direction * 0.5f + left * -0.81f +  
@@ -3463,11 +3832,11 @@ void Resources::CastStringAttack(ObjPtr owner, const vec3& position,
   pos += normal * 5.0f;
 
   // Random variation.
-  // normal *= 20.0f;
-  // float rand_x = Random(-10, 11) / 10.0f;
-  // float rand_y = Random(-10, 11) / 10.0f;
-  // normal += up * rand_y + right * rand_x;
-  // normal = normalize(normal);
+  normal *= 20.0f;
+  float rand_x = Random(-10, 11) / 10.0f;
+  float rand_y = Random(-10, 11) / 10.0f;
+  normal += up * rand_y + right * rand_x;
+  normal = normalize(normal);
 
   float t;
   vec3 q;
@@ -3538,35 +3907,67 @@ void Resources::CastStringAttack(ObjPtr owner, const vec3& position,
 
 void Resources::CastFireExplosion(ObjPtr owner, const vec3& position, 
   const vec3& direction) {
+  cout << "Fire explosion" << endl;
   vec3 pos = position;
   if (length(direction) > 0.1f) {
     pos += direction * 40.0f;
   }
 
+  ObjPtr obj = Create3dParticleEffect("particle_explosion", pos);
+  shared_ptr<Particle> p = static_pointer_cast<Particle>(obj);
+
   Lock();
-  int index = 0;
+  p->collision_type_ = COL_SPHERE;
+  p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
+  p->owner = owner;
+  Unlock();
+}
+
+ObjPtr Resources::Create3dParticleEffect(const string& asset_name, 
+  const vec3& pos) {
+
+  shared_ptr<GameAsset> asset = GetAssetByName(asset_name); 
+  if (!asset) return nullptr;
+
+  shared_ptr<Particle3dAsset> particle_asset = 
+    static_pointer_cast<Particle3dAsset>(asset);
+
+  Lock();
+
+  int index = -1;
+  for (int i = 0; i < particles_3d_.size(); i++) {
+    if (particles_3d_[i]->life <= 0) {
+      index = i;
+      break;
+    }
+  }
+  if (index == -1) index = 0;
 
   // TODO: set particle type.
   shared_ptr<Particle> p = particles_3d_[index];
-  p->particle_type = GetParticleTypeByName("fire-explosion");
-  p->existing_mesh_name = "explosion";
-  p->active_animation = "Armature|expand";
-  p->texture_id = p->particle_type->texture_id;
+  p->particle_type = GetParticleTypeByName(particle_asset->particle_type);
+  p->existing_mesh_name = particle_asset->existing_mesh;
+  p->active_animation = particle_asset->default_animation;
+  p->life = particle_asset->life;
+  p->max_life = particle_asset->life;
+  p->texture_id = GetTextureByName(particle_asset->texture);
   p->animation_frame = 0;
   p->hit_list.clear();
+  p->physics_behavior = particle_asset->physics_behavior;
 
-  p->damage = ProcessDiceFormula(ParseDiceFormula("6d6"));
+  // p->damage = ProcessDiceFormula(ParseDiceFormula("6d6"));
   p->collision_type_ = COL_SPHERE;
-  p->physics_behavior = PHYSICS_FLY;
-  p->owner = owner;
+  p->owner = nullptr;
 
   Unlock();
 
   p->position = pos;
-  p->life = 50.0f;
+
+  // TODO: calculate collision data based on the mesh.
   p->CalculateCollisionData();
   p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
   UpdateObjectPosition(p);
+  return p;
 }
 
 void Resources::CastLightningRay(ObjPtr owner, const vec3& position, 
@@ -3574,8 +3975,11 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
   vec3 up = cross(right, direction);
 
-  vec3 pos = position + direction * 0.5f + right * 1.51f +  
-    up * -1.5f;
+  vec3 pos = position + direction * 0.5f;
+
+  if (owner->IsPlayer()) {
+    pos += right * 1.51f + up * -1.5f;
+  }
 
   vec3 p2 = position + direction * 3000.0f;
   vec3 normal = normalize(p2 - pos);
@@ -3629,7 +4033,7 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vector<unsigned int> indices(12);
 
   mesh->polygons.clear();
-  CreateCylinder(vec3(0), end, 0.25f, vertices, uvs, indices,
+  CreateCylinder(vec3(0), end, 0.05f, vertices, uvs, indices,
     mesh->polygons);
   
   UpdateMesh(*mesh, vertices, uvs, indices);
@@ -3637,6 +4041,74 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
 
   p->position = pos;
   p->life = 1.0f;
+  p->CalculateCollisionData();
+  UpdateObjectPosition(p);
+}
+
+void Resources::CastBlindingRay(ObjPtr owner, const vec3& position, 
+  const vec3& direction) {
+  vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
+  vec3 up = cross(right, direction);
+
+  vec3 pos = position + direction * 0.5f;
+
+  if (owner->IsPlayer()) {
+    pos += right * 1.51f + up * -1.5f;
+  }
+
+  vec3 p2 = position + direction * 3000.0f;
+  vec3 normal = normalize(p2 - pos);
+  pos += normal * 5.0f;
+
+  float t;
+  vec3 q;
+  ObjPtr obj;
+  if (owner->IsPlayer()) {
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL, t, q);
+  } else {
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER, t, q);
+  }
+
+  vec3 end = normal * 50.0f;
+  if (obj) {
+    obj->AddTemporaryStatus(make_shared<BlindnessStatus>(5.0f, 1));
+  } else {
+    if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
+      Plane(vec3(0, 1, 0), kDungeonOffset.y), t, q)) {
+      end = t * 100.0f * normal;
+      CreateParticleEffect(1, q, vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 0.25, 32.0f, 
+        3.0f);
+    }
+  }
+
+  Lock();
+  int index = 0;
+  // for (int i = 0; i < kMax3dParticles; i++) {
+  //   if (particles_3d_[i]->life > 0.0f) continue;
+  //   index = i;
+  //   break;
+  // }
+
+  shared_ptr<Particle> p = particles_3d_[index];
+  MeshPtr mesh = meshes_[p->mesh_name];
+  p->active_animation = "";
+  p->existing_mesh_name = "";
+  p->particle_type = GetParticleTypeByName("lightning");
+  p->texture_id = p->particle_type->texture_id;
+
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<unsigned int> indices(12);
+
+  mesh->polygons.clear();
+  CreateCylinder(vec3(0), end, 0.25f, vertices, uvs, indices,
+    mesh->polygons);
+  
+  UpdateMesh(*mesh, vertices, uvs, indices);
+  Unlock();
+
+  p->position = pos;
+  p->life = 10.0f;
   p->CalculateCollisionData();
   UpdateObjectPosition(p);
 }
@@ -3705,6 +4177,7 @@ void Resources::SpiderCastMagicMissile(ObjPtr spider,
   obj->life = 10000;
   obj->owner = spider;
   obj->type = MISSILE_MAGIC_MISSILE;
+  obj->physics_behavior = PHYSICS_UNDEFINED;
 
   obj->position = spider->position + direction * 6.0f;
   obj->speed = normalize(direction) * 4.0f;
@@ -3767,6 +4240,15 @@ bool Resources::TakeGold(int quantity) {
 
 void Resources::CastDarkvision() {
   player_->AddTemporaryStatus(make_shared<DarkvisionStatus>(20.0f, 1));
+}
+
+void Resources::CastTrueSeeing() {
+  cout << "Casting true seeing." << endl;
+  player_->AddTemporaryStatus(make_shared<TrueSeeingStatus>(20.0f, 1));
+}
+
+void Resources::CastTelekinesis() {
+  player_->AddTemporaryStatus(make_shared<TelekinesisStatus>(20.0f, 1));
 }
 
 struct OctreeCount {
@@ -3894,7 +4376,7 @@ void Resources::LoadArcaneSpells() {
   arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Lightning Ray", 
     "lightning-ray-description", "magic_missile_icon", 0, 2, 2, 20, 100));
 
-  // Complex crystals.
+  // Layered crystals.
   for (int i = 0; i < 3; i++) {
     int crystal_index = configs_->complex_spells[i];
     int item_id = kArcaneSpellItemOffset + crystal_index;
@@ -3903,6 +4385,36 @@ void Resources::LoadArcaneSpells() {
     item_data_[item_id].price = arcane_spell_data_[i]->price;
     item_data_[item_id].max_stash = arcane_spell_data_[i]->max_stash;
   }
+
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Open Lock", 
+    "minor-open-lock-description", "magic_missile_icon", 1, 3, 3, 20, 1));
+
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Fireball", 
+    "fireball-description", "magic_missile_icon", 1, 4, 4, 20, 1));
+
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Bouncy Ball", 
+    "bouncy-ball-description", "magic_missile_icon", 1, 5, 5, 20, 1));
+
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Darkvision", 
+    "darkvision-description", "magic_missile_icon", 1, 6, 6, 20, 1));
+
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("String Attack", 
+    "string-attack-description", "magic_missile_icon", 1, 7, 7, 20, 20));
+
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Telekinesis", 
+    "telekinesis-description", "magic_missile_icon", 1, 8, 8, 20, 1));
+
+  for (int i = 0; i < 6; i++) {
+    int crystal_index = configs_->layered_spells[i];
+    int item_id = kArcaneSpellItemOffset + crystal_index;
+    cout << ">>>>>>>>>>>>>>>>>>>>> item_id: " << item_id << endl;
+    item_data_[item_id].name = arcane_spell_data_[3+i]->name;
+    item_data_[item_id].description = arcane_spell_data_[3+i]->description;
+    item_data_[item_id].price = arcane_spell_data_[3+i]->price;
+    item_data_[item_id].max_stash = arcane_spell_data_[3+i]->max_stash;
+  }
+
+  // Complex crystals.
 }
 
 void Resources::CalculateArcaneSpells() {
@@ -3923,7 +4435,7 @@ void Resources::CalculateArcaneSpells() {
     auto spell_index = std::next(layered_spells.begin(), idx);
     configs_->layered_spells[i] = *spell_index;
     layered_spells.erase(spell_index);
-    layered_to_spell_id_[*spell_index] = i;
+    layered_to_spell_id_[*spell_index] = 3 + i;
   }
 
   // White. 
@@ -3956,11 +4468,16 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
   // Complex and layered.
   if (item_id < kArcaneWhiteOffset) {
     int complex_id = item_id - kArcaneSpellItemOffset;
-    if (complex_to_spell_id_.find(complex_id) == complex_to_spell_id_.end()) {
-      return nullptr;
+    if (complex_to_spell_id_.find(complex_id) != complex_to_spell_id_.end()) {
+      int spell_id = complex_to_spell_id_[complex_id];
+      return arcane_spell_data_[spell_id];
     }
-    int spell_id = complex_to_spell_id_[complex_id];
-    return arcane_spell_data_[spell_id];
+
+    if (layered_to_spell_id_.find(complex_id) != layered_to_spell_id_.end()) {
+      int spell_id = layered_to_spell_id_[complex_id];
+      return arcane_spell_data_[spell_id];
+    }
+    return nullptr;
   }
 
   // White.
@@ -4082,4 +4599,56 @@ void Resources::AddSkillPoint() {
     configs_->skill_points -= configs_->arcane_level + 1;
     configs_->arcane_level++;
   }
+}
+
+int Resources::CreateRandomItem(int base_item_id) {
+  int item_id = random_item_id++;
+  item_data_[item_id] = item_data_[base_item_id];
+  item_data_[item_id].id = item_id;
+
+  int r = Random(0, 2);
+  switch (r) {
+    case 0: {
+      int value = Random(0, 10); 
+      item_data_[item_id].bonuses.push_back(
+        ItemBonus(ITEM_BONUS_TYPE_PROTECTION, value));
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+  return item_id;
+}
+
+void Resources::DropItem(const vec3& position) {
+  int r = Random(0, 2); 
+
+  switch (r) { 
+    case 0: {
+      const int item_id = 10;
+      const int quantity = Random(0, 100);
+
+      ObjPtr obj = CreateGameObjFromAsset(this, "gold", position);
+
+      obj->CalculateCollisionData();
+      obj->quantity = quantity;
+      break;
+    }
+    case 1: {
+      int item_id = CreateRandomItem(17);
+      const ItemData& item = item_data_[item_id];
+
+      ObjPtr obj = CreateGameObjFromAsset(this, item.asset_name, position);
+
+      obj->item_id = item_id;
+      obj->quantity = 1;
+      obj->CalculateCollisionData();
+      break;
+    }
+  }
+}
+
+void Resources::Rest() {
+  player_->life = configs_->max_life;
 }

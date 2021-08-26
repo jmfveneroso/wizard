@@ -1,6 +1,8 @@
 #ifndef __HEIGHT_MAP_HPP__
 #define __HEIGHT_MAP_HPP__
 
+#include "simplex_noise.hpp"
+
 struct TerrainPoint {
   float height = 0.0;
   int tile = 0;
@@ -16,8 +18,10 @@ struct TerrainPoint {
 class HeightMap {
   const string filename_;
   unsigned char compressed_height_map_[48000000]; // 48 MB.
+  SimplexNoise noise_;
 
   void Load();
+  float GetHeightNoise(float x, float y);
 
  public:
   HeightMap(const string& filename);

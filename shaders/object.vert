@@ -11,6 +11,8 @@ out VertexData {
   vec3 position;
   vec2 UV;
   vec3 normal;
+  vec3 tangent;
+  vec3 bitangent;
   vec3 light_dir_tangentspace;
   vec3 eye_dir_tangentspace;
 } out_data;
@@ -23,6 +25,7 @@ uniform mat3 MV3x3;
 
 uniform int enable_bump_map;
 uniform vec3 light_direction;
+uniform vec3 player_pos;
 
 void main(){
   out_data.UV = vertexUV;
@@ -32,6 +35,8 @@ void main(){
   out_data.position = (M * position).xyz;
   gl_Position = MVP * position;
   out_data.normal = (V * M * normal).xyz; 
+  out_data.tangent = (V * M * vec4(vertexTangent_modelspace, 0.0)).xyz; 
+  out_data.bitangent = (V * M * vec4(vertexBitangent_modelspace, 0.0)).xyz; 
 
   vec3 normal_cameraspace = MV3x3 * normalize(vertexNormal_modelspace);
   vec3 tangent_cameraspace = MV3x3 * normalize(vertexTangent_modelspace);
@@ -43,10 +48,13 @@ void main(){
     normal_cameraspace
   ));
 
-  vec3 light_pos_worldspace = light_direction * 200;
+  // vec3 light_pos_worldspace = light_direction * 200;
+  vec3 light_pos_worldspace = out_data.position + light_direction;
+  // vec3 light_pos_worldspace = vec3(10000, 500, 10000);
 
   vec3 vertex_pos_cameraspace = (V * M * vec4(vertexPosition_modelspace, 1)).xyz;
   vec3 eye_dir_cameraspace = vec3(0, 0, 0) - vertex_pos_cameraspace;
+
   vec3 light_pos_cameraspace = (V * vec4(light_pos_worldspace, 1)).xyz;
   vec3 light_dir_cameraspace = light_pos_cameraspace + eye_dir_cameraspace;
 

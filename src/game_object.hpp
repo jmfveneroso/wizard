@@ -52,6 +52,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool never_cull = false;
   bool collidable = true;
   bool summoned = false;
+  bool levitating = false;
   char dungeon_piece_type = '\0';
   ivec2 dungeon_tile = ivec2(-1, -1);
 
@@ -78,6 +79,9 @@ class GameObject : public enable_shared_from_this<GameObject> {
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   double updated_at = 0;
   Status status = STATUS_NONE;
+
+  // For falling floor.
+  bool interacted_with_falling_floor = false;
   
   AiState ai_state = IDLE;
   float state_changed_at = 0;
@@ -102,7 +106,14 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool being_placed = false;
 
   int quantity = 1;
+
+  // For chests.
   bool trapped = false;
+  float mass = -1;
+
+  int item_id = -1;
+
+  int level = 1;
 
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
@@ -118,6 +129,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   }
 
   shared_ptr<GameAsset> GetAsset();
+  shared_ptr<GameAssetGroup> GetAssetGroup();
   string GetDisplayName();
   string GetName() { return GetDisplayName(); }
   bool IsLight();
@@ -131,10 +143,14 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsRegion();
   bool IsCollidable();
   bool IsDungeonPiece();
+  bool IsRotatingPlank();
   bool Is3dParticle();
   bool IsPlayer() { return type == GAME_OBJ_PLAYER; }
   bool IsDestructible();
+  bool IsInvisible();
+  bool IsSecret();
   AssetType GetType();
+  int GetItemId();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -147,8 +163,10 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void Load(pugi::xml_node& xml);
   void ToXml(pugi::xml_node& parent);
   void CollisionDataToXml(pugi::xml_node& parent);
+  void CalculateMonsterStats();
 
   // Collision.
+  int rotating_plank_button = -1;
 
   // Override asset properties.
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
@@ -156,6 +174,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   shared_ptr<AABBTreeNode> aabb_tree = nullptr;
   OBB obb;
   ConvexHull collision_hull; // TODO: should be removed.
+
+  bool invisibility = false;
 
   BoundingSphere GetBoundingSphere();
   AABB GetAABB();
@@ -180,6 +200,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void DealDamage(shared_ptr<GameObject> attacker, float damage, vec3 normal = vec3(0, 1, 0), bool take_hit_animation = true);
   void MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   void RangedAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
+  bool IsPartiallyTransparent();
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -251,6 +272,7 @@ struct Sector : public GameObject {
   shared_ptr<Mesh> GetMesh();
 
   void Load(pugi::xml_node& xml);
+  void Load(const string& name, const vec3& position, const vec3& dimensions);
   void AddGameObject(ObjPtr obj);
   void RemoveObject(ObjPtr obj);
 };
@@ -284,6 +306,9 @@ struct Waypoint : public GameObject {
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name);
 ObjPtr CreateGameObjFromAsset(Resources* resources,
   string asset_name, vec3 position, const string obj_name = "");
+ObjPtr CreateMonster(Resources* resources, string asset_name, vec3 position, 
+  int level);
+ObjPtr CreateMonster(Resources* resources, string asset_name, vec3 position);
 ObjPtr CreateSkydome(Resources* resources);
 ObjPtr CreateSphere(Resources* resources, float radius, vec3 pos);
 
@@ -321,6 +346,38 @@ struct HasteStatus : TemporaryStatus {
 struct DarkvisionStatus : TemporaryStatus {
   DarkvisionStatus(float duration, int strength) 
     : TemporaryStatus(STATUS_DARKVISION, duration, strength) {
+  }
+};
+
+struct TrueSeeingStatus : TemporaryStatus {
+  TrueSeeingStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_TRUE_SEEING, duration, strength) {
+  }
+};
+
+struct PoisonStatus : TemporaryStatus {
+  float counter = 0;
+  float damage;
+  PoisonStatus(float damage, float duration, int strength) 
+    : TemporaryStatus(STATUS_POISON, duration, strength), damage(damage) {
+  }
+};
+
+struct TelekinesisStatus : TemporaryStatus {
+  TelekinesisStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_TELEKINESIS, duration, strength) {
+  }
+};
+
+struct InvisibilityStatus : TemporaryStatus {
+  InvisibilityStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_INVISIBILITY, duration, strength) {
+  }
+};
+
+struct BlindnessStatus : TemporaryStatus {
+  BlindnessStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_BLINDNESS, duration, strength) {
   }
 };
 
@@ -432,6 +489,8 @@ struct UseAbilityAction : Action {
 shared_ptr<Player> CreatePlayer(Resources* resources);
 shared_ptr<Portal> CreatePortal(Resources* resources, 
   shared_ptr<Sector> from_sector, pugi::xml_node& xml);
+shared_ptr<Missile> CreateMissile(Resources* resources, 
+  const string& asset_name);
 
 ObjPtr CreateGameObjFromPolygons(Resources* resources,
   const vector<Polygon>& polygons, const string& name, const vec3& position);

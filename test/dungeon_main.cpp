@@ -13,6 +13,6 @@ int main(int argc, char **argv) {
   );
 
   int time = ms.count();
-  dungeon.GenerateDungeon(1, time);
+  dungeon.GenerateDungeon(6, time);
   return 0;
 }

@@ -465,7 +465,7 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
   }
 
   if (physics_behavior == PHYSICS_FLY || physics_behavior == PHYSICS_SWIM) {
-
+    to_next_location.y = 0;
   } else {
     to_next_location.y = 0;
   }
@@ -485,6 +485,12 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
   float speed = spider->current_speed;
   if (physics_behavior == PHYSICS_FLY) {
     spider->speed += normalize(to_next_location) * speed;
+
+    if (spider->position.y > kDungeonOffset.y + 20.0f) {
+      spider->speed.y += -1.0f * speed;
+    } else {
+      spider->speed.y += (-1.0f + (float(Random(0, 7)) / 3.0f)) * speed;
+    }
   } else {
     spider->speed += spider->forward * speed;
   }
@@ -564,6 +570,9 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
   Dungeon& dungeon = resources_->GetDungeon();
   ivec2 spider_tile = dungeon.GetDungeonTile(spider->position);
 
+  ObjPtr player = resources_->GetPlayer();
+  ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+
   float current_time = glfwGetTime();
   if (spider->cooldowns.find(action->ability) != spider->cooldowns.end()) {
     if (spider->cooldowns[action->ability] > current_time) {
@@ -594,8 +603,70 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
   } else if (action->ability == "haste") {
     spider->AddTemporaryStatus(make_shared<HasteStatus>(2.0, 5.0f, 1));
     spider->cooldowns["haste"] = glfwGetTime() + 10;
+  } else if (action->ability == "invisibility") {
+    spider->AddTemporaryStatus(make_shared<InvisibilityStatus>(10.0f, 1));
+    resources_->CreateParticleEffect(1, spider->position, 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 7.0, 32.0f, 3.0f);
+    spider->cooldowns["invisibility"] = glfwGetTime() + 60;
+  } else if (action->ability == "hook") {
+    resources_->CastHook(spider, spider->position, 
+      normalize(player->position - spider->position));
+    spider->cooldowns["hook"] = glfwGetTime() + 10;
+  } else if (action->ability == "acid-arrow") {
+    resources_->CastAcidArrow(spider, spider->position, 
+      normalize(player->position - spider->position));
+    spider->cooldowns["acid-arrow"] = glfwGetTime() + 1;
+  } else if (action->ability == "lightning-ray") {
+    resources_->CastLightningRay(spider, spider->position, 
+      normalize(player->position - spider->position - vec3(0, 3, 0)));
+    spider->cooldowns["lightning-ray"] = glfwGetTime() - 1;
+  } else if (action->ability == "blinding-ray") {
+    resources_->CastBlindingRay(spider, spider->position, 
+      normalize(player->position - spider->position - vec3(0, 3, 0)));
+    spider->cooldowns["blinding-ray"] = glfwGetTime() + 20;
+  } else if (action->ability == "teleport-back") {
+    for (int i = 0; i < 100; i++) {
+      int off_x = Random(-2, 2);
+      int off_y = Random(-2, 2);
+      ivec2 tile = spider_tile + ivec2(off_x, off_y);
+      if (!dungeon.IsTileClear(tile)) continue;
+     
+      vec3 tile_pos = dungeon.GetTilePosition(tile);
+      player->position = tile_pos;
+      break;
+    }
+    spider->cooldowns["teleport-back"] = glfwGetTime() + 20;
+  } else if (action->ability == "confusion-mushroom") {
+    int cur_room = dungeon.GetRoom(spider_tile);
+    int player_room = dungeon.GetRoom(player_tile);
+
+    if (cur_room == player_room && length(vec2(spider_tile - player_tile)) < 5) {
+      // TODO: add confusion status.
+      player->AddTemporaryStatus(make_shared<PoisonStatus>(1.0f, 20.0f, 1));
+    }
+    spider->cooldowns["confusion-mushroom"] = glfwGetTime() + 30;
+  } else if (action->ability == "mold-poison") {
+    int cur_room = dungeon.GetRoom(spider_tile);
+    for (int x = -5; x <= 5; x++) {
+      for (int y = -5; y <= 5; y++) {
+        if (length(vec2(x, y)) > 5) continue;
+        ivec2 cur_tile = spider_tile + ivec2(x, y); 
+        if (!dungeon.IsValidTile(cur_tile)) continue;
+        if (dungeon.GetRoom(cur_tile) != cur_room) continue;
+
+        vec3 tile_pos = dungeon.GetTilePosition(cur_tile);
+        resources_->CreateParticleEffect(4, tile_pos, 
+          vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
+
+        if (cur_tile.x == player_tile.x && cur_tile.y == player_tile.y) {
+          player->AddTemporaryStatus(make_shared<PoisonStatus>(1.0f, 20.0f, 1));
+        }
+      }
+    }
+
+    // spider->AddTemporaryStatus(make_shared<PoisonStatus>(2.0, 5.0f, 1));
+    spider->cooldowns["mold-poison"] = glfwGetTime() + 10;
   } else if (action->ability == "summon-worm") {
-    return true;
     if (configs->summoned_creatures > 10) return true;
     for (int tries = 0; tries < 100; tries++) {
       int off_x = Random(-1, 1);
@@ -610,8 +681,14 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
       resources_->CreateParticleEffect(32, tile_pos, 
         vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
       configs->summoned_creatures++;
+      break;
     }
-    spider->cooldowns["summon-worm"] = glfwGetTime() + 20;
+    
+    if (spider->GetAsset()->name == "worm_king") {
+      spider->cooldowns["summon-worm"] = glfwGetTime() + 5;
+    } else {
+      spider->cooldowns["summon-worm"] = glfwGetTime() + 30;
+    }
   } else if (action->ability == "spider-web") {
     ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = (player->position + vec3(0, -3.0f, 0)) - spider->position;

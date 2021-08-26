@@ -8,6 +8,10 @@ const int DLRG_VDOOR = 2;
 const int DLRG_DOOR_CLOSED = 4;
 const int DLRG_CHAMBER = 64;
 const int DLRG_PROTECTED = 128;
+const int DLRG_WEB_FLOOR = 256;
+const int DLRG_MINISET = 512;
+const int DLRG_CHASM = 1024;
+const int DLRG_SECRET = 2048;
 
 Dungeon::Dungeon() {
   char_map_[1] = '|';
@@ -40,13 +44,13 @@ Dungeon::Dungeon() {
   char_map_[27] = '+';
   char_map_[28] = 'k';
   char_map_[30] = 'l';
-  char_map_[31] = 'm';
+  char_map_[31] = 'z';
   char_map_[35] = 'g';
   char_map_[36] = 'G';
   char_map_[37] = '+';
   char_map_[40] = 'n';
   char_map_[42] = 'a';
-  char_map_[43] = 't';
+  char_map_[43] = ' ';
   char_map_[60] = '<'; // Up.
   char_map_[61] = '>'; // Down.
   char_map_[62] = 's'; // Spiderling.
@@ -57,11 +61,35 @@ Dungeon::Dungeon() {
   char_map_[68] = 'L'; // Laracna.
   char_map_[69] = 'K'; // Lancet spider.
   char_map_[70] = 'M'; // Mana crystal.
-  char_map_[71] = 'I'; // Green mold.
+  char_map_[71] = 'I'; // Mold.
   char_map_[72] = 'c'; // Chest.
   char_map_[73] = 'w'; // Worm.
   char_map_[74] = 'C'; // Trapped chest.
   char_map_[75] = 'J'; // Speedling.
+  char_map_[76] = ')'; // Web wall.
+  char_map_[77] = '('; // Web wall.
+  char_map_[78] = '#'; // Web floor.
+  char_map_[79] = '_'; // Chasm.
+  char_map_[80] = '^'; // Hanging floor.
+  char_map_[81] = '/'; // Plank.
+  char_map_[82] = '\\'; // Plank vertical.
+  char_map_[83] = 'Y'; // Dragonfly.
+  char_map_[84] = '1'; // Pre rotating platform.
+  char_map_[85] = '2'; // Pre rotating platform.
+  char_map_[86] = '3'; // Pre rotating platform.
+  char_map_[87] = '4'; // Pre rotating platform.
+  char_map_[88] = 'e'; // Exploding pod.
+  char_map_[89] = ','; // Mushroom.
+  char_map_[90] = 't'; // Trapping spiderling.
+  char_map_[91] = 'V'; // Viper.
+  char_map_[92] = '&'; // Secret wall.
+  char_map_[93] = 'm'; // Miniboss.
+  char_map_[94] = 'W'; // Worm King.
+  char_map_[95] = 'r'; // Drider.
+  char_map_[96] = '%'; // Spinning.
+  char_map_[97] = 'E'; // Evil Eye.
+  char_map_[98] = 'Q'; // Spider Queen.
+  char_map_[99] = 'X'; // Statue.
   char_map_[199] = 'A';
   char_map_[200] = 'B';
   char_map_[202] = 'F';
@@ -73,7 +101,7 @@ Dungeon::Dungeon() {
   darkness = new char*[kDungeonSize];
 
   dungeon = new int*[kDungeonSize];
-  flags = new int*[kDungeonSize];
+  flags = new unsigned int*[kDungeonSize];
   room = new int*[kDungeonSize];
   dungeon_visibility_ = new int*[kDungeonSize];
   for (int i = 0; i < kDungeonSize; ++i) {
@@ -83,7 +111,7 @@ Dungeon::Dungeon() {
 
     dungeon[i] = new int[kDungeonSize];
     dungeon_visibility_[i] = new int[kDungeonSize];
-    flags[i] = new int[kDungeonSize];
+    flags[i] = new unsigned int[kDungeonSize];
     room[i] = new int[kDungeonSize];
   }
 
@@ -133,101 +161,27 @@ void Dungeon::Clear() {
   downstairs = ivec2(-1, -1);
 }
 
-void Dungeon::DrawRoom(int x, int y, int w, int h, bool set_flags) {
+void Dungeon::DrawRoom(int x, int y, int w, int h, int add_flags) {
   for (int i = x; i < x + w; i++) {
     for (int j = y; j < y + h; j++) {
       if (i < 0 || j < 0 || i >= kDungeonSize || j >= kDungeonSize) continue;
       dungeon[i][j] = 1;
-      if (set_flags) {
-        flags[i][j] |= DLRG_CHAMBER;
+      if (add_flags) {
+        flags[i][j] |= add_flags;
       }
     }
   }
 }
 
-void Dungeon::FirstRoomV() {
-  vr1_ = Random(0, 2);
-  vr2_ = Random(0, 2);
-  vr3_ = Random(0, 2);
-  hr1_ = 0;
-  hr2_ = 0;
-  hr3_ = 0;
-
-  if (vr1_ + vr3_ <= 1) {
-    vr2_ = 1; 
-  }
-
-  int ys = 1;
-  int ye = 39;
-
-  if (vr1_) {
-    DrawRoom(15, 1, 10, 10);
-  } else {
-    ys = 18;
-  }
-
-  if (vr2_) {
-    DrawRoom(15, 15, 10, 10);
-  }
-
-  if (vr3_) {
-    DrawRoom(15, 29, 10, 10);
-  } else {
-    ye = 22;
-  }
-
-  // Draw corridor.
-  for (int y = ys; y < ye; y++) {
-    for (int x = 17; x < 23; x++) dungeon[x][y] = 1;
-  }
-
-  if (vr1_) RoomGen(15, 1, 10, 10, 0);
-  if (vr2_) RoomGen(15, 15, 10, 10, 0);
-  if (vr3_) RoomGen(15, 29, 10, 10, 0);
-}
-
-void Dungeon::FirstRoomH() {
-  hr1_ = Random(0, 2);
-  hr2_ = Random(0, 2);
-  hr3_ = Random(0, 2);
-  vr1_ = 0;
-  vr2_ = 0;
-  vr3_ = 0;
-  if (hr1_ + hr3_ <= 1) {
-    hr2_ = 1;
-  }
-
-  int xs = 1;
-  int xe = 39;
-
-  if (hr1_) {
-    DrawRoom(1, 15, 10, 10);
-  } else {
-    xs = 18;
-  }
-
-  if (hr2_) {
-    DrawRoom(15, 15, 10, 10);
-  }
-
-  if (hr3_) {
-    DrawRoom(29, 15, 10, 10);
-  } else {
-    xe = 22;
-  }
-
-  // Draw corridor.
-  for (int x = xs; x < xe; x++) {
-    for (int y = 17; y < 23; y++) dungeon[x][y] = 1;
-  }
-
-  if (hr1_) RoomGen(1, 15, 10, 10, 1);
-  if (hr2_) RoomGen(15, 15, 10, 10, 1);
-  if (hr3_) RoomGen(29, 15, 10, 10, 1);
-}
-
 void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height, 
-  int horizontal) {
+  int horizontal, bool secret) {
+
+  unsigned int secret_flag = 0;
+  if (current_level_ >= 4) {
+    if (secret) secret_flag = DLRG_SECRET;
+    else if (Random(0, 30) == 0) secret_flag = DLRG_SECRET;
+  }
+
   // Changes direction 25% of the time.
   int r = Random(0, 4);
   horizontal = (horizontal) ? r != 0 : r == 0;
@@ -241,13 +195,15 @@ void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height,
       y = prev_y + prev_height / 2 - height / 2;
       success = CheckRoom(x, y, width, height);
     }
-    if (success) DrawRoom(x, y, width, height);
+
+    if (success) DrawRoom(x, y, width, height, secret_flag);
 
     int x2 = prev_x + prev_width;
     bool success2 = CheckRoom(x2, y - 1, width + 1, height + 2);
-    if (success2) DrawRoom(x2, y, width, height);
-    if (success ) RoomGen(x, y, width, height, 1);
-    if (success2) RoomGen(x2, y, width, height, 1);
+    if (success2) DrawRoom(x2, y, width, height, secret_flag);
+
+    if (success) RoomGen(x, y, width, height, 1, secret_flag);
+    if (success2) RoomGen(x2, y, width, height, 1, secret_flag);
   } else {
     int x, y, width, height;
     bool success = false;
@@ -258,13 +214,15 @@ void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height,
       y = prev_y - height;
       success = CheckRoom(x, y, width, height);
     }
-    if (success) DrawRoom(x, y, width, height);
+
+    if (success) DrawRoom(x, y, width, height, secret_flag);
 
     int y2 = prev_y + prev_height;
     bool success2 = CheckRoom(x - 1, y2, width + 2, height + 1);
-    if (success2) DrawRoom(x, y2, width, height);
-    if (success ) RoomGen(x, y, width, height, 0);
-    if (success2) RoomGen(x, y2, width, height, 0);
+    if (success2) DrawRoom(x, y2, width, height, secret_flag);
+
+    if (success) RoomGen(x, y, width, height, 0, secret_flag);
+    if (success2) RoomGen(x, y2, width, height, 0, secret_flag);
   }
 }
 
@@ -325,6 +283,12 @@ bool Dungeon::GenerateChambers() {
   cout << num_steps << endl;
   cout << next_tile << endl;
 
+  if (current_level_ == 6) {
+    chambers_[2][1] = 1;
+    chambers_[2][2] = 1;
+    chambers_[2][3] = 1;
+  }
+
   for (int steps = 0; steps < num_steps; steps++) {
     chambers_[next_tile.x][next_tile.y] = 1;
     added_tiles.push_back(next_tile);
@@ -372,6 +336,12 @@ bool Dungeon::GenerateChambers() {
     }
   }
 
+  if (current_level_ == 6) {
+    chambers_[2][1] = 4;
+    chambers_[2][2] = 4;
+    chambers_[2][3] = 4;
+  }
+
   for (int y = 0; y < kDungeonCells; y++) {
     for (int x = 0; x < kDungeonCells; x++) {
       if (chambers_[x][y] == 0) continue;
@@ -391,20 +361,23 @@ bool Dungeon::GenerateChambers() {
 
       // Draw small corridors.
       if (x > 0 && chambers_[x-1][y] > 0)
-        DrawRoom(room_x - 4, room_y + 2, 4, 6, true);
+        DrawRoom(room_x - 4, room_y + 2, 4, 6, DLRG_CHAMBER);
       if (y > 0 && chambers_[x][y-1] > 0)
-        DrawRoom(room_x + 2, room_y - 4, 6, 4, true);
+        DrawRoom(room_x + 2, room_y - 4, 6, 4, DLRG_CHAMBER);
  
       switch (chambers_[x][y]) {
         case 1: { // Empty room.
-          DrawRoom(room_x, room_y, 10, 10, true);
+          DrawRoom(room_x, room_y, 10, 10, DLRG_CHAMBER);
           break;
         }
         case 2: // Long horizontal corridor.
-          DrawRoom(room_x, room_y + 2, 10, 6, true);
+          DrawRoom(room_x, room_y + 2, 10, 6, DLRG_CHAMBER);
           break;
         case 3: // Long vertical corridor.
-          DrawRoom(room_x + 2, room_y, 6, 10, true);
+          DrawRoom(room_x + 2, room_y, 6, 10, DLRG_CHAMBER);
+          break;
+        case 4: // Spider queen room.
+          DrawRoom(room_x, room_y, 10, 14, DLRG_CHAMBER);
           break;
       }
     }
@@ -443,6 +416,10 @@ bool Dungeon::GenerateChambers() {
           code = '|';
           break;
         }
+        case 4: {
+          code = '+';
+          break;
+        }
       }
       cout << code << " ";
     }
@@ -450,14 +427,6 @@ bool Dungeon::GenerateChambers() {
   }
 
   return true;
-}
-
-void Dungeon::FirstRoom() {
-  if (Random(0, 2) == 0) {
-    FirstRoomV();
-  } else {
-    FirstRoomH();
-  }
 }
 
 int Dungeon::GetArea() {
@@ -487,7 +456,15 @@ void Dungeon::PrintMap() {
       if (code == ' ') { 
         code = monsters_and_objs[x][y];
         if (code == ' ') { 
-          code = darkness[x][y];
+          if (IsDark(ivec2(x, y))) {
+            code = '*';
+          } else if (IsWebFloor(ivec2(x, y))) {
+            code = '#';
+          } else if (IsChasm(ivec2(x, y))) {
+            code = '_';
+          } else if (IsSecretRoom(ivec2(x, y))) {
+            code = '$';
+          }
         }
       }
       cout << code << " ";
@@ -506,56 +483,6 @@ void Dungeon::PrintMap() {
 }
 
 void Dungeon::MakeMarchingTiles() {
-  // Double the dungeon size so it becomes easier to do marching tiles.
-  // char** doubled_dungeon;
-  // doubled_dungeon = new char*[kDungeonSize*2];
-  // for (int i = 0; i < kDungeonSize * 2; ++i) {
-  //   doubled_dungeon[i] = new char[kDungeonSize*2];
-  // }
-
-  // for (int j = 0; j < kDungeonSize; j++) {
-  //   for (int i = 0; i < kDungeonSize; i++) {
-  //     int j_2 = j << 1;
-  //     int i_2 = i << 1;
-  //     doubled_dungeon[i_2][j_2] = dungeon[i][j];
-  //     doubled_dungeon[i_2][j_2 + 1] = dungeon[i][j];
-  //     doubled_dungeon[i_2 + 1][j_2] = dungeon[i][j];
-  //     doubled_dungeon[i_2 + 1][j_2 + 1] = dungeon[i][j];
-  //   }
-  // }
-
-  // // Make dungeon void ('.' character).
-  // for (int j = 0; j < kDungeonSize; j++) {
-  //   for (int i = 0; i < kDungeonSize; i++) {
-  //     dungeon[i][j] = 22;
-  //   }
-  // }
-
-  // static const char kMtTable[16] = { 
-  //   22u, 13u, 1u, 13u, 2u, 13u, 13u, 13u, 
-  //   4u, 13u, 1u, 13u, 2u, 13u, 16u, 13u 
-  // };
-
-  // // char_map_[1] = '|';
-  // // char_map_[2] = '-';
-  // // char_map_[4] = '+';
-  // // char_map_[13] = ' ';
-  // // char_map_[16] = '+';
-  // // char_map_[22] = '.';
-
-  // int side = kDungeonSize * 2 - 2;
-  // for (int y = 0, mt_y = 1; mt_y <= side; y++, mt_y += 2) {
-  //   for (int x = 0, mt_x = 1; mt_x <= side; x++, mt_x += 2) {
-  //     int val = 8 * doubled_dungeon[mt_x + 1][mt_y + 1]
-  //             + 4 * doubled_dungeon[mt_x    ][mt_y + 1]
-  //             + 2 * doubled_dungeon[mt_x + 1][mt_y    ]
-  //             + 1 * doubled_dungeon[mt_x    ][mt_y    ];
-  //     dungeon[x][y] = kMtTable[val];
-  //   }
-  // }
-
-  // return;
-
   char** dungeon_copy;
   dungeon_copy = new char*[kDungeonSize];
   for (int i = 0; i < kDungeonSize; ++i) {
@@ -711,14 +638,14 @@ void Dungeon::FillChambers() {
       int room_y = 1 + y * 14;
 
       // Draw small corridors.
-      if (x > 0 && chambers_[x-1][y] > 0) { // Horizontal.
+      if (x > 0 && chambers_[x-1][y] > 0 && chambers_[x][y-1] < 4) { // Horizontal.
         for (int x_ = 0; x_ < 4; x_++) {
           dungeon[room_x - 4 + x_][room_y + 3] = 12;
           dungeon[room_x - 4 + x_][room_y + 6] = 12;
         }
       }
 
-      if (y > 0 && chambers_[x][y-1] > 0) {
+      if (y > 0 && chambers_[x][y-1] > 0 && chambers_[x][y-1] < 4) {
         for (int y_ = 0; y_ < 4; y_++) {
           dungeon[room_x + 3][room_y - 4 + y_] = 11;
           dungeon[room_x + 6][room_y - 4 + y_] = 11;
@@ -737,6 +664,19 @@ void Dungeon::FillChambers() {
           for (int y_ = 0; y_ < 10; y_++) {
             dungeon[room_x + 3][room_y + y_] = 11;
             dungeon[room_x + 6][room_y + y_] = 11;
+          }
+          break;
+        }
+        case 4: { // Spider queen chamber.
+          for (int y_ = 1; y_ <= 14; y_ += 2) {
+            dungeon[room_x + 2][room_y + y_] = 99;
+            dungeon[room_x + 7][room_y + y_] = 99;
+          }
+
+          for (int x_ = 0; x_ < 10; x_++) {
+            for (int y_ = 0; y_ < 14; y_++) {
+              flags[room_x + x_][room_y + y_] |= DLRG_PROTECTED;
+            }
           }
           break;
         }
@@ -920,33 +860,34 @@ void Dungeon::L5HorizWall(int i, int j, char p, int dx) {
   int xx;
   char wt, dt;
 
-  switch (Random(0, 4)) {
-  case 0:
-  case 1:
-    dt = 2;
-    break;
-  case 2:
-    dt = 12;
-    if (p == 2)
-      p = 12;
-    if (p == 4)
-      p = 10;
-    break;
-  case 3:
-    dt = 36;
-    if (p == 2)
-      p = 36;
-    if (p == 4)
-      p = 27;
-    break;
+  // Add webs.
+  int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
+  int type = Random(0, k);
+
+  switch (type) {
+    case 0:
+    case 1: {
+      dt = 2;
+      break;
+    }
+    case 2: {
+      dt = 12;
+      break;
+    }
+    case 3: {
+      dt = 36;
+      break;
+    }
+    case 4: {
+      dt = 76;
+      break;
+    }
   }
 
-  if (Random(0, 6) == 5)
-    wt = 12;
-  else
-    wt = 26;
-  if (dt == 12)
-    wt = 12;
+  if (Random(0, 6) == 5) wt = 12;
+  else wt = 26;
+
+  if (dt == 12) wt = 12;
 
   dungeon[i][j] = p;
 
@@ -955,6 +896,8 @@ void Dungeon::L5HorizWall(int i, int j, char p, int dx) {
   }
 
   xx = Random(0, dx - 1) + 1;
+
+  if (type == 4) return;
 
   if (wt == 12) {
     dungeon[i + xx][j] = wt;
@@ -968,34 +911,38 @@ void Dungeon::L5VertWall(int i, int j, char p, int dy) {
   int yy;
   char wt, dt;
 
-  switch (Random(0, 4)) {
-  case 0:
-  case 1:
-    dt = 1;
-    break;
-  case 2:
-    dt = 11;
-    if (p == 1)
-      p = 11;
-    if (p == 4)
-      p = 14;
-    break;
-  case 3:
-    dt = 35;
-    if (p == 1)
-      p = 35;
-    if (p == 4)
-      p = 37;
-    break;
+  // Add webs.
+  int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
+  int type = Random(0, k);
+
+  switch (type) {
+    case 0:
+    case 1: {
+      dt = 1;
+      break;
+    }
+    case 2: {
+      dt = 11;
+      if (p == 1) p = 11;
+      if (p == 4) p = 14;
+      break;
+    }
+    case 3: {
+      dt = 35;
+      if (p == 1) p = 35;
+      if (p == 4) p = 37;
+      break;
+    }
+    case 4: {
+      dt = 77;
+      break;
+    }
   }
 
-  if (Random(0, 6) == 5)
-    wt = 11;
-  else
-    wt = 25;
+  if (Random(0, 6) == 5) wt = 11;
+  else wt = 25;
 
-  if (dt == 11)
-    wt = 11;
+  if (dt == 11) wt = 11;
 
   dungeon[i][j] = p;
 
@@ -1005,6 +952,8 @@ void Dungeon::L5VertWall(int i, int j, char p, int dy) {
 
   yy = Random(0, dy - 1) + 1;
 
+  if (type == 4) return;
+
   if (wt == 11) {
     dungeon[i][j + yy] = wt;
   } else {
@@ -1013,86 +962,63 @@ void Dungeon::L5VertWall(int i, int j, char p, int dy) {
   }
 }
 
+void Dungeon::AddSecretWalls() {
+  for (int y = 0; y < kDungeonSize; y++) {
+    for (int x = 0; x < kDungeonSize; x++) {
+      if (!(flags[x][y] & DLRG_SECRET)) continue;
+
+      bool border = false;
+      for (int step_y = -1; step_y <= 1; step_y++) {
+        for (int step_x = -1; step_x <= 1; step_x++) {
+          if (step_y == 0 && step_x == 0) continue;
+          int cur_x = x + step_x;
+          int cur_y = y + step_y;
+          if (cur_x < 0 || cur_x >= kDungeonSize || cur_y < 0 || 
+              cur_y >= kDungeonSize) continue;
+          if (!(flags[cur_x][cur_y] & DLRG_SECRET) && 
+            dungeon[cur_x][cur_y] == 13) {
+            border = true;
+            break;
+          }
+        }
+        if (border) break;
+      }
+
+      if (!border) continue;
+      dungeon[x][y] = 92;
+    }
+  }
+}
+
 void Dungeon::AddWalls() {
-  int i, j, x, y;
-  for (j = 0; j < kDungeonSize; j++) {
-    for (i = 0; i < kDungeonSize; i++) {
-      if (!flags[i][j]) {
-        if (dungeon[i][j] == 3 && Random(0, 100) < 100) {
-          x = L5HWallOk(i, j);
-          if (x != -1)
-            L5HorizWall(i, j, 2, x);
-        }
-        if (dungeon[i][j] == 3 && Random(0, 100) < 100) {
-          y = L5VWallOk(i, j);
-          if (y != -1)
-            L5VertWall(i, j, 1, y);
-        }
-        if (dungeon[i][j] == 6 && Random(0, 100) < 100) {
-          x = L5HWallOk(i, j);
-          if (x != -1)
-            L5HorizWall(i, j, 4, x);
-        }
-        if (dungeon[i][j] == 7 && Random(0, 100) < 100) {
-          y = L5VWallOk(i, j);
-          if (y != -1)
-            L5VertWall(i, j, 4, y);
-        }
-        if (dungeon[i][j] == 2 && Random(0, 100) < 100) {
-          x = L5HWallOk(i, j);
-          if (x != -1)
-            L5HorizWall(i, j, 2, x);
-        }
-        if (dungeon[i][j] == 1 && Random(0, 100) < 100) {
-          y = L5VWallOk(i, j);
-          if (y != -1)
-            L5VertWall(i, j, 1, y);
-        }
+  for (int j = 0; j < kDungeonSize; j++) {
+    for (int i = 0; i < kDungeonSize; i++) {
+      if (flags[i][j]) continue;
+      if (dungeon[i][j] == 3) {
+        int x = L5HWallOk(i, j);
+        if (x != -1) L5HorizWall(i, j, 2, x);
+      }
+      if (dungeon[i][j] == 3) {
+        int y = L5VWallOk(i, j);
+        if (y != -1) L5VertWall(i, j, 1, y);
+      }
+      if (dungeon[i][j] == 2) {
+        int x = L5HWallOk(i, j);
+        if (x != -1) L5HorizWall(i, j, 2, x);
+      }
+      if (dungeon[i][j] == 1) {
+        int y = L5VWallOk(i, j);
+        if (y != -1) L5VertWall(i, j, 1, y);
       }
     }
   }
 }
 
 void Dungeon::ClearFlags() {
+  // Clears chamber flag.
   for (int j = 0; j < kDungeonSize; j++) {
     for (int i = 0; i < kDungeonSize; i++) {
-      flags[i][j] &= 0xBF;
-    }
-  }
-}
-
-void Dungeon::DirtFix() {
-  int i, j;
-  for (j = 0; j < kDungeonSize; j++) {
-    for (i = 0; i < kDungeonSize; i++) {
-      if (dungeon[i][j] == 21 && dungeon[i + 1][j] != 19)
-        dungeon[i][j] = 202;
-      if (dungeon[i][j] == 19 && dungeon[i + 1][j] != 19)
-        dungeon[i][j] = 200;
-      if (dungeon[i][j] == 24 && dungeon[i + 1][j] != 19)
-        dungeon[i][j] = 205;
-      if (dungeon[i][j] == 18 && dungeon[i][j + 1] != 18)
-        dungeon[i][j] = 199;
-      if (dungeon[i][j] == 21 && dungeon[i][j + 1] != 18)
-        dungeon[i][j] = 202;
-      if (dungeon[i][j] == 23 && dungeon[i][j + 1] != 18)
-        dungeon[i][j] = 204;
-    }
-  }
-
-}
-
-void Dungeon::CornerFix() {
-  int i, j;
-  for (j = 1; j < kDungeonSize - 1; j++) {
-    for (i = 1; i < kDungeonSize - 1; i++) {
-      if (!(flags[i][j] & DLRG_PROTECTED) && dungeon[i][j] == 17 && dungeon[i - 1][j] == 13 && dungeon[i][j - 1] == 1) {
-        dungeon[i][j] = 16;
-        flags[i][j - 1] &= DLRG_PROTECTED;
-      }
-      if (dungeon[i][j] == 202 && dungeon[i + 1][j] == 13 && dungeon[i][j + 1] == 1) {
-        dungeon[i][j] = 8;
-      }
+      flags[i][j] &= (unsigned int) ~(DLRG_CHAMBER);
     }
   }
 }
@@ -1168,7 +1094,7 @@ bool Dungeon::PlaceMiniSet(const string& miniset_name) {
           for (int step_x = 0; step_x < w; step_x++) {
             if (!search[step_x][step_y]) continue;
             if (dungeon[x + step_x][y + step_y] != search[step_x][step_y] || 
-                flags[x + step_x][y + step_y]) {
+                (flags[x + step_x][y + step_y] & (0xFF | DLRG_SECRET))) {
               valid = false;
               break;
             }
@@ -1180,11 +1106,11 @@ bool Dungeon::PlaceMiniSet(const string& miniset_name) {
             for (int step_x = 0; step_x < w; step_x++) {
               if (!replace[step_x][step_y]) continue;
               dungeon[x + step_x][y + step_y] = replace[step_x][step_y]; 
+              flags[x + step_x][y + step_y] |= DLRG_MINISET;
             }
           }
           if (miniset_name == "STAIRS_DOWN") {
             downstairs = ivec2(x+w/2, y+h/2);
-            cout << "downstairs: " << downstairs << endl;
           }
           return true;
         }
@@ -1216,7 +1142,15 @@ int Dungeon::PlaceMonsterGroup(int x, int y) {
     if (!IsGoodPlaceLocation(cur_x, cur_y, 10.0f, 0.0f)) continue;
 
     int index = Random(0, kLevelData[current_level_].monsters.size());
-    dungeon[cur_x][cur_y] = kLevelData[current_level_].monsters[index];
+    int monster_type = kLevelData[current_level_].monsters[index];
+
+    if (current_level_ > 2 && monster_type == 62 && 
+      IsTileNextToWall(ivec2(cur_x, cur_y))) {
+      dungeon[cur_x][cur_y] = 90;
+    } else {
+      dungeon[cur_x][cur_y] = monster_type;
+    }
+
     if (++monsters_placed >= group_size) break;
   }
   return monsters_placed;
@@ -1274,10 +1208,16 @@ void Dungeon::PlaceMonsters() {
     if (monsters_placed >= num_monsters) break;
   }
   cout << "num_mosnters: " << monsters_placed << endl;
+
+  if (current_level_ == 6) {
+    dungeon[34][34] = 98;
+  }
 }
 
 void Dungeon::PlaceObjects() {
   const int num_objects = kLevelData[current_level_].num_objects;
+  if (num_objects == 0) return;
+  if (kLevelData[current_level_].objects.size() == 0) return;
   
   int objs_placed = 0;
   for (int tries = 0; tries < 100; tries++) {
@@ -1286,7 +1226,12 @@ void Dungeon::PlaceObjects() {
     if (!IsValidPlaceLocation(x, y)) continue;
 
     int index = Random(0, kLevelData[current_level_].objects.size());
-    dungeon[x][y] = kLevelData[current_level_].objects[index];
+    int object_code = kLevelData[current_level_].objects[index];
+    if (object_code == 78) { // Web floor.
+      flags[x][y] |= DLRG_WEB_FLOOR;
+    } else {
+      dungeon[x][y] = object_code;
+    }
 
     objs_placed++;
     if (objs_placed >= num_objects) break;
@@ -1305,6 +1250,10 @@ void Dungeon::GenerateAsciiDungeon() {
       switch (ascii_code) {
         case 's':
         case 'S':
+        case 'Q':
+        case 'r':
+        case 'E':
+        case 'V':
         case 'w':
         case 'K':
         case 'L':
@@ -1315,6 +1264,12 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'q':
         case 'b':
         case 'J':
+        case 'Y':
+        case 'e':
+        case ',':
+        case 't':
+        case 'm':
+        case 'W':
           ascii_dungeon[x][y] = ' ';
           monsters_and_objs[x][y] = ascii_code;
           continue;
@@ -1431,18 +1386,193 @@ bool Dungeon::CreateThemeRoomDarkroom(int room_num) {
 
 }
 
+bool Dungeon::CreateThemeRoomWebFloor(int room_num) {
+  int min_tiles = 14;
+  int max_tiles = 30;
+  if (room_stats[room_num]->tiles.size() < min_tiles) return false;
+  if (room_stats[room_num]->tiles.size() > max_tiles) return false;
+
+  // Place chest.
+  for (int i = 0; i < 100; i++) {
+    int tile_index = Random(0, room_stats[room_num]->tiles.size());
+    ivec2 tile = room_stats[room_num]->tiles[tile_index];
+    if (IsTileNextToDoor(tile)) continue;
+    dungeon[tile.x][tile.y] = 72;
+    break;
+  }
+
+  room_stats[room_num]->dark = true;
+  for (int i = 0; i < room_stats[room_num]->tiles.size(); i++) {
+      const ivec2& tile = room_stats[room_num]->tiles[i];
+      flags[tile.x][tile.y] |= DLRG_WEB_FLOOR;
+  }
+
+  // TODO: Place monsters.
+  return true;
+}
+
+bool Dungeon::IsChasm(int x, int y, int w, int h) {
+  for (int i = x; i < x + w; i++) {
+    for (int j = y; j < y + h; j++) {
+      if (i < 0 || j < 0 || i >= kDungeonSize || j >= kDungeonSize) continue;
+      if (flags[i][j] &= DLRG_CHASM) return true;
+    }
+  }
+  return false;
+}
+
+bool Dungeon::HasStairs(int x, int y, int w, int h) {
+  for (int i = x; i < x + w; i++) {
+    for (int j = y; j < y + h; j++) {
+      if (i < 0 || j < 0 || i >= kDungeonSize || j >= kDungeonSize) continue;
+      if (dungeon[i][j] == 60 && dungeon[i][j] == 61) return true;
+    }
+  }
+  return false;
+}
+
+void Dungeon::DrawChasm(int x, int y, int w, int h, bool horizontal) {
+  for (int i = x; i < x + w; i++) {
+    for (int j = y; j < y + h; j++) {
+      if (i < 0 || j < 0 || i >= kDungeonSize || j >= kDungeonSize) continue;
+      flags[i][j] |= DLRG_CHASM;
+      dungeon[i][j] = 79;
+    }
+  }
+}
+
+bool Dungeon::CreateThemeRoomSpinner() {
+  for (int tries = 0; tries < 10; tries++) { 
+    for (int x = Random(0, kDungeonCells); x < kDungeonCells; x++) {
+      for (int y = Random(0, kDungeonCells); y < kDungeonCells; y++) {
+        if (chambers_[x][y] != 1) continue;
+
+        int room_x = 1 + x * 14;
+        int room_y = 1 + y * 14;
+        if (IsChasm(room_x, room_y, 10, 10)) continue;
+        if (HasStairs(room_x, room_y, 10, 10)) continue;
+        DrawChasm(room_x+1, room_y+1, 8, 8, true);
+
+        dungeon[room_x + 4][room_y + 4] = 96;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool Dungeon::CreateThemeRoomChasm() {
+  for (int tries = 0; tries < 10; tries++) { 
+    for (int x = Random(0, kDungeonCells); x < kDungeonCells; x++) {
+      for (int y = Random(0, kDungeonCells); y < kDungeonCells; y++) {
+        int room_x = 1 + x * 14;
+        int room_y = 1 + y * 14;
+        if (chambers_[x][y] == 2) { // Horizontal
+          if (IsChasm(room_x, room_y + 2, 10, 6)) continue;
+          if (HasStairs(room_x, room_y + 2, 10, 6)) continue;
+          DrawChasm(room_x, room_y + 2, 10, 6, true);
+          for (int x_ = 0; x_ < 10; x_++) {
+            for (int k = 4; k <= 5; k++) {
+              dungeon[room_x + x_][room_y + k] = 80;
+            }
+          }
+          return true;
+        } else if (chambers_[x][y] == 3) { // Vertical.
+          if (IsChasm(room_x + 2, room_y, 6, 10)) continue;
+          DrawChasm(room_x + 2, room_y, 6, 10, false);
+          for (int y_ = 0; y_ < 10; y_++) {
+            for (int k = 4; k <= 5; k++) {
+              dungeon[room_x + k][room_y + y_] = 80;
+            }
+          }
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool Dungeon::CreateThemeRoomRotatingPlatforms() {
+  for (int tries = 0; tries < 10; tries++) { 
+    for (int x = Random(0, kDungeonCells); x < kDungeonCells; x++) {
+      for (int y = Random(0, kDungeonCells); y < kDungeonCells; y++) {
+        int room_x = 1 + x * 14;
+        int room_y = 1 + y * 14;
+        if (chambers_[x][y] == 2) { // Horizontal
+          if (IsChasm(room_x, room_y + 2, 10, 6)) continue;
+          DrawChasm(room_x, room_y + 2, 10, 6, true);
+          int k = 0;
+          for (int x_ = 0; x_ < 3; x_++) {
+            if (x_ == 2)
+              dungeon[room_x + x_ * 3 + 1][room_y + k + 4] = 81;
+            else
+              dungeon[room_x + x_ * 3 + 2][room_y + k + 4] = 81;
+            if (++k == 2) k = 0; 
+          }
+
+          dungeon[room_x + 0][room_y + 4] = 84;
+          dungeon[room_x + 0][room_y + 5] = 84;
+          dungeon[room_x + 9][room_y + 4] = 85;
+          dungeon[room_x + 9][room_y + 5] = 85;
+          return true;
+        } else if (chambers_[x][y] == 3) { // Vertical.
+          if (IsChasm(room_x + 2, room_y, 6, 10)) continue;
+          DrawChasm(room_x + 2, room_y, 6, 10, false);
+          int k = 0;
+          for (int y_ = 0; y_ < 3; y_++) {
+            if (y_ == 2)
+              dungeon[room_x + k + 4][room_y + y_ * 3 + 1] = 82;
+            else
+              dungeon[room_x + k + 4][room_y + y_ * 3 + 2] = 82;
+            if (++k == 2) k = 0; 
+          }
+
+          dungeon[room_x + 4][room_y + 0] = 86;
+          dungeon[room_x + 5][room_y + 0] = 86;
+          dungeon[room_x + 4][room_y + 9] = 87;
+          dungeon[room_x + 5][room_y + 9] = 87;
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 bool Dungeon::CreateThemeRooms() {
   const int num_theme_rooms = kLevelData[current_level_].num_theme_rooms;
   const vector<int>& theme_room_types = kLevelData[current_level_].theme_rooms;
+  if (num_theme_rooms == 0 || theme_room_types.size() == 0) return true;
 
   unordered_set<int> selected_rooms;
   int rooms_placed = 0;
   for (int tries = 0; tries < 100; tries++) {
-    int room_num = Random(0, room_stats.size());
-    if (selected_rooms.find(room_num) != selected_rooms.end()) continue;
-
     int index = Random(0, theme_room_types.size());
     int theme_room = theme_room_types[index];
+
+    if (theme_room == 4) {
+      if (CreateThemeRoomChasm()) {
+        rooms_placed++;
+      }
+      continue;
+    } else if (theme_room == 5) {
+      if (CreateThemeRoomRotatingPlatforms()) {
+        rooms_placed++;
+      }
+      continue;
+    } else if (theme_room == 6) {
+      if (CreateThemeRoomSpinner()) {
+        rooms_placed++;
+      }
+      continue;
+    }
+
+    int room_num = Random(0, room_stats.size());
+    if (selected_rooms.find(room_num) != selected_rooms.end()) continue;
+    if (room_stats[room_num]->has_stairs) continue;
+    if (room_stats[room_num]->is_miniset) continue;
+
     switch (theme_room) {
       case 0: {
         if (!CreateThemeRoomLibrary(room_num)) continue;
@@ -1456,6 +1586,10 @@ bool Dungeon::CreateThemeRooms() {
         if (!CreateThemeRoomDarkroom(room_num)) continue;
         break;
       }
+      case 3: {
+        if (!CreateThemeRoomWebFloor(room_num)) continue;
+        break;
+      }
       default: {
         break;
       }
@@ -1465,7 +1599,9 @@ bool Dungeon::CreateThemeRooms() {
     if (rooms_placed >= num_theme_rooms) break;
     rooms_placed++;
   }
-  return false;
+
+  cout << "rooms_placed: " << rooms_placed << endl;
+  return rooms_placed >= num_theme_rooms;
 }
 
 int Dungeon::FillRoom(ivec2 tile, shared_ptr<Room> current_room) {
@@ -1484,6 +1620,10 @@ int Dungeon::FillRoom(ivec2 tile, shared_ptr<Room> current_room) {
         dungeon[tile.x][tile.y] == 75 ||
         dungeon[tile.x][tile.y] == 63) {
       current_room->has_stairs = true;
+    }
+
+    if (flags[tile.x][tile.y] & DLRG_MINISET) {
+      current_room->is_miniset = true;
     }
 
     for (int off_x = -1; off_x < 2; off_x++) {
@@ -1535,6 +1675,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
     FillChambers();
     TileFix();
     AddWalls();
+    AddSecretWalls();
     ClearFlags();
 
     done_flag = true;
@@ -1544,21 +1685,29 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
       done_flag = false; 
     } else if (!PlaceMiniSet("STAIRS_UP")) {
       done_flag = false;
-    // } else if (!PlaceMiniSet("LARACNA")) {
-    //   done_flag = false;
+    }
+
+    const vector<string>& minisets = kLevelData[current_level_].minisets;
+    for (const string& miniset : minisets) { 
+      if (!PlaceMiniSet(miniset)) {
+        done_flag = false;
+      }
+    }
+
+    for (int j = 0; j < kDungeonSize; j++) {
+      for (int i = 0; i < kDungeonSize; i++) {
+        if (flags[i][j] & 0x7F) {
+          PlaceDoor(i, j);
+        }
+      }
+    }
+ 
+    FindRooms();
+    if (!CreateThemeRooms()) {
+      done_flag = false;
     }
   } while (done_flag == false);
 
-  for (int j = 0; j < kDungeonSize; j++) {
-    for (int i = 0; i < kDungeonSize; i++) {
-      if (flags[i][j] & 0x7F) {
-        PlaceDoor(i, j);
-      }
-    }
-  }
- 
-  FindRooms();
-  CreateThemeRooms();
   PlaceMonsters();
   PlaceObjects();
 
@@ -1683,13 +1832,20 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
   const char dungeon_tile = ascii_dungeon[tile.x][tile.y];
   switch (dungeon_tile) {
     case ' ':
+    case '^':
     case 's':
     case 'S':
+    case 'Q':
+    case 'r':
+    case 'E':
+    case 'Y':
     case 'w':
     case 'K':
     case 'o':
     case 'O':
     case 'L':
+    case '(':
+    case ')':
     // case '>':
     // case '<':
     // case '@':
@@ -1716,23 +1872,37 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
   const char dungeon_next_tile = dungeon_map[next_tile.x][next_tile.y];
   switch (dungeon_tile) {
     case ' ':
+    case '^':
     case 's':
     case 'S':
+    case 'Q':
+    case 'r':
+    case 'E':
+    case 'Y':
     case 'w':
     case 'K':
     case 'L':
+    case '(':
+    case ')':
     // case '<':
     // case '>':
     // case '@':
       switch (dungeon_next_tile) {
         case ' ':
+        case '^':
         case 's':
         case 'S':
+        case 'Q':
+        case 'r':
+        case 'E':
+        case 'Y':
         case 'w':
         case 'K':
         case 'o':
         case 'O':
         case 'L':
+        case '(':
+        case ')':
         // case '<':
         // case '>':
         // case '@':
@@ -1749,11 +1919,18 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
       if (tile.x == next_tile.x || tile.y == next_tile.y) {
         switch (dungeon_next_tile) {
           case ' ':
+          case '^':
           case 's':
           case 'S':
+          case 'Q':
+          case 'r':
+          case 'E':
+          case 'Y':
           case 'w':
           case 'K':
           case 'L':
+          case '(':
+          case ')':
             return true;
           default:
             return false;
@@ -1765,11 +1942,18 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
     case 'O':
       switch (dungeon_next_tile) {
         case ' ':
+        case '^':
         case 's':
         case 'S':
+        case 'Q':
+        case 'r':
+        case 'E':
+        case 'Y':
         case 'w':
         case 'K':
         case 'L':
+        case '(':
+        case ')':
           return true;
         default:
           return false;
@@ -1789,6 +1973,7 @@ bool Dungeon::IsTileNextToWall(const ivec2& tile) {
       switch (dungeon[new_tile.x][new_tile.y]) {
         case 1:
         case 2:
+        case 16:
         case 18:
           return true;
         default:
@@ -1878,8 +2063,13 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
   //     const char dungeon_tile = dungeon_map[i][j];
   //     switch (dungeon_tile) {
   //       case ' ':
+  //       case '^':
   //       case 's':
   //       case 'S':
+  //       case 'Q':
+  //       case 'r':
+  //       case 'E':
+  //       case 'Y':
   //       case 'w':
   //       case 'K':
   //       case 'o':
@@ -1901,8 +2091,13 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
   //     const char dungeon_tile = dungeon_map[i][j];
   //     switch (dungeon_tile) {
   //       case ' ':
+  //       case '^':
   //       case 's':
   //       case 'S':
+  //       case 'Q':
+  //       case 'r':
+  //       case 'E':
+  //       case 'Y':
   //       case 'w':
   //       case 'K':
   //       case 'o':
@@ -1986,8 +2181,15 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
   const char dungeon_tile = dungeon_map[tile.x][tile.y];
   switch (dungeon_tile) {
     case ' ':
+    case '^':
+    case '/':
+    case '\\':
     case 's':
     case 'S':
+    case 'Q':
+    case 'r':
+    case 'E':
+    case 'Y':
     case 'K':
     case 'q':
     case 'w':
@@ -1999,7 +2201,9 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case 'G':
     case '<':
     case '>':
-    case '@':
+    case '\'':
+    case '(':
+    case ')':
       return true;
     case 'd':
     case 'D': {
@@ -2123,8 +2327,15 @@ void Dungeon::CalculateVisibility(const vec3& player_position) {
   //     const char dungeon_tile = dungeon_map[i][j];
   //     switch (dungeon_tile) {
   //       case ' ':
+  //       case '^':
+  //       case '/':
+  //       case '\\':
   //       case 's':
   //       case 'S':
+  //       case 'Q':
+  //       case 'r':
+  //       case 'E':
+  //       case 'Y':
   //       case 'w':
   //       case 'K':
   //       case 'q':
@@ -2150,6 +2361,17 @@ vec3 Dungeon::GetPlatform() {
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
       if (ascii_dungeon[i][j] == '>') {
+        return GetTilePosition(ivec2(i, j)) + vec3(10, 10, 10);
+      }
+    }
+  }
+  throw runtime_error("Could not find platform.");
+}
+
+vec3 Dungeon::GetPlatformUp() {
+  for (int i = 0; i < kDungeonSize; i++) {
+    for (int j = 0; j < kDungeonSize; j++) {
+      if (ascii_dungeon[i][j] == '<') {
         return GetTilePosition(ivec2(i, j)) + vec3(10, 10, 10);
       }
     }
@@ -2187,4 +2409,29 @@ void Dungeon::SetDoorOpen(const ivec2& tile) {
 bool Dungeon::IsDark(const ivec2& tile) {
   if (!IsValidTile(tile)) return false;
   return darkness[tile.x][tile.y] == '*';
+}
+
+bool Dungeon::IsChasm(const ivec2& tile) {
+  if (!IsValidTile(tile)) return false;
+  return flags[tile.x][tile.y] & DLRG_CHASM;
+}
+
+void Dungeon::SetChasm(const ivec2& tile) {
+  if (!IsValidTile(tile)) return;
+  flags[tile.x][tile.y] |= DLRG_CHASM;
+}
+
+bool Dungeon::IsWebFloor(const ivec2& tile) {
+  if (!IsValidTile(tile)) return false;
+  return flags[tile.x][tile.y] & DLRG_WEB_FLOOR;
+}
+
+int Dungeon::GetRoom(const ivec2& tile) {
+  if (!IsValidTile(tile)) return -1;
+  return room[tile.x][tile.y]; 
+}
+
+bool Dungeon::IsSecretRoom(const ivec2& tile) {
+  if (!IsValidTile(tile)) return false;
+  return flags[tile.x][tile.y] & DLRG_SECRET;
 }

@@ -47,6 +47,7 @@ const int kMax3dParticles = 20;
 const int kArcaneSpellItemOffset = 5000;
 const int kArcaneWhiteOffset = 5015;
 const int kArcaneBlackOffset = 5117;
+const int kRandomItemOffset = 100000;
 
 class GameObject;
 
@@ -94,21 +95,21 @@ struct Configs {
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
   int item_matrix[8][7] = {
-    { 13, 14, 15, 10, 0, 0, 0 },
-    { 13, 14, 15, 12, 0, 0, 0 },
-    { 13, 14, 15, 12, 0, 0, 0 },
-    {  0,  0,  0,  0, 0, 0, 0 },
-    {  0,  0,  0,  0, 0, 0, 0 },
+    { 13, 14, 15, 10, 18, 0, 0 },
+    { 13, 14, 15, 12, 18, 0, 0 },
+    { 13, 14, 15, 12, 18, 0, 0 },
+    {  4,  4,  4,  18, 18, 0, 0 },
+    {  5002,  5003,  5004,  0, 0, 0, 0 },
     {  0,  0,  0,  0, 0, 0, 0 },
     {  0,  0,  0,  0, 0, 0, 0 },
     {  0,  0,  0,  0, 0, 0, 0 },
   };
   int item_quantities[8][7] = {
-    { 1, 1, 1, 100, 0, 0, 0 },
-    { 1, 1, 1, 1,   0, 0, 0 },
-    { 1, 1, 1, 1,   0, 0, 0 },
-    { 0, 0, 0, 0,   0, 0, 0 },
-    { 0, 0, 0, 0,   0, 0, 0 },
+    { 1, 1, 1, 100, 1, 0, 0 },
+    { 1, 1, 1, 1,   1, 0, 0 },
+    { 1, 1, 1, 1,   1, 0, 0 },
+    { 1, 1, 1, 1,   1, 0, 0 },
+    { 1, 1, 1, 0,   0, 0, 0 },
     { 0, 0, 0, 0,   0, 0, 0 },
     { 0, 0, 0, 0,   0, 0, 0 },
     { 0, 0, 0, 0,   0, 0, 0 },
@@ -123,11 +124,14 @@ struct Configs {
   string render_scene = "town";
   bool show_spellbook = false;
   bool show_store = false;
+  bool invincible = false;
   bool override_camera_pos = false;
   vec3 camera_pos = vec3(0, 0, 0);
   bool update_renderer = false;
   float light_radius = 90.0f;
+  float reach = 20.0f;
   bool darkvision = false;
+  bool see_invisible = false;
   int summoned_creatures = 0;
 
   int store_items[4][7] = { 
@@ -173,6 +177,12 @@ struct Configs {
   int equipment[7] = { 0, 0, 0, 16, 0, 0, 0 };
 };
 
+struct ItemBonus {
+  ItemBonusType type = ITEM_BONUS_TYPE_UNDEFINED;
+  int value; 
+  ItemBonus(ItemBonusType type, int value) : type(type), value(value) {}
+};
+
 struct ItemData {
   int id;
   ItemType type = ITEM_DEFAULT;
@@ -185,7 +195,22 @@ struct ItemData {
   int spell_id = -1;
   bool insert_in_spellbar = false;
 
+  // For generated items.
+  vector<ItemBonus> bonuses;
+
   ItemData() {}
+  ItemData(const ItemData& item_data) {
+    type = item_data.type;
+    name = item_data.name;
+    description = item_data.description;
+    icon = item_data.icon;
+    asset_name = item_data.asset_name;
+    price = item_data.price;
+    max_stash = item_data.max_stash;
+    spell_id = item_data.spell_id;
+    insert_in_spellbar = item_data.insert_in_spellbar;
+    bonuses = item_data.bonuses;
+  }
   ItemData(int id, string name, string description, string icon, 
     string asset_name, int price, int max_stash, bool insert_in_spellbar,
     ItemType type) 
@@ -266,9 +291,10 @@ struct Callback {
   float next_time;
   float period;
   bool periodic = false;
+  vector<string> args;
 
-  Callback(string function_name, float next_time, float period, bool periodic = false)
-    : function_name(function_name), next_time(next_time), period(period), periodic(periodic) {}
+  Callback(string function_name, vector<string> args,float next_time, float period, bool periodic = false)
+    : function_name(function_name), args(args), next_time(next_time), period(period), periodic(periodic) {}
 };
 
 class CompareCallbacks {
@@ -285,12 +311,13 @@ class Resources {
   int id_counter_ = 0;
   double frame_start_ = 0;
   double delta_time_ = 0;
-  int max_octree_depth_ = 7;
+  int max_octree_depth_ = 6;
   shared_ptr<ScriptManager> script_manager_ = nullptr;
   unordered_map<string, shared_ptr<Npc>> npcs_;
   std::default_random_engine generator_;
   bool use_quadtree_ = true;
   GLFWwindow* window_  ;
+  int random_item_id = kRandomItemOffset;
 
   shared_ptr<Configs> configs_;
   GameState game_state_ = STATE_EDITOR;
@@ -331,6 +358,7 @@ class Resources {
   vector<shared_ptr<GameObject>> lights_;
   vector<shared_ptr<GameObject>> items_;
   vector<shared_ptr<GameObject>> extractables_;
+  vector<shared_ptr<GameObject>> rotating_planks_;
   vector<shared_ptr<Particle>> particles_3d_;
 
   shared_ptr<Player> player_;
@@ -339,6 +367,7 @@ class Resources {
   // Events.
   vector<shared_ptr<Event>> events_;
   vector<shared_ptr<DieEvent>> on_unit_die_events_;
+  vector<shared_ptr<PlayerMoveEvent>> player_move_events_;
 
   // Mutexes.
   mutex mutex_;
@@ -348,7 +377,7 @@ class Resources {
     { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT } },
     { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT } },
     { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_DEFAULT } },
-    { 4, { 4, "Open Lock", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
+    { 4, { 4, "Skeleton Key", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
     { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
     { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT } },
     { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
@@ -361,7 +390,8 @@ class Resources {
     { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT } },
     { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT } },
     { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_WEAPON } },
-    { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "helmet", 1, 1, true, ITEM_HELMET } }
+    { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "yellow-crystal", 1, 1, true, ITEM_HELMET } },
+    { 18, { 18, "True Seeing", "helmet-description", "true_seeing_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT } }
   };
 
   unordered_map<int, EquipmentData> equipment_data_ {
@@ -425,6 +455,7 @@ class Resources {
   void CreateArcaneSpellCrystals();
   void LoadArcaneSpells();
   void CalculateArcaneSpells();
+  void CreateRandomMonster(const vec3& pos);
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir, 
@@ -443,6 +474,7 @@ class Resources {
   void SetGameState(GameState new_state) { game_state_ = new_state; }
   void Cleanup();
   void RunPeriodicEvents();
+  void ProcessRotatingPlanksOrientation();
 
   void AddGameObject(shared_ptr<GameObject> game_obj);
   void CalculateCollisionData(bool recalculate = false);
@@ -502,14 +534,24 @@ class Resources {
   void CastBurningHands(const Camera& camera);
   void CastStringAttack(ObjPtr owner, const vec3& position, 
     const vec3& direction);
+  void CastBlindingRay(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
   void CastLightningRay(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastHeal(ObjPtr owner);
   void CastDarkvision();
+  void CastTrueSeeing();
   void CastHarpoon(const Camera& camera);
   void CastFireExplosion(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastFireball(const Camera& camera);
+  void CastAcidArrow(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
+  void CastHook(ObjPtr owner, const vec3& position, const vec3& direction);
+  void CastHook(const vec3& position, const vec3& direction);
+  void CastTelekinesis();
+  void CastBouncyBall(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
 
   void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction, bool paralysis = false);
   bool SpiderCastPowerMagicMissile(ObjPtr spider, const vec3& direction);
@@ -523,6 +565,8 @@ class Resources {
   void InitParticles();
   int FindUnusedParticle();
   shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
+  shared_ptr<Missile> CreateMissileFromAssetGroup(
+    shared_ptr<GameAssetGroup> asset_group);
 
   // TODO: move to space partition.
   ObjPtr IntersectRayObjects(const vec3& position, 
@@ -562,6 +606,10 @@ class Resources {
   void RegisterOnFinishDialogEvent(const string& dialog_name, const string& callback);
   void RegisterOnFinishPhraseEvent(const string& dialog_name, 
     const string& phrase_name, const string& callback);
+  void RegisterOnHeightBelowEvent(float h, const string& callback);
+  void ProcessOnPlayerMoveEvent();
+
+  void Rest();
 
   vector<shared_ptr<Event>>& GetEvents();
 
@@ -587,7 +635,7 @@ class Resources {
   shared_ptr<DialogChain> GetNpcDialog(const string& target_name);
   void RunScriptFn(const string& script_name);
 
-  void SetCallback(string script_name, float seconds, 
+  void SetCallback(string script_name, vector<string> args, float seconds, 
     bool periodic = false);
   void GenerateOptimizedOctree();
   void StartQuest(const string& quest_name);
@@ -600,6 +648,7 @@ class Resources {
   char** GetCurrentDungeonLevel();
   void CreateDungeon(bool generate_dungeon = true);
   void CreateTown();
+  void CreateSafeZone();
   void DeleteAllObjects();
 
   bool UseQuadtree() { return use_quadtree_; }
@@ -614,6 +663,9 @@ class Resources {
 
   void GiveExperience(int exp_points);
   void AddSkillPoint();
+  int CreateRandomItem(int base_item_id);
+  void DropItem(const vec3& position);
+  ObjPtr Create3dParticleEffect(const string& asset_name, const vec3& pos);
 };
 
 #endif // __RESOURCES_HPP__

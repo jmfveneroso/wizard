@@ -285,7 +285,7 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     string name = (char*) cluster->GetLink()->GetName();
     if (joint_map.find(name) == joint_map.end()) {
       // throw runtime_error(string("Joint ") + name + " not found.");
-      // cout << "Joint " << name << " not found" << endl;
+      cout << "Joint " << name << " not found" << endl;
       continue;
     }
 
@@ -372,7 +372,7 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
       }
       animation.keyframes.push_back(keyframe);
     }
-    // cout << "Extracted animation " << animation.name << endl;
+    cout << "Extracted animation " << animation.name << endl;
     data->animations.push_back(animation);
   }
 }
@@ -397,8 +397,8 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   FbxData data = FbxLoad(filename);
   m.polygons = data.polygons;
 
-  GLuint buffers[6];
-  glGenBuffers(6, buffers);
+  GLuint buffers[8];
+  glGenBuffers(8, buffers);
 
   vector<vec3> vertices;
   vector<unsigned int> indices;
@@ -409,13 +409,13 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   m.num_indices = indices.size();
 
   glBindBuffer(GL_ARRAY_BUFFER, buffers[0]);
-  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), 
     &vertices[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
-  glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(glm::vec2), 
+  glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(vec2), 
     &data.uvs[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, buffers[2]);
-  glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(glm::vec3), 
+  glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(vec3), 
     &data.normals[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]); 
   glBufferData(
@@ -428,11 +428,41 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   glGenVertexArrays(1, &m.vao_);
   glBindVertexArray(m.vao_);
 
-  int num_slots = 4;
+  int num_slots = 6;
   BindBuffer(buffers[0], 0, 3);
   BindBuffer(buffers[1], 1, 2);
   BindBuffer(buffers[2], 2, 3);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]);
+
+  // Compute tangents and bitangents.
+  vector<vec3> tangents(vertices.size());
+  vector<vec3> bitangents(vertices.size());
+  for (int i = 0; i < vertices.size(); i += 3) {
+    vec3 delta_pos1 = vertices[i+1] - vertices[i+0];
+    vec3 delta_pos2 = vertices[i+2] - vertices[i+0];
+    vec2 delta_uv1 = data.uvs[i+1] - data.uvs[i+0];
+    vec2 delta_uv2 = data.uvs[i+2] - data.uvs[i+0];
+
+    float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+    vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+    vec3 bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+    tangents[i+0] = tangent;
+    tangents[i+1] = tangent;
+    tangents[i+2] = tangent;
+    bitangents[i+0] = bitangent;
+    bitangents[i+1] = bitangent;
+    bitangents[i+2] = bitangent;
+  }
+
+  glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
+  glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
+    &tangents[0], GL_STATIC_DRAW);
+  glBindBuffer(GL_ARRAY_BUFFER, buffers[5]);
+  glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
+    &bitangents[0], GL_STATIC_DRAW);
+
+  BindBuffer(buffers[4], 3, 3);
+  BindBuffer(buffers[5], 4, 3);
 
   vector<ivec3> bone_ids;
   vector<vec3> bone_weights;
@@ -442,16 +472,16 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
       bone_weights.push_back(data.bone_weights[data.indices[i]]);
     }
 
-    glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[6]);
     glBufferData(GL_ARRAY_BUFFER, bone_ids.size() * sizeof(glm::ivec3), 
       &bone_ids[0], GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, buffers[5]);
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[7]);
     glBufferData(GL_ARRAY_BUFFER, bone_weights.size() * sizeof(glm::vec3), 
       &bone_weights[0], GL_STATIC_DRAW);
 
     num_slots += 2;
-    BindBuffer(buffers[4], 3, 3);
-    BindBuffer(buffers[5], 4, 3);
+    BindBuffer(buffers[6], 5, 3);
+    BindBuffer(buffers[7], 6, 3);
   }
 
   glBindVertexArray(0);
@@ -492,10 +522,8 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
       }
       m.animations[animation.name].keyframes[frame].bounding_sphere =
         GetBoundingSphereFromVertices(vertices);
-
-      cout << m.animations[animation.name].keyframes[frame].bounding_sphere << endl;
     }
-    // cout << "Extracted animation 2: " << animation.name << endl;
+    cout << "Extracted animation 2: " << animation.name << endl;
   }
 
   for (int i = 0; i < data.joints.size(); i++) {

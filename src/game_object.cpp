@@ -14,17 +14,32 @@ void GameObject::Load(const string& in_name, const string& asset_name,
 
   // Mesh.
   shared_ptr<GameAsset> game_asset = GetAsset();
-  const string mesh_name = GetAsset()->lod_meshes[0];
-  shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
-  if (!mesh) {
-    throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
-  } else if (mesh->animations.size() > 0) {
-    active_animation = mesh->animations.begin()->first;
+  if (!game_asset->default_animation.empty()) {
+    active_animation = game_asset->default_animation;
+  } else {
+    const string mesh_name = game_asset->lod_meshes[0];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    } else if (mesh->animations.size() > 0) {
+      active_animation = mesh->animations.begin()->first;
+    } else {
+      for (shared_ptr<GameAsset> asset : asset_group->assets) {
+        const string mesh_name = asset->lod_meshes[0];
+        shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+        if (mesh->animations.size() > 0) {
+          if (!asset->default_animation.empty()) {
+            active_animation = asset->default_animation;
+          } else {
+            active_animation = mesh->animations.begin()->first;
+          }
+          break;
+        }
+      }
+    }
   }
 
-  // Attributes.
-  max_life = ProcessDiceFormula(game_asset->base_life);
-  life = ProcessDiceFormula(game_asset->base_life);
+  CalculateMonsterStats();
 
   resources_->AddGameObject(shared_from_this());
 }
@@ -66,6 +81,14 @@ void GameObject::Load(pugi::xml_node& xml) {
   }
 
   Load(name, asset_name, LoadVec3FromXml(position_xml));
+}
+
+void GameObject::CalculateMonsterStats() {
+  if (!asset_group) return;
+
+  // Life.
+  max_life = ProcessDiceFormula(GetAsset()->base_life) * level;
+  life = max_life;
 }
 
 BoundingSphere GameObject::GetBoundingSphere() {
@@ -119,6 +142,10 @@ shared_ptr<GameAsset> GameObject::GetAsset() {
     throw runtime_error(string("Asset group with no assets for object ") + name);
   }
   return asset_group->assets[0];
+}
+
+shared_ptr<GameAssetGroup> GameObject::GetAssetGroup() {
+  return asset_group;
 }
 
 shared_ptr<AABBTreeNode> GameObject::GetAABBTree() {
@@ -211,10 +238,23 @@ bool GameObject::IsItem() {
   return asset->type == ASSET_ITEM || type == GAME_OBJ_ACTIONABLE;
 }
 
+bool GameObject::IsRotatingPlank() {
+  return dungeon_piece_type == '/' || dungeon_piece_type == '\\';
+}
+
 bool GameObject::IsDungeonPiece() {
-  return dungeon_piece_type != '\0' && dungeon_piece_type != 'P' && 
-    dungeon_piece_type != 'D' && dungeon_piece_type != 'd' &&
-    dungeon_piece_type != 'G' && dungeon_piece_type != 'g';
+  switch (dungeon_piece_type) {
+    case ' ':
+    case '-':
+    case '|':
+    case '+':
+    case 'o':
+    case 'O':
+      return true;
+    default:
+      break;
+  }
+  return false;
 }
 
 bool GameObject::IsExtractable() {
@@ -256,7 +296,13 @@ bool GameObject::IsDarkness() {
 bool GameObject::Is3dParticle() {
   if (type != GAME_OBJ_PARTICLE) return false;
   if (!asset_group) return false;
-  return GetAsset()->name == "line";
+ 
+  shared_ptr<GameAsset> game_asset = GetAsset();
+  if (game_asset->shader == resources_->GetShader("3d_particle")) {
+    return true;
+  }
+
+  return game_asset->name == "line";
 }
 
 // mat4 GameObject::GetBoneTransform() {
@@ -465,7 +511,14 @@ void Region::ToXml(pugi::xml_node& parent) {
 
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
   ObjPtr obj;
-  if (asset_name == "door" || asset_name == "dungeon_door") {
+
+  // shared_ptr<GameAsset> asset = resources->GetAssetByName(asset_name);
+  // if (asset_name == "line") {
+  //   shared_ptr<Particle> particle = make_shared<Particle>(resources);
+  //   particle->particle_type = resources->GetParticleTypeByName("string-attack");
+  //   obj = particle;
+  // } else 
+  if (asset_name == "door" || asset_name == "dungeon_door" || asset_name == "mausoleum_door" || asset_name == "bedroll") {
     obj = make_shared<Door>(resources);
   // TODO: change to extract from xml.
   } else if (asset_name == "crystal" || asset_name == "metal-eye-dock" || asset_name == "chest") {
@@ -480,6 +533,32 @@ ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
     obj = make_shared<GameObject>(resources);
   }
   return obj;
+}
+
+void Sector::Load(const string& name, const vec3& position, 
+  const vec3& dimensions) {
+  this->name = name;
+  this->position = position;
+  aabb = AABB(vec3(0), dimensions);
+
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<unsigned int> indices;
+  vector<Polygon> polygons;
+  CreateCube(vertices, uvs, indices, polygons, dimensions);
+  Mesh m = CreateMesh(0, vertices, uvs, indices);
+
+  mesh_name = name;
+  resources_->AddMesh(mesh_name, m);
+
+  shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+  mesh->polygons = polygons;
+
+  bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
+  aabb = GetAABBFromPolygons(mesh->polygons); 
+
+  shared_ptr<OctreeNode> root = resources_->GetOctreeRoot();
+  resources_->InsertObjectIntoOctree(root, shared_from_this(), 0);
 }
 
 void Sector::Load(pugi::xml_node& xml) {
@@ -683,6 +762,7 @@ shared_ptr<Player> CreatePlayer(Resources* resources) {
   player->life = 10;
   player->name = "player";
   player->physics_behavior = PHYSICS_NORMAL;
+  player->mass = 100;
 
   // player->collision_type_ = COL_SPHERE;
   // player->bounding_sphere = BoundingSphere(vec3(0), 1.5f);
@@ -712,7 +792,16 @@ ObjPtr CreateGameObjFromAsset(Resources* resources,
   ObjPtr new_game_obj = CreateGameObj(resources, asset_name);
   new_game_obj->Load(name, asset_name, position);
   new_game_obj->CalculateCollisionData();
+
   return new_game_obj;
+}
+
+ObjPtr CreateMonster(Resources* resources, string asset_name, vec3 position, 
+  int level) {
+  ObjPtr obj = CreateGameObjFromAsset(resources, asset_name, position);
+  obj->level = level;
+  obj->CalculateMonsterStats();
+  return obj;
 }
 
 ObjPtr CreateSkydome(Resources* resources) {
@@ -788,6 +877,7 @@ bool GameObject::IsAsset(const string& asset_name) {
 }
 
 float GameObject::GetMass() {
+  if (mass > 0) return mass;
   if (!asset_group) return 1.0f;
   return GetAsset()->mass;
 }
@@ -941,6 +1031,7 @@ void GameObject::CalculateCollisionData() {
       cout << "Calculating AABB tree for " << name << endl;
 
       for (shared_ptr<GameAsset> game_asset : asset_group->assets) {
+        if (game_asset->GetCollisionType() != COL_PERFECT) continue;
         for (const Polygon& p : game_asset->collision_hull) {
           collision_hull.push_back(p);
         }
@@ -1205,6 +1296,8 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, bool tak
   // Reduce damage using armor class.
   if (IsPlayer()) {
     resources_->GetConfigs()->taking_hit = 30.0f;
+    if (resources_->GetConfigs()->invincible) return;
+
     damage *= 30 / (30 + resources_->GetConfigs()->armor_class);
   } else if (IsCreature()) {
     shared_ptr<CreatureAsset> creature =
@@ -1225,14 +1318,47 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, bool tak
 
     // Drop.
     if (IsDestructible()) {
-      unordered_map<int, ItemData>& item_data = resources_->GetItemData();
-
       status = STATUS_DEAD;
-      int r = Random(0, 3);
-      vec3 pos = position + vec3(0, 5.0f, 0);
-      ObjPtr obj = CreateGameObjFromAsset(resources_, 
-        item_data[13 + r].asset_name, pos);
-      obj->CalculateCollisionData();
+      if (GetAsset()->name == "mana_crystal") {
+        unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+
+        int r = Random(0, 3);
+        vec3 pos = position + vec3(0, 5.0f, 0);
+        ObjPtr obj = CreateGameObjFromAsset(resources_, 
+          item_data[13 + r].asset_name, pos);
+        obj->CalculateCollisionData();
+      } else if (GetAsset()->name == "exploding_pod") {
+        unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+        resources_->CreateParticleEffect(16, position, vec3(0, 1, 0), 
+          vec3(1.0, 1.0, 1.0), 0.25, 32.0f, 3.0f);
+
+        int r = Random(0, 5);
+        switch (r) {
+          case 0: {
+            resources_->CastFireExplosion(nullptr, position, vec3(0));
+            break;
+          }
+          case 1: {
+            const int item_id = 10;
+            const int quantity = 100;
+            ObjPtr obj = CreateGameObjFromAsset(resources_, 
+              item_data[item_id].asset_name, position + vec3(0, 5.0f, 0));
+            obj->CalculateCollisionData();
+            obj->quantity = quantity;
+            break;
+          }
+          case 2: {
+            ObjPtr spiderling = CreateGameObjFromAsset(resources_, "spiderling", position);
+            spiderling->ai_state = AI_ATTACK;
+            spiderling->summoned = true;
+            resources_->GetConfigs()->summoned_creatures++;
+            break;
+          }
+          default: {
+            break;
+          }
+        }
+      }
     } else if (IsPlayer()) {
       status = STATUS_DEAD;
       frame = 0;
@@ -1261,4 +1387,42 @@ void GameObject::RangedAttack(shared_ptr<GameObject> obj, vec3 normal) {
     damage = ProcessDiceFormula(GetAsset()->base_ranged_attack);
   }
   obj->DealDamage(shared_from_this(), damage, normal);
+}
+
+bool GameObject::IsInvisible() {
+  if (!asset_group) return invisibility;
+  if (invisibility) return true;
+  return GetAsset()->invisibility;
+}
+
+bool GameObject::IsSecret() {
+  if (!asset_group) return false;
+  return GetAsset()->name == "dungeon_secret_wall";
+}
+
+int GameObject::GetItemId() {
+  if (item_id != -1) return item_id; 
+  if (!asset_group) return -1;
+  return GetAsset()->item_id;
+}
+
+bool GameObject::IsPartiallyTransparent() {
+  if (!asset_group) return false;
+
+  GLuint transparent_shader = resources_->GetShader("transparent_object");
+  GLuint animated_transparent_shader = resources_->GetShader("animated_transparent_object");
+  for (auto asset : asset_group->assets) {
+    if (asset->shader == transparent_shader || 
+        asset->shader == animated_transparent_shader) {
+      return true;
+    }
+  }
+  return false;
+}
+
+shared_ptr<Missile> CreateMissile(Resources* resources, const string& asset_name) {
+  std::cout << "Creating missile" << std::endl;
+  shared_ptr<Missile> new_game_obj = make_shared<Missile>(resources);
+  new_game_obj->Load(resources->GetRandomName(), asset_name, vec3(0));
+  return new_game_obj;
 }

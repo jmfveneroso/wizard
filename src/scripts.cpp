@@ -214,6 +214,29 @@ static PyObject* register_on_finish_phrase_event(PyObject *self, PyObject *args)
   return PyBool_FromLong(0);
 }
 
+static PyObject* register_on_height_below_event(PyObject *self, PyObject *args) {
+  cout << "(1) Register on height below" << endl;
+  char* c_ptr1; 
+  char* c_ptr2; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "ss", &c_ptr1, &c_ptr2)) return NULL;
+
+  if (!c_ptr1 || !c_ptr2) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  string s2 = reinterpret_cast<char*>(c_ptr2);
+  if (!gResources) {
+    return NULL;
+  }
+
+  float f = boost::lexical_cast<float>(s1);
+
+  gResources->RegisterOnHeightBelowEvent(f, s2);
+  cout << "Register on height below" << endl;
+  return PyBool_FromLong(0);
+}
+
 static PyObject* push_action(PyObject *self, PyObject *args) {
   char* c_ptr1; 
   char* c_ptr2; 
@@ -472,7 +495,7 @@ static PyObject* register_callback(PyObject *self, PyObject *args) {
   if (!gResources) return NULL;
 
   float seconds = boost::lexical_cast<float>(s2);
-  gResources->SetCallback(s1, seconds, false);
+  gResources->SetCallback(s1, {}, seconds, false);
   return PyBool_FromLong(0);
 }
 
@@ -495,7 +518,7 @@ static PyObject* register_periodic(PyObject *self, PyObject *args) {
   }
 
   float seconds = boost::lexical_cast<float>(s2);
-  gResources->SetCallback(s1, seconds, true);
+  gResources->SetCallback(s1, {}, seconds, true);
 
   return PyBool_FromLong(0);
 }
@@ -733,13 +756,10 @@ static PyObject* unit_is_visible(PyObject *self, PyObject *args) {
 }
 
 static PyObject* random_number(PyObject *self, PyObject *args) {
-  cout << "I am here" << endl;
   long low, high;
   if (!PyArg_ParseTuple(args, "ll", &low, &high)) return NULL;
-  cout << "I am there" << endl;
 
   long num = Random(low, high);
-  cout << "But where" << endl;
   return PyLong_FromLong(num);
 }
 
@@ -759,6 +779,26 @@ static PyObject* get_prev_action(PyObject *self, PyObject *args) {
     prev_action = ActionTypeToStr(obj->prev_action->type);
   }
   return PyUnicode_FromString(prev_action.c_str());
+}
+
+static PyObject* disable_levitation(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  obj->levitating = false;
+  return PyBool_FromLong(0);
+}
+
+static PyObject* rest(PyObject *self, PyObject *args) {
+  gResources->Rest();
+  return PyBool_FromLong(0);
 }
 
 static PyMethodDef EmbMethods[] = {
@@ -814,10 +854,14 @@ static PyMethodDef EmbMethods[] = {
    "Register on unit die event" },
  { "register_oncollision_event", register_oncollision_event, METH_VARARGS,  
    "Register on collision event" },
+ { "register_on_height_below_event", register_on_height_below_event, 
+   METH_VARARGS, "Register on height below event" },
  { "enter_dungeon", enter_dungeon, METH_VARARGS, "Enter dungeon" },
  { "unit_is_visible", unit_is_visible, METH_VARARGS, "Unit is visible" },
  { "random_number", random_number, METH_VARARGS, "Random number" },
  { "get_prev_action", get_prev_action, METH_VARARGS, "Get previous action" },
+ { "disable_levitation", disable_levitation, METH_VARARGS, "Disable levitation" },
+ { "rest", rest, METH_VARARGS, "Rest" },
  { NULL, NULL, 0, NULL }
 };
 
