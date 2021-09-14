@@ -106,26 +106,20 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 frag_pos,
 }
 
 void main(){
-  vec3 diffuse_color = vec3(0.0);
-
-  // float weight = 0.01f;
-  // if (any(lessThan(in_data.barycentric, vec3(weight)))){
-  //   diffuse_color = vec3(0.0);
-  // } else {
-  //   diffuse_color = vec3(1.0);
-  // }
-
-  diffuse_color = texture(texture_sampler, in_data.UV).rgb;
+  vec3 diffuse_color = texture(texture_sampler, in_data.UV).rgb;
 
   vec3 light_color = vec3(1.0, 1.0, 1.0);
   float light_power = 1.0;
 
   vec3 ambient_color = lighting_color * diffuse_color;
+  // vec3 ambient_color = light_color * diffuse_color;
 
   vec3 out_color = ambient_color;
 
-  float sun_intensity = outdoors * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
-  // float sun_intensity = 0.2 * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
+  float sun_intensity = 1.0;
+  if (outdoors > 0.0f) {
+    sun_intensity = outdoors * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
+  }
 
   if (enable_bump_map > 0) {
     vec3 tex_normal_tangentspace = normalize(texture(bump_map_sampler, 
@@ -164,10 +158,17 @@ void main(){
     }
   }
 
-  float d = distance(player_pos, in_data.position);
-  float depth = clamp(d / light_radius, 0, 1);
-  vec3 fog_color = outdoors * out_color + vec3(0, 0, 0);
-  out_color = mix(out_color, fog_color, depth);
+  if (outdoors > 0.0f) {
+    float d = distance(player_pos, in_data.position);
+    float depth = clamp(d / light_radius, 0, 1);
+    vec3 fog_color = outdoors * out_color + vec3(0, 0, 0);
+    out_color = mix(out_color, fog_color, depth);
+  } else {
+    float d = distance(player_pos, in_data.position);
+    float depth = clamp(d / light_radius, 0, 1);
+    vec3 fog_color = vec3(0, 0, 0);
+    out_color = mix(out_color, fog_color, depth);
+  }
 
   color = vec4(out_color, 1.0);
 }

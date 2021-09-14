@@ -1,4 +1,5 @@
 #include "util.hpp"
+#include <tga.h>
 #include <boost/algorithm/string/replace.hpp>
 
 GLuint GetUniformId(GLuint program_id, string name) {
@@ -105,6 +106,53 @@ GLuint LoadPng(const char* file_name, bool poor_filtering) {
 
   glBindTexture(GL_TEXTURE_2D, 0);
   return texture_id;
+}
+
+GLuint LoadTga(const char* file_name, bool poor_filtering) {
+  TGA *in = TGAOpen(file_name, "r");
+  TGAData data;
+  bzero(&data, sizeof(data));
+  data.flags = TGA_IMAGE_ID | TGA_IMAGE_DATA | TGA_RGB;
+
+  TGAReadImage(in, &data);
+  if (!TGA_SUCCEEDED(in)) {
+    throw runtime_error(TGAStrError(in));
+  }
+
+  const int width = in->hdr.width;
+  const int height = in->hdr.height;
+
+  // Create one OpenGL texture
+  GLuint texture_id;
+  glGenTextures(1, &texture_id);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, 
+    GL_UNSIGNED_BYTE, (char*) data.img_data);
+  
+  // Poor filtering, or ...
+  if (poor_filtering) {
+    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
+  } else {
+    // Nice trilinear filtering ...
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  }
+  glGenerateMipmap(GL_TEXTURE_2D);
+
+  glBindTexture(GL_TEXTURE_2D, 0);
+  return texture_id;
+}
+
+GLuint LoadTexture(const char* file_name, bool poor_filtering) {
+  if (boost::ends_with(file_name, ".png")) {
+    return LoadPng(file_name, poor_filtering);
+  } else if (boost::ends_with(file_name, ".tga")) {
+    return LoadTga(file_name, poor_filtering);
+  }
+  return 0;
 }
 
 GLuint LoadShader(const std::string& directory, const std::string& name) {

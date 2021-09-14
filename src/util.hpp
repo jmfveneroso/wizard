@@ -60,7 +60,8 @@ enum MissileType {
   MISSILE_FIREBALL,
   MISSILE_BOUNCYBALL,
   MISSILE_HOOK,
-  MISSILE_ACID_ARROW
+  MISSILE_ACID_ARROW,
+  MISSILE_SPELL_SHOT,
 };
 
 enum PhysicsBehavior {
@@ -412,6 +413,8 @@ const int kDungeonCells = 6;
 GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
 GLuint LoadPng(const char* file_name, bool poor_filtering=false);
+GLuint LoadTga(const char* file_name, bool poor_filtering=false);
+GLuint LoadTexture(const char* file_name, bool poor_filtering=false);
 GLuint LoadShader(const std::string& directory, const std::string& name);
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
 vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);

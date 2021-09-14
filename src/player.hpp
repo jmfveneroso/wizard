@@ -26,13 +26,13 @@ class PlayerInput {
   GLFWwindow* window_ = nullptr;
 
   void Extract(const Camera& c);
-  void InteractWithItem(GLFWwindow* window, const Camera& c, 
+  bool InteractWithItem(GLFWwindow* window, const Camera& c, 
     bool interact = false);
   void EditTerrain(GLFWwindow* window, const Camera& c);
   void Build(GLFWwindow* window, const Camera& c);
   void PlaceObject(GLFWwindow* window, const Camera& c);
   void EditObject(GLFWwindow* window, const Camera& c);
-  void CastSpellOrUseItem();
+  bool CastSpellOrUseItem();
   void ProcessPlayerCasting();
 
  public:

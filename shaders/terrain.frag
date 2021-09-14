@@ -212,7 +212,6 @@ void main() {
         if (shadow < 0.99) {
           visibility -= 0.2;
         }
-        // visibility -= 0.4 * (1.0 - shadow);
       }
     } else if (in_data.shadow_coord1.x > 0 && in_data.shadow_coord1.x < 1 &&
         in_data.shadow_coord1.y > 0 && in_data.shadow_coord1.y < 1) {
@@ -225,7 +224,6 @@ void main() {
         if (shadow < 0.99) {
           visibility -= 0.2;
         }
-        // visibility -= 0.4 * (1.0 - shadow);
       }
     } else if (in_data.shadow_coord2.x > 0 && in_data.shadow_coord2.x < 1 &&
         in_data.shadow_coord2.y > 0 && in_data.shadow_coord2.y < 1) {
@@ -238,7 +236,6 @@ void main() {
         if (shadow < 0.99) {
           visibility -= 0.2;
         }
-        // visibility -= 0.4 * (1.0 - shadow);
       }
     }
   }

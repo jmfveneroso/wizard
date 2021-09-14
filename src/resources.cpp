@@ -32,6 +32,7 @@ void Resources::Init() {
   player_ = CreatePlayer(this);
 
   LoadShaders(shaders_dir_);
+
   LoadMeshes(directory_ + "/models_fbx");
   LoadAssets(directory_ + "/assets");
   // LoadConfig(directory_ + "/config.xml");
@@ -259,7 +260,8 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
     const string& texture_filename = xml_texture.text().get();
     if (textures_.find(texture_filename) == textures_.end()) {
       string name = xml_texture.attribute("name").value();
-      GLuint texture_id = LoadPng(texture_filename.c_str());
+
+      GLuint texture_id = LoadTexture(texture_filename.c_str());
       textures_[name] = texture_id;
       particle_type->texture_id = texture_id;
     }
@@ -284,7 +286,7 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
     GLuint texture_id = 0;
     bool poor_filtering = xml_texture.attribute("poor-filtering");
     if (textures_.find(texture_filename) == textures_.end()) {
-      texture_id = LoadPng(texture_filename.c_str());
+      texture_id = LoadTexture(texture_filename.c_str());
       textures_[texture_filename] = texture_id;
     } else {
       texture_id = textures_[texture_filename];
@@ -371,9 +373,9 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
     if (abs(object->position[i] - octree_node->center[i]) <
         octree_node->half_dimensions[i]) continue;
 
-    cout << "Object " << object->name << " at pos " << object->position <<
-            " cannot be inserted in the octree with bounding sphere "
-            << bounding_sphere << endl;
+    // cout << "Object " << object->name << " at pos " << object->position <<
+    //         " cannot be inserted in the octree with bounding sphere "
+    //         << bounding_sphere << endl;
     straddle = 1;
     // ThrowError("Object ", object->name, " at position ", object->position, 
     // ThrowError("Object ", object->name, " at position ", object->position, 
@@ -481,10 +483,8 @@ void Resources::AddGameObject(ObjPtr game_obj) {
 void Resources::InitMissiles() {
   // Set a higher number of missiles. Maybe 256.
   for (int i = 0; i < 64; i++) {
-    // shared_ptr<GameAssetGroup> asset_group = GetAssetGroupByName("magic-missile-000");
-    shared_ptr<Missile> new_missile = CreateMissile(this, "magic-missile-000");
+    shared_ptr<Missile> new_missile = CreateMissile(this, "magic_missile");
     new_missile->life = 0;
-    // missiles_[new_missile->name] = new_missile;
     missiles_.push_back(new_missile);
   }
 }
@@ -522,35 +522,35 @@ void Resources::Cleanup() {
   }
 }
 
-shared_ptr<Missile> Resources::CreateMissileFromAssetGroup(
-  shared_ptr<GameAssetGroup> asset_group) {
-  shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
-
-  // new_game_obj->position = vec3(0, 0, 0);
-  // new_game_obj->asset_group = asset_group;
-
-  // shared_ptr<Sector> outside = GetSectorByName("outside");
-  // new_game_obj->current_sector = outside;
-
-  // new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
-  // AddGameObject(new_game_obj);
-  return new_game_obj;
-}
-
-shared_ptr<Missile> Resources::CreateMissileFromAsset(
-  shared_ptr<GameAsset> game_asset) {
-  shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
-
-  // new_game_obj->position = vec3(0, 0, 0);
-  // new_game_obj->asset_group = CreateAssetGroupForSingleAsset(this, game_asset);
-
-  // shared_ptr<Sector> outside = GetSectorByName("outside");
-  // new_game_obj->current_sector = outside;
-
-  // new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
-  // AddGameObject(new_game_obj);
-  return new_game_obj;
-}
+// shared_ptr<Missile> Resources::CreateMissileFromAssetGroup(
+//   shared_ptr<GameAssetGroup> asset_group) {
+//   shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
+// 
+//   // new_game_obj->position = vec3(0, 0, 0);
+//   // new_game_obj->asset_group = asset_group;
+// 
+//   // shared_ptr<Sector> outside = GetSectorByName("outside");
+//   // new_game_obj->current_sector = outside;
+// 
+//   // new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
+//   // AddGameObject(new_game_obj);
+//   return new_game_obj;
+// }
+// 
+// shared_ptr<Missile> Resources::CreateMissileFromAsset(
+//   shared_ptr<GameAsset> game_asset) {
+//   shared_ptr<Missile> new_game_obj = make_shared<Missile>(this);
+// 
+//   // new_game_obj->position = vec3(0, 0, 0);
+//   // new_game_obj->asset_group = CreateAssetGroupForSingleAsset(this, game_asset);
+// 
+//   // shared_ptr<Sector> outside = GetSectorByName("outside");
+//   // new_game_obj->current_sector = outside;
+// 
+//   // new_game_obj->name = "missile-" + boost::lexical_cast<string>(id_counter_ + 1);
+//   // AddGameObject(new_game_obj);
+//   return new_game_obj;
+// }
 
 shared_ptr<Waypoint> Resources::CreateWaypoint(vec3 position, string name) {
   shared_ptr<Waypoint> new_game_obj = make_shared<Waypoint>(this);
@@ -744,6 +744,28 @@ int Resources::FindUnusedParticle(){
   return 0; // All particles are taken, override the first one
 }
 
+shared_ptr<Particle> Resources::CreateOneParticle(vec3 pos, float life, 
+  const string& type, float size) {
+  int particle_index = FindUnusedParticle();
+  shared_ptr<Particle> p = particle_container_[particle_index];
+
+  p->frame = 0;
+
+  p->position = pos;
+  p->target_position = pos;
+
+  p->particle_type = GetParticleTypeByName(type);
+  p->size = size;
+
+  p->life = life;
+  p->max_life = p->life;
+  
+  p->speed = vec3(0);
+  p->collision_type_ = COL_NONE;
+  p->physics_behavior = PHYSICS_NONE;
+  return p;
+}
+
 // TODO: move to particle file.
 void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
   vec3 color, float size, float life, float spread, const string& type) {
@@ -763,6 +785,8 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
     p->position = pos;
     p->target_position = pos;
     p->color = vec4(color, 0.0f);
+    p->associated_obj = nullptr;
+    p->associated_bone = -1;
 
     p->particle_type = GetParticleTypeByName(type);
     if (size < 0) {
@@ -794,6 +818,16 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
 
 // TODO: this should definitely go elsewhere. 
 void Resources::CreateChargeMagicMissileEffect() {
+  ObjPtr obj = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : obj->bones) {
+    shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
+      "particle-sparkle", 0.5f);
+    p->associated_obj = obj;
+    p->offset = vec3(0);
+    p->associated_bone = bone_id;
+  }
+  return;
+
   int particle_index = FindUnusedParticle();
   shared_ptr<Particle> p = particle_container_[particle_index];
   p->frame = 0;
@@ -814,12 +848,36 @@ void Resources::CreateChargeMagicMissileEffect() {
   AddGameObject(new_particle_group);
 }
 
+void Resources::UpdateHand() {
+  shared_ptr<GameObject> obj = GetObjectByName("hand-001");
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    player_->rotation.y + 4.71f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    player_->rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  obj->position = player_->position;
+}
+
 // TODO: move to particle file. Maybe physics.
 void Resources::UpdateParticles() {
   Lock();
   for (int i = 0; i < kMaxParticles; i++) {
     shared_ptr<Particle> p = particle_container_[i];
-    if (--p->life < 0) {
+
+    if (p->scale_in < 1.0f) {
+      p->scale_in += 0.05f;
+    } else if (p->life <= 0 && p->scale_out > 0.0f) {
+      p->scale_out -= 0.05f;
+    } else if (--p->life < 0) {
+      // TODO: p->Reset();
+      p->scale_in = 1.0f;
+      p->scale_out = 0.0f;
       p->life = -1;
       p->particle_type = nullptr;
       p->frame = 0;
@@ -827,13 +885,40 @@ void Resources::UpdateParticles() {
       p->physics_behavior = PHYSICS_NONE;
       p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
       p->owner = nullptr;
+      p->associated_obj = nullptr;
       p->hit_list.clear();
       continue;
     }
 
     if (p->particle_type == nullptr) continue;
     if (int(p->life) % p->particle_type->keep_frame == 0) {
-      p->frame++;
+      if (p->invert) {
+        p->frame--;
+      } else {
+        p->frame++;
+      }
+    }
+
+    if (p->frame >= p->particle_type->num_frames) {
+      p->frame = p->particle_type->num_frames - 1;
+      p->invert = true;
+    }
+   
+    if (p->frame < 0) {
+      p->frame = 0;
+      p->invert = false;
+    }
+
+    if (p->associated_obj) {
+      if (p->associated_bone != -1) {
+        BoundingSphere s = p->associated_obj->GetBoneBoundingSphere(
+          p->associated_bone);
+        p->position = s.center + p->offset;
+        p->position = s.center;
+      } else {
+        p->position = p->associated_obj->position + p->offset;
+      }
+      p->speed = vec3(0.0f);
     }
 
     if (p->particle_type->behavior == PARTICLE_FALL) {
@@ -849,6 +934,7 @@ void Resources::UpdateParticles() {
     }
   }
 
+  float d = GetDeltaTime() / 0.016666f;
   for (int i = 0; i < kMax3dParticles; i++) {
     shared_ptr<Particle> p = particles_3d_[i];
     p->life -= 1.0f;
@@ -869,6 +955,10 @@ void Resources::UpdateParticles() {
     }
     if (p->particle_type == nullptr) continue;
 
+    if (p->associated_obj) {
+      p->position = p->associated_obj->position;
+    }
+
     if (int(p->life) % p->particle_type->keep_frame == 0) {
       p->frame++;
     }
@@ -888,7 +978,7 @@ void Resources::UpdateParticles() {
       MeshPtr mesh = GetMeshByName(p->existing_mesh_name);
       const Animation& animation = mesh->animations[p->active_animation];
 
-      p->animation_frame += 1;
+      p->animation_frame += 1.0f * d * p->animation_speed;
       if (p->animation_frame >= animation.keyframes.size()) {
         p->animation_frame = 0;
       }
@@ -903,12 +993,24 @@ void Resources::UpdateParticles() {
 }
 
 void Resources::UpdateMissiles() {
-  // TODO: maybe could be part of physics.
   for (const auto& missile : missiles_) {
-    if (missile->life < 0) continue;
+    if (missile->scale_in < 1.0f) {
+      missile->scale_in += 0.2f;
+      continue;
+    }
+
+    if (missile->life <= 0) {
+      if (missile->scale_out > 0.0f) {
+        missile->scale_out -= 0.2f;
+        continue;
+      }
+    }
 
     missile->life -= 1;
-    if (missile->life < 0) {
+    if (missile->life <= 0) {
+      // TODO: missile->Reset();
+      missile->scale_in = 1.0f;
+      missile->scale_out = 0.0f;
       // Dieded.
       if (missile->type == MISSILE_BOUNCYBALL) {
         CreateParticleEffect(15, missile->position, vec3(0, 3, 0), 
@@ -1460,17 +1562,23 @@ void Resources::CalculateCollisionData(bool recalculate) {
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
       case GAME_OBJ_DEFAULT:
+      case GAME_OBJ_MISSILE:
         break;
       default:
         continue;
     }
 
-    if (name == "hand-001" || name == "skydome" || name == "player") continue;
+    if (name == "skydome" || name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
 
+
     obj->CalculateCollisionData();
+
+    if (name == "hand-001") {
+      obj->collision_type_ = COL_NONE;
+    }
 
     // if (obj->name == "portal-001") {
     //   CreateGameObjFromPolygons(this, obj->collision_hull, "portal-hull", 
@@ -2643,7 +2751,12 @@ void Resources::UpdateAnimationFrames() {
 
     const Animation& animation = mesh->animations[obj->active_animation];
     if (obj->status != STATUS_DEAD) {
-      obj->frame += 1.0f * d;
+      float animation_speed = 1.0f;
+      if (obj->asset_group != nullptr) {
+        animation_speed = obj->GetAsset()->animation_speed;
+      }
+
+      obj->frame += 1.0f * d * animation_speed;
       if (obj->frame >= animation.keyframes.size()) {
         obj->frame = 0;
       }
@@ -2754,10 +2867,31 @@ void Resources::ProcessTempStatus() {
   } else {
     configs_->player_speed = configs_->max_player_speed / 5.0f;
   }
+
+  if (player->running) {
+    player->stamina -= 0.9f;
+    configs_->player_speed *= 2.0f;
+  }
+
   configs_->light_radius = 90.0f;
   configs_->reach = 20.0f;
   configs_->darkvision = false;
   configs_->see_invisible = false;
+
+  if (player->stamina <= 0.0f) {
+    player->stamina = 0.0f;
+    player->recover_stamina += 0.3f;
+    if (player->recover_stamina >= player->max_stamina) {
+      player->stamina = player->max_stamina;
+      player->recover_stamina = 0.0f;
+    }
+  } else {
+    player->recover_stamina = 0.0f;
+    player->stamina += 0.3f;
+    if (player->stamina > player->max_stamina) { 
+      player->stamina = player->max_stamina;
+    }
+  }
 
   for (auto& [status_type, temp_status] : player->temp_status) {
     if (temp_status->duration == 0) continue;
@@ -2832,6 +2966,10 @@ void Resources::ProcessTempStatus() {
     }
     configs_->armor_class += data.armor_class_bonus;
   }
+
+  if (player->stamina <= 0.01f) {
+    configs_->player_speed *= 0.5f;
+  }
 }
 
 void Resources::ProcessRotatingPlanksOrientation() {
@@ -2881,6 +3019,7 @@ void Resources::RunPeriodicEvents() {
   ProcessSpawnPoints();
   UpdateAnimationFrames();
   UpdateExpirables();
+  UpdateHand();
   UpdateParticles();
   UpdateFrameStart();
   UpdateMissiles();
@@ -2889,6 +3028,14 @@ void Resources::RunPeriodicEvents() {
   ProcessRotatingPlanksOrientation();
 
   // TODO: create time function.
+  if (configs_->render_scene == "dungeon") {
+    configs_->time_of_day = 12.0f;
+    // float radians = configs_->time_of_day * ((2.0f * 3.141592f) / 24.0f);
+    // configs_->sun_position = 
+    //   vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
+    //   vec4(0.0f, -1.0f, 0.0f, 1.0f));
+  }
+
   if (!configs_->stop_time) {
     // 1 minute per second.
     configs_->time_of_day += (1.0f / (60.0f * 60.0f));
@@ -2970,6 +3117,8 @@ void Resources::DeleteAllObjects() {
   InitMissiles();
   InitParticles();
 }
+
+
 
 ObjPtr CreateRoom(Resources* resources, const string& asset_name, 
   vec3 position, int rotation) {
@@ -3071,41 +3220,20 @@ void Resources::CreateDungeon(bool generate_dungeon) {
       vec3 pos = kDungeonOffset + vec3(room_x, y, room_z);
 
       switch (dungeon_map[x][z]) { 
+        // case ' ': {
+        //   tile = CreateRoom(this, "dungeon_floor", pos, 0);
+        //   break;
+        // }
         case '+': {
-          tile = CreateRoom(this, "dungeon_corner", pos, 0);
-          break;
-        }
-        case '&': {
-          tile = CreateRoom(this, "dungeon_secret_wall", pos, 0);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
-        case '@':
-        case ' ': {
-          tile = CreateRoom(this, "dungeon_floor", pos, 0);
-          break;
-        }
-        case '1': 
-        case '2': 
-        case '3': 
-        case '4': {
-          tile = CreateRoom(this, "dungeon_pre_platform", pos, 0);
-          break;
-        }
-        case '^': {
-          tile = CreateRoom(this, "dungeon_hanging_floor", pos, 0);
+          // tile = CreateRoom(this, "dungeon_corner", pos, 0);
           break;
         }
         case '|': {
-          tile = CreateRoom(this, "dungeon_corner", pos, 0);
-          // tile = CreateDungeonRoom(this, "dungeon_wall", pos, 0);
+          // tile = CreateRoom(this, "dungeon_corner", pos, 0);
           break;
         }
         case '-': {
-          tile = CreateRoom(this, "dungeon_corner", pos, 0);
-          // tile = CreateDungeonRoom(this, "dungeon_wall", pos, 1);
+          // tile = CreateRoom(this, "dungeon_corner", pos, 0);
           break;
         }
         case 'o': {
@@ -3122,50 +3250,52 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           tile3->dungeon_tile = ivec2(x, z);
           break;
         }
-        case 'P': {
-          tile = CreateRoom(this, "dungeon_pillar", pos, 1);
+        case 'A': {
+          tile = CreateRoom(this, "dungeon_arch_corner_top_left", pos, 0);
           break;
         }
-        case 'd': {
-          tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
-          tile2 = CreateRoom(this, "dungeon_door", pos, 0);
-          if (Random(0, 4) == 0) {
-            shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
-            d->state = DOOR_WEAK_LOCK;
-          }
+        case 'B': {
+          tile = CreateRoom(this, "dungeon_arch_corner_bottom_left", pos, 0);
+          break;
+        }
+        case 'F': {
+          tile = CreateRoom(this, "dungeon_arch_corner_bottom_right", pos, 0);
+          break;
+        }
+        case 'N': {
+          tile = CreateRoom(this, "dungeon_arch_corner_top_right", pos, 0);
+          break;
+        }
+        // case 'P': {
+        //   tile = CreateRoom(this, "dungeon_pillar", pos, 1);
+        //   break;
+        // }
+        // case 'd': {
+        //   tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
+        //   // tile2 = CreateRoom(this, "dungeon_door", pos, 0);
+        //   // if (Random(0, 4) == 0) {
+        //   //   shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
+        //   //   d->state = DOOR_WEAK_LOCK;
+        //   // }
 
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
-        case 'D': {
-          tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
-          tile2 = CreateRoom(this, "dungeon_door", pos, 1);
-          if (Random(0, 4) == 0) {
-            shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
-            d->state = DOOR_WEAK_LOCK;
-          }
+        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+        //   tile3->dungeon_piece_type = dungeon_map[x][z];
+        //   tile3->dungeon_tile = ivec2(x, z);
+        //   break;
+        // }
+        // case 'D': {
+        //   tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
+        //   tile2 = CreateRoom(this, "dungeon_door", pos, 1);
+        //   if (Random(0, 4) == 0) {
+        //     shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
+        //     d->state = DOOR_WEAK_LOCK;
+        //   }
 
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
-        case 'g': {
-          tile = CreateRoom(this, "dungeon_arch_gate", pos, 0);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
-        case 'G': {
-          tile = CreateRoom(this, "dungeon_arch_gate", pos, 1);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
+        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+        //   tile3->dungeon_piece_type = dungeon_map[x][z];
+        //   tile3->dungeon_tile = ivec2(x, z);
+        //   break;
+        // }
         case '<': {
           ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_platform_up", pos + vec3(5, 0, 5));
           obj->CalculateCollisionData();
@@ -3174,6 +3304,43 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case '>': {
           ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_platform_down", pos+ vec3(5, 0, 5));
           obj->CalculateCollisionData();
+          break;
+        }
+        // case 'g': {
+        //   tile = CreateRoom(this, "dungeon_arch_gate", pos, 0);
+        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+        //   tile3->dungeon_piece_type = dungeon_map[x][z];
+        //   tile3->dungeon_tile = ivec2(x, z);
+        //   break;
+        // }
+        // case 'G': {
+        //   tile = CreateRoom(this, "dungeon_arch_gate", pos, 1);
+        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+        //   tile3->dungeon_piece_type = dungeon_map[x][z];
+        //   tile3->dungeon_tile = ivec2(x, z);
+        //   break;
+        // }
+        case 'p': {
+          tile = CreateRoom(this, "dungeon_high_ceiling", pos + vec3(15, 0, 15), 0);
+          break;
+        }
+        case '^': {
+          tile = CreateRoom(this, "dungeon_hanging_floor", pos, 0);
+          break;
+        }
+        case '&': {
+          tile = CreateRoom(this, "dungeon_secret_wall", pos, 0);
+          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
+          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_tile = ivec2(x, z);
+          break;
+        }
+        case '@':
+        case '1': 
+        case '2': 
+        case '3': 
+        case '4': {
+          tile = CreateRoom(this, "dungeon_pre_platform", pos, 0);
           break;
         }
         case '(': {
@@ -3527,7 +3694,7 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   if (xml_node) player_->life = LoadFloatFromXml(xml_node);
 
   configs_->respawn_point = vec3(10045, 500, 10015);
-  configs_->max_player_speed = 0.03;
+  configs_->max_player_speed = 0.02;
   configs_->jump_force = 0.3;
 
   const pugi::xml_node& game_flags_xml = xml.child("game-flags");
@@ -3587,7 +3754,6 @@ void Resources::LoadConfig(const std::string& xml_filename) {
       }
 
       const string& asset_name = asset_xml.text().get();
-      cout << "Creating game object: " << asset_name << endl;
       ObjPtr new_game_obj = CreateGameObj(this, asset_name);
       new_game_obj->Load(game_obj_xml);
 
@@ -3757,46 +3923,6 @@ void Resources::CastBouncyBall(ObjPtr owner, const vec3& position,
   }
 }
 
-// TODO: this should probably go to spells.cc.
-void Resources::CastMagicMissile(const Camera& camera) {
-  shared_ptr<Missile> obj = nullptr;
-  for (const auto& missile : missiles_) {
-    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
-      obj = missile;
-      break;
-    }
-  }
-
-  if (obj == nullptr) {
-    obj = missiles_[0];
-  }
-
-  obj->life = 10000;
-  obj->owner = player_;
-  obj->type = MISSILE_MAGIC_MISSILE;
-  obj->physics_behavior = PHYSICS_UNDEFINED;
-
-  vec3 left = normalize(cross(camera.up, camera.direction));
-  obj->position = camera.position + camera.direction * 0.5f + left * -0.81f +  
-    camera.up * -0.556f;
-
-  vec3 p2 = camera.position + camera.direction * 3000.0f;
-  obj->speed = normalize(p2 - obj->position) * 4.0f;
-
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    camera.rotation.y + 4.70f,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    camera.rotation.x,
-    vec3(0.0f, 0.0f, 1.0f)
-  );
-  obj->rotation_matrix = rotation_matrix;
-  UpdateObjectPosition(obj);
-}
-
 void Resources::CastBurningHands(const Camera& camera) {
   vec3 right = normalize(cross(camera.direction, camera.up));
   vec3 up = cross(right, camera.direction);
@@ -3907,7 +4033,6 @@ void Resources::CastStringAttack(ObjPtr owner, const vec3& position,
 
 void Resources::CastFireExplosion(ObjPtr owner, const vec3& position, 
   const vec3& direction) {
-  cout << "Fire explosion" << endl;
   vec3 pos = position;
   if (length(direction) > 0.1f) {
     pos += direction * 40.0f;
@@ -3923,9 +4048,40 @@ void Resources::CastFireExplosion(ObjPtr owner, const vec3& position,
   Unlock();
 }
 
+ObjPtr Resources::CreateSpeedLines(ObjPtr obj) {
+  ObjPtr o = Create3dParticleEffect("spell_shot_particle_lines", obj->position);
+  shared_ptr<Particle> p = static_pointer_cast<Particle>(o);
+
+  float f = (rand() % 10000) / 500.0f + 0.1f;
+  p->rotation_matrix = obj->rotation_matrix * rotate(mat4(1.0), f, vec3(1, 0, 0));
+  p->frame = (rand() % 50);
+  p->collision_type_ = COL_NONE;
+  p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
+  return p;  
+}
+
+void Resources::CreateSparks(const vec3& position, const vec3& direction) {
+  quat target = RotationBetweenVectors(vec3(1, 0, 0), direction);
+
+  for (int i = 0; i < 20; i++) {
+    ObjPtr o = Create3dParticleEffect("particle_spark", position);
+    shared_ptr<Particle> p = static_pointer_cast<Particle>(o);
+
+    float f = (rand() % 400) / 500.0f - 0.4f;
+    p->rotation_matrix = mat4_cast(target) * rotate(mat4(1.0), f, vec3(0, 1, 0));
+
+    f = (rand() % 1000) / 500.0f - 0.5f;
+    p->rotation_matrix = p->rotation_matrix * rotate(mat4(1.0), f, vec3(0, 0, 1));
+
+    p->collision_type_ = COL_NONE;
+    p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
+
+    p->scale = (rand() % 20) / 100.0f + 0.1f;
+  } 
+}
+
 ObjPtr Resources::Create3dParticleEffect(const string& asset_name, 
   const vec3& pos) {
-
   shared_ptr<GameAsset> asset = GetAssetByName(asset_name); 
   if (!asset) return nullptr;
 
@@ -3954,6 +4110,10 @@ ObjPtr Resources::Create3dParticleEffect(const string& asset_name,
   p->animation_frame = 0;
   p->hit_list.clear();
   p->physics_behavior = particle_asset->physics_behavior;
+  p->associated_obj = nullptr;
+  p->associated_bone = -1;
+  p->scale = asset->scale;
+  p->animation_speed = asset->animation_speed;
 
   // p->damage = ProcessDiceFormula(ParseDiceFormula("6d6"));
   p->collision_type_ = COL_SPHERE;
@@ -4120,56 +4280,14 @@ void Resources::CastHeal(ObjPtr owner) {
   }
 }
 
-void Resources::CastHarpoon(const Camera& camera) {
-  shared_ptr<Missile> obj = nullptr;
-  for (const auto& missile: missiles_) {
-    if (missile->life <= 0 && missile->GetAsset()->name == "harpoon-missile") {
-      obj = missile;
-      break;
-    }
-  }
-
-  obj->life = 10000;
-  obj->owner = player_;
-
-  vec3 left = normalize(cross(camera.up, camera.direction));
-  obj->position = camera.position + camera.direction * 14.0f + left * -0.81f +  
-    camera.up * -0.2f;
-
-  vec3 p2 = camera.position + camera.direction * 3000.0f;
-  obj->speed = normalize(p2 - obj->position) * 4.0f;
-
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    camera.rotation.y + 4.70f,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    camera.rotation.x,
-    vec3(0.0f, 0.0f, 1.0f)
-  );
-  obj->rotation_matrix = rotation_matrix;
-  UpdateObjectPosition(obj);
-}
-
 // TODO: this should probably go to main.
-void Resources::SpiderCastMagicMissile(ObjPtr spider, 
-  const vec3& direction, bool paralysis) {
+void Resources::SpiderCastMagicMissile(ObjPtr spider, const vec3& direction) {
   shared_ptr<Missile> obj = nullptr;
   for (const auto& missile: missiles_) {
     if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
       obj = missile;
       break;
     }
-  }
-
-  if (!obj) return;
-
-  if (paralysis) {
-    shared_ptr<GameAsset> asset0 = GetAssetByName("magic-missile-paralysis"); 
-    obj = CreateMissileFromAsset(asset0);
-    missiles_.push_back(obj);
   }
 
   if (!obj) return;
@@ -4184,22 +4302,6 @@ void Resources::SpiderCastMagicMissile(ObjPtr spider,
 
   obj->rotation_matrix = spider->rotation_matrix;
   UpdateObjectPosition(obj);
-}
-
-bool Resources::SpiderCastPowerMagicMissile(ObjPtr spider, 
-  const vec3& direction) {
-  if (spider->cooldown > 0) {
-    return false;
-  }
-
-  vec3 c2 = vec3(rotate(mat4(1.0), -0.1f, vec3(0.0f, 1.0f, 0.0f)) * vec4(direction, 1.0f));
-  vec3 c3 = vec3(rotate(mat4(1.0), 0.1f, vec3(0.0f, 1.0f, 0.0f)) * vec4(direction, 1.0f));
-
-  SpiderCastMagicMissile(spider, direction, true);
-  SpiderCastMagicMissile(spider, c2, true);
-  SpiderCastMagicMissile(spider, c3, true);
-  spider->cooldown = 300;
-  return true;
 }
 
 int Resources::CountGold() {
@@ -4359,6 +4461,11 @@ void Resources::CreateArcaneSpellCrystals() {
       boost::lexical_cast<string>(i),
       "Black crystal", "black_crystal_icon", "black-crystal-description", "black");
   }
+
+  // Base spells. 
+  CreateArcaneSpellCrystal(kArcaneBaseOffset - kArcaneSpellItemOffset, string("base-crystal-") + 
+    boost::lexical_cast<string>(0),
+    "Spell Shot", "harpoon_icon", "black-crystal-description", "black");
 }
 
 void Resources::LoadArcaneSpells() {
@@ -4368,13 +4475,16 @@ void Resources::LoadArcaneSpells() {
 
   // Complex spells.
   arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Magic Missile", 
-    "magic-missile-description", "magic_missile_icon", 0, 0, 0, 20, 10));
+    "magic-missile-description", "magic_missile_icon", 0, 0, 0, 20, 10,
+    ivec2(4, 2)));
 
   arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Burning Hands", 
-    "burning-hands-description", "magic_missile_icon", 0, 1, 1, 20, 100));
+    "burning-hands-description", "magic_missile_icon", 0, 1, 1, 20, 100,
+    ivec2(2, 4)));
 
   arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Lightning Ray", 
-    "lightning-ray-description", "magic_missile_icon", 0, 2, 2, 20, 100));
+    "lightning-ray-description", "magic_missile_icon", 0, 2, 2, 20, 100,
+    ivec2(8, 5)));
 
   // Layered crystals.
   for (int i = 0; i < 3; i++) {
@@ -4384,37 +4494,51 @@ void Resources::LoadArcaneSpells() {
     item_data_[item_id].description = arcane_spell_data_[i]->description;
     item_data_[item_id].price = arcane_spell_data_[i]->price;
     item_data_[item_id].max_stash = arcane_spell_data_[i]->max_stash;
+    arcane_spell_data_[i]->item_id = item_id;
   }
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Open Lock", 
-    "minor-open-lock-description", "magic_missile_icon", 1, 3, 3, 20, 1));
+  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Open Lock", 
+  //   "minor-open-lock-description", "magic_missile_icon", 1, 3, 3, 20, 1));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Fireball", 
-    "fireball-description", "magic_missile_icon", 1, 4, 4, 20, 1));
+  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Fireball", 
+  //   "fireball-description", "magic_missile_icon", 1, 4, 4, 20, 1));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Bouncy Ball", 
-    "bouncy-ball-description", "magic_missile_icon", 1, 5, 5, 20, 1));
+  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Bouncy Ball", 
+  //   "bouncy-ball-description", "magic_missile_icon", 1, 5, 5, 20, 1));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Darkvision", 
-    "darkvision-description", "magic_missile_icon", 1, 6, 6, 20, 1));
+  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Darkvision", 
+  //   "darkvision-description", "magic_missile_icon", 1, 6, 6, 20, 1));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("String Attack", 
-    "string-attack-description", "magic_missile_icon", 1, 7, 7, 20, 20));
+  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("String Attack", 
+  //   "string-attack-description", "magic_missile_icon", 1, 7, 7, 20, 20));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Telekinesis", 
-    "telekinesis-description", "magic_missile_icon", 1, 8, 8, 20, 1));
+  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Telekinesis", 
+  //   "telekinesis-description", "magic_missile_icon", 1, 8, 8, 20, 1));
 
-  for (int i = 0; i < 6; i++) {
-    int crystal_index = configs_->layered_spells[i];
-    int item_id = kArcaneSpellItemOffset + crystal_index;
-    cout << ">>>>>>>>>>>>>>>>>>>>> item_id: " << item_id << endl;
-    item_data_[item_id].name = arcane_spell_data_[3+i]->name;
-    item_data_[item_id].description = arcane_spell_data_[3+i]->description;
-    item_data_[item_id].price = arcane_spell_data_[3+i]->price;
-    item_data_[item_id].max_stash = arcane_spell_data_[3+i]->max_stash;
-  }
+  // for (int i = 0; i < 6; i++) {
+  //   int crystal_index = configs_->layered_spells[i];
+  //   int item_id = kArcaneSpellItemOffset + crystal_index;
+  //   item_data_[item_id].name = arcane_spell_data_[3+i]->name;
+  //   item_data_[item_id].description = arcane_spell_data_[3+i]->description;
+  //   item_data_[item_id].price = arcane_spell_data_[3+i]->price;
+  //   item_data_[item_id].max_stash = arcane_spell_data_[3+i]->max_stash;
+  //   arcane_spell_data_[3+i]->item_id = item_id;
+  // }
 
   // Complex crystals.
+
+
+  // Base spells.
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Spell Shot", 
+    "magic-missile-description", "harpoon_icon", 4, 9, 9, 20, 10, 
+    ivec2(5, 5)));
+
+  int item_id = kArcaneBaseOffset + 0;
+  item_data_[item_id].name = arcane_spell_data_[3+0]->name;
+  item_data_[item_id].description = arcane_spell_data_[3+0]->description;
+  item_data_[item_id].price = arcane_spell_data_[3+0]->price;
+  item_data_[item_id].max_stash = arcane_spell_data_[3+0]->max_stash;
+  arcane_spell_data_[3+0]->item_id = item_id;
 }
 
 void Resources::CalculateArcaneSpells() {
@@ -4462,11 +4586,14 @@ void Resources::CalculateArcaneSpells() {
 }
 
 shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
+  cout << "Which arcane spell: " << item_id << endl;
+ 
   int num_spells = arcane_spell_data_.size();
   if (item_id < kArcaneSpellItemOffset) return nullptr;
 
   // Complex and layered.
   if (item_id < kArcaneWhiteOffset) {
+    cout << "Which arcane spell: complex" << endl;
     int complex_id = item_id - kArcaneSpellItemOffset;
     if (complex_to_spell_id_.find(complex_id) != complex_to_spell_id_.end()) {
       int spell_id = complex_to_spell_id_[complex_id];
@@ -4482,6 +4609,7 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
 
   // White.
   if (item_id < kArcaneBlackOffset) {
+    cout << "Which arcane spell: white" << endl;
     int white_id = item_id - kArcaneWhiteOffset;
     if (white_to_spell_id_.find(white_id) == white_to_spell_id_.end()) {
       return nullptr;
@@ -4492,12 +4620,21 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
 
   // Black.
   if (item_id < kArcaneBlackOffset + 5580) {
+    cout << "Which arcane spell: black" << endl;
+    int white_id = item_id - kArcaneWhiteOffset;
     int black_id = item_id - kArcaneBlackOffset;
     if (black_to_spell_id_.find(black_id) == black_to_spell_id_.end()) {
       return nullptr;
     }
     int spell_id = black_to_spell_id_[black_id];
     return arcane_spell_data_[spell_id];
+  }
+
+  // Base.
+  if (item_id < kArcaneBaseOffset + 1) {
+    cout << "Which arcane spell: base" << endl;
+    int base_id = item_id - kArcaneBaseOffset;
+    return arcane_spell_data_[3+base_id];
   }
 
   return nullptr;
@@ -4652,3 +4789,112 @@ void Resources::DropItem(const vec3& position) {
 void Resources::Rest() {
   player_->life = configs_->max_life;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Spells.
+
+shared_ptr<Missile> Resources::GetUnusedMissile() {
+  shared_ptr<Missile> obj = nullptr;
+  for (const auto& missile : missiles_) {
+    if (missile->life <= 0) {
+      obj = missile;
+      break;
+    }
+  }
+  if (obj == nullptr) obj = missiles_[0];
+
+  obj->life = 10000;
+
+  return obj;
+}
+
+void Resources::CastSpellShot(const Camera& camera) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+
+  obj->position = camera.position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    obj->position = s.center;
+  }
+
+  obj->UpdateAsset("spell_shot");
+  obj->scale_in = 0.0f;
+  obj->scale_out = 1.0f;
+  obj->associated_particles.clear();
+  obj->owner = player_;
+  obj->type = MISSILE_MAGIC_MISSILE;
+  obj->physics_behavior = PHYSICS_UNDEFINED;
+
+  vec3 p2 = camera.position + camera.direction * 2000.0f;
+  obj->speed = normalize(p2 - obj->position) * 4.0f;
+
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera.rotation.y + 4.70f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+
+  shared_ptr<Particle> p = CreateOneParticle(obj->position, 2000.0f, 
+    "particle-sparkle", 2.5);
+  p->associated_obj = obj;
+  p->associated_bone = -1;
+  p->scale_in = 0.0f;
+  p->scale_out = 1.0f;
+  obj->associated_particles.push_back(p);
+}
+
+void Resources::CastMagicMissile(const Camera& camera) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+
+  obj->UpdateAsset("magic_missile");
+  obj->owner = player_;
+  obj->type = MISSILE_MAGIC_MISSILE;
+  obj->physics_behavior = PHYSICS_NO_FRICTION;
+
+  vec3 left = normalize(cross(camera.up, camera.direction));
+  obj->position = camera.position + camera.direction * 0.5f + left * -0.81f +  
+    camera.up * -0.556f;
+
+  vec3 p2 = camera.position + camera.direction * 3000.0f;
+  obj->speed = normalize(p2 - obj->position) * 4.0f;
+
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera.rotation.y + 4.70f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+}
+

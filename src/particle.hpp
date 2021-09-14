@@ -29,15 +29,17 @@ struct Particle : GameObject {
 
   float size;
   vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
+  vec3 offset = vec3(0.0);
 
   int frame = 0;
+  bool invert = false;
 
   vec2 tile_pos = vec2(0.5, 0.5);
   float tile_size = 0.167f;
 
   string mesh_name;
   string existing_mesh_name = "";
-  int animation_frame = 0;
+  float animation_frame = 0;
   GLuint texture_id = 0;
 
   // TODO: will need to keep track of types of damage. And on hit effects. Do
@@ -47,7 +49,11 @@ struct Particle : GameObject {
   unordered_set<int> hit_list;
   ObjPtr owner = nullptr;
 
+  ObjPtr associated_obj = nullptr;
+  int associated_bone = -1;
+
   float camera_distance;
+
   bool operator<(const shared_ptr<Particle>& that) const {
     if (!this->particle_type) return false;
     if (!that->particle_type) return true;

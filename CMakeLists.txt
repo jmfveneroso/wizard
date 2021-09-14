@@ -21,11 +21,13 @@ set(ALL_LIBS
   png
   pugixml
   python3.8
+  libtga
 )
 
 set(INCLUDE_DIRS
   ${CMAKE_SOURCE_DIR}/src
   ${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37
+  ${CMAKE_SOURCE_DIR}/lib/libtga-1.0.1/include
   /usr/local/Cellar/glew/2.2.0/include
   /usr/local/Cellar/glfw/3.3.2/include
   /usr/local/Cellar/glm/0.9.9.4/include
@@ -47,6 +49,7 @@ set(LINK_DIRS
   /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib
   "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/"
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
+  ${CMAKE_BINARY_DIR}/lib/libtga-1.0.1
 )
 add_definitions(-DAPPLE)
 
@@ -59,6 +62,7 @@ file(COPY /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framewo
 # Include external libs
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/libpng-1.6.37)
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/pugixml-1.10)
+add_subdirectory(${CMAKE_SOURCE_DIR}/lib/libtga-1.0.1)
 
 set(
   SRC

@@ -14,12 +14,14 @@ out VertexData {
   vec3 normal;
   vec3 light_dir_tangentspace;
   vec3 eye_dir_tangentspace;
+  vec4 shadow_coord; 
 } out_data;
 
 uniform mat4 VP; 
 uniform mat4 V; 
 uniform mat4 P; 
 uniform vec3 player_pos;
+uniform mat4 shadow_matrix0;
 
 void main() {
   vec4 position = vec4(vertex_pos_modelspace, 1.0);
@@ -44,8 +46,7 @@ void main() {
     normal_cameraspace
   ));
 
-  vec3 light_direction = player_pos - out_data.position;
-  vec3 light_pos_worldspace = out_data.position + light_direction;
+  vec3 light_pos_worldspace = player_pos + vec3(0, 5, 0);
 
   vec3 vertex_pos_cameraspace = (V * M * vec4(vertex_pos_modelspace, 1)).xyz;
   vec3 eye_dir_cameraspace = vec3(0, 0, 0) - vertex_pos_cameraspace;
@@ -55,4 +56,7 @@ void main() {
 
   out_data.light_dir_tangentspace = normalize(TBN * light_dir_cameraspace);
   out_data.eye_dir_tangentspace =  normalize(TBN * eye_dir_cameraspace);
+
+  mat4 DepthMVP = shadow_matrix0 * M;
+  out_data.shadow_coord = DepthMVP * position;
 }

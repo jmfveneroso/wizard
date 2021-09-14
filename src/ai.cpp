@@ -299,16 +299,7 @@ bool AI::ProcessRangedAttackAction(ObjPtr spider,
     resources_->CreateParticleEffect(40, 
       spider->position + dir * 5.0f + vec3(0, 2.0, 0), 
       dir * 5.0f, vec3(0.0, 1.0, 0.0), -1.0, 40.0f, 3.0f);
-
-    // TODO: change this to make the creature choose the best attack.
-    if (spider->GetAsset()->name == "cephalid" || spider->GetAsset()->name == "metal-eye") {
-      if (!resources_->SpiderCastPowerMagicMissile(spider, dir)) {
-        resources_->SpiderCastMagicMissile(spider, dir);
-      }
-    } else {
-      resources_->SpiderCastMagicMissile(spider, dir);
-    }
-
+    resources_->SpiderCastMagicMissile(spider, dir);
   }
   return false;
 }

@@ -6,14 +6,14 @@
 const float kWaterHeight = 5.0f;
 
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
-  // Sphere / Bones / Quick Sphere / Perfect / C. Hull / OBB /  Terrain 
-  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SH,    CP_SO, CP_ST }, // Sphere 
-  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BH,    CP_BO, CP_BT }, // Bones
-  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QH,    CP_QO, CP_QT }, // Quick Sphere 
-  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PH,    CP_PO, CP_PT }, // Perfect
-  { CP_HS,    CP_HB,  CP_HQ,         CP_HP,    CP_HH,    CP_HO, CP_HT }, // C. Hull
-  { CP_OS,    CP_OB,  CP_OQ,         CP_OP,    CP_OH,    CP_OO, CP_OT }, // OBB
-  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TH,    CP_TO, CP_TT }  // Terrain
+  // Sphere / Bones / Quick Sphere / Perfect / OBB /  AABB / Terrain 
+  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SO, CP_SA, CP_ST }, // Sphere 
+  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BO, CP_BA, CP_BT }, // Bones
+  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QO, CP_QA, CP_QT }, // Quick Sphere 
+  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PO, CP_PA, CP_PT }, // Perfect
+  { CP_OS,    CP_OB,  CP_OQ,         CP_OP,    CP_OO, CP_OA, CP_OT }, // OBB
+  { CP_AS,    CP_AB,  CP_AQ,         CP_AP,    CP_AO, CP_AA, CP_AT }, // AABB 
+  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TO, CP_TA, CP_TT }  // Terrain
 };
 
 CollisionResolver::CollisionResolver(
@@ -184,6 +184,10 @@ void CollisionResolver::Collide() {
   //   << "\% of a frame" << endl;
 
   TestCollisionsWithTerrain();
+
+  if (resources_->GetConfigs()->render_scene == "dungeon") {
+    TestCollisionsWithDungeon();
+  }
 
   // double time3 = glfwGetTime();
   // float duration3 = time3 - start_time;
@@ -437,38 +441,6 @@ vector<shared_ptr<CollisionST>> GetCollisionsST(ObjPtr obj1,
   return cols;
 }
 
-// Sphere - Convex Hull.
-vector<shared_ptr<CollisionSH>> GetCollisionsSH(ObjPtr obj1, ObjPtr obj2) {
-  BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
-  BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
-
-  vec3 point_of_contact;
-  if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
-    return {};
-  }
-
-  vector<shared_ptr<CollisionSH>> cols;
-  shared_ptr<GameAsset> game_asset = obj2->GetAsset();
-  for (const Polygon& polygon : game_asset->collision_hull) {
-    Polygon p = (obj2->rotation_matrix * polygon) + obj2->position;
-
-    // bool collided = false;
-    // for (vec3 v : p.vertices) {
-    //   if (length(s1.center - v) < s1.radius + s2.radius) {
-    //     collided = true;
-    //     break;
-    //   }
-    // }
-
-    // if (collided) { 
-    //   cout << "wtf wtf" << endl;
-    //   cols.push_back(make_shared<CollisionSH>(obj1, obj2, p));
-    // }
-    cols.push_back(make_shared<CollisionSH>(obj1, obj2, p));
-  }
-  return cols;
-}
-
 vector<shared_ptr<CollisionSO>> GetCollisionsSO(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
   BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
@@ -553,20 +525,10 @@ vector<shared_ptr<CollisionBO>> GetCollisionsBO(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
   BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
 
-  // if (obj1->type == GAME_OBJ_PLAYER) {
-  //   cout << "TEsting here: " << obj1->name << " - " << obj2->GetDisplayName() << endl;
-  //   cout << "s1: " << s1 << endl;
-  //   cout << "s2: " << s2 << endl;
-  // }
-
   vec3 point_of_contact;
   if (length(s1.center - s2.center) > (s1.radius + s2.radius)) {
     return {};
   }
-
-  // if (obj1->type == GAME_OBJ_PLAYER) {
-  //   cout << "Yes" << endl;
-  // }
 
   vector<shared_ptr<CollisionBO>> cols;
   for (const auto& [bone_id, bs] : obj1->bones) {
@@ -691,39 +653,6 @@ vector<shared_ptr<CollisionQT>> GetCollisionsQT(ObjPtr obj1) {
   return { make_shared<CollisionQT>(obj1) };
 }
 
-// Quick Sphere - Convex Hull.
-vector<shared_ptr<CollisionQH>> GetCollisionsQH(ObjPtr obj1, ObjPtr obj2) {
-  BoundingSphere s1;
-  s1.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
-  s1.radius = 0.5f * length(obj1->prev_position - obj1->position) + 
-    obj1->GetAsset()->bounding_sphere.radius;
-
-  BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
-  vec3 displacement_vector, point_of_contact;
-  if (!TestSphereSphere(s1, s2, displacement_vector, point_of_contact)) {
-    return {};
-  }
-
-  vector<shared_ptr<CollisionQH>> cols;
-  shared_ptr<GameAsset> game_asset = obj2->GetAsset();
-  for (const Polygon& polygon : game_asset->collision_hull) {
-    Polygon p = (obj2->rotation_matrix * polygon) + obj2->position;
-
-    bool collided = false;
-    for (vec3 v : p.vertices) {
-      if (length(s1.center - v) < s1.radius + s2.radius) {
-        collided = true;
-        break;
-      }
-    }
-
-    if (collided) { 
-      cols.push_back(make_shared<CollisionQH>(obj1, obj2, p));
-    }
-  }
-  return cols;
-}
-
 vector<shared_ptr<CollisionQO>> GetCollisionsQO(ObjPtr obj1, ObjPtr obj2) {
   BoundingSphere s1;
   s1.center = obj1->prev_position + 0.5f*(obj1->position - obj1->prev_position);
@@ -737,21 +666,6 @@ vector<shared_ptr<CollisionQO>> GetCollisionsQO(ObjPtr obj1, ObjPtr obj2) {
   }
 
   return { make_shared<CollisionQO>(obj1, obj2) };
-}
-
-// Convex Hull - Terrain.
-vector<shared_ptr<CollisionHT>> GetCollisionsHT(ObjPtr obj1, shared_ptr<Resources> asset_catalog) {
-  vector<shared_ptr<CollisionHT>> collisions;
-  shared_ptr<GameAsset> game_asset = obj1->GetAsset();
-
-  BoundingSphere s = obj1->GetTransformedBoundingSphere();
-  vec3 normal;
-  float h = asset_catalog->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &normal);
-  if (s.center.y - s.radius > h) {
-    return {};
-  }
-
-  return { make_shared<CollisionHT>(obj1, Polygon()) };
 }
 
 // OBB - Perfect.
@@ -824,7 +738,6 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_SB: Merge(collisions, GetCollisionsSB(obj1, obj2)); break;
     case CP_SQ: Merge(collisions, GetCollisionsQS(obj2, obj1)); break;
     case CP_SP: Merge(collisions, GetCollisionsSP(obj1, obj2)); break;
-    case CP_SH: Merge(collisions, GetCollisionsSH(obj1, obj2)); break;
     case CP_SO: Merge(collisions, GetCollisionsSO(obj1, obj2)); break;
     case CP_BS: Merge(collisions, GetCollisionsSB(obj2, obj1)); break;
     case CP_BB: Merge(collisions, GetCollisionsBB(obj1, obj2)); break;
@@ -836,14 +749,11 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_QO: Merge(collisions, GetCollisionsQO(obj1, obj2)); break;
     case CP_QQ: break;
     case CP_QP: Merge(collisions, GetCollisionsQP(obj1, obj2)); break;
-    case CP_QH: Merge(collisions, GetCollisionsQH(obj1, obj2)); break;
     case CP_PS: Merge(collisions, GetCollisionsSP(obj2, obj1)); break;
     case CP_PB: Merge(collisions, GetCollisionsBP(obj2, obj1)); break;
     case CP_PQ: Merge(collisions, GetCollisionsQP(obj2, obj1)); break;
     case CP_PO: Merge(collisions, GetCollisionsOP(obj2, obj1)); break;
     case CP_PP: break;
-    case CP_HS: Merge(collisions, GetCollisionsSH(obj2, obj1)); break;
-    case CP_HQ: Merge(collisions, GetCollisionsQH(obj2, obj1)); break;
     case CP_OS: Merge(collisions, GetCollisionsSO(obj2, obj1)); break;
     case CP_OP: Merge(collisions, GetCollisionsOP(obj1, obj2)); break;
     case CP_OB: Merge(collisions, GetCollisionsBO(obj2, obj1)); break;
@@ -924,6 +834,64 @@ void CollisionResolver::TestCollisionsWithTerrain() {
       case COL_QUICK_SPHERE: Merge(collisions, GetCollisionsQT(obj1)); break;
       case COL_OBB:          Merge(collisions, GetCollisionsOT(obj1, resources_, in_dungeon_)); break;
       default: break;
+    }
+  }
+  resources_->Unlock();
+  
+  for (auto& c : collisions) {
+    TestCollision(c);
+    if (c->collided) {
+      find_mutex_.lock();
+      collisions_.push(c);
+      find_mutex_.unlock();
+    }
+  }
+}
+
+void CollisionResolver::TestCollisionsWithDungeon() {
+  Dungeon& dungeon = resources_->GetDungeon();
+  char** dungeon_map = dungeon.GetDungeon();
+
+  shared_ptr<Player> player = resources_->GetPlayer();
+  ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+
+  vector<ColPtr> collisions;
+
+  resources_->Lock();
+  for (ObjPtr obj1 : resources_->GetMovingObjects()) {
+    if (!obj1->current_sector || obj1->current_sector->name != "outside") continue;
+    if (!obj1->IsCollidable()) continue;
+
+    ivec2 obj_tile = dungeon.GetDungeonTile(obj1->position);
+    if (abs(player_tile.x - obj_tile.x) > 10 || 
+        abs(player_tile.y - obj_tile.y) > 10) {
+      continue;
+    }
+
+    for (int x = -1; x <= 1; x++) {
+      for (int y = -1; y <= 1; y++) {
+        ivec2 tile_pos = ivec2(obj_tile.x + x, obj_tile.y + y);
+        if (tile_pos.x < 0 || tile_pos.y < 0 || tile_pos.x >= 80 || 
+          tile_pos.y >= 80) continue;
+
+        char tile = dungeon_map[tile_pos.x][tile_pos.y];
+        if (tile != '+' && tile != '-' && tile != '|') continue;
+
+        AABB aabb;
+        aabb.point = dungeon.GetTilePosition(tile_pos);
+        aabb.point += vec3(-5, 0, -5);
+        aabb.dimensions = vec3(10, 100, 10);
+
+        if (obj1->GetCollisionType() == COL_BONES) {
+          for (const auto& [bone_id, bs] : obj1->bones) {
+            collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+          }
+        } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
+          collisions.push_back(make_shared<CollisionQA>(obj1, aabb));
+        } else if (obj1->GetCollisionType() == COL_OBB) {
+          collisions.push_back(make_shared<CollisionOA>(obj1, aabb));
+        }
+      }
     }
   }
   resources_->Unlock();
@@ -1019,32 +987,6 @@ void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
   c->collided = IntersectBoundingSphereWithTriangle(s1, 
     c->polygon + c->obj2->position, c->displacement_vector, 
     c->point_of_contact);
-
-  c->normal = normalize(c->displacement_vector);
-  if (c->collided) {
-    const vec3& surface_normal = c->polygon.normals[0];
-    const vec3 v = c->obj1->position - c->obj1->prev_position;
-    const vec3 v2 = c->obj2->position - c->obj2->prev_position;
-
-    bool in_contact;
-    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, surface_normal, v, in_contact);
-
-    if (in_contact) {
-      // c->displacement_vector += v2;
-      // c->obj1->in_contact_with = c->obj2;
-    }
-
-    FillCollisionBlankFields(c);
-  }
-}
-
-// Test Sphere - Convex Hull.
-void CollisionResolver::TestCollisionSH(shared_ptr<CollisionSH> c) {
-  BoundingSphere s1 = c->obj1->GetTransformedBoundingSphere();
-
-  c->collided = IntersectBoundingSphereWithTriangle(s1, c->polygon, 
-    c->displacement_vector, c->point_of_contact);
 
   c->normal = normalize(c->displacement_vector);
   if (c->collided) {
@@ -1197,6 +1139,30 @@ void CollisionResolver::TestCollisionBO(shared_ptr<CollisionBO> c) {
   }
 }
 
+// Test Bones - AABB.
+void CollisionResolver::TestCollisionBA(shared_ptr<CollisionBA> c) {
+  BoundingSphere s = c->obj1->GetBoneBoundingSphere(c->bone);
+
+  c->collided = IntersectSphereAABB(s, c->aabb, c->displacement_vector,  
+    c->point_of_contact);
+  if (c->collided) {
+    c->normal = normalize(c->displacement_vector);
+
+    // bool in_contact;
+    // const vec3 v = c->obj1->position - c->obj1->prev_position;
+    // c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+    //   c->displacement_vector, c->normal, v, in_contact);
+
+    // if (in_contact) {
+    //   c->obj1->in_contact_with = c->obj2;
+    // }
+    cout << "Collision AABB: " << c->aabb << endl;
+    cout << "Collision s: " << s << endl;
+
+    FillCollisionBlankFields(c);
+  }
+}
+
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
   BoundingSphere s1 = c->obj1->GetBoneBoundingSphere(c->bone);
@@ -1295,6 +1261,8 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
 
   if (in_dungeon_) {
     if ((s.center.y - s.radius) < kDungeonOffset.y) {
+      cout << "s: " << s << endl;
+      cout << "dungeon offset: " << kDungeonOffset << endl;
       c->displacement_vector = vec3(0, kDungeonOffset.y - (s.center.y - s.radius), 0);
       c->collided = true;
       c->normal = vec3(0, 1, 0);
@@ -1393,53 +1361,28 @@ void CollisionResolver::TestCollisionQO(shared_ptr<CollisionQO> c) {
   // }
 }
 
-void CollisionResolver::TestCollisionQH(shared_ptr<CollisionQH> c) {
+// Test Quick Sphere - AABB.
+void CollisionResolver::TestCollisionQA(shared_ptr<CollisionQA> c) {
   BoundingSphere s = c->obj1->GetBoundingSphere() + c->obj1->prev_position;
   vec3 v = c->obj1->position - c->obj1->prev_position;
-  float t; // Time of collision.
-  c->collided = IntersectMovingSphereTriangle(s, v, c->polygon, t, 
-    c->point_of_contact);
-  if (c->collided) {
-    c->displacement_vector = c->point_of_contact - c->obj1->position;
-    c->normal = c->polygon.normals[0];
-    FillCollisionBlankFields(c);
-  }
-}
 
-// Test Convex Hull - Terrain.
-void CollisionResolver::TestCollisionHT(shared_ptr<CollisionHT> c) {
-  c->collided = false;
-  float max_magnitude = 0;
-  vector<vec3> points_of_contact;
+  const AABB& aabb = c->aabb;
 
-  shared_ptr<GameAsset> game_asset = c->obj1->GetAsset();
-  for (vec3 v : game_asset->GetVertices()) {
-    v = (c->obj1->rotation_matrix * v) + c->obj1->position;
-    vector<Polygon> terrain_polygons;
-    GetTerrainPolygons(resources_, vec2(v.x, v.z), terrain_polygons);
-
-    vec3 normal = terrain_polygons[0].normals[0];
-    vec3 pivot = terrain_polygons[0].vertices[0];
-
-    float magnitude = -dot(v - pivot, normal);
-    if (magnitude < 0) continue;
-
-    c->collided = true;
-    points_of_contact.push_back(v);
-    if (magnitude > max_magnitude) {
-      max_magnitude = magnitude;
-      c->displacement_vector = magnitude * normal;
+  vec3 prev_pos = c->obj1->prev_position;
+  float step = s.radius / length(v);
+  for (float t = 0.0f; t < 1.0; t += step) {
+    s.center = c->obj1->prev_position + v * t;
+    c->collided = IntersectSphereAABB(s, aabb, c->displacement_vector, 
+      c->point_of_contact);
+    if (c->collided) {
+      c->displacement_vector = c->displacement_vector;
+      c->normal = normalize(c->displacement_vector);
+      c->point_of_contact = c->point_of_contact - normalize(v) * 1.0f;
+      FillCollisionBlankFields(c);
+      break;
     }
+    t += step;
   }
-
-  c->point_of_contact = vec3(0);
-  for (const auto& p : points_of_contact) {
-    c->point_of_contact += p;
-  }
-  c->point_of_contact /= points_of_contact.size();
-
-  c->normal = vec3(0, 1, 0);
-  FillCollisionBlankFields(c);
 }
 
 // Test OBB - Perfect.
@@ -1597,8 +1540,6 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionSB(static_pointer_cast<CollisionSB>(c)); break;
     case CP_SP:
       TestCollisionSP(static_pointer_cast<CollisionSP>(c)); break;
-    case CP_SH:
-      TestCollisionSH(static_pointer_cast<CollisionSH>(c)); break;
     case CP_SO:
       TestCollisionSO(static_pointer_cast<CollisionSO>(c)); break;
     case CP_ST:
@@ -1609,6 +1550,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionBP(static_pointer_cast<CollisionBP>(c)); break;
     case CP_BO:
       TestCollisionBO(static_pointer_cast<CollisionBO>(c)); break;
+    case CP_BA:
+      TestCollisionBA(static_pointer_cast<CollisionBA>(c)); break;
     case CP_BT:
       TestCollisionBT(static_pointer_cast<CollisionBT>(c)); break;
     case CP_QP:
@@ -1619,13 +1562,10 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionQT(static_pointer_cast<CollisionQT>(c)); break;
     case CP_QS:
       TestCollisionQS(static_pointer_cast<CollisionQS>(c)); break;
-    case CP_QH:
-      TestCollisionQH(static_pointer_cast<CollisionQH>(c)); break;
     case CP_QO:
       TestCollisionQO(static_pointer_cast<CollisionQO>(c)); break;
-    case CP_HT:
-      // TODO: perform many until converge.
-      TestCollisionHT(static_pointer_cast<CollisionHT>(c)); break;
+    case CP_QA:
+      TestCollisionQA(static_pointer_cast<CollisionQA>(c)); break;
     case CP_OP:
       TestCollisionOP(static_pointer_cast<CollisionOP>(c)); break;
     case CP_OT:
@@ -1751,36 +1691,26 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
             }
           }
         }
-      // } else if (obj2->GetCollisionType() == COL_OBB && 
-      //   obj2->GetPhysicsBehavior() != PHYSICS_FIXED && obj2->IsAsset("plank")) {
-      //   vec3 r = c->point_of_contact - c->obj2->position;
-      //   vec3 f = -c->displacement_vector * 10.0f;
-      //   // f -= dot(f, vec3(1, 0, 0)) * vec3(1, 0, 0);
-
-      //   vec3 torque = cross(r, f);
-      //   torque = dot(torque, vec3(0, 0, 1)) * vec3(0, 0, 1);
-
-      //   float max_torque = 5.0f;
-      //   if (length(torque) > max_torque) {
-      //     torque = normalize(torque) * max_torque;
-      //   } 
-
-      //   // obj2->speed += -c->displacement_vector;
-      //   obj2->torque += torque;
       } 
-      resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
-        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+
+      // resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
+      //   vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+
+      resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+        "magical-explosion", 2.5f);
+
+      // resources_->CreateSparks(c->point_of_contact, c->normal);
     } else {
-      // TODO: Check if collision with water.
-      if (obj1->position.y < 5.0f) {
-        vec3 pos = vec3(obj1->position.x, 5.0f, obj1->position.z);
-        resources_->CreateParticleEffect(1, pos, normal * 1.0f, 
-          vec3(1.0, 1.0, 1.0), 7.0, 32.0f, 3.0f, "splash");
-      } else {
-        resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
-          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
-      }
+      resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+        "magical-explosion", 2.5f);
+      // resources_->CreateOneParticle(obj1->position, 40.0f,  
+      //   "magical-explosion", 2.5f);
     }
+  }
+
+  for (auto p : missile->associated_particles) {
+    p->associated_obj = nullptr; 
+    p->life = -1; 
   }
   obj1->life = -1;
 }

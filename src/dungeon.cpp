@@ -12,6 +12,7 @@ const int DLRG_WEB_FLOOR = 256;
 const int DLRG_MINISET = 512;
 const int DLRG_CHASM = 1024;
 const int DLRG_SECRET = 2048;
+const int DLRG_NO_CEILING = 4096;
 
 Dungeon::Dungeon() {
   char_map_[1] = '|';
@@ -55,6 +56,7 @@ Dungeon::Dungeon() {
   char_map_[61] = '>'; // Down.
   char_map_[62] = 's'; // Spiderling.
   char_map_[63] = '\'';
+  char_map_[64] = '~';
   char_map_[65] = 'S'; // Scorpion.
   char_map_[66] = 'b'; // Bookcase.
   char_map_[67] = 'q'; // Pedestal.
@@ -90,11 +92,11 @@ Dungeon::Dungeon() {
   char_map_[97] = 'E'; // Evil Eye.
   char_map_[98] = 'Q'; // Spider Queen.
   char_map_[99] = 'X'; // Statue.
-  char_map_[199] = 'A';
-  char_map_[200] = 'B';
-  char_map_[202] = 'F';
-  char_map_[204] = 'D';
-  char_map_[205] = 'E';
+  char_map_[100] = 'p'; // Top-Left pillar.
+  char_map_[101] = 'A'; // Top-left arch.
+  char_map_[102] = 'B'; // Bottom-left arch.
+  char_map_[103] = 'F'; // Bottom-right arch.
+  char_map_[104] = 'N'; // Top-right arch.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -563,8 +565,8 @@ void Dungeon::L5Chamber(int sx, int sy, bool topflag, bool bottomflag,
   if (topflag == true) {
     dungeon[sx + 2][sy] = 3; // +
     dungeon[sx + 3][sy] = 12; // O
-    dungeon[sx + 4][sy] = 3;
-    dungeon[sx + 7][sy] = 3;
+    dungeon[sx + 4][sy] = 102; // bottom-left
+    dungeon[sx + 7][sy] = 103; // bottom-right
     dungeon[sx + 8][sy] = 12;
     dungeon[sx + 9][sy] = 3;
   }
@@ -573,8 +575,8 @@ void Dungeon::L5Chamber(int sx, int sy, bool topflag, bool bottomflag,
     sy += 11;
     dungeon[sx + 2][sy] = 3;
     dungeon[sx + 3][sy] = 12;
-    dungeon[sx + 4][sy] = 3;
-    dungeon[sx + 7][sy] = 3;
+    dungeon[sx + 4][sy] = 101; // top-leftright
+    dungeon[sx + 7][sy] = 104; // top-right
     dungeon[sx + 8][sy] = 12;
     dungeon[sx + 9][sy] = 3;
     sy -= 11;
@@ -583,8 +585,8 @@ void Dungeon::L5Chamber(int sx, int sy, bool topflag, bool bottomflag,
   if (leftflag == true) {
     dungeon[sx][sy + 2] = 3;
     dungeon[sx][sy + 3] = 11;
-    dungeon[sx][sy + 4] = 3;
-    dungeon[sx][sy + 7] = 3;
+    dungeon[sx][sy + 4] = 102; // bottom-left
+    dungeon[sx][sy + 7] = 101; // top-left
     dungeon[sx][sy + 8] = 11;
     dungeon[sx][sy + 9] = 3;
   }
@@ -593,8 +595,8 @@ void Dungeon::L5Chamber(int sx, int sy, bool topflag, bool bottomflag,
     sx += 11;
     dungeon[sx][sy + 2] = 3;
     dungeon[sx][sy + 3] = 11;
-    dungeon[sx][sy + 4] = 3;
-    dungeon[sx][sy + 7] = 3;
+    dungeon[sx][sy + 4] = 103; // bottom-right
+    dungeon[sx][sy + 7] = 104; // top-right
     dungeon[sx][sy + 8] = 11;
     dungeon[sx][sy + 9] = 3;
     sx -= 11;
@@ -607,9 +609,15 @@ void Dungeon::L5Chamber(int sx, int sy, bool topflag, bool bottomflag,
     }
   }
 
+  for (j = 0; j <= 11; j++) {
+    for (i = 0; i <= 11; i++) {
+      flags[i + sx][j + sy] |= DLRG_NO_CEILING;
+    }
+  }
+
   // Pillars.
-  dungeon[sx + 4][sy + 4] = 15; // P
-  dungeon[sx + 7][sy + 4] = 15;
+  dungeon[sx + 4][sy + 4] = 100; // p
+  dungeon[sx + 7][sy + 4] = 15; // P
   dungeon[sx + 4][sy + 7] = 15;
   dungeon[sx + 7][sy + 7] = 15;
 }
@@ -1109,7 +1117,7 @@ bool Dungeon::PlaceMiniSet(const string& miniset_name) {
               flags[x + step_x][y + step_y] |= DLRG_MINISET;
             }
           }
-          if (miniset_name == "STAIRS_DOWN") {
+          if (miniset_name == "STAIRS_UP") {
             downstairs = ivec2(x+w/2, y+h/2);
           }
           return true;
@@ -1415,10 +1423,15 @@ bool Dungeon::IsChasm(int x, int y, int w, int h) {
   for (int i = x; i < x + w; i++) {
     for (int j = y; j < y + h; j++) {
       if (i < 0 || j < 0 || i >= kDungeonSize || j >= kDungeonSize) continue;
-      if (flags[i][j] &= DLRG_CHASM) return true;
+      if (flags[i][j] & DLRG_CHASM) return true;
     }
   }
   return false;
+}
+
+bool Dungeon::IsChamber(int x, int y) {
+  if (x < 0 || y < 0 || x >= kDungeonSize || y >= kDungeonSize) return false;
+  return (flags[x][y] & DLRG_NO_CEILING);
 }
 
 bool Dungeon::HasStairs(int x, int y, int w, int h) {
@@ -2202,13 +2215,12 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case '<':
     case '>':
     case '\'':
+    case '~':
     case '(':
     case ')':
-      return true;
     case 'd':
-    case 'D': {
-      return !(flags[tile.x][tile.y] & DLRG_DOOR_CLOSED);
-    }
+    case 'D':
+      return true;
     default: 
       break;
   }
