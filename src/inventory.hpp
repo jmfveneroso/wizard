@@ -14,7 +14,8 @@ enum InventoryState {
   INVENTORY_DIALOG,
   INVENTORY_QUEST_LOG,
   INVENTORY_STATS,
-  INVENTORY_STORE
+  INVENTORY_STORE,
+  INVENTORY_SPELL_SELECTION
 };
 
 enum ItemOrigin {
@@ -75,6 +76,8 @@ class Inventory {
   int throttle_ = 0;
   int cursor_pos_ = 0;
 
+  ivec2 spell_selection_cursor_ = ivec2(5, 5);
+
   CallbackMap callback_map_;
 
   void UpdateMouse(GLFWwindow* window);
@@ -83,6 +86,8 @@ class Inventory {
   void DrawSpellbar();
   void DrawContextPanel(int x, int y, const string& name, 
     const string& description);
+  void DrawSpellSelectionInterface(const Camera& camera, int win_x, int win_y, 
+    GLFWwindow* window);
   void MoveItemBack();
   void DrawInventory(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);

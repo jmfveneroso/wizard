@@ -176,8 +176,20 @@ void Engine::RunCommand(string command) {
       resources_->GetPlayer()->ChangePosition(pos);
       resources_->GetConfigs()->render_scene = "dungeon";
       resources_->SaveGame();
+      resources_->CalculateCollisionData();
+      resources_->GenerateOptimizedOctree();
     } catch(boost::bad_lexical_cast const& e) {
     }
+  } else if (result[0] == "town") {
+    resources_->DeleteAllObjects();
+    resources_->CreateTown();
+    resources_->LoadCollisionData("resources/objects/collision_data.xml");
+    resources_->CalculateCollisionData();
+    resources_->GenerateOptimizedOctree();
+    resources_->GetConfigs()->render_scene = "town";
+    resources_->GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
+    resources_->GetScriptManager()->LoadScripts();
+    resources_->SaveGame();
   } else if (result[0] == "delete-all") {
     cout << "im here" << endl;
     resources_->DeleteAllObjects();

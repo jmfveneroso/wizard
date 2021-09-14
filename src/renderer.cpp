@@ -130,7 +130,7 @@ void Renderer::GetVisibleObjects(
       case GAME_OBJ_ACTIONABLE:
         break;
       case GAME_OBJ_MISSILE: {
-        if (obj->life > 0.0f) {
+        if (obj->life > 0.0f || obj->scale_out > 0.0f) {
           break;
         } else {
           continue;
@@ -166,7 +166,7 @@ void Renderer::GetVisibleObjects(
       case GAME_OBJ_ACTIONABLE:
         break;
       case GAME_OBJ_MISSILE: {
-        if (obj->life > 0.0f) {
+        if (obj->life > 0.0f || obj->scale_out > 0.0f) {
           break;
         } else {
           continue;
@@ -553,6 +553,7 @@ void Renderer::DrawOutside() {
 void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
   if (obj == nullptr) return;
 
+  shared_ptr<Particle> particle = obj;
   shared_ptr<GameAsset> asset = obj->GetAsset();
 
   string mesh_name = obj->mesh_name;
@@ -579,6 +580,19 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
   glBindVertexArray(mesh->vao_);
   mat4 ModelMatrix = translate(mat4(1.0), obj->position);
   ModelMatrix = ModelMatrix * obj->rotation_matrix;
+
+  float scale = obj->scale;
+  if (particle->scale_in < 1.0f) {
+    scale = asset->scale * particle->scale_in;
+  } else if (particle->life <= 0.0f && particle->scale_out > 0.0f) {
+    scale = asset->scale * particle->scale_out;
+  }
+
+  cout << "scale: " << scale << endl;
+  cout << "scale in: " << particle->scale_in << endl;
+  cout << "scale out: " << particle->scale_out << endl;
+
+  ModelMatrix = glm::scale(ModelMatrix, vec3(scale));
 
   mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
   mat4 MVP = projection_matrix_ * ModelViewMatrix;
@@ -616,8 +630,6 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
   } else if (!asset->textures.empty()) {
     texture_id = asset->textures[0];
   }
-
-  shared_ptr<Particle> particle = obj;
 
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
@@ -669,6 +681,15 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     mat4 ModelMatrix = translate(mat4(1.0), obj->position);
     ModelMatrix = ModelMatrix * obj->rotation_matrix;
 
+    float scale = asset->scale;
+    if (obj->scale_in < 1.0f) {
+      scale = asset->scale * obj->scale_in;
+    } else if (obj->life <= 0.0f && obj->scale_out > 0.0f) {
+      scale = asset->scale * obj->scale_out;
+    }
+
+    ModelMatrix = glm::scale(ModelMatrix, vec3(scale));
+
     mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
     mat4 MVP = projection_matrix_ * ModelViewMatrix;
     glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
@@ -688,7 +709,6 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
       (float*) &configs->sun_position);
 
-    glUniform1f(GetUniformId(program_id, "outdoors"), 1);
     if (obj->current_sector) {
       glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
         (float*) &obj->current_sector->lighting_color);
@@ -696,17 +716,16 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       vec3 light_color = vec3(0.3);
       glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
         (float*) &light_color);
-
-      if (configs->render_scene == "dungeon" 
-       || obj->current_sector->name != "outside") {
-        glUniform1f(GetUniformId(program_id, "outdoors"), 0);
-      }
     }
 
     glUniform1f(GetUniformId(program_id, "light_radius"), configs->light_radius);
 
     if (configs->render_scene == "dungeon") {
       glUniform1f(GetUniformId(program_id, "outdoors"), 0);
+      glUniform1f(GetUniformId(program_id, "in_dungeon"), 1);
+    } else {
+      glUniform1f(GetUniformId(program_id, "outdoors"), 1);
+      glUniform1f(GetUniformId(program_id, "in_dungeon"), 0);
     }
 
     glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
@@ -998,9 +1017,10 @@ void Renderer::Draw() {
     );
   }
 
-  if (configs->render_scene != "dungeon") {
-    DrawShadows();
-  }
+  // if (configs->render_scene != "dungeon") {
+  //   DrawShadows();
+  // }
+  DrawShadows();
 
   vec3 clear_color = vec3(0.73, 0.81, 0.92);
   if (configs->render_scene == "dungeon") {
@@ -1046,8 +1066,10 @@ mat4 Renderer::GetShadowMatrix(bool bias, int level) {
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
   vec3 sun_dir = normalize(configs->sun_position);
+  vec3 light_pos = sphere_center + sun_dir * 100.0f;
+
   mat4 view_matrix = lookAt(
-    sphere_center + sun_dir * 500.0f,
+    light_pos,
     sphere_center,
     // camera_.up
     vec3(0, 1, 0)
@@ -1082,7 +1104,19 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
       throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
     }
 
-    GLuint program_id = resources_->GetShader("shadow");
+    GLuint program_id;
+
+    bool is_animated = (
+      asset->shader == resources_->GetShader("animated_object") ||
+      asset->shader == resources_->GetShader("animated_transparent_object"));
+
+    if (is_animated) {
+      program_id = resources_->GetShader("animated_shadow");
+    } else {
+      continue;
+      program_id = resources_->GetShader("shadow");
+    }
+
     glUseProgram(program_id);
     glBindVertexArray(mesh->vao_);
 
@@ -1093,6 +1127,23 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
     mat4 MVP = projection_view_matrix * model_matrix;
 
     glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+
+    if (is_animated) {
+      vector<mat4> joint_transforms;
+      if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+        const Animation& animation = mesh->animations[obj->active_animation];
+        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        }
+      } else {
+        ThrowError("Animation ", obj->active_animation, " for object ",
+          obj->name, " and asset ", asset->name, " does not exist");
+      }
+
+      glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
+        joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+    }
+
     glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
   }
 }
@@ -1157,7 +1208,6 @@ void Renderer::DrawShadows() {
   UpdateCascadedShadows();
 
   GLuint transparent_shader = resources_->GetShader("transparent_object");
-  GLuint lake_shader = resources_->GetShader("mana_pool");
   for (int i = 0; i < 3; i++) {
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffers_[i]);
     glViewport(0, 0, 1024, 1024);
@@ -1171,8 +1221,10 @@ void Renderer::DrawShadows() {
     clip_terrain_ = false;
 
     mat4 shadow_matrix = GetShadowMatrix(true, i);
+
     vec3 sun_dir = normalize(configs->sun_position);
-    vec3 position = cascade_shadows_[i].bounding_sphere.center + sun_dir * 500.0f;
+    vec3 position = cascade_shadows_[i].bounding_sphere.center + sun_dir * 100.0f;
+
     mat4 ModelMatrix = translate(mat4(1.0), position);
     mat4 MVP = shadow_matrix * ModelMatrix;
     ExtractFrustumPlanes(MVP, frustum_planes_);
@@ -1186,8 +1238,7 @@ void Renderer::DrawShadows() {
         // glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
         // DrawObject(obj);
         // glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-      } else if (obj->GetAsset()->shader != transparent_shader &&
-        obj->GetAsset()->shader != lake_shader) {
+      } else if (obj->GetAsset()->shader != transparent_shader) {
         DrawObjectShadow(obj, i);
       }
     }
@@ -1247,9 +1298,32 @@ void Renderer::DrawScreenEffects() {
 
   DrawSpellbar();
 
-  // HP.
+  // Draw stamina.
   shared_ptr<Player> player = resources_->GetPlayer();
-  float hp_bar_width = player->life / configs->max_life;
+  float stamina_bar_width = player->stamina / player->max_stamina;
+  stamina_bar_width = (stamina_bar_width > 0) ? stamina_bar_width : 0;
+  float stamina_recover_bar_width = player->recover_stamina / player->max_stamina;
+  stamina_recover_bar_width = (stamina_recover_bar_width > 0) ? stamina_recover_bar_width : 0;
+
+  if (player->recover_stamina > 0.0f) {
+    draw_2d_->DrawImage("hp_liquid", 25, 700, stamina_recover_bar_width * 266, 266, 1.0, 
+      vec2(stamina_recover_bar_width, 1));
+  } else {
+    draw_2d_->DrawImage("stamina_liquid", 25, 700, stamina_bar_width * 266, 266, 1.0, 
+      vec2(stamina_bar_width, 1));
+  }
+  draw_2d_->DrawImage("hp_bar", 20, 690, 300, 300, 1.0);
+
+  // Draw mana.
+  float mana_bar_width = player->mana / player->max_mana;
+  mana_bar_width = (mana_bar_width > 0) ? mana_bar_width : 0;
+
+  draw_2d_->DrawImage("mana_liquid", 25, 730, mana_bar_width * 266, 266, 1.0, 
+    vec2(mana_bar_width, 1));
+  draw_2d_->DrawImage("hp_bar", 20, 720, 300, 300, 1.0);
+
+  // Draw HP.
+  float hp_bar_width = player->life / player->max_life;
   hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
 
   draw_2d_->DrawImage("hp_liquid", 25, 760, hp_bar_width * 266, 266, 1.0, 
@@ -1323,23 +1397,6 @@ void Renderer::DrawScreenEffects() {
 
 void Renderer::DrawHand() {
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
-  mat4 rotation_matrix = rotate(
-    mat4(1.0),
-    camera_.rotation.y + 4.71f,
-    vec3(0.0f, 1.0f, 0.0f)
-  );
-  rotation_matrix = rotate(
-    rotation_matrix,
-    camera_.rotation.x,
-    vec3(0.0f, 0.0f, 1.0f)
-  );
-  obj->rotation_matrix = rotation_matrix;
-  obj->position = camera_.position + camera_.direction;
-
-  vec3 right = normalize(cross(camera_.direction, camera_.up));
-  vec3 up = normalize(cross(right, camera_.direction));
-  obj->position += up * -2.0f;
-
   DrawObject(obj);
 }
 
@@ -1415,6 +1472,7 @@ void Renderer::UpdateParticleBuffers() {
 
     vec2 uv;
     int index = p->frame + p->particle_type->first_frame;
+
     float tile_size = 1.0f / float(p->particle_type->grid_size);
     uv.x = int(index % p->particle_type->grid_size) * tile_size + tile_size / 2;
     uv.y = (p->particle_type->grid_size - int(index / p->particle_type->grid_size) - 1) * tile_size 
@@ -1528,32 +1586,63 @@ void Renderer::CreateThreads() {
 }
 
 void Renderer::CreateDungeonBuffers() {
-  vector<char> instanced_tiles { ' ', '+', '|', 'o' };
-  vector<string> model_names { "resources/models_fbx/dungeon_floor.fbx", 
+  vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
+  vector<string> model_names { 
+    "resources/models_fbx/dungeon_floor.fbx", 
     "resources/models_fbx/dungeon_corner.fbx", 
-    "resources/models_fbx/dungeon_corner.fbx", 
-    "resources/models_fbx/dungeon_arch.fbx" };
+    "resources/models_fbx/dungeon_wall.fbx", 
+    "resources/models_fbx/dungeon_arch.fbx",
+    "resources/models_fbx/dungeon_door.fbx",
+    "resources/models_fbx/dungeon_arch_gate.fbx",
+    "resources/models_fbx/dungeon_pillar.fbx",
+    "resources/models_fbx/dungeon_ceiling.fbx",
+    "resources/models_fbx/dungeon_floor.fbx",
+  };
 
-  vector<string> texture_names { "resources/textures_png/paving.png", 
-    "resources/textures_png/brick_wall.png", 
-    "resources/textures_png/brick_wall.png", 
-    "resources/textures_png/brick_wall.png" };
+  vector<string> texture_names { 
+    "resources/textures_png/paving.png", 
+    // "resources/textures_png/stone_diffuse.png", 
+    "resources/textures_png/cathedral_wall_diffuse.png", 
+    "resources/textures_png/cathedral_wall_diffuse.png", 
+    "resources/textures_png/cathedral_wall_diffuse.png", 
+    "resources/textures_png/cathedral_wall_diffuse.png", 
+    "resources/textures_png/metal_diffuse.png",
+    "resources/textures_png/cathedral_wall_diffuse.png",
+    "resources/textures_png/granite_wall_diffuse.png",
+    "resources/textures_png/medieval_floor_diffuse.png",
+   };
 
-  vector<string> normal_texture_names { "resources/textures_png/paving_normal.png", 
+  vector<string> normal_texture_names { 
     "resources/textures_png/paving_normal.png", 
-    "resources/textures_png/paving_normal.png", 
-    "resources/textures_png/paving_normal.png" };
+    // "resources/textures_png/stone_normal.png", 
+    "resources/textures_png/cathedral_wall_normal.png", 
+    "resources/textures_png/cathedral_wall_normal.png", 
+    "resources/textures_png/cathedral_wall_normal.png", 
+    "resources/textures_png/cathedral_wall_normal.png", 
+    "resources/textures_png/metal_normal.png",
+    "resources/textures_png/cathedral_wall_normal.png", 
+    "resources/textures_png/granite_wall_normal.png", 
+    "resources/textures_png/medieval_floor_normal.png",
+  };
 
-  vector<string> specular_texture_names { "resources/textures_png/paving_roughness.png", 
+  vector<string> specular_texture_names { 
     "resources/textures_png/paving_roughness.png", 
-    "resources/textures_png/paving_roughness.png", 
-    "resources/textures_png/paving_roughness.png" };
+    // "resources/textures_png/stone_roughness.png", 
+    "resources/textures_png/cathedral_wall_roughness.png", 
+    "resources/textures_png/cathedral_wall_roughness.png", 
+    "resources/textures_png/cathedral_wall_roughness.png", 
+    "resources/textures_png/cathedral_wall_roughness.png", 
+    "resources/textures_png/metal_roughness.png",
+    "resources/textures_png/cathedral_wall_roughness.png", 
+    "resources/textures_png/granite_wall_roughness.png", 
+    "resources/textures_png/medieval_floor_roughness.png",
+  };
 
   vector<FbxData> models;
   vector<GLuint> textures;
   vector<GLuint> normal_textures;
   vector<GLuint> specular_textures;
-  for (int tile = 0; tile < 4; tile++) {
+  for (int tile = 0; tile < instanced_tiles.size(); tile++) {
     models.push_back(FbxLoad(model_names[tile]));
     textures.push_back(LoadPng(texture_names[tile].c_str()));
     normal_textures.push_back(LoadPng(normal_texture_names[tile].c_str()));
@@ -1562,7 +1651,7 @@ void Renderer::CreateDungeonBuffers() {
 
   for (int cx = 0; cx < kDungeonCells; cx++) {
     for (int cz = 0; cz < kDungeonCells; cz++) {
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < instanced_tiles.size(); i++) {
         char tile = instanced_tiles[i];
 
         if (!created_dungeon_buffers) {
@@ -1574,27 +1663,6 @@ void Renderer::CreateDungeonBuffers() {
           glGenBuffers(1, &dungeon_render_data[cx][cz].tangent_buffers[tile]);
           glGenBuffers(1, &dungeon_render_data[cx][cz].bitangent_buffers[tile]);
         }
-
-        // Buffer orphaning.
-        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].vbos[tile]);
-        // glBufferData(GL_ARRAY_BUFFER, 6400 * sizeof(vec3), NULL,
-        //   GL_STREAM_DRAW);
-
-        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].uvs[tile]);
-        // glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(vec2), NULL,
-        //   GL_STREAM_DRAW);
-
-        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].normals[tile]);
-        // glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(vec3), NULL,
-        //   GL_STREAM_DRAW);
-
-        // glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].matrix_buffers[tile]);
-        // glBufferData(GL_ARRAY_BUFFER, model_matrices.size() * sizeof(mat4), 
-        //   NULL, GL_STREAM_DRAW);
-
-        // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dungeon_render_data[cx][cz].element_buffers[tile]); 
-        // glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), 
-        //   NULL, GL_STREAM_DRAW);
 
         const FbxData& data = models[i];
         dungeon_render_data[cx][cz].textures[tile] = textures[i];
@@ -1654,27 +1722,51 @@ void Renderer::CreateDungeonBuffers() {
             float room_z = 10.0f * z;
             vec3 pos = kDungeonOffset + vec3(room_x, y, room_z);
 
-            if (tile == ' ') {
-              mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 25, 0));
-              model_matrices.push_back(ModelMatrix);
-            }
-
             if (tile == '|') {
               if (dungeon_map[x][z] != '|' && dungeon_map[x][z] != '-') continue;
             } else if (tile == 'o') {
-              if (dungeon_map[x][z] != 'o' && dungeon_map[x][z] != 'O') continue;
+              if (dungeon_map[x][z] != 'o' && dungeon_map[x][z] != 'O' && 
+                dungeon_map[x][z] != 'g' && dungeon_map[x][z] != 'G') continue;
+            } else if (tile == 'd') {
+              if (dungeon_map[x][z] != 'd' && dungeon_map[x][z] != 'D') continue;
+            } else if (tile == 'g') {
+              if (dungeon_map[x][z] != 'g' && dungeon_map[x][z] != 'G') continue;
+            } else if (tile == 'P') {
+              if (dungeon_map[x][z] != 'p' && dungeon_map[x][z] != 'P') continue;
             } else if (tile == ' ') {
-              if (dungeon_map[x][z] != ' ') continue;
+            } else if (tile == 'c') {
+            } else if (tile == 's') {
             } else {
               if (dungeon_map[x][z] != tile) continue;
             }
            
             mat4 ModelMatrix = translate(mat4(1.0), pos);
-            if (dungeon_map[x][z] == '-' || dungeon_map[x][z] == 'O') {
+
+            // Rotate.
+            if (dungeon_map[x][z] == '-' || dungeon_map[x][z] == 'O' || 
+              dungeon_map[x][z] == 'D' || dungeon_map[x][z] == 'G') {
               ModelMatrix *= rotate(mat4(1.0), 1.57f, vec3(0, 1, 0));
             }
 
-            model_matrices.push_back(ModelMatrix);
+            if (tile == 'c') {  
+              if (dungeon_map[x][z] != '<' && dungeon_map[x][z] != '\'' && 
+                !resources_->GetDungeon().IsChamber(x, z)) { // Not upstairs. Draw ceiling.
+                // Create ceiling.
+                mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 50, 0));
+                model_matrices.push_back(ModelMatrix);
+              }
+            } else if (tile == ' ') {  
+              if (dungeon_map[x][z] != '>' && dungeon_map[x][z] != '~' &&
+                !resources_->GetDungeon().IsChamber(x, z)) { // Not downstairs. Draw floor.
+                model_matrices.push_back(ModelMatrix);
+              }
+            } else if (tile == 's') {  
+              if (resources_->GetDungeon().IsChamber(x, z)) {
+                model_matrices.push_back(ModelMatrix);
+              }
+            } else {
+              model_matrices.push_back(ModelMatrix);
+            }
           }
         }
         dungeon_render_data[cx][cz].num_objs[tile] = model_matrices.size();
@@ -1748,7 +1840,7 @@ void Renderer::DrawDungeonTiles() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
   int num_culled = 0;
-  vector<char> instanced_tiles { ' ', '+', '|', 'o' };
+  vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
   for (int cx = 0; cx < kDungeonCells; cx++) {
     for (int cz = 0; cz < kDungeonCells; cz++) {
       float size = 140.0f;
@@ -1771,7 +1863,7 @@ void Renderer::DrawDungeonTiles() {
         continue;
       }
 
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < instanced_tiles.size(); i++) {
         char tile = instanced_tiles[i];
 
         GLuint program_id = resources_->GetShader("dungeon");
@@ -1791,6 +1883,18 @@ void Renderer::DrawDungeonTiles() {
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].specular_textures[tile]);
         glUniform1i(GetUniformId(program_id, "specular_sampler"), 2);
+
+
+        // Shadow.
+        mat4 shadow_matrix0 = GetShadowMatrix(true, 0);
+        glUniformMatrix4fv(GetUniformId(program_id, "shadow_matrix0"), 1, GL_FALSE, &shadow_matrix0[0][0]);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, shadow_textures_[0]);
+        glUniform1i(GetUniformId(program_id, "shadow_sampler"), 3);
+
+        glUniform1i(GetUniformId(program_id, "draw_shadows"), 1);
+
         
         mat4 VP = projection_matrix_ * view_matrix_;  
         glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);

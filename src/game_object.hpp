@@ -45,6 +45,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   quat dest_rotation = quat(0, 0, 0, 1);
 
   float distance;
+  float scale = 1.0f;
+  float animation_speed = 1.0f;
 
   // TODO: remove.
   bool draw = true;
@@ -73,6 +75,12 @@ class GameObject : public enable_shared_from_this<GameObject> {
   // TODO: Stuff that should polymorph to something that depends on GameObject.
   float life = 50.0f;
   float max_life = 50.0f;
+  float stamina = 100.0f;
+  float max_stamina = 100.0f;
+  float recover_stamina = 0.0f;
+  float mana = 50.0f;
+  float max_mana = 50.0f;
+
   float current_speed = 0.0f;
   vec3 speed = vec3(0);
   bool can_jump = true;
@@ -114,6 +122,9 @@ class GameObject : public enable_shared_from_this<GameObject> {
   int item_id = -1;
 
   int level = 1;
+
+  float scale_in = 1.0f;
+  float scale_out = 0.0f;
 
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
@@ -161,6 +172,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void Load(const string& in_name, const string& asset_name, 
     const vec3& in_position);
   void Load(pugi::xml_node& xml);
+
   void ToXml(pugi::xml_node& parent);
   void CollisionDataToXml(pugi::xml_node& parent);
   void CalculateMonsterStats();
@@ -201,6 +213,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   void RangedAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   bool IsPartiallyTransparent();
+  void UpdateAsset(const string& asset_name);
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -208,6 +221,7 @@ using ObjPtr = shared_ptr<GameObject>;
 struct Player : public GameObject {
   PlayerAction player_action = PLAYER_IDLE;
   int selected_spell = 0;
+  bool running = false;
 
   vec3 rotation = vec3(-0.6139, -0.0424196, -0.78824);
   string talking_to;
@@ -219,9 +233,12 @@ struct Player : public GameObject {
   }
 };
 
+struct Particle;
+
 struct Missile : public GameObject {
   shared_ptr<GameObject> owner = nullptr;
   MissileType type = MISSILE_MAGIC_MISSILE;
+  vector<shared_ptr<Particle>> associated_particles;
 
   Missile(Resources* resources) 
     : GameObject(resources, GAME_OBJ_MISSILE) {}

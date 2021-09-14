@@ -738,6 +738,59 @@ void Inventory::DrawStats(const Camera& camera, int win_x, int win_y,
   }
 }
 
+void Inventory::DrawSpellSelectionInterface(const Camera& camera, int win_x, int win_y, 
+  GLFWwindow* window) {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  int (&spellbar)[8] = configs->spellbar;
+  int (&spellbar_quantities)[8] = configs->spellbar_quantities;
+
+  draw_2d_->DrawImage("spell_interface", win_x_, win_y_, 550, 550, 1.0);
+
+  vector<shared_ptr<ArcaneSpellData>>& arcane_spell_data = 
+    resources_->GetArcaneSpellData();
+
+  shared_ptr<ArcaneSpellData> selected_spell = nullptr;
+  for (auto spell : arcane_spell_data) {
+    ivec2 pos = ivec2(win_x_, win_y_) + spell->spell_selection_pos * 50;
+    draw_2d_->DrawImage(spell->image_name, pos.x, pos.y, 64, 64, 1.0);
+
+    if (spell_selection_cursor_.x == spell->spell_selection_pos.x &&
+        spell_selection_cursor_.y == spell->spell_selection_pos.y) {
+      selected_spell = spell;
+    }
+  }
+
+  if (throttle_ < 0) {
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+      throttle_ = 5;
+      spell_selection_cursor_ += ivec2(0, -1);
+    } else if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+      throttle_ = 5;
+      spell_selection_cursor_ += ivec2(0, +1);
+    } else if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+      throttle_ = 5;
+      spell_selection_cursor_ += ivec2(-1, 0);
+    } else if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+      throttle_ = 5;
+      spell_selection_cursor_ += ivec2(+1, 0);
+    } else if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS ||
+      glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+      throttle_ = 5;
+      Disable();
+      glfwSetCursorPos(window, 0, 0);
+      resources_->SetGameState(STATE_GAME);
+
+      if (selected_spell) {
+        spellbar[configs->selected_spell] = selected_spell->item_id;
+        spellbar_quantities[configs->selected_spell] = 1;
+      }
+    } 
+  }
+
+  ivec2 pos = ivec2(win_x_, win_y_) + spell_selection_cursor_ * 50;
+  draw_2d_->DrawImage("selected_item", pos.x, pos.y, 64, 64, 1.0);
+}
+
 void Inventory::Draw(const Camera& camera, int win_x, int win_y, 
   GLFWwindow* window) {
   if (!enabled) return;
@@ -772,6 +825,9 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
       break;
     case INVENTORY_DIALOG:
       DrawDialog(window);
+      break;
+    case INVENTORY_SPELL_SELECTION:
+      DrawSpellSelectionInterface(camera, win_x, win_y, window);
       break;
     default:
       break;

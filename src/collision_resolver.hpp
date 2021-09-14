@@ -13,50 +13,50 @@ enum CollisionPair {
   CP_SQ,     // SPHERE -> QUICK_SPHERE
   CP_SP,     // SPHERE -> PERFECT
   CP_ST,     // SPHERE -> TERRAIN
-  CP_SH,     // SPHERE -> C. HULL (Not implemented)
   CP_SO,     // SPHERE -> OBB
+  CP_SA,     // SPHERE -> AABB (Not implemented)
   CP_BS,     // BONES -> SPHERE
   CP_BB,     // BONES -> BONES
   CP_BQ,     // BONES -> QUICK_SPHERE 
   CP_BP,     // BONES -> PERFECT
   CP_BT,     // BONES -> TERRAIN
-  CP_BH,     // BONES -> C. HULL (Not implemented)
   CP_BO,     // BONES -> OBB (Not implemented)
+  CP_BA,     // BONES -> AABB (Not implemented)
   CP_QS,     // QUICK_SPHERE -> SPHERE
   CP_QB,     // QUICK_SPHERE -> BONES
   CP_QQ,     // QUICK_SPHERE -> QUICK_SPHERE (Not implemented)
   CP_QP,     // QUICK_SPHERE -> PERFECT
   CP_QT,     // QUICK_SPHERE -> TERRAIN
-  CP_QH,     // QUICK_SPHERE -> C. HULL
   CP_QO,     // QUICK_SPHERE -> OBB
-  CP_PS,     // PERFECT -> SPHERE
-  CP_PB,     // PERFECT -> BONES
-  CP_PQ,     // PERFECT -> QUICK_SPHERE
-  CP_PP,     // PERFECT -> PERFECT (Not implemented)             
-  CP_PT,     // PERFECT -> TERRAIN (Not implemented)             
-  CP_PH,     // PERFECT -> C. HULL (Not implemented)
+  CP_QA,     // QUICK_SPHERE -> AABB (Not implemented)
+  CP_PS,     // PERFECT -> SPHERE (Not implemented)
+  CP_PB,     // PERFECT -> BONES (Not implemented)
+  CP_PQ,     // PERFECT -> QUICK_SPHERE (Not implemented)
+  CP_PP,     // PERFECT -> PERFECT (Not implemented)
+  CP_PT,     // PERFECT -> TERRAIN (Not implemented)
   CP_PO,     // PERFECT -> OBB (Not implemented)
-  CP_TS,     // TERRAIN -> SPHERE
-  CP_TB,     // TERRAIN -> BONES
-  CP_TQ,     // TERRAIN -> QUICK_SPHERE
+  CP_PA,     // PERFECT -> AABB (Not implemented)
+  CP_TS,     // TERRAIN -> SPHERE (Not implemented)
+  CP_TB,     // TERRAIN -> BONES (Not implemented)
+  CP_TQ,     // TERRAIN -> QUICK_SPHERE (Not implemented)
   CP_TP,     // TERRAIN -> PERFECT (Not implemented)             
   CP_TT,     // TERRAIN -> TERRAIN (Not implemented)             
-  CP_TH,     // TERRAIN -> C. HULL (Not implemented)             
   CP_TO,     // TERRAIN -> OBB (Not implemented)             
-  CP_HS,     // C. HULL -> SPHERE (Not implemented)
-  CP_HB,     // C. HULL -> BONES (Not implemented)
-  CP_HQ,     // C. HULL -> QUICK_SPHERE
-  CP_HP,     // C. HULL -> PERFECT (Not implemented)             
-  CP_HT,     // C. HULL -> TERRAIN
-  CP_HH,     // C. HULL -> C. HULL (Not implemented)             
-  CP_HO,     // C. HULL -> OBB (Not implemented)             
+  CP_TA,     // TERRAIN -> AABB (Not implemented)             
   CP_OS,     // OBB -> SPHERE (Not implemented)
   CP_OB,     // OBB -> BONES (Not implemented)
   CP_OQ,     // OBB -> QUICK_SPHERE
   CP_OP,     // OBB -> PERFECT
   CP_OT,     // OBB -> TERRAIN
-  CP_OH,     // OBB -> C. HULL (Not implemented)             
   CP_OO,     // OBB -> OBB (Not implemented)             
+  CP_OA,     // OBB -> AABB (Not implemented)             
+  CP_AS,     // AABB -> SPHERE (Not implemented)
+  CP_AB,     // AABB -> BONES (Not implemented)
+  CP_AQ,     // AABB -> QUICK_SPHERE (Not implemented)
+  CP_AP,     // AABB -> PERFECT (Not implemented)
+  CP_AT,     // AABB -> TERRAIN (Not implemented)
+  CP_AO,     // AABB -> OBB (Not implemented)             
+  CP_AA,     // AABB -> AABB (Not implemented)             
   CP_UNDEFINED 
 };
 
@@ -107,13 +107,6 @@ struct CollisionSP : Collision {
     : Collision(CP_SP, o1, o2), polygon(polygon) {}
 };
 
-struct CollisionSH : Collision {
-  Polygon polygon;
-  CollisionSH() {}
-  CollisionSH(ObjPtr o1, ObjPtr o2, Polygon polygon)
-    : Collision(CP_SH, o1, o2), polygon(polygon) {}
-};
-
 struct CollisionSO : Collision {
   CollisionSO() {}
   CollisionSO(ObjPtr o1, ObjPtr o2)
@@ -150,6 +143,14 @@ struct CollisionBO : Collision {
     : Collision(CP_BO, o1, o2), bone(bone) {}
 };
 
+struct CollisionBA : Collision {
+  int bone;
+  AABB aabb;
+  CollisionBA() {}
+  CollisionBA(ObjPtr o1, AABB aabb, int bone)
+    : Collision(CP_BA, o1, nullptr), bone(bone), aabb(aabb) {}
+};
+
 struct CollisionBT : Collision {
   int bone;
   Polygon polygon;
@@ -183,23 +184,16 @@ struct CollisionQO : Collision {
     : Collision(CP_QO, o1, o2) {}
 };
 
+struct CollisionQA : Collision {
+  AABB aabb;
+  CollisionQA() {}
+  CollisionQA(ObjPtr o1, AABB  aabb)
+    : Collision(CP_QA, o1, nullptr), aabb(aabb) {}
+};
+
 struct CollisionQT : Collision {
   CollisionQT() {}
   CollisionQT(ObjPtr o1) : Collision(CP_QT, o1, nullptr) {}
-};
-
-struct CollisionQH : Collision {
-  Polygon polygon;
-  CollisionQH() {}
-  CollisionQH(ObjPtr o1, ObjPtr o2, Polygon p) 
-    : Collision(CP_QH, o1, o2), polygon(p) {}
-};
-
-struct CollisionHT : Collision {
-  Polygon polygon;
-  CollisionHT() {}
-  CollisionHT(ObjPtr o1, Polygon p) 
-    : Collision(CP_HT, o1, nullptr), polygon(p) {}
 };
 
 struct CollisionOP : Collision {
@@ -214,6 +208,13 @@ struct CollisionOT : Collision {
   CollisionOT() {}
   CollisionOT(ObjPtr o1, Polygon polygon)
     : Collision(CP_OT, o1, nullptr), polygon(polygon) {}
+};
+
+struct CollisionOA : Collision {
+  AABB aabb;
+  CollisionOA() {}
+  CollisionOA(ObjPtr o1, AABB aabb)
+    : Collision(CP_OA, o1, nullptr), aabb(aabb) {}
 };
 
 class CollisionResolver {
@@ -252,20 +253,19 @@ class CollisionResolver {
   void TestCollisionSS(shared_ptr<CollisionSS> c);
   void TestCollisionSB(shared_ptr<CollisionSB> c);
   void TestCollisionSP(shared_ptr<CollisionSP> c);
-  void TestCollisionSH(shared_ptr<CollisionSH> c);
   void TestCollisionSO(shared_ptr<CollisionSO> c);
   void TestCollisionST(shared_ptr<CollisionST> c);
   void TestCollisionBB(shared_ptr<CollisionBB> c);
   void TestCollisionBP(shared_ptr<CollisionBP> c);
   void TestCollisionBO(shared_ptr<CollisionBO> c);
+  void TestCollisionBA(shared_ptr<CollisionBA> c);
   void TestCollisionBT(shared_ptr<CollisionBT> c);
   void TestCollisionQS(shared_ptr<CollisionQS> c);
   void TestCollisionQP(shared_ptr<CollisionQP> c);
   void TestCollisionQB(shared_ptr<CollisionQB> c);
   void TestCollisionQT(shared_ptr<CollisionQT> c);
-  void TestCollisionQH(shared_ptr<CollisionQH> c);
   void TestCollisionQO(shared_ptr<CollisionQO> c);
-  void TestCollisionHT(shared_ptr<CollisionHT> c);
+  void TestCollisionQA(shared_ptr<CollisionQA> c);
   void TestCollisionOP(shared_ptr<CollisionOP> c);
   void TestCollisionOT(shared_ptr<CollisionOT> c);
   void TestCollision(ColPtr c);
@@ -275,6 +275,7 @@ class CollisionResolver {
   void UpdateObjectPositions();
   void FindCollisions(shared_ptr<OctreeNode> octree_node);
 
+  void TestCollisionsWithDungeon();
   void TestCollisionsWithTerrain();
   void ResolveMissileCollision(ColPtr c);
   void ResolveParticleCollision(ColPtr c);

@@ -148,26 +148,26 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glGenVertexArrays(1, &vao_);
   glBindVertexArray(vao_);
 
-  // texture_ = LoadPng("resources/textures_png/grass.png");
-  // texture1_ = LoadPng("resources/textures_png/dirt.png");
-  // texture2_ = LoadPng("resources/textures_png/gravel.png");
-  // texture3_ = LoadPng("resources/textures_png/mossy_stone.png");
-  // texture4_ = LoadPng("resources/textures_png/leaves.png");
+  // texture_ = LoadTexture("resources/textures_png/grass.png");
+  // texture1_ = LoadTexture("resources/textures_png/dirt.png");
+  // texture2_ = LoadTexture("resources/textures_png/gravel.png");
+  // texture3_ = LoadTexture("resources/textures_png/mossy_stone.png");
+  // texture4_ = LoadTexture("resources/textures_png/leaves.png");
 
-  texture_ = LoadPng("resources/textures_png/grass_diffuse.png");
-  texture4_ = LoadPng("resources/textures_png/grass_normal.png");
+  texture_ = LoadTexture("resources/textures_png/grass_diffuse.png");
+  texture4_ = LoadTexture("resources/textures_png/grass_normal.png");
 
-  texture1_ = LoadPng("resources/textures_png/dirt_diffuse.png");
-  texture5_ = LoadPng("resources/textures_png/dirt_normal.png");
+  texture1_ = LoadTexture("resources/textures_png/dirt_diffuse.png");
+  texture5_ = LoadTexture("resources/textures_png/dirt_normal.png");
 
-  texture2_ = LoadPng("resources/textures_png/gravel_diffuse.png");
-  texture6_ = LoadPng("resources/textures_png/gravel_normal.png");
+  texture2_ = LoadTexture("resources/textures_png/gravel_diffuse.png");
+  texture6_ = LoadTexture("resources/textures_png/gravel_normal.png");
 
-  texture3_ = LoadPng("resources/textures_png/cliff_rock_diffuse.png");
-  texture7_ = LoadPng("resources/textures_png/cliff_rock_normal.png");
+  texture3_ = LoadTexture("resources/textures_png/cliff_rock_diffuse.png");
+  texture7_ = LoadTexture("resources/textures_png/cliff_rock_normal.png");
 
-  water_texture_ = LoadPng("resources/textures_png/water_dudv.png");
-  water_normal_texture_ = LoadPng("resources/textures_png/water_normal.png");
+  water_texture_ = LoadTexture("resources/textures_png/water_dudv.png");
+  water_normal_texture_ = LoadTexture("resources/textures_png/water_normal.png");
   // texture_ = resources_->GetTextureByName("tiles");
   // water_texture_ = resources_->GetTextureByName("water_dudv");
   // water_normal_texture_ = resources_->GetTextureByName("water_normal");

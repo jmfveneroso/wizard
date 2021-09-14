@@ -37,8 +37,10 @@
 #define NEAR_CLIPPING 1.00f
 #define FAR_CLIPPING 10000.0f
 #define FIELD_OF_VIEW 45.0f
-#define WINDOW_WIDTH 1280
-#define WINDOW_HEIGHT 800
+// #define WINDOW_WIDTH 1280
+// #define WINDOW_HEIGHT 800
+#define WINDOW_WIDTH 800
+#define WINDOW_HEIGHT 600
 #define LOD_DISTANCE 100.0f
 #define GRAVITY 0.016
 
@@ -47,6 +49,7 @@ const int kMax3dParticles = 20;
 const int kArcaneSpellItemOffset = 5000;
 const int kArcaneWhiteOffset = 5015;
 const int kArcaneBlackOffset = 5117;
+const int kArcaneBaseOffset = 10697;
 const int kRandomItemOffset = 100000;
 
 class GameObject;
@@ -72,8 +75,8 @@ struct Configs {
   vec3 world_center = kWorldCenter;
   vec3 initial_player_pos = vec3(10947.5, 172.5, 7528);
   vec3 respawn_point = vec3(10045, 500, 10015);
-  float max_player_speed = 0.04f; 
-  float player_speed = 0.04f; 
+  float max_player_speed = 0.02f; 
+  float player_speed = 0.02f; 
   float taking_hit = 0.0f; 
   float fading_out = -60.0f; 
   float time_of_day = 7.0f;
@@ -236,19 +239,20 @@ struct ArcaneSpellData {
   string description;
   string image_name;
 
-  int type = 0; // 0 - complex, 1 - layered, 2 - white, 3 - black.
+  int type = 0; // 0 - complex, 1 - layered, 2 - white, 3 - black, 4 - base.
   int spell_id = 0;
   int item_id;
   int index;
   int price;
   int max_stash;
+  ivec2 spell_selection_pos;
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
-    int item_id, int spell_id, int price, int max_stash) 
+    int item_id, int spell_id, int price, int max_stash, ivec2 spell_selection_pos) 
     : name(name), description(description), image_name(image_name), 
       type(type), item_id(item_id), spell_id(spell_id), price(price), 
-      max_stash(max_stash) {}
+      max_stash(max_stash), spell_selection_pos(spell_selection_pos) {}
 };
 
 struct Phrase {
@@ -541,9 +545,10 @@ class Resources {
   void CastHeal(ObjPtr owner);
   void CastDarkvision();
   void CastTrueSeeing();
-  void CastHarpoon(const Camera& camera);
   void CastFireExplosion(ObjPtr owner, const vec3& position, 
     const vec3& direction);
+  ObjPtr CreateSpeedLines(ObjPtr obj);
+  void CreateSparks(const vec3& position, const vec3& direction);
   void CastFireball(const Camera& camera);
   void CastAcidArrow(ObjPtr owner, const vec3& position, 
     const vec3& direction);
@@ -553,9 +558,9 @@ class Resources {
   void CastBouncyBall(ObjPtr owner, const vec3& position, 
     const vec3& direction);
 
-  void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction, bool paralysis = false);
-  bool SpiderCastPowerMagicMissile(ObjPtr spider, const vec3& direction);
+  void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction);
   void UpdateMissiles();
+  void UpdateHand();
   void UpdateParticles();
   void CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
     vec3 color, float size, float life, float spread, 
@@ -564,9 +569,9 @@ class Resources {
   void InitMissiles();
   void InitParticles();
   int FindUnusedParticle();
-  shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
-  shared_ptr<Missile> CreateMissileFromAssetGroup(
-    shared_ptr<GameAssetGroup> asset_group);
+  // shared_ptr<Missile> CreateMissileFromAsset(shared_ptr<GameAsset> asset);
+  // shared_ptr<Missile> CreateMissileFromAssetGroup(
+  //   shared_ptr<GameAssetGroup> asset_group);
 
   // TODO: move to space partition.
   ObjPtr IntersectRayObjects(const vec3& position, 
@@ -666,6 +671,11 @@ class Resources {
   int CreateRandomItem(int base_item_id);
   void DropItem(const vec3& position);
   ObjPtr Create3dParticleEffect(const string& asset_name, const vec3& pos);
+  shared_ptr<Particle> CreateOneParticle(vec3 pos, float life, 
+    const string& type, float size);
+
+  shared_ptr<Missile> GetUnusedMissile();
+  void CastSpellShot(const Camera& camera);
 };
 
 #endif // __RESOURCES_HPP__

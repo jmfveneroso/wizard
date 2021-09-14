@@ -46,6 +46,8 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   string ai_script;
 
   bool invisibility = false;
+  float scale = 1.0f;
+  float animation_speed = 1.0f;
 
   // Mesh.
   // unordered_map<int, Mesh> lod_meshes;

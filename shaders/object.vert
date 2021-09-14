@@ -26,6 +26,7 @@ uniform mat3 MV3x3;
 uniform int enable_bump_map;
 uniform vec3 light_direction;
 uniform vec3 player_pos;
+uniform int in_dungeon;
 
 void main(){
   out_data.UV = vertexUV;
@@ -48,9 +49,13 @@ void main(){
     normal_cameraspace
   ));
 
-  // vec3 light_pos_worldspace = light_direction * 200;
-  vec3 light_pos_worldspace = out_data.position + light_direction;
-  // vec3 light_pos_worldspace = vec3(10000, 500, 10000);
+  vec3 light_dir = light_direction; 
+  if (in_dungeon > 0) {
+    light_dir = player_pos + vec3(0, 5, 0) - out_data.position;
+  }
+
+  vec3 light_pos_worldspace = player_pos + vec3(0, 5, 0);
+  // vec3 light_pos_worldspace = out_data.position + light_dir;
 
   vec3 vertex_pos_cameraspace = (V * M * vec4(vertexPosition_modelspace, 1)).xyz;
   vec3 eye_dir_cameraspace = vec3(0, 0, 0) - vertex_pos_cameraspace;

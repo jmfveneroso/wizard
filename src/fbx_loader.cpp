@@ -372,7 +372,7 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
       }
       animation.keyframes.push_back(keyframe);
     }
-    cout << "Extracted animation " << animation.name << endl;
+    // cout << "Extracted animation " << animation.name << endl;
     data->animations.push_back(animation);
   }
 }
@@ -523,7 +523,7 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
       m.animations[animation.name].keyframes[frame].bounding_sphere =
         GetBoundingSphereFromVertices(vertices);
     }
-    cout << "Extracted animation 2: " << animation.name << endl;
+    // cout << "Extracted animation 2: " << animation.name << endl;
   }
 
   for (int i = 0; i < data.joints.size(); i++) {

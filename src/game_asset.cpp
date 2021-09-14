@@ -206,7 +206,16 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
   const pugi::xml_node& experience_xml = asset_xml.child("experience");
   if (experience_xml) {
     experience = boost::lexical_cast<float>(experience_xml.text().get());
-    cout << "Loading exp: " << experience << endl;
+  }
+
+  const pugi::xml_node& scale_xml = asset_xml.child("scale");
+  if (scale_xml) {
+    scale = boost::lexical_cast<float>(scale_xml.text().get());
+  }
+
+  const pugi::xml_node& animation_speed_xml = asset_xml.child("animation-speed");
+  if (animation_speed_xml) {
+    animation_speed = boost::lexical_cast<float>(animation_speed_xml.text().get());
   }
 
   const pugi::xml_node& drops_xml = asset_xml.child("drops");
@@ -278,8 +287,13 @@ void GameAsset::CalculateCollisionData() {
   const string mesh_name = lod_meshes[0];
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
 
-  aabb = GetAABBFromPolygons(mesh->polygons);
-  bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
+  if (!collision_hull.empty()) {
+    aabb = GetAABBFromPolygons(collision_hull);
+    bounding_sphere = GetAssetBoundingSphere(collision_hull);
+  } else {
+    aabb = GetAABBFromPolygons(mesh->polygons);
+    bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
+  }
 
   switch (collision_type_) {
     case COL_BONES: {

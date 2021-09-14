@@ -47,8 +47,13 @@ void InitOpenGl() {
   // To make MacOS happy; should not be needed.
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); 
 
+  // Fullscreen.
+  // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
+  //   glfwGetPrimaryMonitor(), NULL);
+
+  // Windowed.
   window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
-    glfwGetPrimaryMonitor(), NULL);
+    NULL, NULL);
 
   if (window_ == NULL) {
     glfwTerminate();

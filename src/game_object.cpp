@@ -100,6 +100,10 @@ BoundingSphere GameObject::GetBoundingSphere() {
     throw runtime_error("Asset group in game object is empty.");
   }
 
+  if (type == GAME_OBJ_MISSILE) { 
+    return GetAsset()->bounding_sphere;
+  }
+
   BoundingSphere s;
   if (bounding_sphere.radius > 0.001f) {
     s = bounding_sphere; 
@@ -250,6 +254,8 @@ bool GameObject::IsDungeonPiece() {
     case '+':
     case 'o':
     case 'O':
+    case 'd':
+    case 'D':
       return true;
     default:
       break;
@@ -745,15 +751,22 @@ void Region::Load(pugi::xml_node& xml) {
 
 BoundingSphere GameObject::GetBoneBoundingSphere(int bone_id) {
   BoundingSphere s = bones[bone_id];
-  if (!asset_group) return s + position;
+  if (!asset_group) {
+    return s + position;
+  }
 
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(GetAsset()->lod_meshes[0]);
   mat4 joint_transform = GetBoneTransform(*mesh, active_animation, bone_id, frame);
+ 
+  // Old way.
+  // vec3 offset = s.center;
+  // offset = vec3(rotation_matrix * vec4(offset, 1.0));
+  // s.center = position + joint_transform * offset;
 
   vec3 offset = s.center;
-  offset = vec3(rotation_matrix * vec4(offset, 1.0));
+  offset = vec3(rotation_matrix * vec4(joint_transform * offset, 1.0));
 
-  s.center = position + joint_transform * offset;
+  s.center = position + offset;
   return s;
 }
 
@@ -1002,8 +1015,14 @@ void GameObject::CalculateCollisionData() {
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
 
   // Bounding sphere and AABB are necessary to cull objects properly.
-  bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
-  aabb = GetAABBFromPolygons(mesh->polygons); 
+  collision_hull = game_asset->collision_hull;
+  if (!collision_hull.empty()) {
+    bounding_sphere = GetAssetBoundingSphere(collision_hull);
+    aabb = GetAABBFromPolygons(collision_hull); 
+  } else {
+    bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
+    aabb = GetAABBFromPolygons(mesh->polygons); 
+  }
 
   switch (GetCollisionType()) {
     case COL_BONES: {
@@ -1421,8 +1440,42 @@ bool GameObject::IsPartiallyTransparent() {
 }
 
 shared_ptr<Missile> CreateMissile(Resources* resources, const string& asset_name) {
-  std::cout << "Creating missile" << std::endl;
   shared_ptr<Missile> new_game_obj = make_shared<Missile>(resources);
   new_game_obj->Load(resources->GetRandomName(), asset_name, vec3(0));
   return new_game_obj;
+}
+
+void GameObject::UpdateAsset(const string& asset_name) {
+  asset_group = resources_->GetAssetGroupByName(asset_name);
+  if (!asset_group) {
+    throw runtime_error(string("Asset group ") + asset_name + 
+      " does not exist.");
+  }
+
+  // Mesh.
+  shared_ptr<GameAsset> game_asset = GetAsset();
+  if (!game_asset->default_animation.empty()) {
+    active_animation = game_asset->default_animation;
+  } else {
+    const string mesh_name = game_asset->lod_meshes[0];
+    shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+    if (!mesh) {
+      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+    } else if (mesh->animations.size() > 0) {
+      active_animation = mesh->animations.begin()->first;
+    } else {
+      for (shared_ptr<GameAsset> asset : asset_group->assets) {
+        const string mesh_name = asset->lod_meshes[0];
+        shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+        if (mesh->animations.size() > 0) {
+          if (!asset->default_animation.empty()) {
+            active_animation = asset->default_animation;
+          } else {
+            active_animation = mesh->animations.begin()->first;
+          }
+          break;
+        }
+      }
+    }
+  }
 }
