@@ -29,9 +29,11 @@ const int kMaxDungeonTiles = 2048;
 
 Renderer::Renderer(shared_ptr<Resources> asset_catalog, 
   shared_ptr<Draw2D> draw_2d, shared_ptr<Project4D> project_4d, 
-  GLFWwindow* window, int window_width, int window_height) : 
+  shared_ptr<Inventory> inventory, GLFWwindow* window, int window_width, 
+  int window_height) : 
   resources_(asset_catalog), draw_2d_(draw_2d), project_4d_(project_4d),
-  window_(window), window_width_(window_width), window_height_(window_height) {
+  inventory_(inventory), window_(window), window_width_(window_width), 
+  window_height_(window_height) {
   cout << "Window width: " << window_width_ << endl;
   cout << "Window height: " << window_height_ << endl;
   Init();
@@ -128,6 +130,7 @@ void Renderer::GetVisibleObjects(
       case GAME_OBJ_WAYPOINT:
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DESTRUCTIBLE:
         break;
       case GAME_OBJ_MISSILE: {
         if (obj->life > 0.0f || obj->scale_out > 0.0f) {
@@ -164,6 +167,7 @@ void Renderer::GetVisibleObjects(
       case GAME_OBJ_WAYPOINT:
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DESTRUCTIBLE:
         break;
       case GAME_OBJ_MISSILE: {
         if (obj->life > 0.0f || obj->scale_out > 0.0f) {
@@ -225,6 +229,7 @@ Renderer::GetVisibleObjectsFromSector(shared_ptr<Sector> sector) {
 bool Renderer::CullObject(shared_ptr<GameObject> obj, 
   const vector<vector<Polygon>>& occluder_convex_hulls) {
   if (obj->name == "hand-001") return true;
+  if (obj->name == "scepter-001") return true;
   if (obj->name == "skydome") return true;
   if (obj->never_cull) return false;
   if (obj->IsInvisible() && !resources_->GetConfigs()->see_invisible) 
@@ -588,10 +593,6 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
     scale = asset->scale * particle->scale_out;
   }
 
-  cout << "scale: " << scale << endl;
-  cout << "scale in: " << particle->scale_in << endl;
-  cout << "scale out: " << particle->scale_out << endl;
-
   ModelMatrix = glm::scale(ModelMatrix, vec3(scale));
 
   mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
@@ -709,14 +710,17 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
       (float*) &configs->sun_position);
 
-    if (obj->current_sector) {
-      glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
-        (float*) &obj->current_sector->lighting_color);
+    vec3 light_color = vec3(1, 1, 1);
+    glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
+      (float*) &light_color);
+    // if (obj->current_sector) {
+    //   glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
+    //     (float*) &obj->current_sector->lighting_color);
 
-      vec3 light_color = vec3(0.3);
-      glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
-        (float*) &light_color);
-    }
+    //   vec3 light_color = vec3(0.3);
+    //   glUniform3fv(GetUniformId(program_id, "lighting_color"), 1,
+    //     (float*) &light_color);
+    // }
 
     glUniform1f(GetUniformId(program_id, "light_radius"), configs->light_radius);
 
@@ -773,7 +777,8 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       texture_id = asset->textures[0];
     }
 
-    if (program_id == resources_->GetShader("animated_object")) {
+    if (program_id == resources_->GetShader("animated_object") ||
+        program_id == resources_->GetShader("animated_object_noshadow")) {
       glDisable(GL_CULL_FACE);
       vector<mat4> joint_transforms;
       if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
@@ -957,6 +962,7 @@ void Renderer::DrawObjects(vector<ObjPtr> objs) {
       DrawObject(obj);
     }
   }
+
   DrawParticles();
   glEnable(GL_CULL_FACE);
 }
@@ -1048,6 +1054,7 @@ void Renderer::Draw() {
 
   glClear(GL_DEPTH_BUFFER_BIT);
 
+  resources_->UpdateHand(camera_);
   DrawHand();
   DrawScreenEffects();
 }
@@ -1110,7 +1117,7 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
       asset->shader == resources_->GetShader("animated_object") ||
       asset->shader == resources_->GetShader("animated_transparent_object"));
 
-    if (is_animated) {
+    if (is_animated && obj->IsCreature()) {
       program_id = resources_->GetShader("animated_shadow");
     } else {
       continue;
@@ -1253,36 +1260,64 @@ void Renderer::DrawShadows() {
 // Static draw
 // ==================
 
-void Renderer::DrawSpellbar() {
-  shared_ptr<Configs> configs = resources_->GetConfigs();
-  unordered_map<int, ItemData>& item_data = resources_->GetItemData();
-  int (&item_matrix)[8][7] = configs->item_matrix;
-  int (&spellbar)[8] = configs->spellbar;
-  int (&spellbar_quantities)[8] = configs->spellbar_quantities;
+void Renderer::DrawStatusBars() {
+  draw_2d_->DrawImage("status_bars", 0, 0, 1440, 1440, 1.0);
 
-  draw_2d_->DrawImage("spell_bar", 400, 730, 600, 600, 1.0);
-  for (int x = 0; x < 8; x++) {
-    int top = 742;
-    int left = 433 + 52 * x;
-    int item_id = configs->spellbar[x];
-    int item_quantity = configs->spellbar_quantities[x];
-    if (item_id != 0) {
-      draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
+  shared_ptr<Player> player = resources_->GetPlayer();
+  float hp_bar_width = player->life / player->max_life;
+  hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
 
-      string qnty = boost::lexical_cast<string>(item_quantity);
-      draw_2d_->DrawText(qnty, left + 7, window_height_ - (top + 25), 
-            vec4(1), 1.0, false, "avenir_light_oblique");
-    }
+  // Draw HP bar.
+  float w = 0.0108333 + 0.237777 * hp_bar_width;
+  float h = 0.584827;
+  draw_2d_->DrawImageWithMask("red", "spellbar_hp_mask", 0, 598, w * 1440, h * 1440, 
+    1.0, vec2(0, 0), vec2(w, h));
+  
+  string hp_str = boost::lexical_cast<string>(player->life) + " / " +
+    boost::lexical_cast<string>(player->max_life);
+  draw_2d_->DrawText(hp_str, 300, 900 - 818, 
+    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
-    if (configs->selected_spell == x) {
-      draw_2d_->DrawImage("selected_item", left, top, 64, 64, 1.0); 
-    }
+  // Draw stamina.
+  float stamina_bar_width = player->stamina / player->max_stamina;
+  stamina_bar_width = (stamina_bar_width > 0) ? stamina_bar_width : 0;
+  float stamina_recover_bar_width = player->recover_stamina / player->max_stamina;
+  stamina_recover_bar_width = (stamina_recover_bar_width > 0) ? stamina_recover_bar_width : 0;
+
+  if (player->recover_stamina > 0.0f) {
+    float w = 0.235555 * stamina_recover_bar_width;
+    float h = 1.0;
+    draw_2d_->DrawImageWithMask("red", "spellbar_stamina_mask", 0, 0, w * 1440, h * 1440, 
+      1.0, vec2(0, 0), vec2(w, h));
+  } else {
+    float w = 0.235555 * stamina_bar_width;
+    float h = 1.0;
+    draw_2d_->DrawImageWithMask("green", "spellbar_stamina_mask", 0, 0, w * 1440, h * 1440, 
+      1.0, vec2(0, 0), vec2(w, h));
   }
+
+  string stamina_str = boost::lexical_cast<string>(int(player->stamina)) + " / " +
+    boost::lexical_cast<string>(int(player->max_stamina));
+  draw_2d_->DrawText(stamina_str, 240, 900 - 872, 
+    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+
+  // Draw mana.
+  float mana_bar_width = player->mana / player->max_mana;
+  mana_bar_width = (mana_bar_width > 0) ? mana_bar_width : 0;
+  draw_2d_->DrawImageWithMask("blue", "mana_bar_mask", 
+    1089 + (1 - mana_bar_width) * 329, 824, 
+    mana_bar_width * 329, 329, 
+    1.0, vec2(1 - mana_bar_width, 0), vec2(mana_bar_width, 1));
+
+  string mana_str = boost::lexical_cast<string>(player->mana) + " / " +
+    boost::lexical_cast<string>(player->max_mana);
+  draw_2d_->DrawText(mana_str, 1110, 900 - 818, 
+    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 }
 
 void Renderer::DrawScreenEffects() {
-  const int kWindowWidth = 1280;
-  const int kWindowHeight = 800;
+  const int kWindowWidth = 1440;
+  const int kWindowHeight = 900;
   shared_ptr<Configs> configs = resources_->GetConfigs();
   float taking_hit = configs->taking_hit;
   if (taking_hit > 0.0 || resources_->GetPlayer()->status == STATUS_DEAD) {
@@ -1294,52 +1329,10 @@ void Renderer::DrawScreenEffects() {
       1.0f - (abs(configs->fading_out) / 60.0f));
   }
 
-  draw_2d_->DrawImage("crosshair", 640-4, 400-4, 8, 8, 0.5);
+  draw_2d_->DrawImage("crosshair", kWindowWidth/2-4, kWindowHeight/2-4, 8, 8, 0.5);
 
-  DrawSpellbar();
-
-  // Draw stamina.
-  shared_ptr<Player> player = resources_->GetPlayer();
-  float stamina_bar_width = player->stamina / player->max_stamina;
-  stamina_bar_width = (stamina_bar_width > 0) ? stamina_bar_width : 0;
-  float stamina_recover_bar_width = player->recover_stamina / player->max_stamina;
-  stamina_recover_bar_width = (stamina_recover_bar_width > 0) ? stamina_recover_bar_width : 0;
-
-  if (player->recover_stamina > 0.0f) {
-    draw_2d_->DrawImage("hp_liquid", 25, 700, stamina_recover_bar_width * 266, 266, 1.0, 
-      vec2(stamina_recover_bar_width, 1));
-  } else {
-    draw_2d_->DrawImage("stamina_liquid", 25, 700, stamina_bar_width * 266, 266, 1.0, 
-      vec2(stamina_bar_width, 1));
-  }
-  draw_2d_->DrawImage("hp_bar", 20, 690, 300, 300, 1.0);
-
-  // Draw mana.
-  float mana_bar_width = player->mana / player->max_mana;
-  mana_bar_width = (mana_bar_width > 0) ? mana_bar_width : 0;
-
-  draw_2d_->DrawImage("mana_liquid", 25, 730, mana_bar_width * 266, 266, 1.0, 
-    vec2(mana_bar_width, 1));
-  draw_2d_->DrawImage("hp_bar", 20, 720, 300, 300, 1.0);
-
-  // Draw HP.
-  float hp_bar_width = player->life / player->max_life;
-  hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
-
-  draw_2d_->DrawImage("hp_liquid", 25, 760, hp_bar_width * 266, 266, 1.0, 
-    vec2(hp_bar_width, 1));
-  draw_2d_->DrawImage("hp_bar", 20, 750, 300, 300, 1.0);
-
-  if (configs->edit_terrain != "none") {
-    draw_2d_->DrawText("Brush size:", 350, 22, vec4(1, 0.3, 0.3, 1.0));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->brush_size), 450, 22, vec4(1, 0.3, 0.3, 1));
-
-    draw_2d_->DrawText("Selected tile:", 550, 22, vec4(1, 0.3, 0.3, 1.0));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->selected_tile), 670, 22, vec4(1, 0.3, 0.3, 1));
-
-    draw_2d_->DrawText("Raise Factor:", 750, 22, vec4(1, 0.3, 0.3, 1.0));
-    draw_2d_->DrawText(boost::lexical_cast<string>(configs->raise_factor), 870, 22, vec4(1, 0.3, 0.3, 1));
-  }
+  inventory_->DrawSpellbar();
+  DrawStatusBars();
 
   // Draw messages.
   double cur_time = glfwGetTime();
@@ -1347,9 +1340,30 @@ void Renderer::DrawScreenEffects() {
   for (int i = num_msgs-1, y = 0; i >= num_msgs - 5 && i >= 0; i--, y += 20) {
     const string& msg = get<0>(configs->messages[i]);
     const float time_remaining = (get<1>(configs->messages[i]) - cur_time) / 10.0f;
-    draw_2d_->DrawText(msg, 25, 800 - 730 + y, 
+    draw_2d_->DrawText(msg, 25, 800 - 700 + y, 
       vec4(1, 1, 1, time_remaining), 1.0, false, "avenir_light_oblique");
   }
+
+  // Draw level up.
+  if (configs->level_up_frame >= 0) {
+    int frame = int(configs->level_up_frame);
+    auto particle_type = resources_->GetParticleTypeByName("level-up");
+    float w = 1.0 / float(particle_type->grid_size);
+    float x = (frame % particle_type->grid_size) * w;
+    float y = 0.875 - (frame / particle_type->grid_size) * w;
+    if (frame >= 0) {
+      draw_2d_->DrawImage("level_up", 40,
+        700, 128, 128, 1.0, vec2(x, y), vec2(w, w)); 
+    }
+
+    configs->level_up_frame += 0.5f;
+    if (configs->level_up_frame >= 64) {
+      configs->level_up_frame = -1;
+    }
+  }
+
+  // draw_2d_->DrawImage("level_up", 200,
+  //   200, 256, 256, 1.0, vec2(0, 0), vec2(1, 1)); 
 
   if (configs->interacting_item && resources_->GetGameState() == STATE_GAME) {
     ObjPtr item = configs->interacting_item;
@@ -1398,6 +1412,11 @@ void Renderer::DrawScreenEffects() {
 void Renderer::DrawHand() {
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   DrawObject(obj);
+
+  if (resources_->IsHoldingScepter()) {
+    obj = resources_->GetObjectByName("scepter-001");
+    DrawObject(obj);
+  }
 }
 
 // ===================
@@ -1523,6 +1542,7 @@ void Renderer::DrawParticles() {
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, prd.type->texture_id);
+
     glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
     
     glUniform3f(GetUniformId(program_id, "camera_right_worldspace"), 
@@ -1893,7 +1913,11 @@ void Renderer::DrawDungeonTiles() {
         glBindTexture(GL_TEXTURE_2D, shadow_textures_[0]);
         glUniform1i(GetUniformId(program_id, "shadow_sampler"), 3);
 
-        glUniform1i(GetUniformId(program_id, "draw_shadows"), 1);
+        if (tile == ' ') {
+          glUniform1i(GetUniformId(program_id, "draw_shadows"), 1);
+        } else {
+          glUniform1i(GetUniformId(program_id, "draw_shadows"), 0);
+        }
 
         
         mat4 VP = projection_matrix_ * view_matrix_;  
@@ -1927,3 +1951,5 @@ void Renderer::DrawDungeonTiles() {
   // cout << "num_culled: " << num_culled << " of " << 
   //   kDungeonCells * kDungeonCells << endl;
 }
+
+void Renderer::SetCamera(const Camera& camera) { camera_ = camera; }

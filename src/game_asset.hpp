@@ -99,6 +99,10 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   float mass = 1.0;
   int experience = 0;
 
+  // Missile damage.
+  DiceFormula damage { 0, 0, 0 };
+
+
   vector<Drop> drops;
 
   // References to resources related with this asset.
@@ -110,6 +114,8 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   // PolygonMeshPtr aabb_tree;
 
   vector<vec3> vertices;
+  bool repeat_animation = true;
+  bool align_to_speed = false;
 
   GameAsset(Resources* resources) : resources_(resources) {}
   GameAsset(Resources* resources, AssetType type) : resources_(resources), 
@@ -123,6 +129,8 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   void CalculateCollisionData();
   void CollisionDataToXml(pugi::xml_node& parent);
   void LoadCollisionData(pugi::xml_node& xml);
+
+  bool IsDestructible();
 };
 
 class CreatureAsset : public GameAsset {
@@ -196,6 +204,8 @@ class GameAssetGroup {
   // Override.
   BoundingSphere bounding_sphere = BoundingSphere(vec3(0.0), 0.0);
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
+
+  bool IsDestructible();
 };
 
 shared_ptr<GameAsset> CreateAsset(Resources* resources, 

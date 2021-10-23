@@ -14,8 +14,10 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
       break;
     }
     case GAME_OBJ_PLAYER:
-    case GAME_OBJ_MISSILE:
       break;
+    case GAME_OBJ_MISSILE: {
+      break;
+    }
     default:
       return;
   }
@@ -72,21 +74,13 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   }
 
   if (length(obj->torque) > 0.0001f) {
-    // float rotation_angle = length(obj->torque) * obj->inertia;
-    // quat new_rotation = angleAxis(degrees(rotation_angle), normalize(obj->torque));
-
-    // obj->cur_rotation = obj->cur_rotation * new_rotation;
-    // obj->rotation_matrix = mat4_cast(obj->cur_rotation);
-
-    // float inertia = 1.0f / obj->GetAsset()->mass;
-    // obj->rotation_matrix = rotate(
-    //   mat4(1.0),
-    //   length(obj->torque) * inertia,
-    //   normalize(obj->torque)
-    // ) * obj->rotation_matrix;
-
-    // obj->prev_position = obj->position;
-    // obj->position = obj->target_position;
+    float inertia = 1.0f / obj->GetAsset()->mass;
+    obj->rotation_matrix = rotate(
+      mat4(1.0),
+      length(obj->torque) * inertia,
+      normalize(obj->torque)
+    ) * obj->rotation_matrix;
+    obj->torque *= 0.96;
   }
   obj->updated_at = glfwGetTime();
 }

@@ -30,7 +30,8 @@ class Draw2D {
   void LoadFonts();
 
  public:
-  Draw2D(shared_ptr<Resources> asset_catalog, const string dir);
+  Draw2D(shared_ptr<Resources> asset_catalog, const string dir, 
+    int window_width, int window_height);
 
   void DrawChar(char, float, float, vec4 = {1.0, 1.0, 1.0, 1.0}, GLfloat = 1.0, const string& font_name = "ubuntu_monospace");
   void DrawText(const string&, float, float, vec4 = {1.0, 1.0, 1.0, 1.0}, GLfloat = 1.0, bool center = false, const string& font_name = "ubuntu_monospace");
@@ -38,7 +39,10 @@ class Draw2D {
   void DrawRectangle(GLfloat, GLfloat, GLfloat, GLfloat, vec3);
 
   void DrawImage(const string& texture, GLfloat x, GLfloat y, GLfloat width, 
-    GLfloat height, GLfloat transparency, vec2 uv = vec2(1, 1));
+    GLfloat height, GLfloat transparency, vec2 uv = vec2(0, 0), vec2 dimensions = vec2(1, 1));
+
+  void DrawImageWithMask(const string& texture, const string& mask, GLfloat x, GLfloat y, GLfloat width, 
+    GLfloat height, GLfloat transparency, vec2 uv = vec2(0, 0), vec2 dimensions = vec2(1, 1));
 };
 
 #endif // __2D_HPP__

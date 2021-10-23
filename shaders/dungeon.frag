@@ -46,9 +46,7 @@ uniform int draw_shadows;
 void main() {
   vec3 diffuse_color = texture(texture_sampler, in_data.UV).rgb;
 
-  vec3 light_color = vec3(1.0, 1.0, 1.0);
   float light_power = 0.6;
-
   vec3 ambient_color = lighting_color * diffuse_color;
 
   vec3 out_color = ambient_color;
@@ -99,8 +97,8 @@ void main() {
   vec3 specular_color = texture(specular_sampler, in_data.UV).rgb * 
     specular_component;
 
-  out_color += visibility * (diffuse_color * light_color * light_power * cos_theta
-       + (specular_color * light_color * light_power * pow(cos_alpha, 5)));
+  out_color += visibility * (diffuse_color * lighting_color * light_power * cos_theta
+       + (specular_color * lighting_color * light_power * pow(cos_alpha, 5)));
 
 
   // Darkness.

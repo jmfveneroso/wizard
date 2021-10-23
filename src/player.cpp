@@ -12,6 +12,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
   bool interact) {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   vector<shared_ptr<GameObject>> items = resources_->GetItems();
+  unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
   vec3 p = c.position;
   vec3 d = normalize(c.direction);
@@ -42,6 +43,9 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           }
         }
       } else if (item->type == GAME_OBJ_ACTIONABLE) {
+         shared_ptr<Actionable> actionable = 
+           static_pointer_cast<Actionable>(item);
+
          resources_->TurnOnActionable(item->name);
 
          if (item->trapped) {
@@ -49,11 +53,24 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
          }
 
          Dungeon& dungeon = resources_->GetDungeon();
-         ivec2 adj_tile = dungeon.GetRandomAdjTile(item->position);
-         vec3 drop_pos = dungeon.GetTilePosition(adj_tile);
+
+         int adj_x = Random(0, 3) - 1;
+         int adj_z = Random(0, 3) - 1;
+         vec3 drop_pos = item->position + vec3(adj_x, 0, adj_z) * 5.0f;
 
          // TODO: xml chest treasure.
-         resources_->DropItem(drop_pos + vec3(0, 5.0f, 0));
+         for (const auto& drop : actionable->drops) {
+           // int r = Random(0, 1000);
+           // r = 0;
+           // if (r >= drop.chance) continue;
+
+           const int item_id = drop.item_id;
+           const int quantity = ProcessDiceFormula(drop.quantity);
+           ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+             item_data[item_id].asset_name, drop_pos);
+           obj->CalculateCollisionData();
+           obj->quantity = quantity;
+         }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();
         if (item->name == "book1-001") {
@@ -66,18 +83,9 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           inventory_->Enable(window, INVENTORY_SPELLBOOK);
           resources_->SetGameState(STATE_INVENTORY);
           resources_->AddMessage("You learned to cast minor open lock.");
-        } else if (item->name == "altar-001") {
-          inventory_->Enable(window, INVENTORY_CRAFT);
-          resources_->SetGameState(STATE_INVENTORY);
         } else if (item->name == "mammon") {
           resources_->TalkTo(item->name);
-        } else if (item->name == "alessia") {
-          resources_->TalkTo(item->name);
-        } else if (item->name == "finganforn") {
-          resources_->TalkTo(item->name);
-        } else if (item->name == "bene") {
-          resources_->TalkTo(item->name);
-        } else if (item->GetAsset()->name == "dungeon_platform_up") {
+        } else if (item->GetAsset()->name == "stairs_down_hull") {
           if (++configs->dungeon_level == 7) {
             resources_->GetConfigs()->render_scene = "safe-zone";
             resources_->DeleteAllObjects();
@@ -92,12 +100,12 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->DeleteAllObjects();
             resources_->CreateDungeon();
             Dungeon& dungeon = resources_->GetDungeon();
-            vec3 pos = dungeon.GetPlatform();
+            vec3 pos = dungeon.GetUpstairs();
             resources_->GetPlayer()->ChangePosition(pos);
             resources_->GetConfigs()->render_scene = "dungeon";
             resources_->SaveGame();
           }
-        } else if (item->GetAsset()->name == "dungeon_platform_down") {
+        } else if (item->GetAsset()->name == "stairs_up_hull") {
           if (configs->render_scene == "safe-zone") {
             configs->dungeon_level = 7;
           }
@@ -117,7 +125,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->DeleteAllObjects();
             resources_->CreateDungeon();
             Dungeon& dungeon = resources_->GetDungeon();
-            vec3 pos = dungeon.GetPlatformUp();
+            vec3 pos = dungeon.GetDownstairs();
             resources_->GetPlayer()->ChangePosition(pos);
             resources_->GetConfigs()->render_scene = "dungeon";
             resources_->SaveGame();
@@ -134,8 +142,17 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
         }
       }
     }
-    configs->interacting_item = item;
-    hit = true;
+
+    if (item->type == GAME_OBJ_ACTIONABLE) {
+      shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(item);
+      if (actionable->state == 0) {
+        configs->interacting_item = item;
+        hit = true;
+      }
+    } else {
+      configs->interacting_item = item;
+      hit = true;
+    }
   }
   return hit;
 }
@@ -370,7 +387,9 @@ Camera PlayerInput::GetCamera() {
   );
 
   vec3 up = glm::cross(right, direction);
-  Camera c = Camera(player->position, direction, up);
+
+  vec3 camera_pos = player->position + vec3(0, 0.25, 0) * sin(resources_->camera_jiggle);
+  Camera c = Camera(camera_pos, direction, up);
 
   c.rotation.x = player->rotation.x;
   c.rotation.y = player->rotation.y;
@@ -382,8 +401,10 @@ bool PlayerInput::CastSpellOrUseItem() {
   shared_ptr<Player> player = resources_->GetPlayer();
   shared_ptr<Configs> configs = resources_->GetConfigs();
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
   
   int item_id = configs->spellbar[configs->selected_spell];
+  cout << "item_id: " << item_id << endl;
   shared_ptr<ArcaneSpellData> arcane_spell =  
     resources_->WhichArcaneSpell(item_id);
 
@@ -403,8 +424,10 @@ bool PlayerInput::CastSpellOrUseItem() {
       case 9: { // Spell shot.
         if (player->stamina > 0.0f) {
           obj->active_animation = "Armature|shoot";
+
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
+          scepter->frame = 0;
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 0;
@@ -415,42 +438,67 @@ bool PlayerInput::CastSpellOrUseItem() {
         return false;
       }
       case 0: {
-        // TODO: check which spell here.
-        if (player->stamina > 0.0f) {
+        // TODO: set spell cost in config.
+        if (player->stamina > 0.0f && player->mana >= 5.0f) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
+          scepter->frame = 0;
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 0;
-          player->stamina -= 50.0f;
+          player->mana -= 5.0f;
+          player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
         }
         return false;
       }
-      case 1: {
-        resources_->CastBurningHands(camera_);
-        if (Random(0, 5) == 0) {
-          configs->spellbar_quantities[configs->selected_spell]--;
-          if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-            configs->spellbar[configs->selected_spell] = 0;
-          }
+      case 1: { // Windslash.
+        // TODO: set spell cost in config.
+        if (player->stamina > 0.0f && player->mana >= 10.0f) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 1;
+          player->mana -= 10.0f;
+          player->stamina -= 20.0f;
+          debounce_ = 20;
+          return true;
         }
-        debounce_ = -1;
-        return true;
+        return false;
       }
-      case 2: {
-        resources_->CastLightningRay(player, camera_.position, camera_.direction);
-        if (Random(0, 5) == 0) {
-          configs->spellbar_quantities[configs->selected_spell]--;
-          if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-            configs->spellbar[configs->selected_spell] = 0;
-          }
+      case 2: { // Heal.
+        // TODO: set spell cost in config.
+        if (player->stamina > 0.0f && player->mana >= 15.0f) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 2;
+          player->mana -= 15.0f;
+          player->stamina -= 20.0f;
+          debounce_ = 20;
+          return true;
         }
-        debounce_ = -1;
-        return true;
+        return false;
       }
+      // case 2: {
+      //   resources_->CastLightningRay(player, camera_.position, camera_.direction);
+      //   if (Random(0, 5) == 0) {
+      //     configs->spellbar_quantities[configs->selected_spell]--;
+      //     if (configs->spellbar_quantities[configs->selected_spell] == 0) {
+      //       configs->spellbar[configs->selected_spell] = 0;
+      //     }
+      //   }
+      //   debounce_ = -1;
+      //   return true;
+      // }
       case 3: { // Open Lock.
         ObjPtr item = configs->interacting_item;
         if (item && item->type == GAME_OBJ_DOOR) {
@@ -460,6 +508,7 @@ bool PlayerInput::CastSpellOrUseItem() {
             obj->active_animation = "Armature|shoot";
             player->player_action = PLAYER_CASTING;
             obj->frame = 0;
+            scepter->frame = 0;
             animation_frame_ = 20;
             player->selected_spell = 4;
             configs->spellbar_quantities[configs->selected_spell]--;
@@ -522,6 +571,33 @@ bool PlayerInput::CastSpellOrUseItem() {
 
   current_spell_ = nullptr;
   switch (item_id) {
+    case 25: {
+      obj->active_animation = "Armature|shoot_scepter";
+      scepter->active_animation = "Armature|shoot_scepter";
+      current_spell_ = resources_->GetArcaneSpellData()[0];
+
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect();
+      player->selected_spell = 0;
+      debounce_ = 20;
+      return true;
+    }
+    case 24: {
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect();
+      player->selected_spell = 1;
+      debounce_ = 20;
+      configs->spellbar[configs->selected_spell] = 0;
+      current_spell_ = resources_->GetArcaneSpellData()[1];
+      return true;
+    }
     case 11: {
       resources_->CastHeal(player);
       configs->spellbar_quantities[configs->selected_spell]--;
@@ -549,6 +625,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
+          scepter->frame = 0;
           animation_frame_ = 20;
           player->selected_spell = 4;
           configs->spellbar_quantities[configs->selected_spell]--;
@@ -589,10 +666,27 @@ void PlayerInput::ProcessPlayerCasting() {
   shared_ptr<Player> player = resources_->GetPlayer();
   shared_ptr<Configs> configs = resources_->GetConfigs();
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
-  obj->active_animation = "Armature|shoot";
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  if (resources_->IsHoldingScepter()) {
+    obj->active_animation = "Armature|shoot_scepter";
+    scepter->active_animation = "Armature|shoot_scepter";
+  } else {
+    obj->active_animation = "Armature|shoot";
+    scepter->active_animation = "Armature|shoot";
+  }
+
   if (animation_frame_ == 0 && glfwGetKey(window_, GLFW_KEY_C) != GLFW_PRESS) {
-    obj->active_animation = "Armature|idle.001";
+    if (resources_->IsHoldingScepter()) {
+      obj->active_animation = "Armature|hold_scepter";
+      scepter->active_animation = "Armature|hold_scepter";
+    } else {
+      obj->active_animation = "Armature|idle.001";
+      scepter->active_animation = "Armature|idle.001";
+    }
     obj->frame = 0;
+    scepter->frame = 0;
+
     player->player_action = PLAYER_IDLE;
     current_spell_ = nullptr;
   } else if (animation_frame_ <= 0 && glfwGetKey(window_, GLFW_KEY_C) == GLFW_PRESS) {
@@ -601,14 +695,29 @@ void PlayerInput::ProcessPlayerCasting() {
         return;
       }
     }
-    obj->active_animation = "Armature|idle.001";
+
+    if (resources_->IsHoldingScepter()) {
+      obj->active_animation = "Armature|hold_scepter";
+      scepter->active_animation = "Armature|hold_scepter";
+    } else {
+      obj->active_animation = "Armature|idle.001";
+      scepter->active_animation = "Armature|idle.001";
+    }
     obj->frame = 0;
+    scepter->frame = 0;
+
     player->player_action = PLAYER_IDLE;
   } else if (animation_frame_ == 20) {
     if (current_spell_) {
       switch (current_spell_->spell_id) {
         case 0:
           resources_->CastMagicMissile(camera_);
+          break;
+        case 1:
+          resources_->CastWindslash(camera_);
+          break;
+        case 2:
+          resources_->CastHeal(player);
           break;
         case 9:
           resources_->CastSpellShot(camera_);
@@ -660,14 +769,18 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
 
   float d = resources_->GetDeltaTime() / 0.016666f;
   if (resources_->GetGameState() == STATE_BUILD) {
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
       player->position += front * 10.0f * d;
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+    }
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
       player->position -= front * 10.0f * d;
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+    }
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
       player->position += right * 10.0f * d;
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+    }
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
       player->position -= right * 10.0f * d;
+    }
 
     if (player->position.x < 11200)
       player->position.x = 11200;
@@ -688,20 +801,24 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     }
   } else {
     // Move forward.
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
       player->speed += front * player_speed * d;
+    }
 
     // Move backward.
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
       player->speed -= front * player_speed * d;
+    }
 
     // Strafe right.
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
       player->speed += right * player_speed * d;
+    }
 
     // Strafe left.
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
       player->speed -= right * player_speed * d;
+    }
 
     // Move up.
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
@@ -740,18 +857,20 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   last_time = current_time;
 
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
   switch (player->player_action) {
     case PLAYER_IDLE: {
-      obj->active_animation = "Armature|idle.001";
+      if (resources_->IsHoldingScepter()) {
+        obj->active_animation = "Armature|hold_scepter";
+        scepter->active_animation = "Armature|hold_scepter";
+      } else {
+        obj->active_animation = "Armature|idle.001";
+      }
+
       if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
         if (debounce_ < 0) {
           CastSpellOrUseItem();
         } else {
-          debounce_ = 20;
-        }
-      } else if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
-        if (debounce_ < 0) {
-          resources_->CastAcidArrow(player, c.position, c.direction);
           debounce_ = 20;
         }
       } else if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
@@ -761,7 +880,9 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         }
       } else if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS) {
         if (debounce_ < 0) {
-          resources_->CastBouncyBall(player, c.position, c.direction);
+          // resources_->CastBouncyBall(player, c.position, c.direction);
+          // resources_->CastBurningHands(c);
+          resources_->CastWindslash(c);
           debounce_ = 20;
         }
       }
@@ -780,10 +901,13 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     if (throttle_counter_ < 0) {
       if (InteractWithItem(window, c, true)) {
         interacted_with_item = true;
-      } else { 
-        inventory_->Enable(window, INVENTORY_SPELL_SELECTION);
-        resources_->SetGameState(STATE_INVENTORY);
       }
+    }
+    throttle_counter_ = 20;
+  } else if (glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      inventory_->Enable(window, INVENTORY_SPELLBOOK);
+      resources_->SetGameState(STATE_INVENTORY);
     }
     throttle_counter_ = 20;
   } else if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
@@ -823,6 +947,16 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       }
       throttle_counter_ = 20;
     }
+  } else if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell++;
+      shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+      shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+      obj->frame = 0;
+      scepter->frame = 0;
+      if (configs->selected_spell > 7) configs->selected_spell = 0;
+    }
+    throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
     if (configs->place_object) {
       configs->new_building->rotation_matrix *= rotate(mat4(1.0), -0.005f, vec3(0, 1, 0));

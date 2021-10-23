@@ -17,41 +17,22 @@ const int DLRG_NO_CEILING = 4096;
 Dungeon::Dungeon() {
   char_map_[1] = '|';
   char_map_[2] = '-';
-  char_map_[4] = '+';
-  char_map_[13] = ' ';
-  char_map_[16] = '+';
-  char_map_[22] = '.';
-
   char_map_[3] = '+';
-  char_map_[5] = '+';
-  char_map_[6] = '+';
-  char_map_[7] = '+';
-  char_map_[8] = '+';
-  char_map_[9] = '+';
-  char_map_[10] = '+';
+  char_map_[13] = ' ';
   char_map_[11] = 'o';
   char_map_[12] = 'O';
-  char_map_[14] = '+';
-  char_map_[15] = 'P';
-  char_map_[17] = '+';
-  char_map_[18] = '|';
-  char_map_[19] = '-';
-  char_map_[20] = '+';
-  char_map_[21] = '+';
-  char_map_[23] = '+';
-  char_map_[24] = '+';
   char_map_[25] = 'd';
   char_map_[26] = 'D';
-  char_map_[27] = '+';
-  char_map_[28] = 'k';
-  char_map_[30] = 'l';
-  char_map_[31] = 'z';
+  char_map_[15] = 'P';
   char_map_[35] = 'g';
   char_map_[36] = 'G';
-  char_map_[37] = '+';
-  char_map_[40] = 'n';
-  char_map_[42] = 'a';
-  char_map_[43] = ' ';
+  char_map_[22] = '.';
+  char_map_[100] = 'p'; // Top-Left pillar.
+  char_map_[101] = 'A'; // Top-left arch.
+  char_map_[102] = 'B'; // Bottom-left arch.
+  char_map_[103] = 'F'; // Bottom-right arch.
+  char_map_[104] = 'N'; // Top-right arch.
+
   char_map_[60] = '<'; // Up.
   char_map_[61] = '>'; // Down.
   char_map_[62] = 's'; // Spiderling.
@@ -92,11 +73,6 @@ Dungeon::Dungeon() {
   char_map_[97] = 'E'; // Evil Eye.
   char_map_[98] = 'Q'; // Spider Queen.
   char_map_[99] = 'X'; // Statue.
-  char_map_[100] = 'p'; // Top-Left pillar.
-  char_map_[101] = 'A'; // Top-left arch.
-  char_map_[102] = 'B'; // Bottom-left arch.
-  char_map_[103] = 'F'; // Bottom-right arch.
-  char_map_[104] = 'N'; // Top-right arch.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -708,182 +684,59 @@ void Dungeon::FillChambers() {
   }
 }
 
-void Dungeon::TileFix() {
-  int i, j;
-  for (j = 0; j < kDungeonSize; j++) {
-    for (i = 0; i < kDungeonSize; i++) {
-      if (dungeon[i][j] == 2 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 23;
-      if (dungeon[i][j] == 13 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 18;
-      if (dungeon[i][j] == 13 && dungeon[i + 1][j] == 2)
-        dungeon[i + 1][j] = 7;
-      if (dungeon[i][j] == 6 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 24;
-      if (dungeon[i][j] == 1 && dungeon[i][j + 1] == 22)
-        dungeon[i][j + 1] = 24;
-      if (dungeon[i][j] == 13 && dungeon[i][j + 1] == 1)
-        dungeon[i][j + 1] = 6;
-      if (dungeon[i][j] == 13 && dungeon[i][j + 1] == 22)
-        dungeon[i][j + 1] = 19;
-    }
-  }
-
-  for (j = 0; j < kDungeonSize; j++) {
-    for (i = 0; i < kDungeonSize; i++) {
-      if (dungeon[i][j] == 13 && dungeon[i + 1][j] == 19)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 13 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 20;
-      if (dungeon[i][j] == 7 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 23;
-      if (dungeon[i][j] == 13 && dungeon[i + 1][j] == 24)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 19 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 20;
-      if (dungeon[i][j] == 2 && dungeon[i + 1][j] == 19)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 19 && dungeon[i + 1][j] == 1)
-        dungeon[i + 1][j] = 6;
-      if (dungeon[i][j] == 7 && dungeon[i + 1][j] == 19)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 2 && dungeon[i + 1][j] == 1)
-        dungeon[i + 1][j] = 6;
-      if (dungeon[i][j] == 3 && dungeon[i + 1][j] == 22)
-        dungeon[i + 1][j] = 24;
-      if (dungeon[i][j] == 21 && dungeon[i + 1][j] == 1)
-        dungeon[i + 1][j] = 6;
-      if (dungeon[i][j] == 7 && dungeon[i + 1][j] == 1)
-        dungeon[i + 1][j] = 6;
-      if (dungeon[i][j] == 7 && dungeon[i + 1][j] == 24)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 4 && dungeon[i + 1][j] == 16)
-        dungeon[i + 1][j] = 17;
-      if (dungeon[i][j] == 7 && dungeon[i + 1][j] == 13)
-        dungeon[i + 1][j] = 17;
-      if (dungeon[i][j] == 2 && dungeon[i + 1][j] == 24)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 2 && dungeon[i + 1][j] == 13)
-        dungeon[i + 1][j] = 17;
-      if (dungeon[i][j] == 23 && dungeon[i - 1][j] == 22)
-        dungeon[i - 1][j] = 19;
-      if (dungeon[i][j] == 19 && dungeon[i - 1][j] == 23)
-        dungeon[i - 1][j] = 21;
-      if (dungeon[i][j] == 6 && dungeon[i - 1][j] == 22)
-        dungeon[i - 1][j] = 24;
-      if (dungeon[i][j] == 6 && dungeon[i - 1][j] == 23)
-        dungeon[i - 1][j] = 21;
-      if (dungeon[i][j] == 1 && dungeon[i][j + 1] == 2)
-        dungeon[i][j + 1] = 7;
-      if (dungeon[i][j] == 6 && dungeon[i][j + 1] == 18)
-        dungeon[i][j + 1] = 21;
-      if (dungeon[i][j] == 18 && dungeon[i][j + 1] == 2)
-        dungeon[i][j + 1] = 7;
-      if (dungeon[i][j] == 6 && dungeon[i][j + 1] == 2)
-        dungeon[i][j + 1] = 7;
-      if (dungeon[i][j] == 21 && dungeon[i][j + 1] == 2)
-        dungeon[i][j + 1] = 7;
-      if (dungeon[i][j] == 6 && dungeon[i][j + 1] == 22)
-        dungeon[i][j + 1] = 24;
-      if (dungeon[i][j] == 6 && dungeon[i][j + 1] == 13)
-        dungeon[i][j + 1] = 16;
-      if (dungeon[i][j] == 1 && dungeon[i][j + 1] == 13)
-        dungeon[i][j + 1] = 16;
-      if (dungeon[i][j] == 13 && dungeon[i][j + 1] == 16)
-        dungeon[i][j + 1] = 17;
-      if (dungeon[i][j] == 6 && dungeon[i][j - 1] == 22)
-        dungeon[i][j - 1] = 7;
-      if (dungeon[i][j] == 6 && dungeon[i][j - 1] == 22)
-        dungeon[i][j - 1] = 24;
-      if (dungeon[i][j] == 7 && dungeon[i][j - 1] == 24)
-        dungeon[i][j - 1] = 21;
-      if (dungeon[i][j] == 18 && dungeon[i][j - 1] == 24)
-        dungeon[i][j - 1] = 21;
-    }
-  }
-
-  for (j = 0; j < kDungeonSize; j++) {
-    for (i = 0; i < kDungeonSize; i++) {
-      if (dungeon[i][j] == 4 && dungeon[i][j + 1] == 2)
-        dungeon[i][j + 1] = 7;
-      if (dungeon[i][j] == 2 && dungeon[i + 1][j] == 19)
-        dungeon[i + 1][j] = 21;
-      if (dungeon[i][j] == 18 && dungeon[i][j + 1] == 22)
-        dungeon[i][j + 1] = 20;
-    }
-  }
-}
-
 int Dungeon::L5HWallOk(int i, int j) {
   int x;
-  bool wallok;
-
-  for (x = 1; dungeon[i + x][j] == 13; x++) {
-    if (dungeon[i + x][j - 1] != 13 || dungeon[i + x][j + 1] != 13 || flags[i + x][j])
+  for (x = 1; dungeon[i + x][j] == 13; x++) { // 13 = Clear tile.
+    if (dungeon[i + x][j - 1] != 13 || 
+        dungeon[i + x][j + 1] != 13 || 
+        flags[i + x][j]) {
       break;
+    }
   }
 
-  wallok = false;
-  if (dungeon[i + x][j] >= 3 && dungeon[i + x][j] <= 7)
-    wallok = true;
-  if (dungeon[i + x][j] >= 16 && dungeon[i + x][j] <= 24)
-    wallok = true;
-  if (dungeon[i + x][j] == 22)
-    wallok = false;
-  if (x == 1)
-    wallok = false;
-
-  if (wallok)
+  if (dungeon[i + x][j] == 3 && x > 1) {
     return x;
-  else
+  } else {
     return -1;
+  }
 }
 
 int Dungeon::L5VWallOk(int i, int j) {
   int y;
-  bool wallok;
-
-  for (y = 1; dungeon[i][j + y] == 13; y++) {
-    if (dungeon[i - 1][j + y] != 13 || dungeon[i + 1][j + y] != 13 || flags[i][j + y])
+  for (y = 1; dungeon[i][j + y] == 13; y++) { // 13 = Clear tile.
+    if (dungeon[i - 1][j + y] != 13 || 
+        dungeon[i + 1][j + y] != 13 || 
+        flags[i][j + y]) {
       break;
+    }
   }
 
-  wallok = false;
-  if (dungeon[i][j + y] >= 3 && dungeon[i][j + y] <= 7)
-    wallok = true;
-  if (dungeon[i][j + y] >= 16 && dungeon[i][j + y] <= 24)
-    wallok = true;
-  if (dungeon[i][j + y] == 22)
-    wallok = false;
-  if (y == 1)
-    wallok = false;
-
-  if (wallok)
+  if (dungeon[i][j + y] == 3 && y > 1) {
     return y;
-  else
+  } else {
     return -1;
+  }
 }
 
-void Dungeon::L5HorizWall(int i, int j, char p, int dx) {
-  int xx;
-  char wt, dt;
 
+void Dungeon::L5HorizWall(int i, int j, char p, int dx) {
   // Add webs.
   int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
   int type = Random(0, k);
 
+  char dt;
   switch (type) {
     case 0:
     case 1: {
-      dt = 2;
+      dt = 2; // Wall.
       break;
     }
     case 2: {
-      dt = 12;
+      dt = 12; // Arch.
       break;
     }
     case 3: {
-      dt = 36;
+      dt = 36; // Gate.
       break;
     }
     case 4: {
@@ -892,26 +745,24 @@ void Dungeon::L5HorizWall(int i, int j, char p, int dx) {
     }
   }
 
-  if (Random(0, 6) == 5) wt = 12;
-  else wt = 26;
-
-  if (dt == 12) wt = 12;
-
+  char wt = 26;
+  if (dt == 12 || dt == 36) wt = 12;
   dungeon[i][j] = p;
 
+  int xx;
   for (xx = 1; xx < dx; xx++) {
     dungeon[i + xx][j] = dt;
   }
 
   xx = Random(0, dx - 1) + 1;
-
   if (type == 4) return;
 
   if (wt == 12) {
     dungeon[i + xx][j] = wt;
+  } else if (dt == 36) {
+    dungeon[i + xx][j] = 12;
   } else {
-    dungeon[i + xx][j] = 2;
-    flags[i + xx][j] |= DLRG_HDOOR;
+    dungeon[i + xx][j] = 26;
   }
 }
 
@@ -947,26 +798,23 @@ void Dungeon::L5VertWall(int i, int j, char p, int dy) {
     }
   }
 
-  if (Random(0, 6) == 5) wt = 11;
-  else wt = 25;
-
-  if (dt == 11) wt = 11;
+  wt = 25;
+  if (dt == 11 || dt == 35) wt = 11;
 
   dungeon[i][j] = p;
-
   for (yy = 1; yy < dy; yy++) {
     dungeon[i][j + yy] = dt;
   }
 
   yy = Random(0, dy - 1) + 1;
-
   if (type == 4) return;
 
   if (wt == 11) {
     dungeon[i][j + yy] = wt;
+  } else if (dt == 35) {
+    dungeon[i][j + yy] = 11;
   } else {
-    dungeon[i][j + yy] = 1;
-    flags[i][j + yy] |= DLRG_VDOOR;
+    dungeon[i][j + yy] = 25;
   }
 }
 
@@ -1002,21 +850,14 @@ void Dungeon::AddWalls() {
   for (int j = 0; j < kDungeonSize; j++) {
     for (int i = 0; i < kDungeonSize; i++) {
       if (flags[i][j]) continue;
-      if (dungeon[i][j] == 3) {
+      if (dungeon[i][j] == 3 || dungeon[i][j] == 2) {
         int x = L5HWallOk(i, j);
-        if (x != -1) L5HorizWall(i, j, 2, x);
+        if (x != -1) L5HorizWall(i, j, 3, x);
       }
-      if (dungeon[i][j] == 3) {
+
+      if (dungeon[i][j] == 3 || dungeon[i][j] == 1) {
         int y = L5VWallOk(i, j);
-        if (y != -1) L5VertWall(i, j, 1, y);
-      }
-      if (dungeon[i][j] == 2) {
-        int x = L5HWallOk(i, j);
-        if (x != -1) L5HorizWall(i, j, 2, x);
-      }
-      if (dungeon[i][j] == 1) {
-        int y = L5VWallOk(i, j);
-        if (y != -1) L5VertWall(i, j, 1, y);
+        if (y != -1) L5VertWall(i, j, 3, y);
       }
     }
   }
@@ -1029,62 +870,6 @@ void Dungeon::ClearFlags() {
       flags[i][j] &= (unsigned int) ~(DLRG_CHAMBER);
     }
   }
-}
-
-void Dungeon::PlaceDoor(int x, int y) {
-  if ((flags[x][y] & DLRG_PROTECTED) == 0) {
-    char df = flags[x][y] & 0x7F;
-    char c = dungeon[x][y];
-    if (df == 1) {
-      if (y != 1 && c == 2)
-        dungeon[x][y] = 26;
-      if (y != 1 && c == 7)
-        dungeon[x][y] = 31;
-      if (y != 1 && c == 14)
-        dungeon[x][y] = 42;
-      if (y != 1 && c == 4)
-        dungeon[x][y] = 43;
-      if (x != 1 && c == 1)
-        dungeon[x][y] = 25;
-      if (x != 1 && c == 10)
-        dungeon[x][y] = 40;
-      if (x != 1 && c == 6)
-        dungeon[x][y] = 30;
-    }
-    if (df == 2) {
-      if (x != 1 && c == 1)
-        dungeon[x][y] = 25;
-      if (x != 1 && c == 6)
-        dungeon[x][y] = 30;
-      if (x != 1 && c == 10)
-        dungeon[x][y] = 40;
-      if (x != 1 && c == 4)
-        dungeon[x][y] = 41;
-      if (y != 1 && c == 2)
-        dungeon[x][y] = 26;
-      if (y != 1 && c == 14)
-        dungeon[x][y] = 42;
-      if (y != 1 && c == 7)
-        dungeon[x][y] = 31;
-    }
-    if (df == 3) {
-      if (x != 1 && y != 1 && c == 4)
-        dungeon[x][y] = 28;
-      if (x != 1 && c == 10)
-        dungeon[x][y] = 40;
-      if (y != 1 && c == 14)
-        dungeon[x][y] = 42;
-      if (y != 1 && c == 2)
-        dungeon[x][y] = 26;
-      if (x != 1 && c == 1)
-        dungeon[x][y] = 25;
-      if (y != 1 && c == 7)
-        dungeon[x][y] = 31;
-      if (x != 1 && c == 6)
-        dungeon[x][y] = 30;
-    }
-  }
-  flags[x][y] = DLRG_PROTECTED;
 }
 
 bool Dungeon::PlaceMiniSet(const string& miniset_name) {
@@ -1180,7 +965,7 @@ bool Dungeon::IsGoodPlaceLocation(int x, int y,
       if (!IsValidTile(tile)) continue;
       
       switch (dungeon[tile.x][tile.y]) {
-        case 61: {
+        case 60: {
           if (downstairs_room == -1 || room[x][y] == downstairs_room) {
             if (length(vec2(x, y) - vec2(tile)) < min_dist_to_staircase) {
               return false;
@@ -1345,7 +1130,7 @@ bool Dungeon::CreateThemeRoomChest(int room_num) {
   for (int i = 0; i < 100; i++) {
     int tile_index = Random(0, room_stats[room_num]->tiles.size());
     ivec2 tile = room_stats[room_num]->tiles[tile_index];
-    if (IsTileNextToDoor(tile)) continue;
+    if (IsTileNextToDoor(tile) && IsValidPlaceLocation(tile.x, tile.y)) continue;
     dungeon[tile.x][tile.y] = 72;
     break;
   }
@@ -1685,10 +1470,13 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
     PrintPreMap();
 
     MakeMarchingTiles();
+
+    // GenerateAsciiDungeon();
+    // PrintMap();
+
     FillChambers();
-    TileFix();
     AddWalls();
-    AddSecretWalls();
+    // AddSecretWalls();
     ClearFlags();
 
     done_flag = true;
@@ -1704,14 +1492,6 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
     for (const string& miniset : minisets) { 
       if (!PlaceMiniSet(miniset)) {
         done_flag = false;
-      }
-    }
-
-    for (int j = 0; j < kDungeonSize; j++) {
-      for (int i = 0; i < kDungeonSize; i++) {
-        if (flags[i][j] & 0x7F) {
-          PlaceDoor(i, j);
-        }
       }
     }
  
@@ -2142,37 +1922,46 @@ void Dungeon::CalculateAllPaths() {
   }
 }
 
-vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest) {
-  ivec2 source_tile = GetDungeonTile(source);
-  ivec2 dest_tile = GetDungeonTile(dest);
+ivec2 Dungeon::GetClosestClearTile(const ivec2& tile) {
+  if (IsTileClear(tile)) return tile;
 
-  int code = 9;
-  if (IsValidTile(source_tile) && IsValidTile(dest_tile)) {
-    code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
+  for (int k = 1; k < 5; k++) {
+    int min_dist = 999;
+    ivec2 best_tile = ivec2(0, 0);
+    for (int off_y = -1; off_y < 2; off_y++) {
+      for (int off_x = -1; off_x < 2; off_x++) {
 
-    if (code == 4 || code == 9) {
-      float min_distance = 999.0f;
-      for (int off_y = -1; off_y < 2; off_y++) {
-        for (int off_x = -1; off_x < 2; off_x++) {
-          if (off_x == 0 && off_y == 0) continue;
+        if (off_x == 0 && off_y == 0) continue;
 
-          ivec2 new_tile = dest_tile + ivec2(off_x, off_y);
-          if (!IsValidTile(new_tile)) continue;
+        ivec2 new_tile = tile + ivec2(off_x * k, off_y * k);
+        if (!IsTileClear(new_tile)) continue;
 
-          float distance = length(vec2(new_tile) - vec2(dest_tile));
-          int new_code = dungeon_path_[new_tile.x][new_tile.y][source_tile.x][source_tile.y];
-          if (distance < min_distance && new_code != 9 && new_code != 4) { 
-            min_distance = distance;
-            code = new_code;
-          }
+        int distance = (off_y == 0 || off_y == 0) ? 1 : 2;
+        if (distance < min_dist) {
+          best_tile = new_tile;
+          min_dist = distance;
         }
       }
     }
+
+    if (min_dist < 999) {
+      return best_tile;
+    }
   }
+  throw runtime_error("Could not find closest valid tile.");
+}
+
+vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest, 
+  float& min_distance) {
+  ivec2 source_tile = GetClosestClearTile(GetDungeonTile(source));
+  ivec2 dest_tile = GetClosestClearTile(GetDungeonTile(dest));
+
+  int code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
+  min_distance = min_distance_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
 
   const ivec2 tile_offset = code_to_offset_[code];
   const ivec2 next_tile = source_tile + tile_offset;
-  if (!IsTileClear(next_tile)) {
+  if (!IsTileClear(next_tile) || code == 9 || code == 4) {
     return vec3(0);
   }
 
@@ -2369,22 +2158,22 @@ void Dungeon::CalculateVisibility(const vec3& player_position) {
   // }
 }
 
-vec3 Dungeon::GetPlatform() {
+vec3 Dungeon::GetDownstairs() {
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
       if (ascii_dungeon[i][j] == '>') {
-        return GetTilePosition(ivec2(i, j)) + vec3(10, 10, 10);
+        return GetTilePosition(ivec2(i, j)) + vec3(-10, 0, 0);
       }
     }
   }
   throw runtime_error("Could not find platform.");
 }
 
-vec3 Dungeon::GetPlatformUp() {
+vec3 Dungeon::GetUpstairs() {
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
       if (ascii_dungeon[i][j] == '<') {
-        return GetTilePosition(ivec2(i, j)) + vec3(10, 10, 10);
+        return GetTilePosition(ivec2(i, j)) + vec3(-10, 0, 0);
       }
     }
   }

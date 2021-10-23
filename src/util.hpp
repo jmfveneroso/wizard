@@ -31,6 +31,8 @@
 #include <boost/algorithm/string/predicate.hpp>
 #include "pugixml.hpp"
 
+#define GRAVITY 0.016
+
 using namespace std;
 using namespace glm;
 
@@ -41,6 +43,7 @@ enum AssetType {
   ASSET_PLATFORM,
   ASSET_DESTRUCTIBLE,
   ASSET_PARTICLE_3D,
+  ASSET_MISSILE,
   ASSET_NONE
 };
 
@@ -49,7 +52,6 @@ enum CollisionType {
   COL_BONES,
   COL_QUICK_SPHERE,
   COL_PERFECT,
-  COL_CONVEX_HULL,
   COL_OBB,
   COL_NONE ,
   COL_UNDEFINED
@@ -62,6 +64,8 @@ enum MissileType {
   MISSILE_HOOK,
   MISSILE_ACID_ARROW,
   MISSILE_SPELL_SHOT,
+  MISSILE_WIND_SLASH,
+  MISSILE_HORN,
 };
 
 enum PhysicsBehavior {
@@ -87,7 +91,8 @@ enum GameObjectType {
   GAME_OBJ_REGION,
   GAME_OBJ_WAYPOINT,
   GAME_OBJ_DOOR,
-  GAME_OBJ_ACTIONABLE
+  GAME_OBJ_ACTIONABLE,
+  GAME_OBJ_DESTRUCTIBLE,
 };
 
 enum ItemBonusType {
@@ -173,6 +178,12 @@ enum DoorState {
   DOOR_WEAK_LOCK
 };
 
+enum DestructibleState {
+  DESTRUCTIBLE_IDLE = 0,
+  DESTRUCTIBLE_DESTROYING,
+  DESTRUCTIBLE_DESTROYED,
+};
+
 enum IntersectMode {
   INTERSECT_ITEMS = 0,
   INTERSECT_ALL,
@@ -182,14 +193,9 @@ enum IntersectMode {
 
 enum ItemType {
   ITEM_DEFAULT = 0,
-  ITEM_WEAPON,
-  ITEM_HELMET,
   ITEM_ARMOR,
-  ITEM_BOOTS,
   ITEM_RING,
-  ITEM_AMULET,
-  ITEM_CONSUMABLE,
-  ITEM_SPELL
+  ITEM_ORB
 };
 
 struct Camera {
@@ -517,6 +523,7 @@ vec4 LoadVec4FromXml(const pugi::xml_node& node);
 string LoadStringFromXml(const pugi::xml_node& node);
 
 float LoadFloatFromXml(const pugi::xml_node& node);
+bool LoadBoolFromXml(const pugi::xml_node& node);
 
 mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
   int bone_id, int frame);
@@ -591,5 +598,8 @@ string DiceFormulaToStr(const DiceFormula& dice_formula);
 int Combination(int n, int k);
 vector<int> GetCombinationFromIndex(int i, int n, int k);
 int GetIndexFromCombination(vector<int> combination, int n, int k);
+
+vec3 CalculateMissileDirectionToHitTarget(const vec3& pos, const vec3& target, 
+  const float& v);
 
 #endif // __UTIL_HPP__

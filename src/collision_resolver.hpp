@@ -20,7 +20,7 @@ enum CollisionPair {
   CP_BQ,     // BONES -> QUICK_SPHERE 
   CP_BP,     // BONES -> PERFECT
   CP_BT,     // BONES -> TERRAIN
-  CP_BO,     // BONES -> OBB (Not implemented)
+  CP_BO,     // BONES -> OBB 
   CP_BA,     // BONES -> AABB (Not implemented)
   CP_QS,     // QUICK_SPHERE -> SPHERE
   CP_QB,     // QUICK_SPHERE -> BONES

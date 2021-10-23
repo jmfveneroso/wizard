@@ -211,8 +211,9 @@ OBB GameObject::GetOBB() {
 bool GameObject::IsMovingObject() {
   switch (type) {
     case GAME_OBJ_PLAYER:
-      return true;
     case GAME_OBJ_PARTICLE:
+    case GAME_OBJ_ACTIONABLE:
+    case GAME_OBJ_DESTRUCTIBLE:
       return true;
     case GAME_OBJ_DEFAULT:
     case GAME_OBJ_MISSILE:
@@ -233,6 +234,7 @@ bool GameObject::IsItem() {
   if (type != GAME_OBJ_DEFAULT
     && type != GAME_OBJ_MISSILE
     && type != GAME_OBJ_ACTIONABLE
+    && type != GAME_OBJ_DESTRUCTIBLE
     && type != GAME_OBJ_DOOR) {
     return false;
   }
@@ -518,7 +520,8 @@ void Region::ToXml(pugi::xml_node& parent) {
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
   ObjPtr obj;
 
-  // shared_ptr<GameAsset> asset = resources->GetAssetByName(asset_name);
+  shared_ptr<GameAssetGroup> asset_group = 
+    resources->GetAssetGroupByName(asset_name);
   // if (asset_name == "line") {
   //   shared_ptr<Particle> particle = make_shared<Particle>(resources);
   //   particle->particle_type = resources->GetParticleTypeByName("string-attack");
@@ -535,6 +538,8 @@ ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
     particle->particle_type = resources->GetParticleTypeByName("string-attack");
     obj = particle;
     // obj->never_cull = true;
+  } else if (asset_group && asset_group->IsDestructible()) {
+    obj = make_shared<Destructible>(resources);
   } else {
     obj = make_shared<GameObject>(resources);
   }
@@ -788,7 +793,6 @@ shared_ptr<Player> CreatePlayer(Resources* resources) {
   player->position = resources->GetConfigs()->initial_player_pos;
   resources->AddGameObject(player);
 
-  resources->GetConfigs()->base_damage = ParseDiceFormula("1d6");
   resources->GetConfigs()->base_hp_dice = ParseDiceFormula("1d8+2");
   return player;
 }
@@ -1014,6 +1018,8 @@ void GameObject::CalculateCollisionData() {
   const string mesh_name = GetAsset()->lod_meshes[0];
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
 
+  cout << "Calculating collision data for object: " << GetDisplayName() << endl;
+
   // Bounding sphere and AABB are necessary to cull objects properly.
   collision_hull = game_asset->collision_hull;
   if (!collision_hull.empty()) {
@@ -1034,6 +1040,7 @@ void GameObject::CalculateCollisionData() {
       break;
     }
     case COL_OBB: {
+      cout << "I am here: OOB" << endl;
       collision_hull = game_asset->collision_hull;
       obb = GetOBBFromPolygons(collision_hull, position);
 
@@ -1242,8 +1249,6 @@ bool GameObject::IsCollidable() {
       shared_ptr<Particle> particle = static_pointer_cast<Particle>(shared_from_this());
       if (!particle->existing_mesh_name.empty()) {
         return true;
-      } else if (particle->particle_type) {
-        return (particle->particle_type->name == "fireball");
       }
       return false;
     }
@@ -1251,6 +1256,7 @@ bool GameObject::IsCollidable() {
     case GAME_OBJ_PLAYER:
     case GAME_OBJ_DOOR:
     case GAME_OBJ_ACTIONABLE:
+    case GAME_OBJ_DESTRUCTIBLE:
       break;
     case GAME_OBJ_MISSILE:
       return (life > 0);
@@ -1308,21 +1314,30 @@ void GameObject::AddTemporaryStatus(shared_ptr<TemporaryStatus> new_status) {
 
 bool GameObject::IsDestructible(){
   if (!asset_group) return false;
-  return GetAsset()->type == ASSET_DESTRUCTIBLE;
+  return asset_group->IsDestructible();
 }
 
-void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, bool take_hit_animation) {
+void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, 
+  bool take_hit_animation) {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
   // Reduce damage using armor class.
   if (IsPlayer()) {
-    resources_->GetConfigs()->taking_hit = 30.0f;
-    if (resources_->GetConfigs()->invincible) return;
+    configs->taking_hit = 30.0f;
+    if (configs->invincible) return;
 
-    damage *= 30 / (30 + resources_->GetConfigs()->armor_class);
+    float dmg_reduction = 30.0f / (float) (30.0f + configs->armor_class);
+    damage *= dmg_reduction;
   } else if (IsCreature()) {
     shared_ptr<CreatureAsset> creature =
       static_pointer_cast<CreatureAsset>(GetAsset());
-    damage *= 30 / (30 + creature->armor_class);
+    float dmg_reduction = 30.0f / (float) (30.0f + creature->armor_class);
+    damage *= dmg_reduction; 
   }
+
+  damage = int(damage);
+  if (damage == 0) damage = 1;
+
   life -= damage;
 
   resources_->CreateParticleEffect(10, position, normal * 1.0f, 
@@ -1400,8 +1415,6 @@ void GameObject::MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal) {
 void GameObject::RangedAttack(shared_ptr<GameObject> obj, vec3 normal) {
   float damage = 1;
   if (!asset_group) {
-    // TODO: associate damage with missile.
-    damage = ProcessDiceFormula(ParseDiceFormula("1d20+5"));
   } else {
     damage = ProcessDiceFormula(GetAsset()->base_ranged_attack);
   }
@@ -1478,4 +1491,22 @@ void GameObject::UpdateAsset(const string& asset_name) {
       }
     }
   }
+}
+
+void Destructible::Destroy() {
+  switch (state) {
+    case DESTRUCTIBLE_IDLE: {
+      state = DESTRUCTIBLE_DESTROYING;
+      frame = 0;
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+bool GameObject::GetRepeatAnimation() {
+  if (!asset_group) return true;
+  return GetAsset()->repeat_animation;
 }

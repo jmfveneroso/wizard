@@ -112,6 +112,9 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
   }
 
   if (IsMissileCollidingAgainstItsOwner(obj1, obj2)) return false;
+  if (obj1->type == GAME_OBJ_MISSILE && obj2->asset_group && 
+       obj2->GetAsset()->name == "dungeon_arch_gate_hull") return false;
+
   return true;
 }
 
@@ -1171,6 +1174,8 @@ void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
   if (in_dungeon_) {
     if ((s1.center.y - s1.radius) < kDungeonOffset.y) {
       c->displacement_vector = vec3(0, kDungeonOffset.y - (s1.center.y - s1.radius), 0);
+      c->point_of_contact = s1.center;
+      c->point_of_contact.y = kDungeonOffset.y;
       c->collided = true;
       c->normal = vec3(0, 1, 0);
       FillCollisionBlankFields(c);
@@ -1261,9 +1266,9 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
 
   if (in_dungeon_) {
     if ((s.center.y - s.radius) < kDungeonOffset.y) {
-      cout << "s: " << s << endl;
-      cout << "dungeon offset: " << kDungeonOffset << endl;
       c->displacement_vector = vec3(0, kDungeonOffset.y - (s.center.y - s.radius), 0);
+      c->point_of_contact = s.center;
+      c->point_of_contact.y = kDungeonOffset.y;
       c->collided = true;
       c->normal = vec3(0, 1, 0);
       FillCollisionBlankFields(c);
@@ -1370,6 +1375,7 @@ void CollisionResolver::TestCollisionQA(shared_ptr<CollisionQA> c) {
 
   vec3 prev_pos = c->obj1->prev_position;
   float step = s.radius / length(v);
+  step = std::min(step, 0.1f);
   for (float t = 0.0f; t < 1.0; t += step) {
     s.center = c->obj1->prev_position + v * t;
     c->collided = IntersectSphereAABB(s, aabb, c->displacement_vector, 
@@ -1644,67 +1650,85 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
   }
 
   obj1->position += c->displacement_vector;
+
   if (obj2 && obj2->type == GAME_OBJ_PLAYER) {
     if (missile->owner) {
       missile->owner->RangedAttack(obj2);
     }
   } else if (obj2 && obj2->IsCreature()) {
-    if (missile->owner && !missile->owner->IsPlayer()) return;
+    if (missile->owner && missile->owner->IsPlayer()) {
+      if (obj2->status != STATUS_DEAD && obj2->status != STATUS_DYING) {
+        if (missile->owner && missile->owner->IsPlayer()) {
+          if (missile->hit_list.find(obj2->id) == missile->hit_list.end()) {
+            missile->hit_list.insert(obj2->id);
 
-    if (obj2->status != STATUS_DEAD && obj2->status != STATUS_DYING) {
-      missile->owner->RangedAttack(obj2, normal);
-    } else {
-      resources_->CreateParticleEffect(10, obj1->position, normal * 1.0f, 
-        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+            shared_ptr<GameAsset> asset = missile->GetAsset();
+
+            cout << "Inflicting damage: " << DiceFormulaToStr(asset->damage) << endl;
+            obj2->DealDamage(missile->owner, ProcessDiceFormula(asset->damage), normal);
+          }
+
+          // resources_->CreateParticleEffect(10, position, normal * 1.0f, 
+          //   vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
+
+          // TODO: particle effect from xml.
+          if (missile->type != MISSILE_WIND_SLASH) {
+            resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+              "magical-explosion", 2.5f);
+          }
+        } else {
+          // Monster attack.
+          missile->owner->RangedAttack(obj2, normal);
+        }
+      } else {
+        if (missile->type != MISSILE_WIND_SLASH) {
+          resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+            "magical-explosion", 2.5f);
+        }
+      }
+      if (missile->type == MISSILE_WIND_SLASH) {
+        return;
+      }
     }
   } else {
     if (obj2) {
       if (obj2->IsDestructible()) {
-        if (obj2->GetAsset()->name == "mana_crystal") {
-          if (obj2->life > 0.0f) { 
-            obj2->life -= 20.0f;
-            if (obj2->life <= 0.0f) { 
-              obj2->status = STATUS_DEAD;
-              resources_->CreateParticleEffect(64, obj2->position, 
-                vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
+        shared_ptr<Destructible> destructible = 
+          static_pointer_cast<Destructible>(obj2);
+        destructible->Destroy();
 
-              int r = Random(0, 2);
-              switch (r) {
-                case 0: {
-                  vec3 position = obj2->position + vec3(0, 5.0f, 0);
-                  ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-                    "open-lock-crystal", position);
-                  obj->CalculateCollisionData();
-                  break;
-                }
-                case 1: {
-                  vec3 position = obj2->position + vec3(0, 5.0f, 0);
-                  ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-                    "spell-crystal", position);
-                  obj->CalculateCollisionData();
-                  break;
-                }
-                default: {  
-                  break;
-                }
-              }
-            }
-          }
-        }
+        resources_->CreateParticleEffect(10, obj2->position + vec3(0, 3, 0), 
+          vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
+
+        resources_->CreateDrops(obj2);
+        // vec3 position = obj2->position + vec3(0, 5.0f, 0);
+        // ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+        //   "spell-crystal", position);
+        // obj->speed = vec3(.5f, .5f, 0);
+        // obj->CalculateCollisionData();
       } 
 
-      // resources_->CreateParticleEffect(16, obj1->position, normal * 1.0f, 
-      //   vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
-
-      resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
-        "magical-explosion", 2.5f);
-
-      // resources_->CreateSparks(c->point_of_contact, c->normal);
+      if (missile->type == MISSILE_WIND_SLASH) {
+        resources_->CreateOneParticle(c->obj1->position, 40.0f,  
+          "windslash-collision", 5.0f);
+      } else {
+        resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+          "magical-explosion", 2.5f);
+      }
     } else {
-      resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
-        "magical-explosion", 2.5f);
-      // resources_->CreateOneParticle(obj1->position, 40.0f,  
-      //   "magical-explosion", 2.5f);
+      if (missile->type == MISSILE_WIND_SLASH) {
+        if (c->collision_pair == CP_BT) {
+          resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+            "grind-green", 2.5f);
+          return;
+        } else {
+          resources_->CreateOneParticle(c->obj1->position, 40.0f,  
+            "windslash-collision", 5.0f);
+        }
+      } else {
+        resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+          "magical-explosion", 2.5f);
+      }
     }
   }
 
@@ -1712,7 +1736,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
     p->associated_obj = nullptr; 
     p->life = -1; 
   }
-  obj1->life = -1;
+  missile->life = -1;
 }
 
 void CollisionResolver::ProcessInContactWith() {

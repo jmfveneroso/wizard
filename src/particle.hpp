@@ -46,7 +46,6 @@ struct Particle : GameObject {
   // the same thing for missiles.
   float damage;
   bool hit_once = true;
-  unordered_set<int> hit_list;
   ObjPtr owner = nullptr;
 
   ObjPtr associated_obj = nullptr;

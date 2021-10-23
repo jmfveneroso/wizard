@@ -34,6 +34,9 @@ class AI {
   void Chase(ObjPtr spider);
   void ProcessNPC(ObjPtr unit);
 
+  bool WhiteSpineAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
   bool ProcessRandomMoveAction(ObjPtr spider, shared_ptr<RandomMoveAction> action);
   bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);

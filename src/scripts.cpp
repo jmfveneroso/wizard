@@ -726,7 +726,7 @@ static PyObject* enter_dungeon(PyObject *self, PyObject *args) {
   gResources->DeleteAllObjects();
   gResources->CreateDungeon();
   Dungeon& dungeon = gResources->GetDungeon();
-  vec3 pos = dungeon.GetPlatform();
+  vec3 pos = dungeon.GetUpstairs();
   player->ChangePosition(pos);
   gResources->GetConfigs()->render_scene = "dungeon";
   gResources->SaveGame();

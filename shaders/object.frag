@@ -108,11 +108,8 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 frag_pos,
 void main(){
   vec3 diffuse_color = texture(texture_sampler, in_data.UV).rgb;
 
-  vec3 light_color = vec3(1.0, 1.0, 1.0);
-  float light_power = 1.0;
-
+  float light_power = 0.6;
   vec3 ambient_color = lighting_color * diffuse_color;
-  // vec3 ambient_color = light_color * diffuse_color;
 
   vec3 out_color = ambient_color;
 
@@ -141,15 +138,15 @@ void main(){
     vec3 specular_color = texture(specular_sampler, in_data.UV).rgb * 
       specular_component;
 
-    out_color += sun_intensity * ((diffuse_color * light_color * light_power * cos_theta)
-       + (specular_color * light_color * light_power * pow(cos_alpha, 5)));
+    out_color += sun_intensity * ((diffuse_color * lighting_color * light_power * cos_theta)
+       + (specular_color * lighting_color * light_power * pow(cos_alpha, 5)));
   } else {
     // Sun light.
     vec3 light_cameraspace = (V * vec4(light_direction, 0.0)).xyz;
     vec3 n = normalize(in_data.normal);
     vec3 l = normalize(light_cameraspace);
     float brightness = clamp(dot(n, l), 0, 1);
-    out_color += sun_intensity * (diffuse_color * light_color * light_power * brightness);
+    out_color += sun_intensity * (diffuse_color * lighting_color * light_power * brightness);
 
     // Point lights.
     for (int i = 0; i < NUM_POINT_LIGHTS; i++) {

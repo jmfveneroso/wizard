@@ -110,8 +110,11 @@ void Engine::RunCommand(string command) {
     configs->arcane_level--;
   } else if (result[0] == "invincible") {
     configs->invincible = true;
-  } else if (result[0] == "full-life") {
-    player->life = configs->max_life;
+  } else if (result[0] == "full-life" || result[0] == "fl") {
+    player->life = player->max_life;
+    player->mana = player->max_mana;
+    player->stamina = player->max_stamina;
+
     player->status = STATUS_NONE;
   } else if (result[0] == "count-octree") {
     resources_->CountOctreeNodes();
@@ -172,7 +175,7 @@ void Engine::RunCommand(string command) {
       resources_->DeleteAllObjects();
       resources_->CreateDungeon();
       Dungeon& dungeon = resources_->GetDungeon();
-      vec3 pos = dungeon.GetPlatform();
+      vec3 pos = dungeon.GetUpstairs();
       resources_->GetPlayer()->ChangePosition(pos);
       resources_->GetConfigs()->render_scene = "dungeon";
       resources_->SaveGame();
@@ -334,12 +337,6 @@ bool Engine::ProcessGameInput() {
           }
         }
         throttle_counter_ = 4;
-      } else if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell++;
-          if (configs->selected_spell > 7) configs->selected_spell = 0;
-        }
-        throttle_counter_ = 5;
       } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           configs->selected_tile = 0;
@@ -409,7 +406,6 @@ bool Engine::ProcessGameInput() {
       if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           inventory_->Disable();
-          glfwSetCursorPos(window, 0, 0);
         }
         throttle_counter_ = 20;
       }
@@ -451,7 +447,7 @@ void Engine::AfterFrame() {
     }
     case STATE_INVENTORY: {
       Camera c = player_input_->GetCamera();
-      inventory_->Draw(c, 200, 100, window_);
+      inventory_->Draw(c, 0, 0, window_);
       break;
     }
     default:
@@ -503,29 +499,29 @@ void Engine::BeforeFrameDebug() {
   }
 
 
-  for (auto& [name, obj] : objs) {
-    if (!obj->IsCreature()) continue;
+  // for (auto& [name, obj] : objs) {
+  //   if (!obj->IsCreature()) continue;
 
-    cout << "Obj: " << obj->GetName() << endl;
+  //   cout << "Obj: " << obj->GetName() << endl;
 
-    for (auto& [id, bone] : obj->bones) {
-      string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
-      cout << "obb: " << obb_name << endl;
-    
-      BoundingSphere bs = obj->GetBoneBoundingSphere(id);
-      if (door_obbs_.find(obb_name) == door_obbs_.end()) {
-      cout << "bs: " << bs << endl;
-        ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
-        bone_obj->never_cull = true;
-        door_obbs_[obb_name] = bone_obj;
-        resources_->UpdateObjectPosition(bone_obj);
-      } else {
-        ObjPtr bone_obj = door_obbs_[obb_name];
-        bone_obj->position = bs.center;
-        resources_->UpdateObjectPosition(bone_obj);
-      }
-    }
-  }
+  //   for (auto& [id, bone] : obj->bones) {
+  //     string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
+  //     cout << "obb: " << obb_name << endl;
+  //   
+  //     BoundingSphere bs = obj->GetBoneBoundingSphere(id);
+  //     if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+  //     cout << "bs: " << bs << endl;
+  //       ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
+  //       bone_obj->never_cull = true;
+  //       door_obbs_[obb_name] = bone_obj;
+  //       resources_->UpdateObjectPosition(bone_obj);
+  //     } else {
+  //       ObjPtr bone_obj = door_obbs_[obb_name];
+  //       bone_obj->position = bs.center;
+  //       resources_->UpdateObjectPosition(bone_obj);
+  //     }
+  //   }
+  // }
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   Camera c = player_input_->GetCamera();
@@ -649,11 +645,7 @@ void Engine::Run() {
     Camera c = player_input_->GetCamera();
     renderer_->SetCamera(c);
 
-    if (configs->render_scene != "hypercube") {
-      renderer_->Draw();
-    } else if (configs->render_scene == "hypercube") {
-      renderer_->DrawHypercube();
-    }
+    renderer_->Draw();
     resources_->Unlock();
 
     AfterFrame();

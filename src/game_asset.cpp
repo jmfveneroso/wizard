@@ -229,6 +229,11 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     }
   }
 
+  const pugi::xml_node& damage_xml = asset_xml.child("damage");
+  if (damage_xml) {
+    damage = ParseDiceFormula(damage_xml.text().get());
+  }
+
   // Physics: Speed - Turn Rate.
   const pugi::xml_node& base_speed_xml = asset_xml.child("base-speed");
   if (base_speed_xml) {
@@ -278,6 +283,18 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     if (life_xml) {
       particle_asset->life = boost::lexical_cast<float>(life_xml.text().get());
     }
+  }
+
+  const pugi::xml_node& repeat_animation_xml = 
+    asset_xml.child("repeat-animation");
+  if (repeat_animation_xml) {
+    repeat_animation = LoadBoolFromXml(repeat_animation_xml);
+  }
+
+  const pugi::xml_node& align_to_speed_xml = 
+    asset_xml.child("align-to-speed");
+  if (align_to_speed_xml) {
+    align_to_speed = LoadBoolFromXml(align_to_speed_xml);
   }
 
   resources_->AddAsset(shared_from_this());
@@ -520,4 +537,13 @@ void GameAsset::LoadCollisionData(pugi::xml_node& xml) {
   }
 
   loaded_collision = true;
+}
+
+bool GameAsset::IsDestructible() {
+  return type == ASSET_DESTRUCTIBLE;
+}
+
+bool GameAssetGroup::IsDestructible() {
+  if (assets.empty()) return false;
+  return assets[0]->IsDestructible();
 }

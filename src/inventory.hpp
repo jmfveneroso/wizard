@@ -10,10 +10,7 @@ using namespace glm;
 enum InventoryState {
   INVENTORY_ITEMS = 0,
   INVENTORY_SPELLBOOK,
-  INVENTORY_CRAFT,
   INVENTORY_DIALOG,
-  INVENTORY_QUEST_LOG,
-  INVENTORY_STATS,
   INVENTORY_STORE,
   INVENTORY_SPELL_SELECTION
 };
@@ -23,6 +20,7 @@ enum ItemOrigin {
   ITEM_ORIGIN_SPELLBAR,
   ITEM_ORIGIN_STORE,
   ITEM_ORIGIN_EQUIPMENT,
+  ITEM_ORIGIN_SPELL_GRAPH,
   ITEM_ORIGIN_NONE
 };
 
@@ -35,21 +33,6 @@ struct DraggedItem {
   int hold_offset_x = 0;
   int hold_offset_y = 0;
 };
-
-// struct ItemSlot {
-//   int x;
-//   int y;
-//   string callback;
-// };
-// 
-// struct UiLayout {
-//   string background;
-//   vector<ItemSlot> item_slots;
-// };
-
-class Inventory;
-typedef void (Inventory::*CallbackFunction)(void); // function pointer type
-typedef unordered_map<string, CallbackFunction> CallbackMap;
 
 class Inventory {
   shared_ptr<Draw2D> draw_2d_;
@@ -78,29 +61,72 @@ class Inventory {
 
   ivec2 spell_selection_cursor_ = ivec2(5, 5);
 
-  CallbackMap callback_map_;
+
+
+  vec2 inventory_pos_;
+  vec2 inventory_pos_start_;
+  vec2 inventory_pos_target_;
+  const float inventory_animation_duration_ = 1.0f;
+  float inventory_animation_start_ = 0.0f;
+
+  vec2 item_description_screen_pos_;
+  vec2 item_description_screen_pos_start_;
+  vec2 item_description_screen_pos_target_;
+  const float item_description_screen_animation_duration_ = 1.0f;
+  float item_description_screen_animation_start_ = 0.0f;
+
+  vec2 spellbook_pos_;
+  vec2 spellbook_pos_start_;
+  vec2 spellbook_pos_target_;
+  const float spellbook_animation_duration_ = 1.0f;
+  float spellbook_animation_start_ = 0.0f;
+
+  vec2 cog_rotation_;
+  vec2 cog_rotation_start_;
+  vec2 cog_rotation_target_;
+  const float cog_animation_duration_ = 1.0f;
+  float cog_animation_start_ = 0.0f;
+
+  vec2 spell_description_pos_;
+  vec2 spell_description_pos_start_;
+  vec2 spell_description_pos_target_;
+  const float spell_description_animation_duration_ = 1.0f;
+  float spell_description_animation_start_ = 0.0f;
+
+  float closing = 0.0f;
+  GLFWwindow* window_;
+
+  string crystal_combination_anim_name_ = "item-combination";
+  ivec2 crystal_combination_pos_;
+  float crystal_combination_frame_ = -1;
+  float level_up_frame_ = -1;
+  ivec2 crystal_after_pos_;
+  int crystal_after_;
+  void DrawAnimation(const string& animation_name, const ivec2& pos, int frame);
 
   void UpdateMouse(GLFWwindow* window);
   bool IsMouseInRectangle(int left, int right, int bottom, int top);
-  void DrawItemMatrix();
-  void DrawSpellbar();
+  bool IsMouseInCircle(const ivec2& pos, float circle);
   void DrawContextPanel(int x, int y, const string& name, 
     const string& description);
   void DrawSpellSelectionInterface(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
   void MoveItemBack();
-  void DrawInventory(const Camera& camera, int win_x, int win_y, 
-    GLFWwindow* window);
-  void DrawSpellPage();
+  void UpdateAnimations();
+  void DrawCogs();
+  void DrawItemDescriptionScreen();
+  void DrawStats(const ivec2& pos);
+  void DrawOverlay(const ivec2& pos);
+  void DrawItems(const ivec2& pos);
+  void DrawInventory();
+  void DrawSpellDescription();
   void DrawSpellbook();
   void DrawStore(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
-  void DrawEquipment(const Camera& camera, int win_x, int win_y, 
-    GLFWwindow* window);
+  void DrawEquipment(const ivec2& pos);
   void DrawDialog(GLFWwindow* window);
-  void DrawQuestLog(GLFWwindow* window);
   void NextPhrase(GLFWwindow* window, const string& next_phrase_name = "");
-  void DrawStats(const Camera& camera, int win_x, int win_y, GLFWwindow* window);
+  void UseItem(int x, int y);
   void TryToCombineCrystals(int x, int y);
 
  public:
@@ -108,6 +134,7 @@ class Inventory {
 
   Inventory(shared_ptr<Resources> asset_catalog, shared_ptr<Draw2D> draw_2d);
 
+  void DrawSpellbar();
   void Draw(const Camera& camera, int win_x = 200, int win_y = 100, GLFWwindow* window = nullptr);
 
   void Enable(GLFWwindow* window, InventoryState state = INVENTORY_ITEMS);

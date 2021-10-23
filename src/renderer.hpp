@@ -7,6 +7,7 @@
 #include "terrain.hpp"
 #include "2d.hpp"
 #include "4d.hpp"
+#include "inventory.hpp"
 
 using namespace std;
 using namespace glm;
@@ -65,6 +66,7 @@ class Renderer {
   shared_ptr<Resources> resources_;
   shared_ptr<Draw2D> draw_2d_;
   shared_ptr<Project4D> project_4d_;
+  shared_ptr<Inventory> inventory_;
   GLFWwindow* window_;
   int window_width_ = WINDOW_WIDTH;
   int window_height_ = WINDOW_HEIGHT;
@@ -136,7 +138,7 @@ class Renderer {
   void GetFrustumPlanes(vec4 frustum_planes[6]);
 
   void Init();
-  void DrawSpellbar();
+  void DrawStatusBars();
 
   // Get visible objects.
   vector<ObjPtr> GetVisibleObjectsInCaves(
@@ -158,13 +160,13 @@ class Renderer {
 
  public:
   Renderer(shared_ptr<Resources> asset_catalog, shared_ptr<Draw2D> draw_2d,
-    shared_ptr<Project4D> project_4d, GLFWwindow* window, int window_width,
-    int window_height);
+    shared_ptr<Project4D> project_4d, shared_ptr<Inventory> inventory, 
+    GLFWwindow* window, int window_width, int window_height);
   ~Renderer();
 
   void Draw();
   void DrawHypercube();
-  void SetCamera(const Camera& camera) { camera_ = camera; }
+  void SetCamera(const Camera& camera);
 
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }

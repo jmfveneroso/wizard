@@ -70,6 +70,7 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
   quat h_rotation = RotationBetweenVectors(front, spider->forward);
   quat v_rotation = RotationBetweenVectors(up, spider->up);
   quat target_rotation = v_rotation * h_rotation;
+  // quat target_rotation = h_rotation;
 
   // Check if object is facing the correct direction.
   vec3 cur_forward = spider->rotation_matrix * front;
@@ -163,7 +164,8 @@ bool AI::ProcessStatus(ObjPtr spider) {
   // Check status. If taking hit, or dying.
   switch (spider->status) {
     case STATUS_TAKING_HIT: {
-      resources_->ChangeObjectAnimation(spider, "Armature|idle");
+      // resources_->ChangeObjectAnimation(spider, "Armature|idle");
+      resources_->ChangeObjectAnimation(spider, "Armature|taking_hit");
 
       if (spider->frame >= 39) {
         // spider->actions = {};
@@ -265,41 +267,47 @@ void AI::ProcessMentalState(ObjPtr unit) {
   }
 }
 
-bool AI::ProcessRangedAttackAction(ObjPtr spider, 
+bool AI::ProcessRangedAttackAction(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
   if (resources_->GetConfigs()->disable_attacks) {
     return true;
   }
 
-  resources_->ChangeObjectAnimation(spider, "Armature|attack");
+  if (creature->GetAsset()->name == "white_spine") {
+    return WhiteSpineAttack(creature, action);
+  }
+  return true;
+}
 
-  if (int(spider->frame) >= 79) return true;
+bool AI::WhiteSpineAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const int num_missiles = boost::lexical_cast<int>(resources_->GetGameFlag("white_spine_num_missiles"));
+  const float missile_speed = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_speed"));
+  const float spread = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_spread"));
 
-  if (int(spider->frame) == 44) {
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 58) return true;
+
+  if (int(creature->frame) == 42) {
     ObjPtr player = resources_->GetObjectByName("player");
-    vec3 dir = (player->position + vec3(0, -3.0f, 0)) - spider->position;
+    vec3 dir = CalculateMissileDirectionToHitTarget(creature->position,
+      player->position + vec3(0, -3.0f, 0), missile_speed);
 
-    vec3 forward = normalize(vec3(dir.x, 0, dir.z));
-    vec3 right = normalize(cross(forward, vec3(0, 1, 0)));
+    for (int i = 0; i < num_missiles; i++) {
+      vec3 p2 = creature->position + dir * 200.0f;
+      vec3 dir = normalize(p2 - creature->position);
 
-    float x = dot(dir, forward);
-    float y = dot(dir, vec3(0, 1, 0));
-    float v = 4.0f;
-    float v2 = v * v;
-    float v4 = v * v * v * v;
-    float g = 0.016f;
-    float x2 = x * x;
+      if (i > 0) {
+        float x_ang = (float) Random(-5, 6) * spread;
+        float y_ang = (float) Random(-5, 6) * spread;
+        vec3 right = cross(dir, vec3(0, 1, 0));
+        mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+        dir = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+      }
 
-    // https://en.wikipedia.org/wiki/Projectile_motion
-    // Angle required to hit coordinate.
-    float tan = (v2 - sqrt(v4 - g * (g * x2 + 2 * y * v2))) / (g * x);
-    float angle = atan(tan); 
-    dir = vec3(rotate(mat4(1.0f), angle, right) * vec4(forward, 1.0f));  
-
-    resources_->CreateParticleEffect(40, 
-      spider->position + dir * 5.0f + vec3(0, 2.0, 0), 
-      dir * 5.0f, vec3(0.0, 1.0, 0.0), -1.0, 40.0f, 3.0f);
-    resources_->SpiderCastMagicMissile(spider, dir);
+      resources_->CastMissile(creature, MISSILE_HORN, dir, missile_speed);
+    }
   }
   return false;
 }
@@ -462,7 +470,7 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
   }
 
   float dist_next_location = length(to_next_location);
-  if (dist_next_location < 2.0f) {
+  if (dist_next_location < 1.0f) {
     return true;
   }
 
@@ -502,10 +510,14 @@ bool AI::ProcessMoveToPlayerAction(
   ObjPtr spider, shared_ptr<MoveToPlayerAction> action) {
   Dungeon& dungeon = resources_->GetDungeon();
   const vec3& player_pos = resources_->GetPlayer()->position;
-  vec3 next_pos = dungeon.GetNextMove(spider->position, player_pos);
-  if (next_pos.x == 0 && next_pos.z == 0) {
-    spider->actions.push(make_shared<StandAction>());
-    return true;
+
+  float min_distance = 0.0f;
+  vec3 next_pos = dungeon.GetNextMove(spider->position, player_pos, 
+    min_distance);
+
+  // Use direct pathfinding when the monster is very close.
+  if (length2(next_pos) < 0.0001f || min_distance < 2.0f) {
+    next_pos = player_pos;
   }
 
   spider->actions.push(make_shared<MoveAction>(next_pos));
@@ -792,7 +804,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         spider->actions.pop();
         spider->prev_action = move_to_player_action;
         resources_->Unlock();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }

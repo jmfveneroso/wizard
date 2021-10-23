@@ -39,10 +39,9 @@
 #define FIELD_OF_VIEW 45.0f
 // #define WINDOW_WIDTH 1280
 // #define WINDOW_HEIGHT 800
-#define WINDOW_WIDTH 800
+#define WINDOW_WIDTH 960
 #define WINDOW_HEIGHT 600
 #define LOD_DISTANCE 100.0f
-#define GRAVITY 0.016
 
 const int kMaxParticles = 1000;
 const int kMax3dParticles = 20;
@@ -97,26 +96,31 @@ struct Configs {
   bool scale_object = false;
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
-  int item_matrix[8][7] = {
-    { 13, 14, 15, 10, 18, 0, 0 },
-    { 13, 14, 15, 12, 18, 0, 0 },
-    { 13, 14, 15, 12, 18, 0, 0 },
-    {  4,  4,  4,  18, 18, 0, 0 },
-    {  5002,  5003,  5004,  0, 0, 0, 0 },
-    {  0,  0,  0,  0, 0, 0, 0 },
-    {  0,  0,  0,  0, 0, 0, 0 },
-    {  0,  0,  0,  0, 0, 0, 0 },
+  int item_matrix[10][5] = {
+    { 18, 19, 20, 21, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
   };
-  int item_quantities[8][7] = {
-    { 1, 1, 1, 100, 1, 0, 0 },
-    { 1, 1, 1, 1,   1, 0, 0 },
-    { 1, 1, 1, 1,   1, 0, 0 },
-    { 1, 1, 1, 1,   1, 0, 0 },
-    { 1, 1, 1, 0,   0, 0, 0 },
-    { 0, 0, 0, 0,   0, 0, 0 },
-    { 0, 0, 0, 0,   0, 0, 0 },
-    { 0, 0, 0, 0,   0, 0, 0 },
+  int item_quantities[10][5] = {
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
   };
+
   int selected_spell = 0;
   int spellbar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   int spellbar_quantities[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -150,8 +154,9 @@ struct Configs {
   int experience = 0;
   int level = 0;
   int skill_points = 5;
-  DiceFormula base_damage;
-  DiceFormula base_hp_dice;
+  DiceFormula base_hp_dice = ParseDiceFormula("1d20");
+  DiceFormula base_mana_dice = ParseDiceFormula("1d10");
+  DiceFormula base_stamina_dice = ParseDiceFormula("1d10");
 
   int base_armor_class = 0;
   int armor_class = 0;
@@ -177,7 +182,11 @@ struct Configs {
   vector<int> white_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8 }; // 105 possible combinations.
   vector<int> black_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }; // 5460 possible combinations.
 
-  int equipment[7] = { 0, 0, 0, 16, 0, 0, 0 };
+  int equipment[4] = { 26, 26, 27, 28 };
+
+  float level_up_frame = -1;
+ 
+  int gold = 0;
 };
 
 struct ItemBonus {
@@ -192,11 +201,13 @@ struct ItemData {
   string name;
   string description;
   string icon;
+  string image;
   string asset_name;
   int price;
   int max_stash;
   int spell_id = -1;
   bool insert_in_spellbar = false;
+  ivec2 size = ivec2(1, 1);
 
   // For generated items.
   vector<ItemBonus> bonuses;
@@ -213,13 +224,16 @@ struct ItemData {
     spell_id = item_data.spell_id;
     insert_in_spellbar = item_data.insert_in_spellbar;
     bonuses = item_data.bonuses;
+    image = item_data.image;
+    size = item_data.size;
   }
   ItemData(int id, string name, string description, string icon, 
     string asset_name, int price, int max_stash, bool insert_in_spellbar,
-    ItemType type) 
+    ItemType type, string image, ivec2 size) 
     : id(id), name(name), description(description), icon(icon), 
       asset_name(asset_name), price(price), max_stash(max_stash),
-      insert_in_spellbar(insert_in_spellbar), type(type) {}
+      insert_in_spellbar(insert_in_spellbar), type(type), image(image), 
+      size(size) {}
 };
 
 struct EquipmentData {
@@ -246,13 +260,17 @@ struct ArcaneSpellData {
   int price;
   int max_stash;
   ivec2 spell_selection_pos;
+  ivec2 spell_graph_pos;
+  bool learned = false;
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
-    int item_id, int spell_id, int price, int max_stash, ivec2 spell_selection_pos) 
+    int item_id, int spell_id, int price, int max_stash, ivec2 spell_selection_pos, 
+    ivec2 spell_graph_pos) 
     : name(name), description(description), image_name(image_name), 
       type(type), item_id(item_id), spell_id(spell_id), price(price), 
-      max_stash(max_stash), spell_selection_pos(spell_selection_pos) {}
+      max_stash(max_stash), spell_selection_pos(spell_selection_pos),
+      spell_graph_pos(spell_graph_pos) {}
 };
 
 struct Phrase {
@@ -334,6 +352,9 @@ class Resources {
   HeightMap height_map_;
   Dungeon dungeon_;
 
+  bool town_loaded_ = false;
+  void LoadTownAssets();
+
   // Indices by name.
   unordered_map<string, GLuint> shaders_;
   unordered_map<string, GLuint> textures_;
@@ -377,30 +398,41 @@ class Resources {
   mutex mutex_;
 
   unordered_map<int, ItemData> item_data_ {
-    { 0, { 0, "", "", "", "", 0, 0, false, ITEM_DEFAULT } },
-    { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT } },
-    { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT } },
-    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_DEFAULT } },
-    { 4, { 4, "Skeleton Key", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
-    { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
-    { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT } },
-    { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT } },
-    { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true, ITEM_DEFAULT } },
-    { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true, ITEM_DEFAULT } },
-    { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false, ITEM_DEFAULT } },
-    { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true, ITEM_DEFAULT } },
-    { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true, ITEM_DEFAULT } },
-    { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true, ITEM_DEFAULT } },
-    { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT } },
-    { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT } },
-    { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_WEAPON } },
-    { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "yellow-crystal", 1, 1, true, ITEM_HELMET } },
-    { 18, { 18, "True Seeing", "helmet-description", "true_seeing_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT } }
+    { 0, { 0, "", "", "", "", 0, 0, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_DEFAULT, "health_potion", ivec2(1, 1) } },
+    { 4, { 4, "Skeleton Key", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 18, { 18, "Earth Mana Crystal", "helmet-description", "earth_mana_crystal_icon", "earth_mana_crystal", 1, 1, true, ITEM_DEFAULT, "earth_mana_crystal", ivec2(1, 1) } },
+    { 19, { 19, "Fire Mana Crystal", "helmet-description", "fire_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "fire_mana_crystal", ivec2(1, 1) } },
+    { 20, { 20, "Water Mana Crystal", "helmet-description", "water_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "water_mana_crystal", ivec2(1, 1) } },
+    { 21, { 21, "Rock Mana Crystal", "rock_mana_description", "rock_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "rock_mana_crystal", ivec2(1, 1) } },
+    { 22, { 22, "Air Mana Crystal", "air_mana_description", "air_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "air_mana_crystal", ivec2(1, 1) } },
+    { 23, { 23, "Life Mana Crystal", "life_mana_description", "life_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "life_mana_crystal", ivec2(1, 1) } },
+    { 24, { 24, "Scroll", "life_mana_description", "scroll_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "scroll", ivec2(2, 1) } },
+    { 25, { 25, "Staff", "life_mana_description", "staff_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "staff", ivec2(1, 4) } },
+    { 26, { 26, "Ring", "helmet-description", "ring_icon", "true_seeing_gem", 1, 1, true, ITEM_RING, "ring", ivec2(1, 1) } },
+    { 27, { 27, "Orb of Fire", "helmet-description", "orb_of_fire_icon", "true_seeing_gem", 1, 1, true, ITEM_ORB, "orb_of_fire", ivec2(2, 2) } },
+    { 28, { 28, "Armor", "helmet-description", "armor_icon", "true_seeing_gem", 1, 1, true, ITEM_ARMOR, "armor", ivec2(2, 3) } }
   };
 
   unordered_map<int, EquipmentData> equipment_data_ {
-    { 16, { 16, DiceFormula(1, 10, 0), 0 } },
-    { 17, { 17, DiceFormula(), 10 } }
+    { 26, { 26, DiceFormula(), 1 } },
+    { 27, { 27, DiceFormula(), 1 } },
+    { 28, { 28, DiceFormula(), 1 } }
   };
 
   vector<shared_ptr<ArcaneSpellData>> arcane_spell_data_;
@@ -464,6 +496,8 @@ class Resources {
  public:
   Resources(const string& resources_dir, const string& shaders_dir, 
     GLFWwindow* window_);
+
+  float camera_jiggle = 0.0f;
 
   // Just right.
   void RemoveObject(ObjPtr obj);
@@ -558,9 +592,11 @@ class Resources {
   void CastBouncyBall(ObjPtr owner, const vec3& position, 
     const vec3& direction);
 
-  void SpiderCastMagicMissile(ObjPtr spider, const vec3& direction);
+  void CastMissile(
+    ObjPtr owner, const MissileType& missile_type, const vec3& direction, 
+  const float& velocity);
   void UpdateMissiles();
-  void UpdateHand();
+  void UpdateHand(const Camera& camera);
   void UpdateParticles();
   void CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
     vec3 color, float size, float life, float spread, 
@@ -621,6 +657,7 @@ class Resources {
   // Item and actionables.
   void TurnOnActionable(const string& name);
   void TurnOffActionable(const string& name);
+  bool CanPlaceItem(const ivec2& pos, int item_id);
   bool InsertItemInInventory(int item_id, int quantity = 1);
 
   void AddTexture(const string& texture_name, const GLuint texture_id);
@@ -670,12 +707,17 @@ class Resources {
   void AddSkillPoint();
   int CreateRandomItem(int base_item_id);
   void DropItem(const vec3& position);
-  ObjPtr Create3dParticleEffect(const string& asset_name, const vec3& pos);
+  shared_ptr<Particle> Create3dParticleEffect(const string& asset_name, 
+    const vec3& pos);
   shared_ptr<Particle> CreateOneParticle(vec3 pos, float life, 
     const string& type, float size);
 
   shared_ptr<Missile> GetUnusedMissile();
   void CastSpellShot(const Camera& camera);
+  void CreateDrops(ObjPtr obj);
+
+  void CastWindslash(const Camera& camera);
+  bool IsHoldingScepter();
 };
 
 #endif // __RESOURCES_HPP__

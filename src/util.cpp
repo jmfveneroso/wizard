@@ -884,7 +884,6 @@ CollisionType StrToCollisionType(const std::string& s) {
     { "bones", COL_BONES },
     { "perfect", COL_PERFECT },
     { "quick-sphere", COL_QUICK_SPHERE },
-    { "convex-hull", COL_CONVEX_HULL},
     { "obb", COL_OBB},
     { "none", COL_NONE },
     { "undefined", COL_UNDEFINED }
@@ -898,7 +897,6 @@ std::string CollisionTypeToStr(const CollisionType& col) {
     { COL_BONES, "bones" },
     { COL_PERFECT, "perfect" },
     { COL_QUICK_SPHERE, "quick-sphere" },
-    { COL_CONVEX_HULL, "convex-hull" },
     { COL_OBB, "obb" },
     { COL_NONE, "none" },
     { COL_UNDEFINED, "undefined" }
@@ -1031,6 +1029,10 @@ vec4 LoadVec4FromXml(const pugi::xml_node& node) {
 
 float LoadFloatFromXml(const pugi::xml_node& node) {
   return boost::lexical_cast<float>(node.text().get());
+}
+
+bool LoadBoolFromXml(const pugi::xml_node& node) {
+  return boost::lexical_cast<bool>(node.text().get());
 }
 
 string LoadStringFromXml(const pugi::xml_node& node) {
@@ -1590,3 +1592,23 @@ int GetIndexFromCombination(vector<int> combination, int n, int k) {
 //   vector<vec3>& vertices, vector<vec2>& uvs, 
 //   vector<unsigned int>& indices, vector<Polygon>& polygons) {
 // }
+
+vec3 CalculateMissileDirectionToHitTarget(const vec3& pos, const vec3& target, 
+  const float& v) {
+  vec3 dir = target - pos;
+  vec3 forward = normalize(vec3(dir.x, 0, dir.z));
+  vec3 right = normalize(cross(forward, vec3(0, 1, 0)));
+
+  float x = dot(dir, forward);
+  float y = dot(dir, vec3(0, 1, 0));
+  float v2 = v * v;
+  float v4 = v * v * v * v;
+  float g = GRAVITY;
+  float x2 = x * x;
+
+  // https://en.wikipedia.org/wiki/Projectile_motion
+  // Angle required to hit coordinate.
+  float tan = (v2 - sqrt(v4 - g * (g * x2 + 2 * y * v2))) / (g * x);
+  float angle = atan(tan); 
+  return vec3(rotate(mat4(1.0f), angle, right) * vec4(forward, 1.0f));  
+}

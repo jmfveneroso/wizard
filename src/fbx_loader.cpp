@@ -93,6 +93,34 @@ void ExtractSkeleton(FbxScene* scene, FbxData* data) {
   if (!skeleton_node) return;
 
   data->skeleton = BuildSkeleton(skeleton_node);
+
+  queue<FbxNode*> nodes;
+  nodes.push(scene->GetRootNode());
+  while (!nodes.empty()) {
+    FbxNode* node = nodes.front();
+    nodes.pop();
+
+    if (node->GetNodeAttribute() != NULL && 
+        node->GetNodeAttribute()->GetAttributeType() == FbxNodeAttribute::eSkeleton) {
+      FbxSkeleton* lSkeleton = (FbxSkeleton*) node->GetNodeAttribute();
+      shared_ptr<SkeletonJoint> joint = make_shared<SkeletonJoint>();
+      joint->name = (char*) lSkeleton->GetName();
+      joint->node = node;
+      data->joint_map[joint->name] = joint;
+
+      FbxTime time; 
+      time.SetFrame(0, FbxTime::eFrames24); 
+      FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
+        GetGeometryTransformation(scene->GetRootNode());
+      FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
+        joint->node->EvaluateGlobalTransform(time); 
+      joint->global_bindpose = GetMatrix(mGlobalTransform);
+    }
+
+    for (int i = 0; i < node->GetChildCount(); i++) {
+      nodes.push(node->GetChild(i));
+    }
+  }
 }
 
 void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
@@ -247,26 +275,30 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     throw runtime_error("Wrong number of deformers.");
   }
 
-  unordered_map<string, shared_ptr<SkeletonJoint>> joint_map;
-  stack<shared_ptr<SkeletonJoint>> joint_stack({ data->skeleton });
-  while (!joint_stack.empty()) {
-    shared_ptr<SkeletonJoint> joint = joint_stack.top();
-    joint_stack.pop();
-    for (auto& c : joint->children) joint_stack.push(c);
-    joint_map[joint->name] = joint;
+  // unordered_map<string, shared_ptr<SkeletonJoint>> joint_map;
+  // stack<shared_ptr<SkeletonJoint>> joint_stack({ data->skeleton });
+  // while (!joint_stack.empty()) {
+  //   shared_ptr<SkeletonJoint> joint = joint_stack.top();
+  //   joint_stack.pop();
+  //   for (auto& c : joint->children) joint_stack.push(c);
+  //   joint_map[joint->name] = joint;
 
-    // Old way.
-    // joint->global_bindpose = transform_link_matrix * inverse(transform_matrix) * 
-    //   geometry_transform;
+  //   cout << "Adding joint " << joint->name << endl;
 
-    FbxTime time; 
-    time.SetFrame(0, FbxTime::eFrames24); 
-    FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
-      GetGeometryTransformation(scene->GetRootNode());
-    FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
-      joint->node->EvaluateGlobalTransform(time); 
-    joint->global_bindpose = GetMatrix(mGlobalTransform);
-  }
+  //   // Old way.
+  //   // joint->global_bindpose = transform_link_matrix * inverse(transform_matrix) * 
+  //   //   geometry_transform;
+
+  //   FbxTime time; 
+  //   time.SetFrame(0, FbxTime::eFrames24); 
+  //   FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
+  //     GetGeometryTransformation(scene->GetRootNode());
+  //   FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
+  //     joint->node->EvaluateGlobalTransform(time); 
+  //   joint->global_bindpose = GetMatrix(mGlobalTransform);
+  // }
+
+  unordered_map<string, shared_ptr<SkeletonJoint>>& joint_map = data->joint_map;
 
   vector<vector<tuple<int, float>>> bone_weights(data->vertices.size());
   data->joints.resize(joint_map.size());

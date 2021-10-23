@@ -41,8 +41,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   vec3 up = vec3(0, 1, 0); // Determines object up direction.
   vec3 forward = vec3(0, 0, 1); // Determines object forward direction.
 
-  quat cur_rotation = quat(0, 0, 0, 1);
-  quat dest_rotation = quat(0, 0, 0, 1);
+  quat cur_rotation;
+  quat dest_rotation;
 
   float distance;
   float scale = 1.0f;
@@ -83,6 +83,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   float current_speed = 0.0f;
   vec3 speed = vec3(0);
+  vec3 acceleration = vec3(0);
+
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
   double updated_at = 0;
@@ -133,6 +135,9 @@ class GameObject : public enable_shared_from_this<GameObject> {
   vector<shared_ptr<GameObject>> closest_lights;
 
   unordered_map<Status, shared_ptr<TemporaryStatus>> temp_status;
+
+  float item_sparkle = 0.0f;
+  unordered_set<int> hit_list;
 
   GameObject(Resources* resources) : resources_(resources) {}
   GameObject(Resources* resources, GameObjectType type) 
@@ -214,6 +219,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void RangedAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   bool IsPartiallyTransparent();
   void UpdateAsset(const string& asset_name);
+  bool GetRepeatAnimation();
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -305,6 +311,8 @@ struct Door : public GameObject {
 
 struct Actionable : public GameObject {
   int state = 0; // 0: off, 1: turning_on, 2: on, 3: turning_off
+  vector<Drop> drops;
+
   Actionable(Resources* resources) 
     : GameObject(resources, GAME_OBJ_ACTIONABLE) {}
 };
@@ -318,6 +326,18 @@ struct Waypoint : public GameObject {
   Waypoint(Resources* resources) 
     : GameObject(resources, GAME_OBJ_WAYPOINT) {}
   void ToXml(pugi::xml_node& parent);
+};
+
+struct Destructible : public GameObject {
+  DestructibleState state = DESTRUCTIBLE_IDLE;
+
+  Destructible(Resources* resources) 
+    : GameObject(resources, GAME_OBJ_DESTRUCTIBLE) {}
+
+  // Destructible(Resources* resources) 
+  //   : GameObject(resources, GAME_OBJ_DESTRUCTIBLE) {}
+
+  void Destroy();
 };
 
 ObjPtr CreateGameObj(Resources* resources, const string& asset_name);

@@ -184,7 +184,7 @@ class Dungeon {
   };
 
   const LevelData kLevelData[7] {
-    { 760,  30, 5, 2, { 62, 62, 62 /*, 65 */                   }, { 70, 70, 70, 72, 74     }, {                 }, { 0, 1, 1 }, 42, 3 },            // Level 0.
+    { 760,  30, 5, 2, { 62, 62, 62 , 65                        }, { 70, 70, 70, 72, 74     }, {                 }, { 0, 1, 1 }, 42, 3 },            // Level 0.
     { 760,  40, 8, 2, { 62, 75, 75, 65, 65, 73, 73             }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 0, 1, 1, 2, 3, 3 }, 56, 4 },   // Level 1.
     { 840,  40, 8, 2, { 62, 75, 65, 73, 69                     }, { 70, 72, 74, 74, 78, 78 }, { "LARACNA"       }, { 0, 1, 1, 3, 3 }, 56, 4 },      // Level 2.
     { 840,  40, 8, 2, { 62, 75, 65, 73, 69, 83, 83, 71, 89, 89 }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 5 }, 56, 4 },                  // Level 3.
@@ -222,14 +222,12 @@ class Dungeon {
   void L5Hall(int x1, int y1, int x2, int y2);
   void L5Chamber(int sx, int sy, bool topflag, bool bottomflag, bool leftflag, 
     bool rightflag);
-  void TileFix();
   int L5HWallOk(int i, int j);
   int L5VWallOk(int i, int j);
   void L5HorizWall(int i, int j, char p, int dx);
   void L5VertWall(int i, int j, char p, int dy);
   void AddSecretWalls();
   void AddWalls();
-  void PlaceDoor(int x, int y);
   bool PlaceMiniSet(const string& miniset);
 
   int PlaceMonsterGroup(int x, int y);
@@ -256,6 +254,7 @@ class Dungeon {
   void FindRooms();
   int FillRoom(ivec2 tile, shared_ptr<Room> current_room);
   void PrintPreMap();
+  ivec2 GetClosestClearTile(const ivec2& tile);
 
  public:
   Dungeon();
@@ -268,12 +267,12 @@ class Dungeon {
   char** GetMonstersAndObjs();
   char** GetDarkness();
 
-  vec3 GetNextMove(const vec3& source, const vec3& dest);
+  vec3 GetNextMove(const vec3& source, const vec3& dest, float& min_distance);
 
   void CalculateVisibility(const vec3& player_position);
 
-  vec3 GetPlatform();
-  vec3 GetPlatformUp();
+  vec3 GetDownstairs();
+  vec3 GetUpstairs();
 
   bool IsRoomTile(const ivec2& tile);
   bool IsDark(const ivec2& tile);

@@ -35,6 +35,7 @@ void Resources::Init() {
 
   LoadMeshes(directory_ + "/models_fbx");
   LoadAssets(directory_ + "/assets");
+
   // LoadConfig(directory_ + "/config.xml");
 
   // TODO: move to space partitioning.
@@ -44,6 +45,9 @@ void Resources::Init() {
   // Player.
   ObjPtr hand_obj = CreateGameObj(this, "hand");
   hand_obj->Load("hand-001", "hand", player_->position);
+
+  ObjPtr scepter_obj = CreateGameObj(this, "equipped_scepter");
+  scepter_obj->Load("scepter-001", "equipped_scepter", player_->position);
 
   CreateSkydome(this);
 
@@ -245,6 +249,14 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
     quests_[quest->name] = quest;
   }
 
+  const pugi::xml_node& game_flags_xml = xml.child("game-flags");
+  for (pugi::xml_node flag_xml = game_flags_xml.child("flag"); flag_xml; 
+    flag_xml = flag_xml.next_sibling("flag")) {
+    string name = flag_xml.attribute("name").value();
+    const string value = flag_xml.text().get();
+    game_flags_[name] = value;
+  }
+
   for (pugi::xml_node xml_particle = xml.child("particle-type"); xml_particle; 
     xml_particle = xml_particle.next_sibling("particle-type")) {
     shared_ptr<ParticleType> particle_type = make_shared<ParticleType>();
@@ -264,6 +276,8 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
       GLuint texture_id = LoadTexture(texture_filename.c_str());
       textures_[name] = texture_id;
       particle_type->texture_id = texture_id;
+    } else {
+      particle_type->texture_id = textures_[name];
     }
 
     particle_type->grid_size = boost::lexical_cast<int>(xml_particle.attribute("grid-size").value());
@@ -773,13 +787,6 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
     int particle_index = FindUnusedParticle();
     shared_ptr<Particle> p = particle_container_[particle_index];
 
-    if (type == "splash") {
-      ObjPtr ripple = CreateGameObjFromAsset(this, "z-quad", pos + vec3(0, 1.0f, 0));
-      UpdateObjectPosition(ripple);
-      AddNewObject(ripple);
-      pos += vec3(0, 3.5f, 0);
-    }
-
     p->frame = 0;
     p->life = life;
     p->position = pos;
@@ -804,52 +811,42 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
     p->speed = main_direction + rand_direction * spread;
 
     int r = Random(0, 4);
-    if (type == "fireball" && r == 0) {
-      p->collision_type_ = COL_QUICK_SPHERE;
-      p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
-      UpdateObjectPosition(p);
-      p->physics_behavior = PHYSICS_NORMAL;
-    } else {
+    // if (type == "fireball" && r == 0) {
+    //   p->collision_type_ = COL_QUICK_SPHERE;
+    //   p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
+    //   UpdateObjectPosition(p);
+    //   p->physics_behavior = PHYSICS_NORMAL;
+    // } else {
       p->collision_type_ = COL_NONE;
       p->physics_behavior = PHYSICS_NONE;
-    }
+    // }
   }
 } 
 
 // TODO: this should definitely go elsewhere. 
 void Resources::CreateChargeMagicMissileEffect() {
-  ObjPtr obj = GetObjectByName("hand-001");
-  for (const auto& [bone_id, bs] : obj->bones) {
-    shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
-      "particle-sparkle", 0.5f);
-    p->associated_obj = obj;
-    p->offset = vec3(0);
-    p->associated_bone = bone_id;
+  if (IsHoldingScepter()) {
+    ObjPtr obj = GetObjectByName("scepter-001");
+    for (const auto& [bone_id, bs] : obj->bones) {
+      shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
+        "particle-sparkle", 0.5f);
+      p->associated_obj = obj;
+      p->offset = vec3(0);
+      p->associated_bone = bone_id;
+    }
+  } else {
+    ObjPtr obj = GetObjectByName("hand-001");
+    for (const auto& [bone_id, bs] : obj->bones) {
+      shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
+        "particle-sparkle", 0.5f);
+      p->associated_obj = obj;
+      p->offset = vec3(0);
+      p->associated_bone = bone_id;
+    }
   }
-  return;
-
-  int particle_index = FindUnusedParticle();
-  shared_ptr<Particle> p = particle_container_[particle_index];
-  p->frame = 0;
-  p->life = 40;
-  p->position = vec3(0.35, -0.436, 0.2);
-  p->color = vec4(1.0f, 1.0f, 1.0f, 0.0f);
-  p->particle_type = GetParticleTypeByName("charge-magic-missile");
-  p->size = 0.5;
-
-  // Create object.
-  shared_ptr<ParticleGroup> new_particle_group = make_shared<ParticleGroup>(
-    this);
-
-  new_particle_group->name = "particle-group-obj-" + 
-    boost::lexical_cast<string>(id_counter_ + 1);
-  new_particle_group->particles.push_back(p);
-
-  AddGameObject(new_particle_group);
 }
 
-void Resources::UpdateHand() {
-  shared_ptr<GameObject> obj = GetObjectByName("hand-001");
+void Resources::UpdateHand(const Camera& camera) {
   mat4 rotation_matrix = rotate(
     mat4(1.0),
     player_->rotation.y + 4.71f,
@@ -860,8 +857,14 @@ void Resources::UpdateHand() {
     player_->rotation.x,
     vec3(0.0f, 0.0f, 1.0f)
   );
+
+  shared_ptr<GameObject> obj = GetObjectByName("hand-001");
   obj->rotation_matrix = rotation_matrix;
-  obj->position = player_->position;
+  obj->position = camera.position;
+
+  obj = GetObjectByName("scepter-001");
+  obj->rotation_matrix = rotation_matrix;
+  obj->position = camera.position;
 }
 
 // TODO: move to particle file. Maybe physics.
@@ -910,10 +913,13 @@ void Resources::UpdateParticles() {
     }
 
     if (p->associated_obj) {
+      if (p->associated_obj->life <= 0.0f) {
+        p->associated_obj = nullptr;
+      }
+
       if (p->associated_bone != -1) {
         BoundingSphere s = p->associated_obj->GetBoneBoundingSphere(
           p->associated_bone);
-        p->position = s.center + p->offset;
         p->position = s.center;
       } else {
         p->position = p->associated_obj->position + p->offset;
@@ -938,7 +944,11 @@ void Resources::UpdateParticles() {
   for (int i = 0; i < kMax3dParticles; i++) {
     shared_ptr<Particle> p = particles_3d_[i];
     p->life -= 1.0f;
-    if (p->life < 0) {
+    if (p->scale_in < 1.0f) {
+      p->scale_in += 0.05f;
+    } else if (p->life <= 0 && p->scale_out > 0.0f) {
+      p->scale_out -= 0.05f;
+    } else if (p->life < 0) {
       if (configs_->new_building && configs_->new_building->id == p->id) {
         p->life = p->max_life;
       } else {
@@ -949,15 +959,13 @@ void Resources::UpdateParticles() {
         p->physics_behavior = PHYSICS_NONE;
         p->bounding_sphere = BoundingSphere(vec3(0), 1.0f);
         p->owner = nullptr;
+        p->associated_obj = nullptr;
         p->hit_list.clear();
         continue;
       }
     }
-    if (p->particle_type == nullptr) continue;
 
-    if (p->associated_obj) {
-      p->position = p->associated_obj->position;
-    }
+    if (p->particle_type == nullptr) continue;
 
     if (int(p->life) % p->particle_type->keep_frame == 0) {
       p->frame++;
@@ -965,6 +973,24 @@ void Resources::UpdateParticles() {
 
     if (p->frame >= p->particle_type->num_frames) {
       p->frame = 0;
+    }
+
+    if (p->frame < 0) {
+      p->frame = 0;
+      p->invert = false;
+    }
+
+    if (p->associated_obj) {
+      if (p->associated_bone != -1) {
+        BoundingSphere s = p->associated_obj->GetBoneBoundingSphere(
+          p->associated_bone);
+        p->position = s.center + p->offset;
+        p->position = s.center;
+      } else {
+        p->position = p->associated_obj->position + p->offset;
+      }
+      p->speed = vec3(0.0f);
+      p->rotation_matrix = p->associated_obj->rotation_matrix;
     }
 
     int index = p->frame + p->particle_type->first_frame;
@@ -993,6 +1019,7 @@ void Resources::UpdateParticles() {
 }
 
 void Resources::UpdateMissiles() {
+  int i = 0;
   for (const auto& missile : missiles_) {
     if (missile->scale_in < 1.0f) {
       missile->scale_in += 0.2f;
@@ -1007,6 +1034,7 @@ void Resources::UpdateMissiles() {
     }
 
     missile->life -= 1;
+
     if (missile->life <= 0) {
       // TODO: missile->Reset();
       missile->scale_in = 1.0f;
@@ -1016,6 +1044,28 @@ void Resources::UpdateMissiles() {
         CreateParticleEffect(15, missile->position, vec3(0, 3, 0), 
           vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.5f);
       }
+      for (auto p : missile->associated_particles) {
+        p->associated_obj = nullptr; 
+        p->life = -1; 
+      }
+      missile->life = -1;
+      continue;
+    }
+
+    if (missile->type == MISSILE_WIND_SLASH && int(missile->frame) % 10 == 0) {
+      BoundingSphere s = missile->GetBoneBoundingSphere(1);
+      CreateOneParticle(s.center, 20.0f, "sparks", 5.0f);
+    }
+
+    if (missile->type == MISSILE_HORN && int(missile->frame) % 10 == 0) {
+      CreateOneParticle(missile->position, 20.0f, "sparks", 5.0f);
+    }
+ 
+    if (missile->GetAsset()->align_to_speed) {
+      quat target_rotation = RotationBetweenVectors(vec3(0, 0, 1), 
+        normalize(missile->speed));
+
+      missile->rotation_matrix = mat4_cast(target_rotation);
     }
   }
 
@@ -1074,7 +1124,7 @@ vector<ObjPtr> Resources::GenerateOptimizedOctreeAux(
   vector<ObjPtr> bot_objs;
   for (auto [id, obj] : octree_node->objects) {
     if ((obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_ACTIONABLE
-         && obj->type != GAME_OBJ_DOOR) || 
+         && obj->type != GAME_OBJ_DOOR && obj->type != GAME_OBJ_DESTRUCTIBLE) || 
       obj->GetAsset()->physics_behavior != PHYSICS_FIXED) {
       continue;
     }
@@ -1290,10 +1340,11 @@ void Resources::RemoveDead() {
 
   for (auto it = destructibles_.begin(); it < destructibles_.end(); it++) {
     ObjPtr obj = *it;
-    if (obj->type == GAME_OBJ_PLAYER) continue;
-    if (obj->type == GAME_OBJ_PARTICLE) continue;
-    if (obj->GetAsset()->type != ASSET_DESTRUCTIBLE) continue;
-    if (obj->status != STATUS_DEAD) continue;
+    if (!obj->IsDestructible()) continue;
+    
+    shared_ptr<Destructible> destructible = 
+      static_pointer_cast<Destructible>(obj);
+    if (destructible->state != DESTRUCTIBLE_DESTROYED) continue;
     RemoveObject(obj);
   }
 
@@ -1396,6 +1447,7 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_WAYPOINT) continue;
     if (obj->status == STATUS_DEAD) continue;
     if (obj->name == "hand-001") continue;
+    if (obj->name == "scepter-001") continue;
  
     if (!IntersectRaySphere(position, direction, 
       obj->GetTransformedBoundingSphere(), t, q)) {
@@ -1417,6 +1469,7 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_WAYPOINT) continue;
     if (obj->status == STATUS_DEAD) continue;
     if (obj->name == "hand-001") continue;
+    if (obj->name == "scepter-001") continue;
 
     if (!IntersectRaySphere(position, direction, 
       obj->GetTransformedBoundingSphere(), t, q)) {
@@ -1475,13 +1528,15 @@ void Resources::SaveObjects() {
     switch (obj->type) {
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DESTRUCTIBLE:
       case GAME_OBJ_DEFAULT:
         break;
       default:
         continue;
     }
 
-    if (name == "hand-001" || name == "skydome" || name == "player") continue;
+    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
+        name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -1561,6 +1616,7 @@ void Resources::CalculateCollisionData(bool recalculate) {
     switch (obj->type) {
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DESTRUCTIBLE:
       case GAME_OBJ_DEFAULT:
       case GAME_OBJ_MISSILE:
         break;
@@ -1576,7 +1632,7 @@ void Resources::CalculateCollisionData(bool recalculate) {
 
     obj->CalculateCollisionData();
 
-    if (name == "hand-001") {
+    if (name == "hand-001" || name == "scepter-001" ) {
       obj->collision_type_ = COL_NONE;
     }
 
@@ -1603,13 +1659,15 @@ void Resources::SaveCollisionData() {
     switch (obj->type) {
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DESTRUCTIBLE:
       case GAME_OBJ_DEFAULT:
         break;
       default:
         continue;
     }
 
-    if (name == "hand-001" || name == "skydome" || name == "player") continue;
+    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
+        name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -1722,6 +1780,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     // if (item->type != GAME_OBJ_DEFAULT && item->type != GAME_OBJ_WAYPOINT) continue;
     if (item->status == STATUS_DEAD) continue;
     if (item->name == "hand-001") continue;
+    if (item->name == "scepter-001") continue;
  
     // float distance = std::max(length(position - item->position) - item->GetBoundingSphere().radius, 0.0f);
     float distance = length(position - item->position);
@@ -1976,6 +2035,7 @@ shared_ptr<GameAsset> Resources::GetAssetByName(const string& name) {
 shared_ptr<GameAssetGroup> Resources::GetAssetGroupByName(const string& name) {
   if (asset_groups_.find(name) == asset_groups_.end()) {
     // cout << "Asset group " << name << " does not exist";
+    return nullptr;
   }
   return asset_groups_[name];
 }
@@ -2203,54 +2263,40 @@ void Resources::TurnOffActionable(const string& name) {
   }
 }
 
+bool Resources::CanPlaceItem(const ivec2& pos, int item_id) {
+  const ivec2& size = item_data_[item_id].size;
+  for (int x = 0; x < size.x; x++) {
+    for (int y = 0; y < size.y; y++) {
+      ivec2 cur = pos + ivec2(x, y);
+      if (cur.x >= 10 || cur.y >= 5) return false;
+      if (configs_->item_matrix[cur.x][cur.y] != 0) return false;
+    }
+  }
+  return true;
+}
+
 bool Resources::InsertItemInInventory(int item_id, int quantity) {
+  if (item_id == 10) {
+    configs_->gold += quantity;
+    return true;
+  }
+
   const ItemData& item = item_data_[item_id];
 
-  if (item.insert_in_spellbar) {
-    for (int i = 0; i < 8; i++) {
-      if (configs_->spellbar[i] == item_id) {
-        if (configs_->spellbar_quantities[i] < item.max_stash) {
-          configs_->spellbar_quantities[i] += quantity;
-          if (configs_->spellbar_quantities[i] > item.max_stash) {
-            quantity = configs_->spellbar_quantities[i] = item.max_stash;
-          } else {
-            return true;
-          }
+  for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 5; j++) {
+      if (configs_->item_matrix[i][j] != 0) continue;
+      if (!CanPlaceItem(ivec2(i, j), item_id)) continue;
+
+      configs_->item_matrix[i][j] = item_id;
+      const ivec2& size = item_data_[item_id].size;
+      for (int x = 0; x < size.x; x++) {
+        for (int y = 0; y < size.y; y++) {
+          if (x == 0 && y == 0) continue;
+          configs_->item_matrix[i + x][j + y] = -1;
         }
       }
-    }
-
-    for (int i = 0; i < 8; i++) {
-      if (configs_->spellbar[i] == 0) {
-        configs_->spellbar[i] = item_id;
-        configs_->spellbar_quantities[i] = quantity;
-        return true;
-      }
-    }
-  }
-
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 7; j++) {
-      if (configs_->item_matrix[j][i] == item_id) {
-        if (configs_->item_quantities[j][i] < item.max_stash) {
-          configs_->item_quantities[j][i] += quantity;
-          if (configs_->item_quantities[j][i] > item.max_stash) {
-            quantity = configs_->item_quantities[j][i] = item.max_stash;
-          } else {
-            return true;
-          }
-        }
-      }
-    }
-  }
-
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 7; j++) {
-      if (configs_->item_matrix[j][i] == 0) {
-        configs_->item_matrix[j][i] = item_id;
-        configs_->item_quantities[j][i] = quantity;
-        return true;
-      }
+      return true;
     }
   }
   return false;
@@ -2658,6 +2704,21 @@ void Resources::LearnSpell(const unsigned int spell_id) {
 void Resources::UpdateAnimationFrames() {
   float d = GetDeltaTime() / 0.016666f;
 
+  float speed = length(player_->speed);
+  if (speed > 0.01f && player_->can_jump) {
+    camera_jiggle += d * speed * 0.5f;
+
+    if (camera_jiggle > 6.28f) {
+      camera_jiggle -= 6.28f;
+    }
+  } else {
+    if (camera_jiggle < 3.14f) {
+      camera_jiggle += ((3.14f - camera_jiggle) / 3.14f) * d * 0.5f;
+    } else if (camera_jiggle < 6.28f) {
+      camera_jiggle += ((6.28f - camera_jiggle) / 3.14f) * d * 0.5f;
+    }
+  }
+
   for (auto& [name, obj] : objects_) {
     if (obj->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(obj);
@@ -2738,7 +2799,59 @@ void Resources::UpdateAnimationFrames() {
       continue; 
     }
 
-    if (obj->type != GAME_OBJ_DEFAULT) {
+    if (obj->type == GAME_OBJ_DESTRUCTIBLE) {
+      shared_ptr<Destructible> destructible = 
+        static_pointer_cast<Destructible>(obj);
+      shared_ptr<Mesh> mesh = GetMesh(destructible);
+
+      switch (destructible->state) {
+        case DESTRUCTIBLE_IDLE: {
+          ChangeObjectAnimation(destructible, "Armature|idle");
+          destructible->frame = 0;
+          break;
+        }
+        case DESTRUCTIBLE_DESTROYING: {
+          ChangeObjectAnimation(destructible, "Armature|destroying");
+          destructible->frame += 1.0f * d;
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
+          if (destructible->frame >= num_frames - 1) {
+            destructible->state = DESTRUCTIBLE_DESTROYED;
+            destructible->frame = num_frames - 1;
+          }
+          break;
+        }
+        case DESTRUCTIBLE_DESTROYED: {
+          ChangeObjectAnimation(destructible, "Armature|destroying");
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
+          destructible->frame = num_frames - 1;
+          break;
+        }
+        default:
+          break;
+      }
+
+      int num_frames = GetNumFramesInAnimation(*mesh, destructible->active_animation);
+      if (destructible->frame >= num_frames) {
+        destructible->frame = 0;
+      }
+      continue; 
+    }
+
+    if (obj->IsItem()) {
+      obj->item_sparkle -= 1.0f;
+
+      string particle_name = "particle-smoke-" +
+        boost::lexical_cast<string>(Random(0, 3));
+      if (obj->item_sparkle < 0.0f) {
+        obj->item_sparkle = 5.0f;
+        if (length(obj->speed) > 0.1f) {
+          shared_ptr<Particle> p = CreateOneParticle(obj->position, 60.0f, 
+            particle_name, Random(1, 7) * 0.5f);
+        }
+      }
+    }
+
+    if (obj->type != GAME_OBJ_DEFAULT && obj->type != GAME_OBJ_MISSILE) {
       continue;
     }
 
@@ -2758,10 +2871,18 @@ void Resources::UpdateAnimationFrames() {
 
       obj->frame += 1.0f * d * animation_speed;
       if (obj->frame >= animation.keyframes.size()) {
-        obj->frame = 0;
+        if (obj->GetRepeatAnimation()) {
+          obj->frame = 0;
+        } else {
+          obj->frame = animation.keyframes.size() - 1;
+        }
       }
     }
   }
+
+  shared_ptr<GameObject> obj = GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = GetObjectByName("scepter-001");
+  scepter->frame = obj->frame;
 }
 
 void Resources::ProcessEvents() {
@@ -2954,16 +3075,12 @@ void Resources::ProcessTempStatus() {
   }
 
   // Player equipment. 
-  configs_->base_damage = DiceFormula(1, 6, 0);
   configs_->armor_class = configs_->base_armor_class;
   for (int i = 0; i < 7; i++) {
     int item_id = configs_->equipment[i];
     if (item_id == 0) continue;
 
     EquipmentData& data = equipment_data_[item_id];
-    if (data.damage.num_die > 0 || data.damage.bonus > 0) {
-      configs_->base_damage = data.damage;
-    }
     configs_->armor_class += data.armor_class_bonus;
   }
 
@@ -3019,10 +3136,9 @@ void Resources::RunPeriodicEvents() {
   ProcessSpawnPoints();
   UpdateAnimationFrames();
   UpdateExpirables();
-  UpdateHand();
-  UpdateParticles();
   UpdateFrameStart();
   UpdateMissiles();
+  UpdateParticles();
   ProcessEvents();
   ProcessTempStatus();
   ProcessRotatingPlanksOrientation();
@@ -3091,7 +3207,8 @@ void Resources::DeleteAllObjects() {
   auto it = objects_.begin();
   while (it != objects_.end()) {
     auto& [name, obj] = *it;
-    if (name == "hand-001" || name == "skydome" || name == "player") {
+    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
+        name == "player") {
       ++it;
       continue;
     }
@@ -3220,108 +3337,77 @@ void Resources::CreateDungeon(bool generate_dungeon) {
       vec3 pos = kDungeonOffset + vec3(room_x, y, room_z);
 
       switch (dungeon_map[x][z]) { 
-        // case ' ': {
-        //   tile = CreateRoom(this, "dungeon_floor", pos, 0);
-        //   break;
-        // }
-        case '+': {
-          // tile = CreateRoom(this, "dungeon_corner", pos, 0);
-          break;
-        }
-        case '|': {
-          // tile = CreateRoom(this, "dungeon_corner", pos, 0);
-          break;
-        }
-        case '-': {
-          // tile = CreateRoom(this, "dungeon_corner", pos, 0);
+        case ' ': {
+          tile = CreateRoom(this, "dungeon_ceiling_hull", pos, 0);
           break;
         }
         case 'o': {
-          tile = CreateRoom(this, "dungeon_arch", pos, 0);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
+          tile = CreateRoom(this, "dungeon_arch_hull", pos, 0);
           break;
         }
         case 'O': {
-          tile = CreateRoom(this, "dungeon_arch", pos, 1);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
+          tile = CreateRoom(this, "dungeon_arch_hull", pos, 1);
+          break;
+        }
+        case 'g': {
+          tile = CreateRoom(this, "dungeon_arch_hull", pos, 0);
+          tile2 = CreateRoom(this, "dungeon_arch_gate_hull", pos, 0);
+          break;
+        }
+        case 'G': {
+          tile = CreateRoom(this, "dungeon_arch_hull", pos, 1);
+          tile2 = CreateRoom(this, "dungeon_arch_gate_hull", pos, 1);
           break;
         }
         case 'A': {
           tile = CreateRoom(this, "dungeon_arch_corner_top_left", pos, 0);
-          break;
-        }
-        case 'B': {
-          tile = CreateRoom(this, "dungeon_arch_corner_bottom_left", pos, 0);
-          break;
-        }
-        case 'F': {
-          tile = CreateRoom(this, "dungeon_arch_corner_bottom_right", pos, 0);
+          tile->CalculateCollisionData();
           break;
         }
         case 'N': {
-          tile = CreateRoom(this, "dungeon_arch_corner_top_right", pos, 0);
+          tile = CreateRoom(this, "dungeon_arch_corner_top_left", pos, 1);
+          tile->CalculateCollisionData();
           break;
         }
-        // case 'P': {
-        //   tile = CreateRoom(this, "dungeon_pillar", pos, 1);
-        //   break;
-        // }
-        // case 'd': {
-        //   tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
-        //   // tile2 = CreateRoom(this, "dungeon_door", pos, 0);
-        //   // if (Random(0, 4) == 0) {
-        //   //   shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
-        //   //   d->state = DOOR_WEAK_LOCK;
-        //   // }
-
-        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-        //   tile3->dungeon_piece_type = dungeon_map[x][z];
-        //   tile3->dungeon_tile = ivec2(x, z);
-        //   break;
-        // }
-        // case 'D': {
-        //   tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
-        //   tile2 = CreateRoom(this, "dungeon_door", pos, 1);
-        //   if (Random(0, 4) == 0) {
-        //     shared_ptr<Door> d = static_pointer_cast<Door>(tile2);
-        //     d->state = DOOR_WEAK_LOCK;
-        //   }
-
-        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-        //   tile3->dungeon_piece_type = dungeon_map[x][z];
-        //   tile3->dungeon_tile = ivec2(x, z);
-        //   break;
-        // }
+        case 'F': {
+          tile = CreateRoom(this, "dungeon_arch_corner_top_left", pos, 2);
+          tile->CalculateCollisionData();
+          break;
+        }
+        case 'B': {
+          tile = CreateRoom(this, "dungeon_arch_corner_top_left", pos, 3);
+          tile->CalculateCollisionData();
+          break;
+        }
+        case 'd': {
+          tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
+          break;
+        }
+        case 'D': {
+          tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
+          break;
+        }
         case '<': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_platform_up", pos + vec3(5, 0, 5));
+          CreateGameObjFromAsset(this, "dungeon_platform_up", pos + vec3(5, 0, 5));
+          ObjPtr obj = CreateGameObjFromAsset(this, "stairs_up_hull", pos + vec3(5, 0, 5));
           obj->CalculateCollisionData();
           break;
         }
         case '>': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_platform_down", pos+ vec3(5, 0, 5));
+          CreateGameObjFromAsset(this, "dungeon_platform_down", pos + vec3(5, 0, 5));
+          ObjPtr obj = CreateGameObjFromAsset(this, "stairs_down_hull", pos + vec3(5, 0, 5));
           obj->CalculateCollisionData();
           break;
         }
-        // case 'g': {
-        //   tile = CreateRoom(this, "dungeon_arch_gate", pos, 0);
-        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-        //   tile3->dungeon_piece_type = dungeon_map[x][z];
-        //   tile3->dungeon_tile = ivec2(x, z);
-        //   break;
-        // }
-        // case 'G': {
-        //   tile = CreateRoom(this, "dungeon_arch_gate", pos, 1);
-        //   ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-        //   tile3->dungeon_piece_type = dungeon_map[x][z];
-        //   tile3->dungeon_tile = ivec2(x, z);
-        //   break;
-        // }
+        case 'P': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_pillar_hull", pos);
+          obj->CalculateCollisionData();
+          break;
+        }
         case 'p': {
           tile = CreateRoom(this, "dungeon_high_ceiling", pos + vec3(15, 0, 15), 0);
+          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_pillar_hull", pos);
+          obj->CalculateCollisionData();
           break;
         }
         case '^': {
@@ -3420,11 +3506,15 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case 'M': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "mana_crystal", pos + vec3(0, 0, 0));
+          ObjPtr obj = CreateGameObjFromAsset(this, "barrel", pos + vec3(0, 0, 0));
           break;
         }
         case 'c': {
           ObjPtr obj = CreateGameObjFromAsset(this, "chest", pos + vec3(0, 0, 0));
+          
+          // TODO: set drops based on dungeon level.
+          shared_ptr<Actionable> a = static_pointer_cast<Actionable>(obj);
+          a->drops.push_back(Drop(10, 1000, "100"));
           break;
         }
         case 'C': {
@@ -3448,7 +3538,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
             { 'L', "spider" },
             { 'w', "worm" },
             { 's', "spiderling" },
-            { 'S', "scorpion" },
+            { 'S', "white_spine" },
             { 't', "spiderling" },
             { 'V', "demon-vine" },
             { 'Y', "dragonfly" },
@@ -3578,13 +3668,15 @@ void Resources::SaveGame() {
     switch (obj->type) {
       case GAME_OBJ_DOOR:
       case GAME_OBJ_ACTIONABLE:
+      case GAME_OBJ_DESTRUCTIBLE:
       case GAME_OBJ_DEFAULT:
         break;
       default:
         continue;
     }
 
-    if (name == "hand-001" || name == "skydome" || name == "player") continue;
+    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
+        name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -3596,8 +3688,8 @@ void Resources::SaveGame() {
   }
 
   pugi::xml_node item_matrix_node = xml.append_child("item-matrix");
-  for (int x = 0; x < 8; x++) {
-    for (int y = 0; y < 7; y++) {
+  for (int x = 0; x < 10; x++) {
+    for (int y = 0; y < 5; y++) {
       pugi::xml_node item_xml = item_matrix_node.append_child("item");
       item_xml.append_attribute("x") = boost::lexical_cast<string>(x).c_str();
       item_xml.append_attribute("y") = boost::lexical_cast<string>(y).c_str();
@@ -3641,7 +3733,17 @@ void Resources::LoadGame(const string& config_filename,
   player_->status = STATUS_NONE;
 }
 
+void Resources::LoadTownAssets() {
+  if (town_loaded_) return;
+  LoadMeshes(directory_ + "/town_models");
+  LoadAssets(directory_ + "/assets/town_assets");
+  CalculateCollisionData();
+  town_loaded_ = true;
+}
+
 void Resources::CreateTown() {
+  LoadTownAssets();
+
   LoadObjects(directory_ + "/objects");
   LoadNpcs(directory_ + "/assets/npc.xml");
 }
@@ -3696,14 +3798,6 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   configs_->respawn_point = vec3(10045, 500, 10015);
   configs_->max_player_speed = 0.02;
   configs_->jump_force = 0.3;
-
-  const pugi::xml_node& game_flags_xml = xml.child("game-flags");
-  for (pugi::xml_node flag_xml = game_flags_xml.child("flag"); flag_xml; 
-    flag_xml = flag_xml.next_sibling("flag")) {
-    string name = flag_xml.attribute("name").value();
-    const string value = flag_xml.text().get();
-    game_flags_[name] = value;
-  }
 
   if (configs_->render_scene == "town") {
     CreateTown();
@@ -3942,7 +4036,7 @@ void Resources::CastBurningHands(const Camera& camera) {
   float size = Random(1, 51) / 20.0f;
 
   CreateParticleEffect(2, pos, normal,
-    vec3(1.0, 1.0, 1.0), size, 48.0f, 15.0f, "fireball");
+    vec3(1.0, 1.0, 1.0), 5 * size, 48.0f, 15.0f, "windslash");
 }
 
 void Resources::CastStringAttack(ObjPtr owner, const vec3& position, 
@@ -4048,6 +4142,65 @@ void Resources::CastFireExplosion(ObjPtr owner, const vec3& position,
   Unlock();
 }
 
+void Resources::CastWindslash(const Camera& camera) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+
+  obj->UpdateAsset("windslash_missile");
+  obj->CalculateCollisionData();
+
+  obj->owner = player_;
+  obj->type = MISSILE_WIND_SLASH;
+  obj->physics_behavior = PHYSICS_NO_FRICTION;
+  obj->scale_in = 1.0f;
+  obj->scale_out = 0.0f;
+  obj->associated_particles.clear();
+  obj->frame = 0;
+
+  obj->position = camera.position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    obj->position = s.center;
+  }
+
+  vec3 p2 = camera.position + camera.direction * 200.0f;
+  obj->speed = normalize(p2 - obj->position) * 1.0f;
+
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera.rotation.y + 4.70f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  obj->rotation_matrix = rotate(
+    rotation_matrix,
+    camera.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+
+  obj->torque = normalize(camera.direction) * 0.05f;
+  UpdateObjectPosition(obj);
+
+  obj->life = 200;
+
+  // for (int i = 2; i <= 2; i++) {
+  //   shared_ptr<Particle> p = CreateOneParticle(obj->position, 2000.0f, 
+  //     "particle-sparkle-green", 0.5);
+  //   p->associated_obj = obj;
+  //   p->associated_bone = i;
+  //   p->scale_in = 1.0f;
+  //   p->scale_out = 0.0f;
+  //   obj->associated_particles.push_back(p);
+  // }
+
+  // shared_ptr<Particle> p = Create3dParticleEffect("particle_windslash", 
+  //   obj->position);
+  // p->associated_obj = obj;
+  // p->associated_bone = -1;
+  // p->scale_in = 1.0f;
+  // p->scale_out = 0.0f;
+  // obj->associated_particles.push_back(p);
+}
+
 ObjPtr Resources::CreateSpeedLines(ObjPtr obj) {
   ObjPtr o = Create3dParticleEffect("spell_shot_particle_lines", obj->position);
   shared_ptr<Particle> p = static_pointer_cast<Particle>(o);
@@ -4080,7 +4233,7 @@ void Resources::CreateSparks(const vec3& position, const vec3& direction) {
   } 
 }
 
-ObjPtr Resources::Create3dParticleEffect(const string& asset_name, 
+shared_ptr<Particle> Resources::Create3dParticleEffect(const string& asset_name, 
   const vec3& pos) {
   shared_ptr<GameAsset> asset = GetAssetByName(asset_name); 
   if (!asset) return nullptr;
@@ -4099,7 +4252,6 @@ ObjPtr Resources::Create3dParticleEffect(const string& asset_name,
   }
   if (index == -1) index = 0;
 
-  // TODO: set particle type.
   shared_ptr<Particle> p = particles_3d_[index];
   p->particle_type = GetParticleTypeByName(particle_asset->particle_type);
   p->existing_mesh_name = particle_asset->existing_mesh;
@@ -4275,40 +4427,39 @@ void Resources::CastBlindingRay(ObjPtr owner, const vec3& position,
 
 void Resources::CastHeal(ObjPtr owner) {
   owner->life += 20.0f;
-  if (owner->life >= 100.0f) {
-    owner->life = 100.0f;
+  if (owner->life >= owner->max_life) {
+    owner->life = owner->max_life;
   }
 }
 
 // TODO: this should probably go to main.
-void Resources::SpiderCastMagicMissile(ObjPtr spider, const vec3& direction) {
-  shared_ptr<Missile> obj = nullptr;
-  for (const auto& missile: missiles_) {
-    if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
-      obj = missile;
-      break;
-    }
-  }
+void Resources::CastMissile(
+  ObjPtr owner, const MissileType& missile_type, const vec3& direction, 
+  const float& velocity) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+  obj->UpdateAsset("horn");
+  obj->CalculateCollisionData();
 
-  if (!obj) return;
+  obj->owner = owner;
+  obj->type = missile_type;
+  obj->physics_behavior = obj->GetAsset()->physics_behavior;
+  obj->scale_in = 1.0f;
+  obj->scale_out = 0.0f;
+  obj->associated_particles.clear();
 
-  obj->life = 10000;
-  obj->owner = spider;
-  obj->type = MISSILE_MAGIC_MISSILE;
-  obj->physics_behavior = PHYSICS_UNDEFINED;
+  obj->position = owner->position; 
+  obj->speed = direction * velocity;
+  obj->life = 200.0f;
 
-  obj->position = spider->position + direction * 6.0f;
-  obj->speed = normalize(direction) * 4.0f;
-
-  obj->rotation_matrix = spider->rotation_matrix;
+  obj->rotation_matrix = owner->rotation_matrix;
   UpdateObjectPosition(obj);
 }
 
 int Resources::CountGold() {
   const int kGoldId = 10;
   int gold = 0;
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 7; j++) {
+  for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 5; j++) {
       if (configs_->item_matrix[j][i] != kGoldId) continue;
 
       gold += configs_->item_quantities[j][i];
@@ -4323,8 +4474,8 @@ bool Resources::TakeGold(int quantity) {
   if (CountGold() < quantity) return false;
 
   int gold_to_take = quantity;
-  for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 7; j++) {
+  for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 5; j++) {
       if (configs_->item_matrix[j][i] != kGoldId) continue;
 
       const int q = configs_->item_quantities[j][i];
@@ -4345,7 +4496,6 @@ void Resources::CastDarkvision() {
 }
 
 void Resources::CastTrueSeeing() {
-  cout << "Casting true seeing." << endl;
   player_->AddTemporaryStatus(make_shared<TrueSeeingStatus>(20.0f, 1));
 }
 
@@ -4395,7 +4545,7 @@ void Resources::CreateArcaneSpellCrystal(int item_id, string name,
   string texture_name) {
   item_data_[kArcaneSpellItemOffset + item_id] = 
     { kArcaneSpellItemOffset + item_id, display_name, description, 
-      icon_name, name, 10, 0, true, ITEM_DEFAULT };
+      icon_name, name, 10, 0, true, ITEM_DEFAULT, icon_name, ivec2(1, 1) };
 
   pugi::xml_document doc;
   pugi::xml_node asset_xml = doc.append_child("asset");
@@ -4475,27 +4625,30 @@ void Resources::LoadArcaneSpells() {
 
   // Complex spells.
   arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Magic Missile", 
-    "magic-missile-description", "magic_missile_icon", 0, 0, 0, 20, 10,
-    ivec2(4, 2)));
+    "magic-missile-description", "magic_missile_icon", 0, 21, 0, 20, 10,
+    ivec2(4, 2), ivec2(96, 249)));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Burning Hands", 
-    "burning-hands-description", "magic_missile_icon", 0, 1, 1, 20, 100,
-    ivec2(2, 4)));
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Windslash", 
+    "burning-hands-description", "windslash_icon", 0, 22, 1, 22, 100,
+    ivec2(2, 4), ivec2(442, 850)));
 
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Lightning Ray", 
-    "lightning-ray-description", "magic_missile_icon", 0, 2, 2, 20, 100,
-    ivec2(8, 5)));
+  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Heal", 
+    "lightning-ray-description", "healing_icon", 0, 23, 2, 20, 100,
+    ivec2(8, 5), ivec2(781, 236)));
 
   // Layered crystals.
-  for (int i = 0; i < 3; i++) {
-    int crystal_index = configs_->complex_spells[i];
-    int item_id = kArcaneSpellItemOffset + crystal_index;
-    item_data_[item_id].name = arcane_spell_data_[i]->name;
-    item_data_[item_id].description = arcane_spell_data_[i]->description;
-    item_data_[item_id].price = arcane_spell_data_[i]->price;
-    item_data_[item_id].max_stash = arcane_spell_data_[i]->max_stash;
-    arcane_spell_data_[i]->item_id = item_id;
-  }
+  // for (int i = 0; i < 3; i++) {
+  //   int crystal_index = configs_->complex_spells[i];
+  //   int item_id = kArcaneSpellItemOffset + crystal_index;
+  //   item_data_[item_id].name = arcane_spell_data_[i]->name;
+  //   item_data_[item_id].description = arcane_spell_data_[i]->description;
+  //   item_data_[item_id].price = arcane_spell_data_[i]->price;
+  //   item_data_[item_id].max_stash = arcane_spell_data_[i]->max_stash;
+  //   arcane_spell_data_[i]->item_id = item_id;
+
+  //   // TODO: load from config.
+  //   // arcane_spell_data_[3+0]->learned = true;
+  // }
 
   // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Open Lock", 
   //   "minor-open-lock-description", "magic_missile_icon", 1, 3, 3, 20, 1));
@@ -4530,8 +4683,8 @@ void Resources::LoadArcaneSpells() {
 
   // Base spells.
   arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Spell Shot", 
-    "magic-missile-description", "harpoon_icon", 4, 9, 9, 20, 10, 
-    ivec2(5, 5)));
+    "spell_shot_description", "spell_shot_icon", 4, 9, 9, 20, 10, 
+    ivec2(5, 5), ivec2(0, 0)));
 
   int item_id = kArcaneBaseOffset + 0;
   item_data_[item_id].name = arcane_spell_data_[3+0]->name;
@@ -4539,6 +4692,7 @@ void Resources::LoadArcaneSpells() {
   item_data_[item_id].price = arcane_spell_data_[3+0]->price;
   item_data_[item_id].max_stash = arcane_spell_data_[3+0]->max_stash;
   arcane_spell_data_[3+0]->item_id = item_id;
+  arcane_spell_data_[3+0]->learned = true;
 }
 
 void Resources::CalculateArcaneSpells() {
@@ -4586,14 +4740,23 @@ void Resources::CalculateArcaneSpells() {
 }
 
 shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
-  cout << "Which arcane spell: " << item_id << endl;
+  if (item_id == 21) {
+    return arcane_spell_data_[0];
+  }
+
+  if (item_id == 22) {
+    return arcane_spell_data_[1];
+  }
+
+  if (item_id == 23) {
+    return arcane_spell_data_[2];
+  }
  
   int num_spells = arcane_spell_data_.size();
   if (item_id < kArcaneSpellItemOffset) return nullptr;
 
   // Complex and layered.
   if (item_id < kArcaneWhiteOffset) {
-    cout << "Which arcane spell: complex" << endl;
     int complex_id = item_id - kArcaneSpellItemOffset;
     if (complex_to_spell_id_.find(complex_id) != complex_to_spell_id_.end()) {
       int spell_id = complex_to_spell_id_[complex_id];
@@ -4609,7 +4772,6 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
 
   // White.
   if (item_id < kArcaneBlackOffset) {
-    cout << "Which arcane spell: white" << endl;
     int white_id = item_id - kArcaneWhiteOffset;
     if (white_to_spell_id_.find(white_id) == white_to_spell_id_.end()) {
       return nullptr;
@@ -4620,7 +4782,6 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
 
   // Black.
   if (item_id < kArcaneBlackOffset + 5580) {
-    cout << "Which arcane spell: black" << endl;
     int white_id = item_id - kArcaneWhiteOffset;
     int black_id = item_id - kArcaneBlackOffset;
     if (black_to_spell_id_.find(black_id) == black_to_spell_id_.end()) {
@@ -4632,7 +4793,6 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
 
   // Base.
   if (item_id < kArcaneBaseOffset + 1) {
-    cout << "Which arcane spell: base" << endl;
     int base_id = item_id - kArcaneBaseOffset;
     return arcane_spell_data_[3+base_id];
   }
@@ -4660,6 +4820,10 @@ int Resources::CrystalCombination(int item_id1, int item_id2) {
     item_id2 = item_id1;
     item_id1 = aux;
   }
+
+  if (item_id1 == 18 && item_id2 == 19) return 21;
+  if (item_id1 == 19 && item_id2 == 20) return 22;
+  if (item_id1 == 18 && item_id2 == 20) return 23;
 
   int type1 = GetArcaneSpellType(item_id1);
   int type2 = GetArcaneSpellType(item_id2);
@@ -4723,7 +4887,10 @@ void Resources::GiveExperience(int exp_points) {
     configs_->experience -= next_level;
     configs_->level++;
     configs_->skill_points += 5;
-    configs_->max_life += ProcessDiceFormula(configs_->base_hp_dice);
+    configs_->level_up_frame = 0;
+    player_->max_life += ProcessDiceFormula(configs_->base_hp_dice);
+    player_->max_mana += ProcessDiceFormula(configs_->base_mana_dice);
+    player_->max_stamina += ProcessDiceFormula(configs_->base_stamina_dice);
     player_->life = configs_->max_life;
 
     AddMessage(string("You leveled up!"));
@@ -4822,21 +4989,30 @@ shared_ptr<Missile> Resources::GetUnusedMissile() {
   if (obj == nullptr) obj = missiles_[0];
 
   obj->life = 10000;
-
+  obj->hit_list.clear();
   return obj;
 }
 
-void Resources::CastSpellShot(const Camera& camera) {
+void Resources::CastMagicMissile(const Camera& camera) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
   obj->position = camera.position; 
-  ObjPtr hand = GetObjectByName("hand-001");
-  for (const auto& [bone_id, bs] : hand->bones) {
-    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+
+  ObjPtr focus;
+  if (IsHoldingScepter()) {
+    focus = GetObjectByName("scepter-001");
+  } else {
+    focus = GetObjectByName("hand-001");
+  }
+
+  for (const auto& [bone_id, bs] : focus->bones) {
+    BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
     obj->position = s.center;
   }
 
-  obj->UpdateAsset("spell_shot");
+  obj->UpdateAsset("magic_missile");
+  obj->CalculateCollisionData();
+
   obj->scale_in = 0.0f;
   obj->scale_out = 1.0f;
   obj->associated_particles.clear();
@@ -4844,7 +5020,7 @@ void Resources::CastSpellShot(const Camera& camera) {
   obj->type = MISSILE_MAGIC_MISSILE;
   obj->physics_behavior = PHYSICS_UNDEFINED;
 
-  vec3 p2 = camera.position + camera.direction * 2000.0f;
+  vec3 p2 = camera.position + camera.direction * 200.0f;
   obj->speed = normalize(p2 - obj->position) * 4.0f;
 
   mat4 rotation_matrix = rotate(
@@ -4869,19 +5045,27 @@ void Resources::CastSpellShot(const Camera& camera) {
   obj->associated_particles.push_back(p);
 }
 
-void Resources::CastMagicMissile(const Camera& camera) {
+void Resources::CastSpellShot(const Camera& camera) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
-  obj->UpdateAsset("magic_missile");
+  obj->UpdateAsset("spell_shot");
+  obj->CalculateCollisionData();
+
   obj->owner = player_;
   obj->type = MISSILE_MAGIC_MISSILE;
   obj->physics_behavior = PHYSICS_NO_FRICTION;
+  obj->scale_in = 1.0f;
+  obj->scale_out = 0.0f;
+  obj->associated_particles.clear();
 
-  vec3 left = normalize(cross(camera.up, camera.direction));
-  obj->position = camera.position + camera.direction * 0.5f + left * -0.81f +  
-    camera.up * -0.556f;
+  obj->position = camera.position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    obj->position = s.center;
+  }
 
-  vec3 p2 = camera.position + camera.direction * 3000.0f;
+  vec3 p2 = camera.position + camera.direction * 200.0f;
   obj->speed = normalize(p2 - obj->position) * 4.0f;
 
   mat4 rotation_matrix = rotate(
@@ -4898,3 +5082,26 @@ void Resources::CastMagicMissile(const Camera& camera) {
   UpdateObjectPosition(obj);
 }
 
+void Resources::CreateDrops(ObjPtr obj) {
+  if (!obj->asset_group) return;
+
+  auto asset = obj->GetAsset();
+  for (const auto& drop : obj->GetAsset()->drops) {
+    int r = Random(0, 1000);
+    if (r > drop.chance) continue;
+
+    vec3 pos = obj->position + vec3(0, 5.0f, 0);
+    ObjPtr obj = CreateGameObjFromAsset(this, 
+      item_data_[drop.item_id].asset_name, pos);
+
+    float x = Random(0, 10) * .2f;
+    float z = Random(0, 10) * .2f;
+    obj->speed = vec3(-1.0f + x, .5f, -1.0f + z);
+    obj->CalculateCollisionData();
+  }
+}
+
+bool Resources::IsHoldingScepter() {
+  int item_id = configs_->spellbar[configs_->selected_spell];
+  return (item_id == 25);
+}

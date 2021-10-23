@@ -86,15 +86,15 @@ int main() {
   const string shaders_dir = "shaders";
 
   resources = make_shared<Resources>(resources_dir, shaders_dir, window_);
-  draw_2d = make_shared<Draw2D>(resources, resources_dir);
+  draw_2d = make_shared<Draw2D>(resources, resources_dir, 1440, 900);
   project_4d = make_shared<Project4D>(resources);
-  renderer = make_shared<Renderer>(resources, draw_2d, project_4d, window_, 
-    window_width_, window_height_);
+  inventory = make_shared<Inventory>(resources, draw_2d);
+  renderer = make_shared<Renderer>(resources, draw_2d, project_4d,
+    inventory, window_, window_width_, window_height_);
   physics = make_shared<Physics>(resources);
   collision_resolver = make_shared<CollisionResolver>(resources);
   ai = make_shared<AI>(resources);
   text_editor = make_shared<TextEditor>(draw_2d);
-  inventory = make_shared<Inventory>(resources, draw_2d);
   player_input = make_shared<PlayerInput>(resources, project_4d, 
     inventory, renderer->terrain());
   engine = make_shared<Engine>(project_4d, renderer, text_editor, inventory, 

@@ -3,12 +3,9 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
-const int kWindowWidth = 1280;
-const int kWindowHeight = 800;
-
-Draw2D::Draw2D(shared_ptr<Resources> asset_catalog, const string dir) 
-  : resources_(asset_catalog), dir_(dir),
-  window_width_(1280), window_height_(800) {
+Draw2D::Draw2D(shared_ptr<Resources> asset_catalog, const string dir, 
+  int window_width, int window_height) : resources_(asset_catalog), dir_(dir),
+  window_width_(window_width), window_height_(window_height) {
 
   shader_id_ = asset_catalog->GetShader("text");
   polygon_shader_id_ = asset_catalog->GetShader("polygon");
@@ -270,7 +267,8 @@ void Draw2D::DrawRectangle(GLfloat x, GLfloat y, GLfloat width, GLfloat height, 
 }
 
 void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y, 
-  GLfloat width, GLfloat height, GLfloat transparency, vec2 uv) {
+  GLfloat width, GLfloat height, GLfloat transparency, vec2 uv, 
+  vec2 dimensions) {
   GLuint shader_id = resources_->GetShader("2d_image");
 
   glBindVertexArray(vao_);
@@ -279,18 +277,40 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glUseProgram(shader_id);
 
+  // vector<vec3> vertices = {
+  //   { 0        , 0         , 0.0 },
+  //   { 0        , 0 - height, 0.0 },
+  //   { 0 + width, 0         , 0.0 },
+  //   { 0 + width, 0         , 0.0 },
+  //   { 0        , 0 - height, 0.0 },
+  //   { 0 + width, 0 - height, 0.0 }
+  // };
+
+  // vector<vec2> uvs = {
+  //   { uv.x, dimensions.y }, { uv.x, uv.y }, { dimensions.x, dimensions.y }, 
+  //   { dimensions.x, dimensions.y }, { uv.x, uv.y }, { dimensions.x, uv.y }
+  // };
+  // vector<vec2> uvs = {
+  //   { uv.x, dimensions.y }, { uv.x, uv.y }, { dimensions.x, dimensions.y }, 
+  //   { dimensions.x, dimensions.y }, { uv.x, uv.y }, { dimensions.x, uv.y }
+  // };
+
   vector<vec3> vertices = {
-    { x        , kWindowHeight - y         , 0.0 },
-    { x        , kWindowHeight - y - height, 0.0 },
-    { x + width, kWindowHeight - y         , 0.0 },
-    { x + width, kWindowHeight - y         , 0.0 },
-    { x        , kWindowHeight - y - height, 0.0 },
-    { x + width, kWindowHeight - y - height, 0.0 }
+    { x        , window_height_ - y         , 0.0 },
+    { x        , window_height_ - y - height, 0.0 },
+    { x + width, window_height_ - y         , 0.0 },
+    { x + width, window_height_ - y         , 0.0 },
+    { x        , window_height_ - y - height, 0.0 },
+    { x + width, window_height_ - y - height, 0.0 }
   };
 
   vector<vec2> uvs = {
-    { 0, uv.y }, { 0, 0 }, { uv.x, uv.y }, { uv.x, uv.y }, { 0, 0 }, { uv.x, 0 }
+    { uv.x               , uv.y + dimensions.y }, { uv.x, uv.y }, { uv.x + dimensions.x, uv.y + dimensions.y }, 
+    { uv.x + dimensions.x, uv.y + dimensions.y }, { uv.x, uv.y }, { uv.x + dimensions.x, uv.y }
   };
+  // vector<vec2> uvs = {
+  //   { 0, uv.y }, { 0, 0 }, { uv.x, uv.y }, { uv.x, uv.y }, { 0, 0 }, { uv.x, 0 }
+  // };
 
   vec3 color = vec3(1.0, 0, 0);
   glUniform3f(GetUniformId(shader_id, "lineColor"), color.x, color.y, color.z);
@@ -308,6 +328,60 @@ void Draw2D::DrawImage(const string& texture, GLfloat x, GLfloat y,
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, texture_id);
   glUniform1i(GetUniformId(shader_id, "texture_sampler"), 0);
+
+  BindBuffer(vbo_, 0, 3);
+  BindBuffer(uv_, 1, 2);
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glEnable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+  glBindVertexArray(0);
+}
+
+void Draw2D::DrawImageWithMask(const string& texture, const string& mask, 
+  GLfloat x, GLfloat y, GLfloat width, GLfloat height, GLfloat transparency, 
+  vec2 uv, vec2 dimensions) {
+  GLuint shader_id = resources_->GetShader("2d_image_with_mask");
+
+  glBindVertexArray(vao_);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glUseProgram(shader_id);
+
+  vector<vec3> vertices = {
+    { x        , window_height_ - y         , 0.0 },
+    { x        , window_height_ - y - height, 0.0 },
+    { x + width, window_height_ - y         , 0.0 },
+    { x + width, window_height_ - y         , 0.0 },
+    { x        , window_height_ - y - height, 0.0 },
+    { x + width, window_height_ - y - height, 0.0 }
+  };
+
+  vector<vec2> uvs = {
+    { uv.x               , uv.y + dimensions.y }, { uv.x, uv.y }, { uv.x + dimensions.x, uv.y + dimensions.y }, 
+    { uv.x + dimensions.x, uv.y + dimensions.y }, { uv.x, uv.y }, { uv.x + dimensions.x, uv.y }
+  };
+
+  vec3 color = vec3(1.0, 0, 0);
+  glUniform3f(GetUniformId(shader_id, "lineColor"), color.x, color.y, color.z);
+  glUniformMatrix4fv(GetUniformId(shader_id, "projection"), 1, GL_FALSE, &projection_[0][0]);
+  glUniform1f(GetUniformId(shader_id, "transparency"), transparency);
+
+  glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(glm::vec3), &vertices[0]); 
+
+  glBindBuffer(GL_ARRAY_BUFFER, uv_);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, uvs.size() * sizeof(glm::vec2), &uvs[0]); 
+
+  GLuint texture_id = resources_->GetTextureByName(texture);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+  glUniform1i(GetUniformId(shader_id, "texture_sampler"), 0);
+
+  GLuint mask_id = resources_->GetTextureByName(mask);
+  glActiveTexture(GL_TEXTURE1);
+  glBindTexture(GL_TEXTURE_2D, mask_id);
+  glUniform1i(GetUniformId(shader_id, "mask_sampler"), 1);
 
   BindBuffer(vbo_, 0, 3);
   BindBuffer(uv_, 1, 2);
