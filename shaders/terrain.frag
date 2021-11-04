@@ -288,7 +288,7 @@ void main() {
   float light_power = 0.85;
 
   // Sun light.
-  float sun_intensity = (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
+  float sun_intensity = (1.0 + dot(light_direction, vec3(0, 1, 0))) * 0.25;
   out_color += visibility * sun_intensity * (diffuse_color * light_color * light_power * cos_theta);
 
   // Point lights.

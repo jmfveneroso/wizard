@@ -1352,6 +1352,10 @@ bool IsNaN(const vec3& v) {
   return false;
 }
 
+bool IsNaN(const mat4& m) {
+  return (isnan(m[0][0]));
+}
+
 void CreateLine(const vec3& source, const vec3& dest, vector<vec3>& vertices, 
   vector<vec2>& uvs, vector<unsigned int>& indices, vector<Polygon>& polygons) {
   vec3 v = dest - source;

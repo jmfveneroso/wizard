@@ -60,7 +60,6 @@ class AI {
     shared_ptr<UseAbilityAction> action);
 
   bool ProcessStatus(ObjPtr spider);
-  void ProcessMentalState(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);
   void ProcessPlayerAction(ObjPtr player);
 

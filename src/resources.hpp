@@ -60,7 +60,8 @@ enum GameState {
   STATE_CRAFT,
   STATE_TERRAIN_EDITOR,
   STATE_DIALOG,
-  STATE_BUILD
+  STATE_BUILD,
+  STATE_MAP
 };
 
 struct Quest {
@@ -109,6 +110,31 @@ struct Configs {
     {   0, 0,  0,  0, 0 },
   };
   int item_quantities[10][5] = {
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 1, 1 },
+    { 1, 1, 1, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+    { 0, 0, 0, 0, 0 },
+  };
+
+  int store_matrix[10][5] = {
+    { 18, 19, 20, 21, 0 },
+    {   3, 0,  0,  0, 0 },
+    {   -1, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+    {   0, 0,  0,  0, 0 },
+  };
+  int store_quantities[10][5] = {
     { 1, 1, 1, 1, 1 },
     { 1, 1, 1, 1, 1 },
     { 1, 1, 1, 1, 1 },
@@ -401,7 +427,7 @@ class Resources {
     { 0, { 0, "", "", "", "", 0, 0, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_DEFAULT, "health_potion", ivec2(1, 1) } },
+    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_USABLE, "health_potion", ivec2(1, 1) } },
     { 4, { 4, "Skeleton Key", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
@@ -414,7 +440,7 @@ class Resources {
     { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_SCEPTER, "", ivec2(1, 1) } },
     { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
     { 18, { 18, "Earth Mana Crystal", "helmet-description", "earth_mana_crystal_icon", "earth_mana_crystal", 1, 1, true, ITEM_DEFAULT, "earth_mana_crystal", ivec2(1, 1) } },
     { 19, { 19, "Fire Mana Crystal", "helmet-description", "fire_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "fire_mana_crystal", ivec2(1, 1) } },
@@ -423,7 +449,7 @@ class Resources {
     { 22, { 22, "Air Mana Crystal", "air_mana_description", "air_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "air_mana_crystal", ivec2(1, 1) } },
     { 23, { 23, "Life Mana Crystal", "life_mana_description", "life_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "life_mana_crystal", ivec2(1, 1) } },
     { 24, { 24, "Scroll", "life_mana_description", "scroll_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "scroll", ivec2(2, 1) } },
-    { 25, { 25, "Staff", "life_mana_description", "staff_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "staff", ivec2(1, 4) } },
+    { 25, { 25, "Staff", "life_mana_description", "staff_icon", "scepter", 1, 1, true, ITEM_DEFAULT, "staff", ivec2(1, 4) } },
     { 26, { 26, "Ring", "helmet-description", "ring_icon", "true_seeing_gem", 1, 1, true, ITEM_RING, "ring", ivec2(1, 1) } },
     { 27, { 27, "Orb of Fire", "helmet-description", "orb_of_fire_icon", "true_seeing_gem", 1, 1, true, ITEM_ORB, "orb_of_fire", ivec2(2, 2) } },
     { 28, { 28, "Armor", "helmet-description", "armor_icon", "true_seeing_gem", 1, 1, true, ITEM_ARMOR, "armor", ivec2(2, 3) } }

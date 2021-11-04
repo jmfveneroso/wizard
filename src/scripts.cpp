@@ -290,23 +290,51 @@ static PyObject* push_action(PyObject *self, PyObject *args) {
     }
   } else if (s2 == "take-aim") {
     obj->actions.push(make_shared<TakeAimAction>());
+    obj->frame = 0;
   } else if (s2 == "ranged-attack") {
     obj->actions.push(make_shared<RangedAttackAction>());
+    obj->frame = 0;
   } else if (s2 == "meelee-attack") {
     obj->actions.push(make_shared<MeeleeAttackAction>());
+    obj->frame = 0;
   } else if (s2 == "random-move") {
     obj->actions.push(make_shared<RandomMoveAction>());
-  } else if (s2 == "meelee-attack") {
-    obj->actions.push(make_shared<MeeleeAttackAction>());
   } else if (s2 == "move-to-player") {
     obj->actions.push(make_shared<MoveToPlayerAction>());
   } else if (s2 == "move-away-from-player") {
     obj->actions.push(make_shared<MoveAwayFromPlayerAction>());
   } else if (s2 == "use-ability") {
     obj->actions.push(make_shared<UseAbilityAction>(s3));
+  } else if (s2 == "idle") {
+    int seconds = boost::lexical_cast<int>(s3);
+    obj->actions.push(make_shared<IdleAction>(seconds));
   }
   gResources->Unlock();
 
+  return PyBool_FromLong(1);
+}
+
+static PyObject* clear_actions(PyObject *self, PyObject *args) {
+  char* c_ptr1; 
+
+  // How to parse tuple: http://web.mit.edu/people/amliu/vrut/python/ext/parseTuple.html
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+
+  if (!c_ptr1) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+  if (!gResources) {
+    return NULL;
+  }
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) {
+    return PyBool_FromLong(0);
+  }
+
+  gResources->Lock();
+  obj->actions = {};
+  gResources->Unlock();
   return PyBool_FromLong(1);
 }
 
@@ -658,6 +686,25 @@ static PyObject* has_unfinished_actions(PyObject *self, PyObject *args) {
   return PyBool_FromLong(0);
 }
 
+static PyObject* get_next_action(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  string next_action;
+  if (!obj->actions.empty()) {
+    next_action = ActionTypeToStr(obj->actions.front()->type);
+  }
+
+  return PyUnicode_FromString(next_action.c_str());
+}
+
 static PyObject* register_on_unit_die_event(PyObject *self, PyObject *args) {
   char* c_ptr1;
   if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
@@ -709,6 +756,29 @@ static PyObject* distance_to_player(PyObject *self, PyObject *args) {
   ObjPtr player = gResources->GetPlayer();
 
   double distance = length(player->position - obj->position);
+  return PyFloat_FromDouble(distance);
+}
+
+static PyObject* next_move_distance_to_player(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  vec3 next_move = vec3(99999, 99999, 99999);
+  if (!obj->actions.empty() && obj->actions.front()->type == ACTION_MOVE) {
+    shared_ptr<MoveAction> move_action =  
+      static_pointer_cast<MoveAction>(obj->actions.front());
+    next_move = move_action->destination;
+  }
+
+  ObjPtr player = gResources->GetPlayer();
+  double distance = length(next_move - player->position);
   return PyFloat_FromDouble(distance);
 }
 
@@ -806,10 +876,14 @@ static PyMethodDef EmbMethods[] = {
   "Tests if player is inside region" },
  { "distance_to_player", distance_to_player, METH_VARARGS,
   "Distance to player" },
+ { "next_move_distance_to_player", next_move_distance_to_player, METH_VARARGS,
+  "Next move distance to player" },
  { "issue_move_order", issue_move_order, METH_VARARGS,
   "Issue move order for unit to move to waypoint" },
  { "push_action", push_action, METH_VARARGS,
   "Push action" },
+ { "clear_actions", clear_actions, METH_VARARGS, "Clear actions" },
+ { "get_next_action", get_next_action, METH_VARARGS, "Get next action" },
  { "register_onenter_event", register_onenter_event, METH_VARARGS,
   "Register an on enter event" },
  { "register_onleave_event", register_onleave_event, METH_VARARGS,

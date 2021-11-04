@@ -41,6 +41,10 @@ class Draw2D {
   void DrawImage(const string& texture, GLfloat x, GLfloat y, GLfloat width, 
     GLfloat height, GLfloat transparency, vec2 uv = vec2(0, 0), vec2 dimensions = vec2(1, 1));
 
+  void DrawRotatedImage(const string& texture, GLfloat x, GLfloat y, GLfloat width, 
+    GLfloat height, GLfloat transparency, float rotation, vec2 uv = vec2(0, 0), 
+    vec2 dimensions = vec2(1, 1));
+
   void DrawImageWithMask(const string& texture, const string& mask, GLfloat x, GLfloat y, GLfloat width, 
     GLfloat height, GLfloat transparency, vec2 uv = vec2(0, 0), vec2 dimensions = vec2(1, 1));
 };

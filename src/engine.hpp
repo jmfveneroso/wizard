@@ -52,6 +52,7 @@ class Engine {
   unordered_map<string, ObjPtr> door_obbs_;
   ObjPtr my_box_;
   void RunBeforeFrameDebugFunctions();
+  void EnableMap();
 
  public:
   Engine(

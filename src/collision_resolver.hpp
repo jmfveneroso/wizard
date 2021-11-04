@@ -268,6 +268,7 @@ class CollisionResolver {
   void TestCollisionQA(shared_ptr<CollisionQA> c);
   void TestCollisionOP(shared_ptr<CollisionOP> c);
   void TestCollisionOT(shared_ptr<CollisionOT> c);
+  void TestCollisionOA(shared_ptr<CollisionOA> c);
   void TestCollision(ColPtr c);
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

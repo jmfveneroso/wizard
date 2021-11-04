@@ -231,6 +231,7 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   if (obj->name == "hand-001") return true;
   if (obj->name == "scepter-001") return true;
   if (obj->name == "skydome") return true;
+  if (obj->name == "map-001") return true;
   if (obj->never_cull) return false;
   if (obj->IsInvisible() && !resources_->GetConfigs()->see_invisible) 
     return true;
@@ -651,6 +652,7 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
 void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   if (obj == nullptr) return;
 
+  shared_ptr<Configs> configs = resources_->GetConfigs();
   // if (obj->type == GAME_OBJ_PORTAL) {
   //   // TODO: draw portal.
   //   return;
@@ -675,6 +677,11 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     }
 
     GLuint program_id = asset->shader;
+
+    bool dying = (obj->IsCreature() && obj->life <= 0.0f);
+    if (dying) {
+      program_id = resources_->GetShader("death");
+    }
 
     glUseProgram(program_id);
 
@@ -706,7 +713,6 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     glUniform3fv(GetUniformId(program_id, "camera_pos"), 1,
       (float*) &camera_.position);
 
-    shared_ptr<Configs> configs = resources_->GetConfigs();
     glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
       (float*) &configs->sun_position);
 
@@ -778,6 +784,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     }
 
     if (program_id == resources_->GetShader("animated_object") ||
+        program_id == resources_->GetShader("outdoor_animated_object") ||
         program_id == resources_->GetShader("animated_object_noshadow")) {
       glDisable(GL_CULL_FACE);
       vector<mat4> joint_transforms;
@@ -849,7 +856,8 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
-    } else if (program_id == resources_->GetShader("object")) {
+    } else if (program_id == resources_->GetShader("object") ||
+               program_id == resources_->GetShader("outdoor_object")) {
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, texture_id);
       glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
@@ -926,6 +934,61 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform1f(GetUniformId(program_id, "move_factor"), move_factor);
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND); 
+    } else if (program_id == resources_->GetShader("death")) {
+      glUniform1f(GetUniformId(program_id, "enable_animation"), 1);
+      vector<mat4> joint_transforms;
+      Animation& animation = mesh->animations[obj->active_animation];
+      if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+        const Animation& animation = mesh->animations[obj->active_animation];
+        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        }
+
+        glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
+          joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+
+        float dissolve_value = obj->frame / (float) animation.keyframes.size();
+        glUniform1f(GetUniformId(program_id, "dissolve_value"), dissolve_value);
+
+        glDisable(GL_CULL_FACE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, texture_id);
+        glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
+        if (asset->bump_map_id == 0) {
+          glActiveTexture(GL_TEXTURE1);
+          glBindTexture(GL_TEXTURE_2D, texture_id);
+          glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
+
+          glUniform1i(GetUniformId(program_id, "enable_bump_map"), 0);
+        } else {
+          glActiveTexture(GL_TEXTURE1);
+          glBindTexture(GL_TEXTURE_2D, asset->bump_map_id);
+          glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
+
+          glUniform1i(GetUniformId(program_id, "enable_bump_map"), 1);
+        }
+
+        if (asset->specular_id != 0) {
+          glActiveTexture(GL_TEXTURE2);
+          glBindTexture(GL_TEXTURE_2D, asset->specular_id);
+          glUniform1i(GetUniformId(program_id, "specular_sampler"), 2);
+        }
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, resources_->GetTextureByName("dissolve"));
+        glUniform1i(GetUniformId(program_id, "mask_sampler"), 3);
+
+        glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
+        glDisable(GL_BLEND);
+        glBindVertexArray(0);
+      } else {
+        ThrowError("Animation ", obj->active_animation, " for object ",
+          obj->name, " and asset ", asset->name, " does not exist");
+      }
     } else {
       if (program_id == resources_->GetShader("sky")) {
         shared_ptr<Configs> configs = resources_->GetConfigs();
@@ -1057,6 +1120,11 @@ void Renderer::Draw() {
   resources_->UpdateHand(camera_);
   DrawHand();
   DrawScreenEffects();
+
+  glClear(GL_DEPTH_BUFFER_BIT);
+  if (resources_->GetGameState() == STATE_MAP) {
+    DrawMap();
+  }
 }
 
 // ==========================
@@ -1117,13 +1185,24 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
       asset->shader == resources_->GetShader("animated_object") ||
       asset->shader == resources_->GetShader("animated_transparent_object"));
 
+    bool in_dungeon = resources_->GetConfigs()->render_scene == "dungeon";
+
     if (is_animated && obj->IsCreature()) {
       program_id = resources_->GetShader("animated_shadow");
+    } else if (in_dungeon && obj->IsItem()) {
+      if (obj->asset_group->name != "dungeon_platform_up" &&
+          obj->asset_group->name != "dungeon_platform_down" &&
+          obj->asset_group->name != "chest") {
+        program_id = resources_->GetShader("shadow");
+      } else {
+        continue;
+      }
+    } else if (!in_dungeon) {
+      program_id = resources_->GetShader("shadow");
     } else {
       continue;
-      program_id = resources_->GetShader("shadow");
     }
-
+ 
     glUseProgram(program_id);
     glBindVertexArray(mesh->vao_);
 
@@ -1417,6 +1496,27 @@ void Renderer::DrawHand() {
     obj = resources_->GetObjectByName("scepter-001");
     DrawObject(obj);
   }
+}
+
+void Renderer::DrawMap() {
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("map-001");
+
+  shared_ptr<Player> player = shared_ptr<Player>(resources_->GetPlayer());
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    player->rotation.y + 4.71f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    player->rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+
+  obj->rotation_matrix = rotation_matrix;
+  obj->position = camera_.position;
+
+  DrawObject(obj);
 }
 
 // ===================
@@ -1781,7 +1881,8 @@ void Renderer::CreateDungeonBuffers() {
                 model_matrices.push_back(ModelMatrix);
               }
             } else if (tile == 's') {  
-              if (resources_->GetDungeon().IsChamber(x, z)) {
+              if (dungeon_map[x][z] != '>' && dungeon_map[x][z] != '~' &&
+                  resources_->GetDungeon().IsChamber(x, z)) {
                 model_matrices.push_back(ModelMatrix);
               }
             } else {

@@ -4,7 +4,6 @@ in FragData {
   vec3 position;
   vec2 UV;
   vec3 normal;
-  vec3 barycentric;
   vec3 tangent;
   vec3 bitangent;
   vec3 light_dir_tangentspace;

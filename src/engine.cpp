@@ -132,6 +132,10 @@ void Engine::RunCommand(string command) {
       configs->new_building->being_placed = true;
       configs->place_object = true;
       resources_->AddNewObject(configs->new_building);
+
+      if (asset_name == "scepter") {
+        configs->new_building->torque = vec3(0.2, 0.2, 0);
+      }
     }
   } else if (result[0] == "create-particle") {
     string asset_name = result[1];
@@ -162,6 +166,9 @@ void Engine::RunCommand(string command) {
     configs->place_axis = 1;
     configs->place_object = true;
     resources_->AddNewObject(configs->new_building);
+  } else if (result[0] == "gold") {
+    int gold_quantity = boost::lexical_cast<int>(result[1]);
+    configs->gold = gold_quantity;
   } else if (result[0] == "save") {
     resources_->GetHeightMap().Save();
   } else if (result[0] == "save-objs") {
@@ -252,6 +259,12 @@ void Engine::RunPeriodicEventsAsync() {
   // }
 }
 
+void Engine::EnableMap() {
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("map-001");
+  obj->frame = 0;
+  obj->active_animation = "Armature|unroll";
+}
+
 bool Engine::ProcessGameInput() {
   --throttle_counter_;
   GLFWwindow* window = renderer_->window();
@@ -318,6 +331,14 @@ bool Engine::ProcessGameInput() {
         if (throttle_counter_ < 0) {
           inventory_->Enable(window);
           resources_->SetGameState(STATE_INVENTORY);
+        }
+        throttle_counter_ = 10;
+        return false;
+      } else if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          EnableMap();
+          inventory_->Enable(window, INVENTORY_MAP);
+          resources_->SetGameState(STATE_MAP);
         }
         throttle_counter_ = 10;
         return false;
@@ -402,6 +423,17 @@ bool Engine::ProcessGameInput() {
       }
       return true;
     }
+    case STATE_MAP: {
+      if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          resources_->SetGameState(STATE_GAME);
+          inventory_->Disable();
+          glfwSetCursorPos(window_, 0, 0);
+        }
+        throttle_counter_ = 20;
+      }
+      return true;
+    }
     case STATE_INVENTORY: {
       if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
@@ -445,6 +477,7 @@ void Engine::AfterFrame() {
       text_editor_->Draw();
       break;
     }
+    case STATE_MAP:
     case STATE_INVENTORY: {
       Camera c = player_input_->GetCamera();
       inventory_->Draw(c, 0, 0, window_);

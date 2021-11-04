@@ -41,8 +41,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   vec3 up = vec3(0, 1, 0); // Determines object up direction.
   vec3 forward = vec3(0, 0, 1); // Determines object forward direction.
 
-  quat cur_rotation;
-  quat dest_rotation;
+  quat cur_rotation = quat(0.1, 0.1, 0.1, 0.1);
+  quat dest_rotation = quat(0.1, 0.1, 0.1, 0.1);
 
   float distance;
   float scale = 1.0f;
@@ -127,6 +127,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   float scale_in = 1.0f;
   float scale_out = 0.0f;
+  bool touching_the_ground = false;
 
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
@@ -152,6 +153,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsDarkness();
   bool IsExtractable();
   bool IsItem();
+  bool IsPickableItem();
   bool IsMovingObject();
   bool IsCreature();
   bool IsAsset(const string& asset_name);
@@ -165,6 +167,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsDestructible();
   bool IsInvisible();
   bool IsSecret();
+  bool IsCreatureCollider();
   AssetType GetType();
   int GetItemId();
 
@@ -450,10 +453,12 @@ struct IdleAction : Action {
 };
 
 struct RangedAttackAction : Action {
+  bool damage_dealt = false;
   RangedAttackAction() : Action(ACTION_RANGED_ATTACK) {}
 };
 
 struct MeeleeAttackAction : Action {
+  bool damage_dealt = false;
   MeeleeAttackAction() : Action(ACTION_MEELEE_ATTACK) {}
 };
 

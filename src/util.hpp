@@ -195,7 +195,9 @@ enum ItemType {
   ITEM_DEFAULT = 0,
   ITEM_ARMOR,
   ITEM_RING,
-  ITEM_ORB
+  ITEM_ORB,
+  ITEM_USABLE,
+  ITEM_SCEPTER
 };
 
 struct Camera {
@@ -556,6 +558,7 @@ void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs,
 int Random(int low, int high);
 int RandomEven(int low, int high);
 bool IsNaN(const vec3& v);
+bool IsNaN(const mat4& m);
 
 void CreateLine(const vec3& source, const vec3& dest, vector<vec3>& vertices, 
   vector<vec2>& uvs, vector<unsigned int>& indices, 

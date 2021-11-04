@@ -106,7 +106,8 @@ bool IntersectRayAABB(vec3 p, vec3 d, AABB a, float &tmin, vec3 &q);
 
 bool IntersectSegmentPlane(vec3 a, vec3 b, Plane p, float &t, vec3 &q);
 
-bool TestOBBPlane(const OBB obb, Plane p);
+bool TestOBBPlane(const OBB obb, Plane p, vec3& displacement_vector, 
+  vec3& point_of_contact);
 
 bool TestAABBPlane(const AABB& aabb, const Plane& p,
   vec3& displacement_vector, vec3& point_of_contact);

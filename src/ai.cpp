@@ -63,14 +63,14 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
   to_point.y = 0;
 
   const vec3 front = vec3(0, 0, 1);
-  const vec3 up = vec3(0, 1, 0);
+  // const vec3 up = vec3(0, 1, 0);
  
   // At rest position, the object forward direction is +Z and up is +Y.
   spider->forward = normalize(to_point);
   quat h_rotation = RotationBetweenVectors(front, spider->forward);
-  quat v_rotation = RotationBetweenVectors(up, spider->up);
-  quat target_rotation = v_rotation * h_rotation;
-  // quat target_rotation = h_rotation;
+  // quat v_rotation = RotationBetweenVectors(up, spider->up);
+  // quat target_rotation = v_rotation * h_rotation;
+  quat target_rotation = h_rotation;
 
   // Check if object is facing the correct direction.
   vec3 cur_forward = spider->rotation_matrix * front;
@@ -79,10 +79,8 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
     normalize(cur_forward));
 
   bool is_rotating = abs(dot(h_rotation, cur_h_rotation)) < rotation_threshold;
-  if (dot(spider->cur_rotation, target_rotation) < 0.999f) {
-    spider->cur_rotation =  
-      RotateTowards(spider->cur_rotation, target_rotation, turn_rate);
-  }
+  spider->cur_rotation =  
+    RotateTowards(spider->cur_rotation, target_rotation, turn_rate);
   spider->rotation_matrix = mat4_cast(spider->cur_rotation);
   return is_rotating; 
 }
@@ -141,8 +139,9 @@ void AI::Chase(ObjPtr spider) {
   }
 }
 
-void AI::Idle(ObjPtr spider) {
-  if (!spider->actions.empty()) {
+void AI::Idle(ObjPtr unit) {
+  resources_->ChangeObjectAnimation(unit, "Armature|idle");
+  if (!unit->actions.empty()) {
     // Complete the actions before choosing other actions.
     return;
   }
@@ -177,6 +176,17 @@ bool AI::ProcessStatus(ObjPtr spider) {
     case STATUS_DYING: {
       bool is_dead = false;
 
+      // if (int(spider->frame) % 5 == 0) {
+      //   string particle_name = "particle-smoke-" +
+      //     boost::lexical_cast<string>(Random(0, 3));
+
+      //   vec3 pos = spider->position + vec3(Random(-10, 11), Random(-10, 11), 
+      //     Random(-10, 11) * 0.05f);
+
+      //   shared_ptr<Particle> p = resources_->CreateOneParticle(pos, 60.0f, 
+      //     particle_name, Random(1, 7) * 0.5f);
+      // }
+
       shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
       if (!MeshHasAnimation(*mesh, "Armature|death")) {
         is_dead = true;
@@ -184,9 +194,8 @@ bool AI::ProcessStatus(ObjPtr spider) {
         resources_->ChangeObjectAnimation(spider, "Armature|death");
 
         // TODO: move drop logic to another class.
-        int num_frames = GetNumFramesInAnimation(*mesh, 
-          spider->active_animation);
-        if (spider->frame >= num_frames - 1) {
+        int num_frames = GetNumFramesInAnimation(*mesh, "Armature|death");
+        if (spider->frame >= num_frames - 2) {
           ivec2 adj_tile = dungeon.GetRandomAdjTile(spider->position);
           vec3 drop_pos = dungeon.GetTilePosition(adj_tile);
 
@@ -243,30 +252,6 @@ void AI::ProcessNPC(ObjPtr unit) {
   resources_->ChangeObjectAnimation(unit, "Armature|idle");
 }
 
-// Given the environment and the queued actions, what should be the next 
-// actions? 
-void AI::ProcessMentalState(ObjPtr unit) {
-  if (unit->GetAsset()->type != ASSET_CREATURE) return;
-
-  // IDLE
-  // WANDER
-  // AGGRESSIVE
-
-  if (unit->IsNpc()) {
-    ProcessNPC(unit);
-    return;
-  }
-
-  // TODO: mental states should be Attack, Flee, Patrol (search), Hunt, Wander.
-  switch (unit->ai_state) {
-    case IDLE: Idle(unit); break;
-    case WANDER: Wander(unit); break;
-    case AI_ATTACK: Attack(unit); break;
-    case CHASE: Chase(unit); break;
-    default: break;
-  }
-}
-
 bool AI::ProcessRangedAttackAction(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
   if (resources_->GetConfigs()->disable_attacks) {
@@ -289,7 +274,8 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
 
   if (int(creature->frame) >= 58) return true;
 
-  if (int(creature->frame) == 42) {
+  if (creature->frame >= 42 && !action->damage_dealt) {
+    action->damage_dealt = true;
     ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = CalculateMissileDirectionToHitTarget(creature->position,
       player->position + vec3(0, -3.0f, 0), missile_speed);
@@ -320,15 +306,20 @@ bool AI::ProcessMeeleeAttackAction(ObjPtr spider,
 
   resources_->ChangeObjectAnimation(spider, "Armature|attack");
 
-  if (int(spider->frame) >= 79) return true;
+  int num_frames = spider->GetNumFramesInCurrentAnimation();
+  if (spider->frame >= num_frames - 5) {
+    return true;
+  }
 
   // if (int(spider->frame) == 44) {
-  if (int(spider->frame) == 1) {
+  if (!action->damage_dealt) {
     cout << "Attacking player" << endl;
     ObjPtr player = resources_->GetObjectByName("player");
     vec3 dir = player->position - spider->position;
     if (length(dir) < 20.0f) {
+      cout << "Meelee attack hit: " << length(dir) << endl;
       spider->MeeleeAttack(player, normalize(dir));
+      action->damage_dealt = true;
     }
   }
   return false;
@@ -444,7 +435,7 @@ bool AI::ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action) {
 }
 
 bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
-  if (glfwGetTime() > action->issued_at + 3.0f) {
+  if (glfwGetTime() > action->issued_at + 1.0f) {
     spider->actions.push(make_shared<RandomMoveAction>());
     return true;
   }
@@ -733,7 +724,6 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<MoveAction> move_action =  
         static_pointer_cast<MoveAction>(action);
       if (ProcessMoveAction(spider, move_action)) {
-
         resources_->Lock();
         spider->actions.pop();
         spider->prev_action = move_action;
@@ -768,7 +758,6 @@ void AI::ProcessNextAction(ObjPtr spider) {
         spider->actions.pop();
         spider->prev_action = idle_action;
         resources_->Unlock();
-        spider->frame = 0;
       }
       break;
     }
@@ -1034,7 +1023,6 @@ void AI::Run() {
 
     // Check status. If taking hit, dying, poisoned, etc.
     if (ProcessStatus(obj)) {
-      // ProcessMentalState(obj);
       ProcessNextAction(obj);
     }
 
@@ -1070,7 +1058,6 @@ void AI::ProcessUnitAiAsync() {
 
     // Check status. If taking hit, dying, poisoned, etc.
     if (ProcessStatus(obj)) {
-      // ProcessMentalState(obj);
       ProcessNextAction(obj);
     }
 

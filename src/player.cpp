@@ -46,30 +46,28 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
          shared_ptr<Actionable> actionable = 
            static_pointer_cast<Actionable>(item);
 
-         resources_->TurnOnActionable(item->name);
+         if (actionable->state == 0) {
+           resources_->TurnOnActionable(item->name);
 
-         if (item->trapped) {
-           resources_->CastFireExplosion(nullptr, item->position, vec3(0));
-         }
+           Dungeon& dungeon = resources_->GetDungeon();
 
-         Dungeon& dungeon = resources_->GetDungeon();
+           float r = float(Random(-100, 101));
+           vec3 v = vec3(rotate(item->rotation_matrix, 0.01f * r, vec3(0, 1, 0)) * vec4(-5, 0, 0, 1));
+           vec3 drop_pos = item->position + v;
 
-         int adj_x = Random(0, 3) - 1;
-         int adj_z = Random(0, 3) - 1;
-         vec3 drop_pos = item->position + vec3(adj_x, 0, adj_z) * 5.0f;
+           // TODO: xml chest treasure.
+           for (const auto& drop : actionable->drops) {
+             // int r = Random(0, 1000);
+             // r = 0;
+             // if (r >= drop.chance) continue;
 
-         // TODO: xml chest treasure.
-         for (const auto& drop : actionable->drops) {
-           // int r = Random(0, 1000);
-           // r = 0;
-           // if (r >= drop.chance) continue;
-
-           const int item_id = drop.item_id;
-           const int quantity = ProcessDiceFormula(drop.quantity);
-           ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-             item_data[item_id].asset_name, drop_pos);
-           obj->CalculateCollisionData();
-           obj->quantity = quantity;
+             const int item_id = drop.item_id;
+             const int quantity = ProcessDiceFormula(drop.quantity);
+             ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+               item_data[item_id].asset_name, drop_pos);
+             obj->CalculateCollisionData();
+             obj->quantity = quantity;
+           }
          }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();

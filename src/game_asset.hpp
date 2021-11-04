@@ -116,6 +116,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   vector<vec3> vertices;
   bool repeat_animation = true;
   bool align_to_speed = false;
+  bool creature_collider = false;
 
   GameAsset(Resources* resources) : resources_(resources) {}
   GameAsset(Resources* resources, AssetType type) : resources_(resources), 

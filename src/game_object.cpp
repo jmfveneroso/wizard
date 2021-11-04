@@ -41,6 +41,20 @@ void GameObject::Load(const string& in_name, const string& asset_name,
 
   CalculateMonsterStats();
 
+  if (IsCreature()) {
+    const vec3 front = vec3(0, 0, 1);
+    forward = vec3(0, 0, 1.1);
+    quat h_rotation = RotationBetweenVectors(front, forward);
+    quat target_rotation = h_rotation;
+
+    vec3 cur_forward = rotation_matrix * front;
+    cur_forward.y = 0;
+    quat cur_h_rotation = RotationBetweenVectors(front, normalize(cur_forward));
+
+    cur_rotation = RotateTowards(cur_rotation, target_rotation, 1.0f);
+    rotation_matrix = mat4_cast(cur_rotation);
+  }
+
   resources_->AddGameObject(shared_from_this());
 }
 
@@ -242,6 +256,11 @@ bool GameObject::IsItem() {
   if (!asset_group) return false;
   shared_ptr<GameAsset> asset = GetAsset();
   return asset->type == ASSET_ITEM || type == GAME_OBJ_ACTIONABLE;
+}
+
+bool GameObject::IsPickableItem() {
+  if (!IsItem()) return false;
+  return item_id != -1;
 }
 
 bool GameObject::IsRotatingPlank() {
@@ -888,6 +907,11 @@ bool GameObject::IsCreature() {
   return GetAsset()->type == ASSET_CREATURE;
 }
 
+bool GameObject::IsCreatureCollider() {
+  if (!asset_group) return false;
+  return GetAsset()->creature_collider;
+}
+
 bool GameObject::IsAsset(const string& asset_name) {
   if (!asset_group) return false;
   return GetAsset()->name == asset_name;
@@ -1194,7 +1218,7 @@ void GameObject::LoadCollisionData(pugi::xml_node& xml) {
 }
 
 void GameObject::LookAt(vec3 look_at) {
-  vec3 dir = look_at - position;
+  vec3 dir = position - look_at;
 
   rotation_matrix = mat4(1.0);
   target_rotation_matrix = mat4(1.0);
@@ -1344,6 +1368,7 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
     vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
   if (life <= 0) {
     status = STATUS_DYING; // This status is irreversible.
+    frame = 0;
     
     if (attacker && attacker->IsPlayer()) {
       cout << "Killed a unit, giving experience: " << GetAsset()->experience << endl;

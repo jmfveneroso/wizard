@@ -22,6 +22,22 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
       return;
   }
 
+  if (IsNaN(obj->rotation_matrix)) {
+    obj->rotation_matrix = mat4(1.0f);
+    obj->rotation_factor = 0;
+    obj->torque = vec3(0.0);
+    obj->target_rotation_matrix = mat4(1.0);
+    obj->up = vec3(0, 1, 0);
+    obj->forward = vec3(0, 0, 1);
+    obj->cur_rotation = quat();
+    obj->dest_rotation = quat();
+  }
+
+  if (IsNaN(obj->position) || IsNaN(obj->speed)) {
+    obj->position = vec3(0);
+    obj->speed = vec3(0);
+  }
+
   if (obj->life <= 0 || obj->freeze) {
     return;
   }
@@ -58,12 +74,14 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     // obj->speed.x *= 0.99;
     // obj->speed.y *= 0.99;
     // obj->speed.z *= 0.99;
-  } else {
+  } else if (obj->IsCreature() || obj->IsPlayer() || obj->touching_the_ground) {
     obj->speed.x *= 0.9;
     obj->speed.y *= 0.99;
     obj->speed.z *= 0.9;
-
-    // obj->torque *= 0.96;
+  } else {
+    obj->speed.x *= 0.99;
+    obj->speed.y *= 0.99;
+    obj->speed.z *= 0.99;
   }
 
   float d = resources_->GetDeltaTime() / 0.016666f;
@@ -73,7 +91,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     obj->target_position = obj->position + obj->speed;
   }
 
-  if (length(obj->torque) > 0.0001f) {
+  if (!obj->IsCreature() && !obj->IsPlayer() && length(obj->torque) > 0.0001f) {
     float inertia = 1.0f / obj->GetAsset()->mass;
     obj->rotation_matrix = rotate(
       mat4(1.0),

@@ -49,6 +49,9 @@ void Resources::Init() {
   ObjPtr scepter_obj = CreateGameObj(this, "equipped_scepter");
   scepter_obj->Load("scepter-001", "equipped_scepter", player_->position);
 
+  ObjPtr map_obj = CreateGameObj(this, "map_interface");
+  map_obj->Load("map-001", "map_interface", player_->position);
+
   CreateSkydome(this);
 
   // TODO: move to particle.
@@ -1448,6 +1451,7 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->status == STATUS_DEAD) continue;
     if (obj->name == "hand-001") continue;
     if (obj->name == "scepter-001") continue;
+    if (obj->name == "map-001") continue;
  
     if (!IntersectRaySphere(position, direction, 
       obj->GetTransformedBoundingSphere(), t, q)) {
@@ -1470,6 +1474,7 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->status == STATUS_DEAD) continue;
     if (obj->name == "hand-001") continue;
     if (obj->name == "scepter-001") continue;
+    if (obj->name == "map-001") continue;
 
     if (!IntersectRaySphere(position, direction, 
       obj->GetTransformedBoundingSphere(), t, q)) {
@@ -1535,8 +1540,8 @@ void Resources::SaveObjects() {
         continue;
     }
 
-    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
-        name == "player") continue;
+    if (name == "hand-001" || name == "scepter-001" || name == "map-001" || 
+        name == "skydome" || name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -1632,7 +1637,7 @@ void Resources::CalculateCollisionData(bool recalculate) {
 
     obj->CalculateCollisionData();
 
-    if (name == "hand-001" || name == "scepter-001" ) {
+    if (name == "hand-001" || name == "scepter-001" || name == "map-001") {
       obj->collision_type_ = COL_NONE;
     }
 
@@ -1666,8 +1671,8 @@ void Resources::SaveCollisionData() {
         continue;
     }
 
-    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
-        name == "player") continue;
+    if (name == "hand-001" || name == "scepter-001" || name == "map-001" || 
+        name == "skydome" || name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -1781,6 +1786,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     if (item->status == STATUS_DEAD) continue;
     if (item->name == "hand-001") continue;
     if (item->name == "scepter-001") continue;
+    if (item->name == "map-001") continue;
  
     // float distance = std::max(length(position - item->position) - item->GetBoundingSphere().radius, 0.0f);
     float distance = length(position - item->position);
@@ -2713,9 +2719,9 @@ void Resources::UpdateAnimationFrames() {
     }
   } else {
     if (camera_jiggle < 3.14f) {
-      camera_jiggle += ((3.14f - camera_jiggle) / 3.14f) * d * 0.5f;
+      camera_jiggle += d * 0.01f * 0.5f;
     } else if (camera_jiggle < 6.28f) {
-      camera_jiggle += ((6.28f - camera_jiggle) / 3.14f) * d * 0.5f;
+      camera_jiggle += d * 0.01f * 0.5f;
     }
   }
 
@@ -3207,8 +3213,8 @@ void Resources::DeleteAllObjects() {
   auto it = objects_.begin();
   while (it != objects_.end()) {
     auto& [name, obj] = *it;
-    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
-        name == "player") {
+    if (name == "hand-001" || name == "scepter-001" || name == "map-001" || 
+        name == "skydome"  || name == "player") {
       ++it;
       continue;
     }
@@ -3396,6 +3402,8 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case '>': {
           CreateGameObjFromAsset(this, "dungeon_platform_down", pos + vec3(5, 0, 5));
           ObjPtr obj = CreateGameObjFromAsset(this, "stairs_down_hull", pos + vec3(5, 0, 5));
+          obj->CalculateCollisionData();
+          obj = CreateGameObjFromAsset(this, "stairs_down_creature_hull", pos + vec3(5, 0, 5));
           obj->CalculateCollisionData();
           break;
         }
@@ -3675,8 +3683,8 @@ void Resources::SaveGame() {
         continue;
     }
 
-    if (name == "hand-001" || name == "scepter-001" || name == "skydome" || 
-        name == "player") continue;
+    if (name == "hand-001" || name == "scepter-001" || name == "map-001" ||  
+        name == "skydome" || name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -5094,9 +5102,12 @@ void Resources::CreateDrops(ObjPtr obj) {
     ObjPtr obj = CreateGameObjFromAsset(this, 
       item_data_[drop.item_id].asset_name, pos);
 
-    float x = Random(0, 10) * .2f;
-    float z = Random(0, 10) * .2f;
-    obj->speed = vec3(-1.0f + x, .5f, -1.0f + z);
+    float x = Random(0, 11) * .05f;
+    float z = Random(0, 11) * .05f;
+    obj->speed = vec3(-0.25f + x, .5f, -0.25f + z) * (1.0f / obj->GetMass());
+
+    obj->torque = cross(normalize(obj->speed), vec3(1, 1, 0)) * 5.0f;
+
     obj->CalculateCollisionData();
   }
 }

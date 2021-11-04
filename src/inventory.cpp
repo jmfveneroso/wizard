@@ -13,6 +13,30 @@ Inventory::Inventory(shared_ptr<Resources> asset_catalog,
   draw_2d_(draw_2d) {
 }
 
+int Inventory::WhichItem(const int item_matrix[10][5], int x, int y, 
+  ivec2& pos) {
+  if (x < 0 || x >= 10 || y < 0 || y >= 5) return 0;
+
+  if (item_matrix[x][y] != -1) return item_matrix[x][y];
+
+  for (int x_ = x; x_ >= 0; x_--) {
+    for (int y_ = y; y_ >= 0; y_--) {
+      int item_id = item_matrix[x_][y_];
+      if (item_id == 0) continue;
+      if (item_id == -1) continue;
+      
+      const ItemData& item_data = resources_->GetItemData()[item_id];
+      const ivec2& size = item_data.size;
+      if (x >= x_ && y >= y_ && x < x_ + size.x && y < y_ + size.y) {
+        pos = ivec2(x_, y_);
+        return item_id;
+      }
+    }
+  }
+
+  return 0;
+}
+
 void Inventory::UpdateMouse(GLFWwindow* window) {
   double x_pos, y_pos;
   glfwGetCursorPos(window, &x_pos, &y_pos);
@@ -37,7 +61,7 @@ bool Inventory::IsMouseInCircle(const ivec2& pos, float circle) {
   return length2(vec2(mouse_x_, mouse_y_) - vec2(pos)) < circle * circle;
 }
 
-void Inventory::TryToCombineCrystals(int x, int y) {
+bool Inventory::TryToCombineCrystals(int x, int y) {
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
   shared_ptr<Configs> configs = resources_->GetConfigs();
   int (&item_matrix)[10][5] = configs->item_matrix;
@@ -72,7 +96,9 @@ void Inventory::TryToCombineCrystals(int x, int y) {
     // }
     selected_item_ = 0;
     selected_qnty_ = 0;
+    return true;
   }
+  return false;
 }
 
 void Inventory::DrawSpellbar() {
@@ -110,11 +136,15 @@ void Inventory::DrawSpellbar() {
     if (dragged_item.origin != ITEM_ORIGIN_NONE && 
         IsMouseInRectangle(left, right, bottom, top) && !lft_click_) {
       auto spell = resources_->WhichArcaneSpell(dragged_item.item_id);
-      if ((spell && dragged_item.origin == ITEM_ORIGIN_SPELL_GRAPH) ||
-        !spell) {
-        if (spell)
-          cout << "spell: " << spell->spell_id << endl;
-        cout << "item_id: " << dragged_item.item_id << endl;
+      bool select = false;
+      if ((spell && dragged_item.origin == ITEM_ORIGIN_SPELL_GRAPH)) {
+        select = true;
+      } else if (!spell) {
+        const ItemData& item_data = resources_->GetItemData()[dragged_item.item_id];
+        select = (item_data.type == ITEM_USABLE || item_data.type == ITEM_SCEPTER);
+      }
+
+      if (select) {
         spellbar[x] = dragged_item.item_id;
         spellbar_quantities[x] = 1;
         dragged_item.origin = ITEM_ORIGIN_NONE;
@@ -131,6 +161,8 @@ void Inventory::MoveItemBack() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   int (&item_matrix)[10][5] = configs->item_matrix;
   int (&item_quantities)[10][5] = configs->item_quantities;
+  int (&store_matrix)[10][5] = configs->store_matrix;
+  int (&store_quantities)[10][5] = configs->store_quantities;
   int (&spellbar)[8] = configs->spellbar;
   int (&spellbar_quantities)[8] = configs->spellbar_quantities;
   int (&equipment)[4] = configs->equipment;
@@ -144,6 +176,17 @@ void Inventory::MoveItemBack() {
     if (dragged_item.origin == ITEM_ORIGIN_EQUIPMENT) {
       const ItemData& item_data = resources_->GetItemData()[selected_item_];
       equipment[old_pos_x_] = selected_item_;
+    } else if (dragged_item.origin == ITEM_ORIGIN_STORE) {
+      store_matrix[old_pos_x_][old_pos_y_] = selected_item_;
+
+      const ivec2& size = item_data[selected_item_].size;
+      for (int step_x = 0; step_x < size.x; step_x++) {
+        for (int step_y = 0; step_y < size.y; step_y++) {
+          if (step_x == 0 && step_y == 0) continue;
+          item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
+        }
+      }
+
     } else if (old_pos_y_ == -1) {
       spellbar[old_pos_x_] = selected_item_;
       spellbar_quantities[old_pos_x_] = selected_qnty_;
@@ -159,12 +202,11 @@ void Inventory::MoveItemBack() {
         }
       }
     }
-  } else {
-    // // TODO: drop item with quantity.
-    // vec3 position = camera_.position + camera_.direction * 10.0f;
-    // ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-    //   item_data[selected_item_].asset_name, position);
-    // obj->CalculateCollisionData();
+  } else if (selected_item_ != -1) {
+    vec3 position = camera_.position + camera_.direction * 5.0f;
+    ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
+      item_data[selected_item_].asset_name, position);
+    obj->CalculateCollisionData();
   }
 
   dragged_item.origin = ITEM_ORIGIN_NONE;
@@ -185,15 +227,15 @@ void Inventory::DrawEquipment(const ivec2& pos) {
   int (&equipment)[4] = configs->equipment;
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
-  vector<tuple<ivec2, ivec2, ItemType>> slots { 
-    { pos + ivec2(83, 405), ivec2(61, 61), ITEM_RING  }, 
-    { pos + ivec2(182, 405), ivec2(61, 61), ITEM_RING  }, 
-    { pos + ivec2(381, 381), ivec2(112, 112), ITEM_ORB   }, 
-    { pos + ivec2(379, 153), ivec2(136, 171), ITEM_ARMOR }, 
+  vector<tuple<ivec2, ivec2, ItemType, string>> slots { 
+    { pos + ivec2(83, 405), ivec2(61, 61), ITEM_RING, "inventory_ring1_hint" }, 
+    { pos + ivec2(182, 405), ivec2(61, 61), ITEM_RING, "inventory_ring2_hint" }, 
+    { pos + ivec2(381, 381), ivec2(112, 112), ITEM_ORB, "inventory_orb_hint" }, 
+    { pos + ivec2(379, 153), ivec2(136, 171), ITEM_ARMOR, "inventory_armor_hint" }, 
   };
 
   for (int i = 0; i < 4; i++) {
-    const auto& [slot, dimensions, type] = slots[i];
+    const auto& [slot, dimensions, type, hint] = slots[i];
 
     int left = slot.x;
     int right = left + dimensions.x;
@@ -218,7 +260,10 @@ void Inventory::DrawEquipment(const ivec2& pos) {
       }
     }
 
-    if (equipment_id == 0) continue;
+    if (equipment_id == 0) {
+      draw_2d_->DrawImage(hint, pos.x, pos.y, 900, 900, 1.0);
+      continue;
+    }
 
     const ItemData& item = resources_->GetItemData()[equipment_id];
 
@@ -304,22 +349,33 @@ void Inventory::DrawItems(const ivec2& pos) {
  
       if (IsMouseInRectangle(left, right, bottom, top)) {
         if (lft_click_ && selected_item_ == 0) {
-          dragged_item.origin = ITEM_ORIGIN_INVENTORY;
-          dragged_item.item_id = item_matrix[x][y];
-          selected_item_ = item_matrix[x][y];
-          selected_qnty_ = item_quantities[x][y];
-
-          const ivec2& size = item_data[dragged_item.item_id].size;
-          for (int step_x = 0; step_x < size.x; step_x++) {
-            for (int step_y = 0; step_y < size.y; step_y++) {
-              item_matrix[x + step_x][y + step_y] = 0;
-            }
+          int item_id = item_matrix[x][y];
+          int x_ = x; int y_ = y;
+          if (item_id == -1) {
+            ivec2 pos;
+            item_id = WhichItem(item_matrix, x, y, pos);
+            x_ = pos.x;
+            y_ = pos.y;
           }
 
-          old_pos_x_ = x;
-          old_pos_y_ = y;
-          hold_offset_x_ = mouse_x_ - left;
-          hold_offset_y_ = mouse_y_ - top;
+          if (item_id > 0) {
+            dragged_item.origin = ITEM_ORIGIN_INVENTORY;
+            dragged_item.item_id = item_id;
+            selected_item_ = item_id;
+            selected_qnty_ = item_quantities[x][y];
+
+            const ivec2& size = item_data[dragged_item.item_id].size;
+            for (int step_x = 0; step_x < size.x; step_x++) {
+              for (int step_y = 0; step_y < size.y; step_y++) {
+                item_matrix[x_ + step_x][y_ + step_y] = 0;
+              }
+            }
+
+            old_pos_x_ = x_;
+            old_pos_y_ = y_;
+            hold_offset_x_ = mouse_x_ - left;
+            hold_offset_y_ = mouse_y_ - top;
+          }
         }
       }
 
@@ -328,9 +384,9 @@ void Inventory::DrawItems(const ivec2& pos) {
           const int price = item_data[selected_item_].price;
 
           bool complete_drag = true; 
-          if (dragged_item.origin == ITEM_ORIGIN_STORE) {
-            // Buy.
-            if (resources_->CountGold() < price) {
+          bool buying = dragged_item.origin == ITEM_ORIGIN_STORE; 
+          if (buying) {
+            if (configs->gold < price) {
               complete_drag = false;
             }
           }
@@ -352,23 +408,16 @@ void Inventory::DrawItems(const ivec2& pos) {
                 selected_qnty_ = 0;
                 old_pos_x_ = 0;
                 old_pos_y_ = 0;
-                if (dragged_item.origin == ITEM_ORIGIN_STORE) resources_->TakeGold(price);
+                if (buying) {
+                  configs->gold -= price;
+                }
               }
-            // } else if (item_matrix[x][y] == selected_item_) {
-            //   const int max_stash = item_data[selected_item_].max_stash;
-            //   if (item_quantities[x][y] < max_stash) {
-            //     if (item_quantities[x][y] + selected_qnty_ <= max_stash) {
-            //       item_quantities[x][y] += selected_qnty_;
-            //       selected_item_ = 0;
-            //       selected_qnty_ = 0;
-            //       if (dragged_item.origin == ITEM_ORIGIN_STORE) resources_->TakeGold(price);
-            //     } else {
-            //       selected_qnty_ = item_quantities[x][y] + selected_qnty_ - max_stash;
-            //       item_quantities[x][y] = max_stash;
-            //     }
-            //   }
             } else {
-              TryToCombineCrystals(x, y);
+              if (TryToCombineCrystals(x, y)) {
+                if (buying) {
+                  configs->gold -= price;
+                }
+              }
             }
           }
         }
@@ -376,6 +425,69 @@ void Inventory::DrawItems(const ivec2& pos) {
 
       const int item_id = item_matrix[x][y];
       const int item_quantity = item_quantities[x][y];
+      if (item_id != 0 && item_id != -1) {
+        const string& icon = item_data[item_id].icon;
+        const ivec2& size = item_data[item_id].size;
+
+        float max_side = std::max(size.x, size.y);
+        vec2 dimensions = vec2((float) size.x / (float) max_side, (float) size.y / (float) max_side);
+        draw_2d_->DrawImage(icon, left, top, max_side * 51, max_side * 51, 1.0);
+      }
+    }
+  }
+}
+
+void Inventory::DrawStoreItems(const ivec2& pos) {
+  unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  int (&store_matrix)[10][5] = configs->store_matrix;
+  int (&store_quantities)[10][5] = configs->store_quantities;
+
+  for (int x = 0; x < 10; x++) {
+    for (int y = 0; y < 5; y++) {
+      int left = pos.x + 603 + kTileSize * x;
+      int right = left + 46;
+      int top = pos.y + 557 + kTileSize * y;
+      int bottom = top + 46;
+ 
+      if (IsMouseInRectangle(left, right, bottom, top)) {
+        if (lft_click_ && selected_item_ == 0) {
+          dragged_item.origin = ITEM_ORIGIN_STORE;
+          dragged_item.item_id = store_matrix[x][y];
+          selected_item_ = store_matrix[x][y];
+          selected_qnty_ = store_quantities[x][y];
+
+          const ivec2& size = item_data[dragged_item.item_id].size;
+          for (int step_x = 0; step_x < size.x; step_x++) {
+            for (int step_y = 0; step_y < size.y; step_y++) {
+              store_matrix[x + step_x][y + step_y] = 0;
+            }
+          }
+
+          old_pos_x_ = x;
+          old_pos_y_ = y;
+          hold_offset_x_ = mouse_x_ - left;
+          hold_offset_y_ = mouse_y_ - top;
+        }
+      }
+
+      if (!lft_click_ && selected_item_ != 0) {
+        if (IsMouseInRectangle(left, right, bottom, top)) {
+          const int price = item_data[selected_item_].price;
+
+          if (dragged_item.origin != ITEM_ORIGIN_STORE && 
+              dragged_item.origin != ITEM_ORIGIN_SPELLBAR) { 
+            selected_item_ = 0;
+            selected_qnty_ = 0;
+            old_pos_x_ = 0;
+            old_pos_y_ = 0;
+            configs->gold += price / 2;
+          }
+        }
+      }
+
+      const int item_id = store_matrix[x][y];
+      const int item_quantity = store_quantities[x][y];
       if (item_id != 0 && item_id != -1) {
         const string& icon = item_data[item_id].icon;
         const ivec2& size = item_data[item_id].size;
@@ -417,8 +529,6 @@ void Inventory::DrawOverlay(const ivec2& pos) {
 }
 
 void Inventory::DrawInventory() {
-  DrawItemDescriptionScreen();
-
   ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;
   draw_2d_->DrawImage("inventory_stats_screen", pos.x, pos.y, 900, 
     900, 1.0);
@@ -520,25 +630,55 @@ void Inventory::DrawItemDescriptionScreen() {
   int (&item_matrix)[10][5] = configs->item_matrix;
 
   ivec2 pos = vec2(win_x_, win_y_) + item_description_screen_pos_;
-  draw_2d_->DrawImage("inventory_item_description_screen", pos.x, 
-    pos.y, 900, 900, 1.0);
+  if (state_ == INVENTORY_STORE) {
+    pos = vec2(win_x_, win_y_) + store_pos_;
+  } else {
+    draw_2d_->DrawImage("inventory_item_description_screen", pos.x, 
+      pos.y, 900, 900, 1.0);
+  }
+
+  if (selected_item_ != 0) {
+    const ItemData& item_data = resources_->GetItemData()[selected_item_];
+    const string& description = resources_->GetString(item_data.description);
+    if (state_ == INVENTORY_STORE) {
+      draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+      draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+      DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+    } else {
+      draw_2d_->DrawImage("black", pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+      draw_2d_->DrawImage(item_data.image, pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+      DrawContextPanel(pos.x + 615, pos.y + 568, item_data.name, description);
+    }
+    return;
+  }
+
 
   for (int x = 0; x < 10; x++) {
     for (int y = 0; y < 5; y++) {
-      const int item_id = item_matrix[x][y];
+      int item_id = item_matrix[x][y];
 
       int left = pos.x + 34 + kTileSize * x;
       int right = left + 46;
       int top = pos.y + 557 + kTileSize * y;
       int bottom = top + 46;
       if (IsMouseInRectangle(left, right, bottom, top) && item_id != 0) {
+        if (item_id == -1) {
+          ivec2 pos;
+          item_id = WhichItem(item_matrix, x, y, pos);
+        }
+
         const ItemData& item_data = resources_->GetItemData()[item_id];
         const string& description = resources_->GetString(item_data.description);
 
-        draw_2d_->DrawImage("black", pos.x + 667, pos.y + 397, 128, 128, 1.0); 
-        draw_2d_->DrawImage(item_data.image, pos.x + 667, pos.y + 397, 128, 128, 1.0); 
-
-        DrawContextPanel(pos.x + 615, pos.y + 568, item_data.name, description);
+        if (state_ == INVENTORY_STORE) {
+          draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+          draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+          DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+        } else {
+          draw_2d_->DrawImage("black", pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+          draw_2d_->DrawImage(item_data.image, pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+          DrawContextPanel(pos.x + 615, pos.y + 568, item_data.name, description);
+        }
 
         if (rgt_click_) {
           UseItem(x, y);
@@ -567,13 +707,123 @@ void Inventory::DrawItemDescriptionScreen() {
       const ItemData& item_data = resources_->GetItemData()[equipment_id];
       const string& description = resources_->GetString(item_data.description);
 
-      draw_2d_->DrawImage("black", pos.x + 667, pos.y + 397, 128, 128, 1.0); 
-      draw_2d_->DrawImage(item_data.image, pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+      if (state_ == INVENTORY_STORE) {
+        draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+        draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+        DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+      } else {
+        draw_2d_->DrawImage("black", pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+        draw_2d_->DrawImage(item_data.image, pos.x + 667, pos.y + 397, 128, 128, 1.0); 
+        DrawContextPanel(pos.x + 615, pos.y + 568, item_data.name, description);
+      }
+    }
+  }
 
-      DrawContextPanel(pos.x + 615, pos.y + 568, item_data.name, description);
+  if (state_ == INVENTORY_STORE) {
+    int (&store_matrix)[10][5] = configs->store_matrix;
+    for (int x = 0; x < 10; x++) {
+      for (int y = 0; y < 5; y++) {
+        int item_id = store_matrix[x][y];
+        if (item_id == -1) {
+          ivec2 pos;
+          item_id = WhichItem(store_matrix, x, y, pos);
+        }
+
+        int left = pos.x + 604 + kTileSize * x;
+        int right = left + 46;
+        int top = pos.y + 557 + kTileSize * y;
+        int bottom = top + 46;
+        if (IsMouseInRectangle(left, right, bottom, top) && item_id != 0) {
+          const ItemData& item_data = resources_->GetItemData()[item_id];
+          const string& description = resources_->GetString(item_data.description);
+
+          draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+          draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+
+          DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+        }
+      }
     }
   }
 }
+
+// void Inventory::DrawStoreItemDescription(const ivec2& pos) {
+//   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+//   shared_ptr<Configs> configs = resources_->GetConfigs();
+//   int (&item_matrix)[10][5] = configs->item_matrix;
+//   int (&store_matrix)[10][5] = configs->store_matrix;
+// 
+//   // Inventory.
+//   for (int x = 0; x < 10; x++) {
+//     for (int y = 0; y < 5; y++) {
+//       const int item_id = item_matrix[x][y];
+// 
+//       int left = pos.x + 34 + kTileSize * x;
+//       int right = left + 46;
+//       int top = pos.y + 557 + kTileSize * y;
+//       int bottom = top + 46;
+//       if (IsMouseInRectangle(left, right, bottom, top) && item_id != 0) {
+//         const ItemData& item_data = resources_->GetItemData()[item_id];
+//         const string& description = resources_->GetString(item_data.description);
+// 
+//         draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+//         draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+// 
+//         DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+//       }
+//     }
+//   }
+//  
+//   // Equipment.
+//   int (&equipment)[4] = configs->equipment;
+//   vector<tuple<ivec2, ivec2, ItemType>> slots { 
+//     { pos + ivec2(83, 405), ivec2(61, 61), ITEM_RING  }, 
+//     { pos + ivec2(182, 405), ivec2(61, 61), ITEM_RING  }, 
+//     { pos + ivec2(381, 381), ivec2(112, 112), ITEM_ORB   }, 
+//     { pos + ivec2(379, 153), ivec2(136, 171), ITEM_ARMOR }, 
+//   };
+//   for (int i = 0; i < 4; i++) {
+//     const auto& [slot, dimensions, type] = slots[i];
+// 
+//     int left = slot.x;
+//     int right = left + dimensions.x;
+//     int top = slot.y;
+//     int bottom = top + dimensions.y;
+// 
+//     int equipment_id = equipment[i];
+//     if (IsMouseInRectangle(left, right, bottom, top)) {
+//       const ItemData& item_data = resources_->GetItemData()[equipment_id];
+//       const string& description = resources_->GetString(item_data.description);
+// 
+//       draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+//       draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+// 
+//       DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+//     }
+//   }
+// 
+//   // Store.
+//   for (int x = 0; x < 10; x++) {
+//     for (int y = 0; y < 5; y++) {
+//       const int item_id = store_matrix[x][y];
+// 
+//       int left = pos.x + 604 + kTileSize * x;
+//       int right = left + 46;
+//       int top = pos.y + 557 + kTileSize * y;
+//       int bottom = top + 46;
+//       if (IsMouseInRectangle(left, right, bottom, top) && item_id != 0) {
+//         const ItemData& item_data = resources_->GetItemData()[item_id];
+//         const string& description = resources_->GetString(item_data.description);
+// 
+//         draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+//         draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+// 
+//         DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
+//       }
+//     }
+//   }
+// }
+
 
 void Inventory::UseItem(int x, int y) {
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
@@ -704,60 +954,12 @@ void Inventory::DrawStore(const Camera& camera, int win_x, int win_y,
   int (&craft_table)[5] = configs->craft_table;
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
-  draw_2d_->DrawImage("store", win_x + 500, win_y, 800, 800, 1.0);
+  ivec2 pos = vec2(win_x_, win_y_) + store_pos_;
+  draw_2d_->DrawImage("store", pos.x, pos.y, 1226, 1226, 1.0);
 
-  int (&item_matrix)[4][7] = configs->store_items;
-  for (int x = 0; x < 4; x++) {
-    for (int y = 0; y < 7; y++) {
-      int left = win_x + 552 + kTileSize * x;
-      int right = left + 46;
-      int top = win_y + 90 + kTileSize * y;
-      int bottom = top + 46;
- 
-      if (IsMouseInRectangle(left, right, bottom, top)) {
-        if (lft_click_ && selected_item_ == 0) {
-          selected_item_ = item_matrix[x][y];
-          selected_qnty_ = item_data[selected_item_].max_stash;
-          // item_matrix[x][y] = 0;
-          // item_quantities[x][y] = 0;
-          old_pos_x_ = -1;
-          old_pos_y_ = -1;
-          hold_offset_x_ = mouse_x_ - left;
-          hold_offset_y_ = mouse_y_ - top;
-          dragged_item.origin = ITEM_ORIGIN_STORE;
-        }
-      }
-
-      if (!lft_click_ && selected_item_ != 0) {
-        // TODO: sell item.
-      }
-
-      const int item_id = item_matrix[x][y];
-      if (item_id != 0) {
-        draw_2d_->DrawImage(item_data[item_id].icon, left, top, 64, 64, 1.0); 
-      }
-    }
-  }
-
-  for (int x = 0; x < 4; x++) {
-    for (int y = 0; y < 7; y++) {
-      const int item_id = item_matrix[x][y];
-
-      int left = win_x + 552 + kTileSize * x;
-      int right = left + 46;
-      int top = win_y + 90 + kTileSize * y;
-      int bottom = top + 46;
-
-      if (rgt_click_) {
-        if (IsMouseInRectangle(left, right, bottom, top)) {
-          const ItemData& item_data = resources_->GetItemData()[item_id];
-          const string& description = resources_->GetString(item_data.description);
-          DrawContextPanel(left + kTileSize, top - 160, item_data.name, 
-            description);
-        }
-      }
-    }
-  }
+  DrawStoreItems(pos);
+  // DrawStoreItemDescription(pos);
+  DrawItemDescriptionScreen();
 }
 
 void Inventory::NextPhrase(GLFWwindow* window, const string& next_phrase_name) {
@@ -788,7 +990,12 @@ void Inventory::NextPhrase(GLFWwindow* window, const string& next_phrase_name) {
           current_dialog->on_finish_dialog_events[dialog_name]);
       }
       npc->ClearActions();
-      Disable();
+
+      enabled = false; 
+      shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
+      current_dialog->enabled = false;
+      glfwSetCursorPos(window_, 0, 0);
+      
       glfwSetCursorPos(window, 0, 0);
       resources_->SetGameState(STATE_GAME);
     }
@@ -816,13 +1023,17 @@ void Inventory::DrawDialog(GLFWwindow* window) {
   int num_options = cur_phrase.options.size();
 
   ObjPtr npc = current_dialog->npc;
-  if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS && throttle_ < 0) {
-    throttle_ = 20;
+  if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && throttle_ < 0) {
+    throttle_ = 10;
 
     if (num_options > 0) {
       if (++cursor_pos_ > num_options - 1) cursor_pos_ = 0;
-    } else {
-      NextPhrase(window);
+    }
+  } else if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && throttle_ < 0) {
+    throttle_ = 10;
+
+    if (num_options > 0) {
+      if (--cursor_pos_ < 0) cursor_pos_ = num_options - 1;
     }
   } else if (glfwGetKey(window, GLFW_KEY_ENTER) == GLFW_PRESS && throttle_ < 0) {
     if (num_options > 0) {
@@ -830,6 +1041,8 @@ void Inventory::DrawDialog(GLFWwindow* window) {
         throw runtime_error("Dialog option beyond scope.");
       }
       NextPhrase(window, get<0>(cur_phrase.options[cursor_pos_]));
+    } else {
+      NextPhrase(window, "");
     }
   }
 
@@ -842,15 +1055,23 @@ void Inventory::DrawDialog(GLFWwindow* window) {
   }
 
   int pos_y = 420;
+  draw_2d_->DrawImage("transparent_gray", 220, pos_y, 700, 240, 1.0);
 
-  draw_2d_->DrawImage("dialog", 220, pos_y, 800, 800, 1.0);
+  vec2 pos1 = vec2(225, pos_y + 5);
+  vec2 pos2 = vec2(225 + 690, pos_y + 235);
+  draw_2d_->DrawLine(pos1, vec2(pos2.x, pos1.y), 1, vec3(0.6));
+  draw_2d_->DrawLine(pos1, vec2(pos1.x, pos2.y), 1, vec3(0.6));
+  draw_2d_->DrawLine(vec2(pos2.x, pos1.y), pos2, 1, vec3(0.6));
+  draw_2d_->DrawLine(vec2(pos1.x, pos2.y), pos2, 1, vec3(0.6));
 
-  pos_y += 100;
+  pos_y += 50;
 
   string phrase = current_dialog->dialog->phrases[current_dialog->current_phrase].content;
 
   vector<string> words;
   boost::split(words, phrase, boost::is_any_of(" \n\r\t"));
+
+  int pos_x = 320;
 
   string line = "";
   const int kMaxLineSize = 72;
@@ -867,7 +1088,7 @@ void Inventory::DrawDialog(GLFWwindow* window) {
       continue;
     }
 
-    draw_2d_->DrawText(line, 300, kWindowHeight - pos_y, vec4(1), 1.0, false, 
+    draw_2d_->DrawText(line, pos_x, kWindowHeight - pos_y, vec4(1), 1.0, false, 
       "avenir_light_oblique");
     pos_y += 20;
 
@@ -875,29 +1096,23 @@ void Inventory::DrawDialog(GLFWwindow* window) {
   }
 
   if (!line.empty()) {
-    draw_2d_->DrawText(line, 300, kWindowHeight - pos_y, vec4(1), 1.0, false, 
+    draw_2d_->DrawText(line, pos_x, kWindowHeight - pos_y, vec4(1), 1.0, false, 
       "avenir_light_oblique");
     pos_y += 20;
   }
 
   int pos = 0;
+
+  pos_y += 40;
   for (const auto& [next, content] : cur_phrase.options) {
     if (cursor_pos_ == pos) {
-      draw_2d_->DrawImage("next-dialog", 240, pos_y - 30, 64, 64, 1.0);
+      draw_2d_->DrawImage("white_circle", pos_x - 24, pos_y - 13, 16, 16, 1.0);
     }
 
-    draw_2d_->DrawText(content, 300, kWindowHeight - pos_y, vec4(1), 1.0, false, 
+    draw_2d_->DrawText(content, pos_x, kWindowHeight - pos_y, vec4(1), 1.0, false, 
       "avenir_light_oblique");
-    pos_y += 20;
+    pos_y += 30;
     pos++;
-  }
-
-  if (current_dialog->current_phrase ==
-    current_dialog->dialog->phrases.size() - 1) {
-    draw_2d_->DrawImage("dialog-end", 900, 620, 64, 64, 1.0);
-  } else if (current_dialog->current_phrase < 
-    current_dialog->dialog->phrases.size() - 1) {
-    draw_2d_->DrawImage("next-dialog", 900, 620, 64, 64, 1.0);
   }
 }
 
@@ -993,12 +1208,94 @@ void Inventory::UpdateAnimations() {
     spell_description_pos_ += (spell_description_pos_target_ - spell_description_pos_) * y;
   }
 
+  seconds = glfwGetTime() - store_animation_start_;
+  if (seconds <= store_animation_duration_) {
+    float x = clamp(seconds / store_animation_duration_, 0, 1);
+    float y = 1 / (1 + exp(10 * (0.5 - x)));
+
+    vec2 step = store_pos_ + (store_pos_target_ - store_pos_) * y;
+    store_pos_ += (store_pos_target_ - store_pos_) * y;
+  }
+
   if (closing > 0.0 && glfwGetTime() > closing) {
     enabled = false; 
     shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
     current_dialog->enabled = false;
     glfwSetCursorPos(window_, 0, 0);
   }
+}
+
+void Inventory::DrawMap() {
+  Dungeon& dungeon = resources_->GetDungeon(); 
+  auto player = resources_->GetPlayer();
+  ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+
+  if (lft_click_ && !map_dragging_) {
+    map_dragging_ = true;
+    map_drag_origin_ = ivec2(mouse_x_, mouse_y_);
+  } else if (lft_click_ && map_dragging_) {
+    map_offset_ += ivec2((vec2(mouse_x_, mouse_y_) - vec2(map_drag_origin_)));
+    map_drag_origin_ = ivec2(mouse_x_, mouse_y_);
+  } else {
+    map_dragging_ = false;
+    map_drag_origin_ = ivec2(0, 0);
+  }
+
+  unordered_map<char, string> image_map {
+    { '+', "map_interface_corner" },
+    { '|', "map_interface_vertical_wall" },
+    { '-', "map_interface_horizontal_wall" },
+    { 'o', "map_interface_vertical_arch" },
+    { 'O', "map_interface_horizontal_arch" },
+    { 'g', "map_interface_vertical_gate" },
+    { 'G', "map_interface_horizontal_gate" },
+    { 'd', "map_interface_vertical_door" },
+    { 'D', "map_interface_horizontal_door" },
+    { 'P', "map_interface_pillar" },
+    { 'p', "map_interface_pillar" },
+    { '<', "map_interface_upstairs" },
+    { '>', "map_interface_downstairs" },
+    { '*', "map_interface_uncharted" },
+  };
+
+  vec3 player_off = (player->position - kDungeonOffset - vec3(5, 0, 5)) * 1.5f;
+  vec2 map_center = vec2(player_off.x, player_off.z) + vec2(map_offset_);
+
+  vec2 dungeon_origin = vec2(720 - map_center.x, 400 - map_center.y);
+
+  ivec2 dungeon_top_left = player_tile + ivec2(vec2(map_offset_) * 0.0667f) - ivec2(30, 20);
+
+  char** dungeon_map = dungeon.GetDungeon();
+  char** monsters_and_objs = dungeon.GetMonstersAndObjs();
+  for (int y = dungeon_top_left.y; y < dungeon_top_left.y + 40; y++) {
+    for (int x = dungeon_top_left.x; x < dungeon_top_left.x + 60; x++) {
+      if (x < 0 || y < 0 || x >= kDungeonSize || y >= kDungeonSize) continue;
+
+      char code = dungeon_map[x][y];
+      if (!dungeon.IsTileDiscovered(ivec2(x, y))) {
+        code = '*';
+        continue;
+      }
+
+      if (image_map.find(code) == image_map.end()) continue;
+
+      vec2 pos = dungeon_origin + vec2(x * 15, y * 15);
+
+      float k = 1.0f - std::max(float(std::abs(x - dungeon_top_left.x - 30)) / 30.0f, 
+        std::abs(float(y - dungeon_top_left.y - 20) / 20.0f));
+      float transparency = clamp(k, 0.0f, 0.2f) * 5.0f;
+
+      if (code == '<' || code == '>') {
+        draw_2d_->DrawImage(image_map[code], pos.x, pos.y, 30, 30, transparency); 
+      } else {
+        draw_2d_->DrawImage(image_map[code], pos.x, pos.y, 15, 15, transparency); 
+      }
+    }
+  }
+ 
+  float rotation = -atan2(camera_.direction.x, camera_.direction.z);
+  draw_2d_->DrawRotatedImage("map_interface_cursor", dungeon_origin.x + player_off.x, 
+    dungeon_origin.y + player_off.z, 20, 20, 1.0, rotation); 
 }
 
 void Inventory::Draw(const Camera& camera, int win_x, int win_y, 
@@ -1029,17 +1326,19 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
     case INVENTORY_ITEMS:
       DrawSpellDescription();
       DrawSpellbook();
+      DrawItemDescriptionScreen();
       DrawInventory();
       DrawCogs();
       DrawSpellbar();
       break;
     case INVENTORY_STORE:
-      DrawInventory();
       DrawStore(camera, win_x, win_y, window);
+      DrawInventory();
       break;
     case INVENTORY_SPELLBOOK:
       DrawSpellDescription();
       DrawSpellbook();
+      DrawItemDescriptionScreen();
       DrawInventory();
       DrawCogs();
       DrawSpellbar();
@@ -1050,19 +1349,33 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
     case INVENTORY_SPELL_SELECTION:
       DrawSpellSelectionInterface(camera, win_x, win_y, window);
       break;
+    case INVENTORY_MAP:
+      DrawMap();
+      break;
     default:
       break;
   }
 
-  if (state_ != INVENTORY_DIALOG) {
+  if (state_ != INVENTORY_DIALOG || state_ != INVENTORY_MAP) {
     if (!lft_click_ && selected_item_ != 0) {
       MoveItemBack();
     }
 
     unordered_map<int, ItemData>& item_data = resources_->GetItemData();
     if (selected_item_ != 0) {
-      draw_2d_->DrawImage(item_data[selected_item_].icon, mouse_x_ - hold_offset_x_, 
-        mouse_y_ - hold_offset_y_, 64, 64, 1.0); 
+      const ItemData& data = item_data[selected_item_];
+
+      int off_x = 0;
+      int off_y = 0;
+      if (data.size.x != data.size.y) {
+        int max_size = std::max(data.size.x, data.size.y);
+        float padding_x = float(max_size) - float(data.size.x);
+        float padding_y = float(max_size) - float(data.size.y);
+        off_x = (padding_x / float(max_size)) * 32.0f;
+        off_y = (padding_y / float(max_size)) * 32.0f;
+      }
+
+      draw_2d_->DrawImage(data.icon, mouse_x_ - 32 + off_x, mouse_y_ - 32 + off_y, 64, 64, 1.0); 
     }
     draw_2d_->DrawImage("cursor", mouse_x_, mouse_y_, 64, 64, 1.0);
   }
@@ -1097,6 +1410,12 @@ void Inventory::Enable(GLFWwindow* window, InventoryState state) {
   spell_description_pos_start_ = vec2(-900, 0);
   spell_description_pos_target_ = vec2(0, 0);
   spell_description_animation_start_ = glfwGetTime();
+
+  store_pos_ = vec2(-1160, 0);
+  store_pos_start_ = vec2(-1160, 0);
+  store_pos_target_ = vec2(0, 0);
+  store_animation_start_ = glfwGetTime();
+
 }
 
 void Inventory::Disable() { 
@@ -1119,6 +1438,10 @@ void Inventory::Disable() {
   spell_description_pos_start_ = spell_description_pos_;
   spell_description_pos_target_ = vec2(-900, 0);
   spell_description_animation_start_ = glfwGetTime();
+
+  store_pos_start_ = store_pos_;
+  store_pos_target_ = vec2(-1160, 0);
+  store_animation_start_ = glfwGetTime();
 }
 
 // void Inventory::DrawQuestLog(GLFWwindow* window) {

@@ -79,6 +79,7 @@ class Dungeon {
   char** darkness;
 
   int** dungeon_visibility_;
+  int** dungeon_discovered_;
   ivec2 last_player_pos = ivec2(-1, -1);
 
   unordered_map<int, char> char_map_;
@@ -184,7 +185,7 @@ class Dungeon {
   };
 
   const LevelData kLevelData[7] {
-    { 760,  30, 5, 2, { 62, 62, 62 , 65                        }, { 70, 70, 70, 72, 74     }, {                 }, { 0, 1, 1 }, 42, 3 },            // Level 0.
+    { 760,  30, 5, 2, { 62, 62, 62 , 65                        }, { 70, 70, 70, 72, 74     }, {                 }, { 1, 1 }, 42, 3 },            // Level 0.
     { 760,  40, 8, 2, { 62, 75, 75, 65, 65, 73, 73             }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 0, 1, 1, 2, 3, 3 }, 56, 4 },   // Level 1.
     { 840,  40, 8, 2, { 62, 75, 65, 73, 69                     }, { 70, 72, 74, 74, 78, 78 }, { "LARACNA"       }, { 0, 1, 1, 3, 3 }, 56, 4 },      // Level 2.
     { 840,  40, 8, 2, { 62, 75, 65, 73, 69, 83, 83, 71, 89, 89 }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 5 }, 56, 4 },                  // Level 3.
@@ -283,6 +284,8 @@ class Dungeon {
   bool IsTileClear(const ivec2& tile, const ivec2& next_tile);
   bool IsTileTransparent(const ivec2& tile);
   bool IsTileVisible(const vec3& position);
+  bool IsTileDiscovered(const vec3& position);
+  bool IsTileDiscovered(const ivec2& tile);
   bool IsTileNextToWall(const ivec2& tile);
   bool IsTileNextToDoor(const ivec2& tile);
   ivec2 GetDungeonTile(const vec3& position);

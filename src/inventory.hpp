@@ -12,7 +12,8 @@ enum InventoryState {
   INVENTORY_SPELLBOOK,
   INVENTORY_DIALOG,
   INVENTORY_STORE,
-  INVENTORY_SPELL_SELECTION
+  INVENTORY_SPELL_SELECTION,
+  INVENTORY_MAP
 };
 
 enum ItemOrigin {
@@ -59,6 +60,10 @@ class Inventory {
   int throttle_ = 0;
   int cursor_pos_ = 0;
 
+  bool map_dragging_ = false;
+  ivec2 map_drag_origin_ = ivec2(0, 0);
+  ivec2 map_offset_ = ivec2(0, 0);
+
   ivec2 spell_selection_cursor_ = ivec2(5, 5);
 
 
@@ -93,6 +98,12 @@ class Inventory {
   const float spell_description_animation_duration_ = 1.0f;
   float spell_description_animation_start_ = 0.0f;
 
+  vec2 store_pos_;
+  vec2 store_pos_start_;
+  vec2 store_pos_target_;
+  const float store_animation_duration_ = 1.0f;
+  float store_animation_start_ = 0.0f;
+
   float closing = 0.0f;
   GLFWwindow* window_;
 
@@ -123,11 +134,15 @@ class Inventory {
   void DrawSpellbook();
   void DrawStore(const Camera& camera, int win_x, int win_y, 
     GLFWwindow* window);
+  void DrawStoreItems(const ivec2& pos);
+  // void DrawStoreItemDescription(const ivec2& pos);
   void DrawEquipment(const ivec2& pos);
   void DrawDialog(GLFWwindow* window);
   void NextPhrase(GLFWwindow* window, const string& next_phrase_name = "");
   void UseItem(int x, int y);
-  void TryToCombineCrystals(int x, int y);
+  bool TryToCombineCrystals(int x, int y);
+  void DrawMap();
+  int WhichItem(const int item_matrix[10][5], int x, int y, ivec2& pos);
 
  public:
   bool enabled;

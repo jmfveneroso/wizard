@@ -9,7 +9,7 @@ layout(location = 4) in vec3 vertexBitangent_modelspace;
 layout(location = 5) in ivec3 bone_ids;
 layout(location = 6) in vec3 bone_weights;
 
-out VertexData {
+out FragData {
   vec3 position;
   vec2 UV;
   vec3 normal;

@@ -111,9 +111,20 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
     return false;
   }
 
+  if ((obj1->IsCreature() && obj2->IsPickableItem()) || 
+    (obj1->IsPickableItem() && obj2->IsCreature()) ||
+    (obj1->IsPlayer() && obj2->IsPickableItem()) ||
+    (obj1->IsPickableItem() && obj2->IsPlayer())) {
+    return false;
+  }
+
   if (IsMissileCollidingAgainstItsOwner(obj1, obj2)) return false;
   if (obj1->type == GAME_OBJ_MISSILE && obj2->asset_group && 
        obj2->GetAsset()->name == "dungeon_arch_gate_hull") return false;
+
+  if ((obj1->IsCreatureCollider() && !obj2->IsCreature() && !obj2->IsPlayer()) ||
+      (obj2->IsCreatureCollider() && !obj1->IsCreature() && !obj1->IsPlayer()))
+    return false;
 
   return true;
 }
@@ -134,6 +145,8 @@ void CollisionResolver::Collide() {
   double start_time = glfwGetTime();
 
   in_dungeon_ = resources_->GetConfigs()->render_scene == "dungeon";
+
+  resources_->GetPlayer()->can_jump = false;
 
   find_mutex_.lock();
   ClearMetrics();
@@ -825,6 +838,7 @@ void CollisionResolver::TestCollisionsWithTerrain() {
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->current_sector || obj1->current_sector->name != "outside") continue;
     if (!obj1->IsCollidable()) continue;
+    obj1->touching_the_ground = false;
 
     if (in_dungeon_) {
       ivec2 obj_tile = dungeon.GetDungeonTile(obj1->position);
@@ -846,6 +860,7 @@ void CollisionResolver::TestCollisionsWithTerrain() {
     if (c->collided) {
       find_mutex_.lock();
       collisions_.push(c);
+      c->obj1->touching_the_ground = true;
       find_mutex_.unlock();
     }
   }
@@ -1186,9 +1201,30 @@ void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
 
   float h = resources_->GetHeightMap().GetTerrainHeight(
     vec2(c->obj1->position.x, c->obj1->position.z), &normal);
-  if (s1.center.y < kWaterHeight) {
+  if ((s1.center.y - s1.radius) < h) {
+
+    c->displacement_vector = vec3(0, h - (s1.center.y - s1.radius), 0);
+    c->point_of_contact = s1.center;
+    c->point_of_contact.y = kDungeonOffset.y;
     c->collided = true;
-    h = 5.0f;
+    c->normal = c->polygon.normals[0];
+
+    const vec3& surface_normal = c->polygon.normals[0];
+    const vec3 v = c->obj1->position - c->obj1->prev_position;
+
+    bool in_contact;
+    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+      c->displacement_vector, surface_normal, v, in_contact, false);
+
+    FillCollisionBlankFields(c);
+
+    const vec3 up = vec3(0, 1, 0);
+    float flatness = dot(surface_normal, up);
+
+    // Surface is not too steep.
+    if (flatness > 0.6f) {
+      return;
+    }
   }
 
   if (c->obj1->position.y < h - 10) {
@@ -1443,6 +1479,43 @@ void CollisionResolver::TestCollisionOP(shared_ptr<CollisionOP> c) {
 
 // Test OBB - Terrain.
 void CollisionResolver::TestCollisionOT(shared_ptr<CollisionOT> c) {
+  if (in_dungeon_) {
+    OBB obb = c->obj1->GetTransformedOBB();
+    obb.center += c->obj1->position;
+    // vec3 obb_center = c->obj1->position + obb.center;
+
+    if (obb.center.y < kDungeonOffset.y) {
+      obb.center.y = kDungeonOffset.y + 0.1f;
+    }
+
+    Plane p;
+    p.normal = vec3(0, 1, 0);
+    p.d = kDungeonOffset.y;
+
+    c->collided = TestOBBPlane(obb, p, c->displacement_vector, 
+      c->point_of_contact);
+
+    if (c->collided) {
+      c->normal = vec3(0, 1, 0);
+      FillCollisionBlankFields(c);
+      return;
+    }
+
+    // // TODO: Collide AABB plane.
+    // float max_len = std::max(length(obb.axis[0]), std::max(length(obb.axis[1]), 
+    //   length(obb.axis[2])));
+    // if ((obb_center.y - max_len) < kDungeonOffset.y) {
+    //   c->displacement_vector = vec3(0, kDungeonOffset.y - (obb_center.y - max_len), 0);
+    //   c->collided = true;
+    //   c->normal = vec3(0, 1, 0);
+    //   FillCollisionBlankFields(c);
+    //   return;
+    // }
+  }
+  return;
+
+
+
   OBB obb = c->obj1->GetTransformedOBB();
   vec3 obb_center = c->obj1->position + obb.center;
 
@@ -1538,6 +1611,30 @@ void CollisionResolver::TestCollisionOT(shared_ptr<CollisionOT> c) {
   }
 }
 
+void CollisionResolver::TestCollisionOA(shared_ptr<CollisionOA> c) {
+  BoundingSphere s = c->obj1->GetBoundingSphere() + c->obj1->prev_position;
+  vec3 v = c->obj1->position - c->obj1->prev_position;
+
+  const AABB& aabb = c->aabb;
+
+  vec3 prev_pos = c->obj1->prev_position;
+  float step = s.radius / length(v);
+  step = std::min(step, 0.1f);
+  for (float t = 0.0f; t < 1.0; t += step) {
+    s.center = c->obj1->prev_position + v * t;
+    c->collided = IntersectSphereAABB(s, aabb, c->displacement_vector, 
+      c->point_of_contact);
+    if (c->collided) {
+      c->displacement_vector = c->displacement_vector;
+      c->normal = normalize(c->displacement_vector);
+      c->point_of_contact = c->point_of_contact - normalize(v) * 1.0f;
+      FillCollisionBlankFields(c);
+      break;
+    }
+    t += step;
+  }
+}
+
 void CollisionResolver::TestCollision(ColPtr c) {
   switch (c->collision_pair) {
     case CP_SS: 
@@ -1576,6 +1673,8 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionOP(static_pointer_cast<CollisionOP>(c)); break;
     case CP_OT:
       TestCollisionOT(static_pointer_cast<CollisionOT>(c)); break;
+    case CP_OA:
+      TestCollisionOA(static_pointer_cast<CollisionOA>(c)); break;
     default: break;
   }
 }
@@ -1584,7 +1683,15 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
   ObjPtr obj1 = c->obj1;
   ObjPtr obj2 = c->obj2;
 
-  shared_ptr<Missile> missile = static_pointer_cast<Missile>(c->obj1);
+  if (obj1->type != GAME_OBJ_MISSILE) {
+    ObjPtr aux = obj1;
+    obj1 = obj2;
+    obj2 = aux;
+    c->displacement_vector = -c->displacement_vector;
+    c->normal = -c->normal;
+  }
+
+  shared_ptr<Missile> missile = static_pointer_cast<Missile>(obj1);
 
   // TODO: the object should have a callback function that gets called when it
   // collides.
@@ -1709,7 +1816,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
       } 
 
       if (missile->type == MISSILE_WIND_SLASH) {
-        resources_->CreateOneParticle(c->obj1->position, 40.0f,  
+        resources_->CreateOneParticle(obj1->position, 40.0f,  
           "windslash-collision", 5.0f);
       } else {
         resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
@@ -1722,7 +1829,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
             "grind-green", 2.5f);
           return;
         } else {
-          resources_->CreateOneParticle(c->obj1->position, 40.0f,  
+          resources_->CreateOneParticle(obj1->position, 40.0f,  
             "windslash-collision", 5.0f);
         }
       } else {
@@ -1846,7 +1953,8 @@ void CollisionResolver::ResolveCollisions() {
     const vec3& displacement_vector = c->displacement_vector;
     vec3 normal = c->normal;
 
-    if (obj1->type == GAME_OBJ_MISSILE) {
+    if (obj1->type == GAME_OBJ_MISSILE ||
+        (obj2 && obj2->type == GAME_OBJ_MISSILE)) {
       ResolveMissileCollision(c);
       continue;
     }
@@ -1897,6 +2005,17 @@ void CollisionResolver::ResolveCollisions() {
         displaced_obj->up = normal;
       }
     }
+
+    if (c->collision_pair == CP_OT) {
+      OBB obb = displaced_obj->GetTransformedOBB();
+      obb.center += displaced_obj->position;
+   
+      vec3 new_torque = cross(obb.center - c->point_of_contact, c->displacement_vector);
+      // if (length(new_torque) > 0.01f) {
+      //   displaced_obj->torque += cross(obb.center - c->point_of_contact, c->displacement_vector);
+      // }
+      displaced_obj->torque += cross(c->displacement_vector, obb.center - c->point_of_contact);
+    } 
 
     displaced_obj->target_position = displaced_obj->position;
     resources_->UpdateObjectPosition(displaced_obj);

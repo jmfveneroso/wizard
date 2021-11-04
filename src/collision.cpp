@@ -853,17 +853,52 @@ bool IntersectSegmentPlane(vec3 a, vec3 b, Plane p, float &t, vec3 &q) {
   return false;
 }
 
-bool TestOBBPlane(const OBB obb, Plane p) {
+bool TestOBBPlane(const OBB obb, Plane p, vec3& displacement_vector, 
+  vec3& point_of_contact) {
   // Compute the projection interval radius of b onto L(t) = b.c + t * p.n
-  float r = obb.center[0] * abs(dot(p.normal, obb.axis[0])) +
-    obb.center[1] * abs(dot(p.normal, obb.axis[1])) +
-    obb.center[2] * abs(dot(p.normal, obb.axis[2]));
+  float r = obb.half_widths[0] * abs(dot(p.normal, obb.axis[0])) +
+    obb.half_widths[1] * abs(dot(p.normal, obb.axis[1])) +
+    obb.half_widths[2] * abs(dot(p.normal, obb.axis[2]));
 
   // Compute distance of box center from plane.
   float s = dot(p.normal, obb.center) - p.d;
 
   // Intersection occurs when distance s falls within [-r,+r] interval
-  return abs(s) <= r;
+  bool collision = abs(s) <= r;
+  if (collision) {
+    displacement_vector = p.normal * (r - s) * ((s < 0) ? -1.0f : 1.0f);
+
+    static const vector<vec3> points {
+      vec3(-1, -1, -1), vec3(-1, -1, 1), vec3(-1, 1, -1), vec3(-1, 1, 1),
+      vec3(1, -1, -1), vec3(1, -1, 1), vec3(1, 1, -1), vec3(1, 1, 1),
+    };
+
+    vector<vec3> colliding_points;
+    vector<float> magnitudes;
+    for (const auto& point : points) {
+      vec3 p_ = obb.center;
+      for (int i = 0; i < 3; i++) {
+        p_ += obb.axis[i] * point[i] * obb.half_widths[i];
+      }
+
+      float s = dot(p.normal, p_) - p.d;
+      if (abs(s) <= r) {
+        colliding_points.push_back(p_);
+        magnitudes.push_back(r - abs(s));
+      }
+    }
+
+    float total_magnitude = 0.0f;
+    for (int i = 0; i < magnitudes.size(); i++) total_magnitude += magnitudes[i];
+    for (int i = 0; i < magnitudes.size(); i++) magnitudes[i] /= total_magnitude;
+
+    point_of_contact = vec3(0);
+    for (int i = 0 ; i < colliding_points.size(); i++) {
+      point_of_contact += colliding_points[i] * magnitudes[i];
+    }
+    point_of_contact += displacement_vector;
+  }
+  return collision;
 }
 
 bool TestAABBPlane(const AABB& aabb, const Plane& p,
