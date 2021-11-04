@@ -5116,3 +5116,29 @@ bool Resources::IsHoldingScepter() {
   int item_id = configs_->spellbar[configs_->selected_spell];
   return (item_id == 25);
 }
+
+ivec2 Resources::GetInventoryItemPosition(const int item_id) {
+  for (int x = 0; x < 10; x++) {
+    for (int y = 0; y < 5; y++) {
+      if (configs_->item_matrix[x][y] == item_id) return ivec2(x, y);
+    }
+  }
+  return ivec2(-1, -1);
+}
+
+bool Resources::InventoryHasItem(const int item_id) {
+  ivec2 pos = GetInventoryItemPosition(item_id);
+  return (pos.x == -1 && pos.y == -1);
+}
+
+void Resources::RemoveItemFromInventory(const ivec2& pos) {
+  int item_id = configs_->item_matrix[pos.x][pos.y];
+  if (item_id <= 0) return;
+
+  const ivec2& size = item_data_[item_id].size;
+  for (int step_x = 0; step_x < size.x; step_x++) {
+    for (int step_y = 0; step_y < size.y; step_y++) {
+      configs_->item_matrix[x + step_x][y + step_y] = 0;
+    }
+  }
+}

@@ -569,6 +569,18 @@ bool PlayerInput::CastSpellOrUseItem() {
 
   current_spell_ = nullptr;
   switch (item_id) {
+    case 3: {
+      ivec2 pos = resources_->GetInventoryItemPosition(item_id);
+      if (pos.x == -1 && pos.y == -1) {
+        break;
+      }
+
+      resources_->RemoveItem(pos);
+     
+      player->life += Random(30, 51);
+      debounce_ = 20;
+      break;
+    } 
     case 25: {
       obj->active_animation = "Armature|shoot_scepter";
       scepter->active_animation = "Armature|shoot_scepter";
@@ -635,15 +647,6 @@ bool PlayerInput::CastSpellOrUseItem() {
       debounce_ = 20;
       break;
     }
-    case 3: {
-      configs->spellbar_quantities[configs->selected_spell]--;
-      if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-        configs->spellbar[configs->selected_spell] = 0;
-      }
-      player->life += Random(30, 51);
-      debounce_ = 20;
-      break;
-    } 
     case 18: {
       resources_->CastTrueSeeing();
       configs->spellbar_quantities[configs->selected_spell]--;

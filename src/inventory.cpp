@@ -147,11 +147,11 @@ void Inventory::DrawSpellbar() {
       if (select) {
         spellbar[x] = dragged_item.item_id;
         spellbar_quantities[x] = 1;
-        dragged_item.origin = ITEM_ORIGIN_NONE;
-        selected_item_ = 0;
-        selected_qnty_ = 0;
-        old_pos_x_ = 0;
-        old_pos_y_ = 0;
+        // dragged_item.origin = ITEM_ORIGIN_NONE;
+        // selected_item_ = 0;
+        // selected_qnty_ = 0;
+        // old_pos_x_ = 0;
+        // old_pos_y_ = 0;
       }
     }
   }

@@ -744,6 +744,9 @@ class Resources {
 
   void CastWindslash(const Camera& camera);
   bool IsHoldingScepter();
+  ivec2 GetInventoryItemPosition(const int item_id);
+  bool InventoryHasItem(const int item_id);
+  void RemoveItemFromInventory(const ivec2& pos);
 };
 
 #endif // __RESOURCES_HPP__
