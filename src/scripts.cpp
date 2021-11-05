@@ -866,6 +866,27 @@ static PyObject* disable_levitation(PyObject *self, PyObject *args) {
   return PyBool_FromLong(0);
 }
 
+static PyObject* can_hit_player(PyObject *self, PyObject *args) {
+  char* c_ptr1;
+  if (!PyArg_ParseTuple(args, "s", &c_ptr1)) return NULL;
+  if (!c_ptr1) return NULL;
+  if (!gResources) return NULL;
+
+  string s1 = reinterpret_cast<char*>(c_ptr1);
+
+  ObjPtr obj = gResources->GetObjectByName(s1);
+  if (!obj) return NULL;
+
+  ObjPtr player = gResources->GetPlayer();
+
+  Dungeon& dungeon = gResources->GetDungeon();
+  bool obstructed = dungeon.IsRayObstructed(obj->position, player->position);
+  cout << "Obstructed: " << obstructed << endl;
+
+  return PyBool_FromLong((obstructed) ? 0 : 1);
+}
+
+
 static PyObject* rest(PyObject *self, PyObject *args) {
   gResources->Rest();
   return PyBool_FromLong(0);
@@ -935,6 +956,7 @@ static PyMethodDef EmbMethods[] = {
  { "random_number", random_number, METH_VARARGS, "Random number" },
  { "get_prev_action", get_prev_action, METH_VARARGS, "Get previous action" },
  { "disable_levitation", disable_levitation, METH_VARARGS, "Disable levitation" },
+ { "can_hit_player", can_hit_player, METH_VARARGS, "Can hit player" },
  { "rest", rest, METH_VARARGS, "Rest" },
  { NULL, NULL, 0, NULL }
 };

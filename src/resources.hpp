@@ -79,6 +79,7 @@ struct Configs {
   float player_speed = 0.02f; 
   float taking_hit = 0.0f; 
   float fading_out = -60.0f; 
+  bool drifting_away = false;
   float time_of_day = 7.0f;
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
   bool disable_attacks = false;
@@ -448,11 +449,11 @@ class Resources {
     { 21, { 21, "Rock Mana Crystal", "rock_mana_description", "rock_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "rock_mana_crystal", ivec2(1, 1) } },
     { 22, { 22, "Air Mana Crystal", "air_mana_description", "air_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "air_mana_crystal", ivec2(1, 1) } },
     { 23, { 23, "Life Mana Crystal", "life_mana_description", "life_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "life_mana_crystal", ivec2(1, 1) } },
-    { 24, { 24, "Scroll", "life_mana_description", "scroll_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "scroll", ivec2(2, 1) } },
-    { 25, { 25, "Staff", "life_mana_description", "staff_icon", "scepter", 1, 1, true, ITEM_DEFAULT, "staff", ivec2(1, 4) } },
-    { 26, { 26, "Ring", "helmet-description", "ring_icon", "true_seeing_gem", 1, 1, true, ITEM_RING, "ring", ivec2(1, 1) } },
-    { 27, { 27, "Orb of Fire", "helmet-description", "orb_of_fire_icon", "true_seeing_gem", 1, 1, true, ITEM_ORB, "orb_of_fire", ivec2(2, 2) } },
-    { 28, { 28, "Armor", "helmet-description", "armor_icon", "true_seeing_gem", 1, 1, true, ITEM_ARMOR, "armor", ivec2(2, 3) } }
+    { 24, { 24, "Scroll", "life_mana_description", "scroll_icon", "scroll", 1, 1, true, ITEM_USABLE, "scroll", ivec2(2, 1) } },
+    { 25, { 25, "Scepter", "life_mana_description", "staff_icon", "scepter", 1, 1, true, ITEM_SCEPTER, "staff", ivec2(1, 4) } },
+    { 26, { 26, "Ring", "helmet-description", "ring_icon", "ring", 1, 1, true, ITEM_RING, "ring", ivec2(1, 1) } },
+    { 27, { 27, "Orb of Fire", "helmet-description", "orb_of_fire_icon", "orb", 1, 1, true, ITEM_ORB, "orb_of_fire", ivec2(2, 2) } },
+    { 28, { 28, "Armor", "helmet-description", "armor_icon", "armor", 1, 1, true, ITEM_ARMOR, "armor", ivec2(2, 3) } }
   };
 
   unordered_map<int, EquipmentData> equipment_data_ {
@@ -518,6 +519,7 @@ class Resources {
   void LoadArcaneSpells();
   void CalculateArcaneSpells();
   void CreateRandomMonster(const vec3& pos);
+  void ProcessDriftAwayEvent();
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir, 
@@ -747,6 +749,7 @@ class Resources {
   ivec2 GetInventoryItemPosition(const int item_id);
   bool InventoryHasItem(const int item_id);
   void RemoveItemFromInventory(const ivec2& pos);
+  Camera GetCamera();
 };
 
 #endif // __RESOURCES_HPP__

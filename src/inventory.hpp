@@ -98,6 +98,8 @@ class Inventory {
   const float spell_description_animation_duration_ = 1.0f;
   float spell_description_animation_start_ = 0.0f;
 
+  float show_map_after_ = 0.0f;
+
   vec2 store_pos_;
   vec2 store_pos_start_;
   vec2 store_pos_target_;

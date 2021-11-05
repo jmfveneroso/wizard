@@ -364,35 +364,7 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
 }
 
 Camera PlayerInput::GetCamera() {
-  shared_ptr<Player> player = resources_->GetPlayer();
-  
-  vec3 direction(
-    cos(player->rotation.x) * sin(player->rotation.y), 
-    sin(player->rotation.x),
-    cos(player->rotation.x) * cos(player->rotation.y)
-  );
-
-  vec3 right = glm::vec3(
-    sin(player->rotation.y - 3.14f/2.0f), 
-    0,
-    cos(player->rotation.y - 3.14f/2.0f)
-  );
-
-  vec3 front = glm::vec3(
-    cos(player->rotation.x) * sin(player->rotation.y), 
-    0,
-    cos(player->rotation.x) * cos(player->rotation.y)
-  );
-
-  vec3 up = glm::cross(right, direction);
-
-  vec3 camera_pos = player->position + vec3(0, 0.25, 0) * sin(resources_->camera_jiggle);
-  Camera c = Camera(camera_pos, direction, up);
-
-  c.rotation.x = player->rotation.x;
-  c.rotation.y = player->rotation.y;
-  c.right = right;
-  return c;
+  return resources_->GetCamera();
 }
 
 bool PlayerInput::CastSpellOrUseItem() {
@@ -575,7 +547,7 @@ bool PlayerInput::CastSpellOrUseItem() {
         break;
       }
 
-      resources_->RemoveItem(pos);
+      resources_->RemoveItemFromInventory(pos);
      
       player->life += Random(30, 51);
       debounce_ = 20;

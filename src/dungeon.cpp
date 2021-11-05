@@ -2025,6 +2025,23 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
   return false;
 }
 
+bool Dungeon::IsRayObstructed(vec3 start, vec3 end) {
+  const float delta = 0.1f;
+
+  start.y = 0;
+  end.y = 0;
+  vec3 d = end - start;
+  vec3 step = normalize(d) * delta;
+
+  vec3 current = start;
+  int num_steps = length(d) / delta;
+  for (int i = 0; i < num_steps; i++) {
+    if (!IsTileTransparent(GetDungeonTile(current))) return true;
+    current += step;
+  }
+  return false;
+}
+
 void Dungeon::CastRay(const vec2& player_pos, const vec2& ray) {
   ivec2 start_tile = ivec2(player_pos);
   ivec2 end_tile = ivec2(player_pos + ray);
@@ -2042,7 +2059,7 @@ void Dungeon::CastRay(const vec2& player_pos, const vec2& ray) {
   int py = 2 * dx1 - dy1;
 
   vector<ivec2> line;
-  if (dy1 <= dx1) {
+  if (dy1 <= dx1) { // More horizontal than vertical.
     x  = (dx >= 0) ? x1 : x2;
     y  = (dx >= 0) ? y1 : y2;
     xe = (dx >= 0) ? x2 : x1;
@@ -2073,7 +2090,7 @@ void Dungeon::CastRay(const vec2& player_pos, const vec2& ray) {
         dungeon_discovered_[line[i].x][line[i].y] = 1;
       }
     }
-  } else {
+  } else { // More vertical than horizontal.
     x  = (dy >= 0) ? x1 : x2;
     y  = (dy >= 0) ? y1 : y2;
     ye = (dy >= 0) ? y2 : y1;

@@ -223,6 +223,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsPartiallyTransparent();
   void UpdateAsset(const string& asset_name);
   bool GetRepeatAnimation();
+  bool GetApplyTorque();
 };
 
 using ObjPtr = shared_ptr<GameObject>;

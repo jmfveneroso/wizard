@@ -1117,7 +1117,6 @@ void Renderer::Draw() {
 
   glClear(GL_DEPTH_BUFFER_BIT);
 
-  resources_->UpdateHand(camera_);
   DrawHand();
   DrawScreenEffects();
 

@@ -297,6 +297,12 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     align_to_speed = LoadBoolFromXml(align_to_speed_xml);
   }
 
+  const pugi::xml_node& apply_torque_xml = 
+    asset_xml.child("apply-torque");
+  if (apply_torque_xml) {
+    apply_torque = LoadBoolFromXml(apply_torque_xml);
+  }
+
   const pugi::xml_node& creature_collider_xml = 
     asset_xml.child("creature-collider");
   if (creature_collider_xml) {

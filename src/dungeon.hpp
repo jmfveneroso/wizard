@@ -306,6 +306,7 @@ class Dungeon {
 
   int GetRoom(const ivec2& tile);
   bool IsChamber(int x, int y);
+  bool IsRayObstructed(vec3 start, vec3 end);
 };
 
 #endif // __DUNGEON_HPP__

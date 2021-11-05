@@ -1748,6 +1748,13 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
       }
       return false;
     }
+    case COL_QUICK_SPHERE: {
+      BoundingSphere s = obj->GetTransformedBoundingSphere();
+      if (IntersectRaySphere(position, direction, s, tmin, q)) {
+          return true;
+      }
+      return false;
+    }
     default: {
       return false;
       // const BoundingSphere& s = obj->GetTransformedBoundingSphere();
@@ -2987,8 +2994,11 @@ void Resources::ProcessTempStatus() {
   }
 
   shared_ptr<Player> player = GetPlayer();
-  configs_->fading_out -= 1.0f;
-  configs_->taking_hit -= 1.0f;
+
+  float d = GetDeltaTime() / 0.016666f;
+  configs_->fading_out -= 1.0f * d;
+  configs_->taking_hit -= 1.0f * d;
+
   if (configs_->taking_hit < 0.0) {
     configs_->player_speed = configs_->max_player_speed;
   } else {
@@ -3131,6 +3141,24 @@ void Resources::ProcessRotatingPlanksOrientation() {
   }
 }
 
+void Resources::ProcessDriftAwayEvent() {
+  if (configs_->drifting_away) {
+    if (configs_->fading_out < 0.0f) {
+      player_->position = vec3(11492.41, 141, 7360);
+      player_->rotation = vec3(1, 0, 0);
+      player_->speed = vec3(0);
+      AddMessage(string("You drifted among the hills and found your way up after many hours."));
+      configs_->drifting_away = false;
+    }
+    return;
+  }
+
+  if (player_->position.y < 20.0f) {
+    configs_->drifting_away = true;
+    configs_->fading_out = 60.0f;
+  }
+}
+
 void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
@@ -3141,11 +3169,13 @@ void Resources::RunPeriodicEvents() {
   ProcessCallbacks();
   ProcessSpawnPoints();
   UpdateAnimationFrames();
+  UpdateHand(GetCamera());
   UpdateExpirables();
   UpdateFrameStart();
   UpdateMissiles();
   UpdateParticles();
   ProcessEvents();
+  ProcessDriftAwayEvent();
   ProcessTempStatus();
   ProcessRotatingPlanksOrientation();
 
@@ -5114,7 +5144,8 @@ void Resources::CreateDrops(ObjPtr obj) {
 
 bool Resources::IsHoldingScepter() {
   int item_id = configs_->spellbar[configs_->selected_spell];
-  return (item_id == 25);
+  if (item_id != 25) return false;
+  return InventoryHasItem(item_id);
 }
 
 ivec2 Resources::GetInventoryItemPosition(const int item_id) {
@@ -5128,7 +5159,7 @@ ivec2 Resources::GetInventoryItemPosition(const int item_id) {
 
 bool Resources::InventoryHasItem(const int item_id) {
   ivec2 pos = GetInventoryItemPosition(item_id);
-  return (pos.x == -1 && pos.y == -1);
+  return (pos.x != -1);
 }
 
 void Resources::RemoveItemFromInventory(const ivec2& pos) {
@@ -5138,7 +5169,37 @@ void Resources::RemoveItemFromInventory(const ivec2& pos) {
   const ivec2& size = item_data_[item_id].size;
   for (int step_x = 0; step_x < size.x; step_x++) {
     for (int step_y = 0; step_y < size.y; step_y++) {
-      configs_->item_matrix[x + step_x][y + step_y] = 0;
+      configs_->item_matrix[pos.x + step_x][pos.y + step_y] = 0;
     }
   }
+}
+
+Camera Resources::GetCamera() {
+  vec3 direction(
+    cos(player_->rotation.x) * sin(player_->rotation.y), 
+    sin(player_->rotation.x),
+    cos(player_->rotation.x) * cos(player_->rotation.y)
+  );
+
+  vec3 right = glm::vec3(
+    sin(player_->rotation.y - 3.14f/2.0f), 
+    0,
+    cos(player_->rotation.y - 3.14f/2.0f)
+  );
+
+  vec3 front = glm::vec3(
+    cos(player_->rotation.x) * sin(player_->rotation.y), 
+    0,
+    cos(player_->rotation.x) * cos(player_->rotation.y)
+  );
+
+  vec3 up = glm::cross(right, direction);
+
+  vec3 camera_pos = player_->position + vec3(0, 0.25, 0) * sin(camera_jiggle);
+  Camera c = Camera(camera_pos, direction, up);
+
+  c.rotation.x = player_->rotation.x;
+  c.rotation.y = player_->rotation.y;
+  c.right = right;
+  return c;
 }

@@ -91,7 +91,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     obj->target_position = obj->position + obj->speed;
   }
 
-  if (!obj->IsCreature() && !obj->IsPlayer() && length(obj->torque) > 0.0001f) {
+  if (!obj->IsCreature() && !obj->IsPlayer() && length(obj->torque) > 0.0001f && obj->GetApplyTorque()) {
     float inertia = 1.0f / obj->GetAsset()->mass;
     obj->rotation_matrix = rotate(
       mat4(1.0),

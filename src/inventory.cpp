@@ -120,8 +120,9 @@ void Inventory::DrawSpellbar() {
         draw_2d_->DrawImageWithMask(spell->image_name,
           "spellbar_item_mask", left, top, 44, 44, 1.0); 
       } else {
+        float alpha = (resources_->InventoryHasItem(item_id)) ? 1.0 : 0.3;
         draw_2d_->DrawImageWithMask(item_data[item_id].image, 
-          "spellbar_item_mask", left, top, 44, 44, 1.0); 
+          "spellbar_item_mask", left, top, 44, 44, alpha); 
         // draw_2d_->DrawImageWithMask("red", "spellbar_mask", 0, 0, w * 1440, 
         //   h * 1440, 1.0, vec2(0, 0), vec2(w, h));
       } 
@@ -145,6 +146,7 @@ void Inventory::DrawSpellbar() {
       }
 
       if (select) {
+        cout << "Darling dariax: " << dragged_item.item_id << endl;
         spellbar[x] = dragged_item.item_id;
         spellbar_quantities[x] = 1;
         // dragged_item.origin = ITEM_ORIGIN_NONE;
@@ -168,10 +170,14 @@ void Inventory::MoveItemBack() {
   int (&equipment)[4] = configs->equipment;
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
-  int top = win_y_ + 16;
-  int bottom = top + 800;
-  int left = win_x_ + 16;
-  int right = left + 784;
+  int top = win_y_;
+  int bottom = top + 900;
+  int left = win_x_;
+  int right = left + 900;
+  if (state_ == INVENTORY_STORE) {
+    right = left + 1160;
+  }
+
   if (IsMouseInRectangle(left, right, bottom, top)) {
     if (dragged_item.origin == ITEM_ORIGIN_EQUIPMENT) {
       const ItemData& item_data = resources_->GetItemData()[selected_item_];
@@ -186,7 +192,6 @@ void Inventory::MoveItemBack() {
           item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
         }
       }
-
     } else if (old_pos_y_ == -1) {
       spellbar[old_pos_x_] = selected_item_;
       spellbar_quantities[old_pos_x_] = selected_qnty_;
@@ -203,9 +208,16 @@ void Inventory::MoveItemBack() {
       }
     }
   } else if (selected_item_ != -1) {
+    // Drop item.
     vec3 position = camera_.position + camera_.direction * 5.0f;
     ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
       item_data[selected_item_].asset_name, position);
+
+    float x = Random(0, 11) * .05f;
+    float y = Random(0, 11) * .05f;
+    float z = Random(0, 11) * .05f;
+    obj->torque = normalize(vec3(x, y, z)) * 2.0f;
+
     obj->CalculateCollisionData();
   }
 
@@ -1241,6 +1253,10 @@ void Inventory::DrawMap() {
     map_drag_origin_ = ivec2(0, 0);
   }
 
+  if (glfwGetTime() < show_map_after_) {
+    return;
+  }
+
   unordered_map<char, string> image_map {
     { '+', "map_interface_corner" },
     { '|', "map_interface_vertical_wall" },
@@ -1416,6 +1432,7 @@ void Inventory::Enable(GLFWwindow* window, InventoryState state) {
   store_pos_target_ = vec2(0, 0);
   store_animation_start_ = glfwGetTime();
 
+  show_map_after_ = glfwGetTime() + 0.5;
 }
 
 void Inventory::Disable() { 

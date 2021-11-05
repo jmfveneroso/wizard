@@ -1535,3 +1535,8 @@ bool GameObject::GetRepeatAnimation() {
   if (!asset_group) return true;
   return GetAsset()->repeat_animation;
 }
+
+bool GameObject::GetApplyTorque() {
+  if (!asset_group) return true;
+  return GetAsset()->apply_torque;
+}
