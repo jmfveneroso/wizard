@@ -92,6 +92,8 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "s") {
     configs->max_player_speed = 0.2;
     configs->levitate = true;
+  } else if (result[0] == "restart") {
+    resources_->RestartGame();
   } else if (result[0] == "nos") {
     configs->max_player_speed = 0.04;
     configs->levitate = false;
@@ -358,54 +360,6 @@ bool Engine::ProcessGameInput() {
           }
         }
         throttle_counter_ = 4;
-      } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_tile = 0;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 0;
-          configs->selected_tile = 1;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 1;
-          configs->selected_tile = 2;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 2;
-          configs->selected_tile = 3;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 3;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 4;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 5;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 6;
-        }
-        throttle_counter_ = 5;
-      } else if (glfwGetKey(window, GLFW_KEY_8) == GLFW_PRESS) {
-        if (throttle_counter_ < 0) {
-          configs->selected_spell = 7;
-        }
-        throttle_counter_ = 5;
       }
       player_input_->ProcessInput(window_);
 

@@ -113,6 +113,7 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
 
   if ((obj1->IsCreature() && obj2->IsPickableItem()) || 
     (obj1->IsPickableItem() && obj2->IsCreature()) ||
+    (obj1->IsPickableItem() && obj2->IsPickableItem()) ||
     (obj1->IsPlayer() && obj2->IsPickableItem()) ||
     (obj1->IsPickableItem() && obj2->IsPlayer())) {
     return false;
@@ -727,6 +728,7 @@ vector<shared_ptr<CollisionOT>> GetCollisionsOT(ObjPtr obj1,
   if (in_dungeon) {
     return { make_shared<CollisionOT>(obj1, Polygon()) };
   }
+  // return { make_shared<CollisionOT>(obj1, Polygon()) };
 
   vector<Polygon> polygons;
   GetTerrainPolygons(resources, vec2(obj1->position.x, obj1->position.z), 
@@ -737,6 +739,18 @@ vector<shared_ptr<CollisionOT>> GetCollisionsOT(ObjPtr obj1,
     cols.push_back(make_shared<CollisionOT>(obj1, polygon));
   }
   return cols;
+}
+
+vector<shared_ptr<CollisionOO>> GetCollisionsOO(ObjPtr obj1, ObjPtr obj2) {
+  BoundingSphere s1 = obj1->GetTransformedBoundingSphere();
+  BoundingSphere s2 = obj2->GetTransformedBoundingSphere();
+
+  vec3 displacement_vector, point_of_contact;
+  if (!TestSphereSphere(s1, s2, displacement_vector, point_of_contact)) {
+    return {};
+  }
+
+  return { make_shared<CollisionOO>(obj1, obj2) };
 }
 
 vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
@@ -774,6 +788,7 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
     case CP_OP: Merge(collisions, GetCollisionsOP(obj1, obj2)); break;
     case CP_OB: Merge(collisions, GetCollisionsBO(obj2, obj1)); break;
     case CP_OQ: Merge(collisions, GetCollisionsQO(obj2, obj1)); break;
+    case CP_OO: Merge(collisions, GetCollisionsOO(obj1, obj2)); break;
     default: break;  
   }
   return collisions;
@@ -838,6 +853,7 @@ void CollisionResolver::TestCollisionsWithTerrain() {
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->current_sector || obj1->current_sector->name != "outside") continue;
     if (!obj1->IsCollidable()) continue;
+    if (obj1->IsFixed()) continue;
     obj1->touching_the_ground = false;
 
     if (in_dungeon_) {
@@ -1310,38 +1326,15 @@ void CollisionResolver::TestCollisionQT(shared_ptr<CollisionQT> c) {
       FillCollisionBlankFields(c);
       return;
     }
+    return;
   }
 
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
-  c->collided = (s.center.y - s.radius < h);
-
-  bool collided_with_water = false;
-  if (s.center.y < kWaterHeight) {
+  if ((s.center.y - s.radius) < h) {
+    c->displacement_vector = vec3(0, h - (s.center.y - s.radius), 0);
+    c->point_of_contact = s.center;
+    c->point_of_contact.y = kDungeonOffset.y;
     c->collided = true;
-    c->displacement_vector = vec3(0);
-    collided_with_water = true;
-  }
-
-  if (c->collided) {
-    if (!collided_with_water) {
-      vector<Polygon> polygons;
-      GetTerrainPolygons(resources_, vec2(s.center.x, s.center.z), polygons);
-
-      const vector<vec3>& v0 = polygons[0].vertices;
-      const vector<vec3>& v1 = polygons[1].vertices;
-      bool inside;
-
-      vec3 p1 = ClosestPtPointTriangle(s.center, v0[0], v0[1], v0[2], &inside);
-      vec3 p2 = ClosestPtPointTriangle(s.center, v1[0], v1[1], v1[2], &inside);
-
-      if (length2(p1 - s.center) < length2(p2 - s.center)) {
-        c->displacement_vector = p1 - s.center;
-        c->point_of_contact = p1;
-      } else {
-        c->displacement_vector = p2 - s.center;
-        c->point_of_contact = p2;
-      }
-    }
     FillCollisionBlankFields(c);
   }
 }
@@ -1446,35 +1439,10 @@ void CollisionResolver::TestCollisionOP(shared_ptr<CollisionOP> c) {
 
   if (c->collided) {
     c->displacement_vector = to_world_space * c->displacement_vector;
-    c->normal = normalize(c->displacement_vector);
+    c->point_of_contact = to_world_space * c->point_of_contact;
+    c->normal = c->polygon.normals[0];
     FillCollisionBlankFields(c);
   }
-
-  // TODO: May be useful if I want to do AABB collision.
-  // AABB aabb = c->obj1->GetAABB() + c->obj1->position;
-  // c->collided = TestTriangleAABB(c->polygon + c->obj2->position, aabb,
-  //     c->displacement_vector, c->point_of_contact);
-
-  // string obj1_name = c->obj1->GetAsset()->name;
-  // string obj2_name = c->obj2->GetAsset()->name;
-
-  // if (c->collided) {
-  //   const vec3& surface_normal = c->polygon.normals[0];
-  //   const vec3 v = c->obj1->position - c->obj1->prev_position;
-  //   const vec3 v2 = c->obj2->position - c->obj2->prev_position;
-
-  //   bool in_contact;
-  //   c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-  //     c->displacement_vector, surface_normal, v, in_contact);
-
-  //   c->normal = normalize(c->displacement_vector);
-
-  //   if (in_contact) {
-  //     c->obj1->in_contact_with = c->obj2;
-  //   }
-
-  //   FillCollisionBlankFields(c);
-  // }
 }
 
 // Test OBB - Terrain.
@@ -1482,7 +1450,6 @@ void CollisionResolver::TestCollisionOT(shared_ptr<CollisionOT> c) {
   if (in_dungeon_) {
     OBB obb = c->obj1->GetTransformedOBB();
     obb.center += c->obj1->position;
-    // vec3 obb_center = c->obj1->position + obb.center;
 
     if (obb.center.y < kDungeonOffset.y) {
       obb.center.y = kDungeonOffset.y + 0.1f;
@@ -1500,113 +1467,31 @@ void CollisionResolver::TestCollisionOT(shared_ptr<CollisionOT> c) {
       FillCollisionBlankFields(c);
       return;
     }
+    return;
+  } 
 
-    // // TODO: Collide AABB plane.
-    // float max_len = std::max(length(obb.axis[0]), std::max(length(obb.axis[1]), 
-    //   length(obb.axis[2])));
-    // if ((obb_center.y - max_len) < kDungeonOffset.y) {
-    //   c->displacement_vector = vec3(0, kDungeonOffset.y - (obb_center.y - max_len), 0);
-    //   c->collided = true;
-    //   c->normal = vec3(0, 1, 0);
-    //   FillCollisionBlankFields(c);
-    //   return;
-    // }
-  }
-  return;
-
-
+  Plane p;
+  p.normal = c->polygon.normals[0];
+  p.d = dot(p.normal, c->polygon.vertices[0]);
 
   OBB obb = c->obj1->GetTransformedOBB();
-  vec3 obb_center = c->obj1->position + obb.center;
 
-  mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
-  mat3 from_world_space = inverse(to_world_space);
+  vec3 normal;
+  float height = resources_->GetHeightMap().GetTerrainHeight(
+    vec2(obb.center.x + c->obj1->position.x, 
+    obb.center.z + c->obj1->position.z), &normal);
 
-  Polygon polygon_in_obb_space = from_world_space * c->polygon;
-
-  AABB aabb_in_obb_space;
-  aabb_in_obb_space.point = from_world_space * obb_center - obb.half_widths;
-  aabb_in_obb_space.dimensions = obb.half_widths * 2.0f;
-
-  if (in_dungeon_) {
-    // TODO: Collide AABB plane.
-    float max_len = std::max(length(obb.axis[0]), std::max(length(obb.axis[1]), 
-      length(obb.axis[2])));
-    if ((obb_center.y - max_len) < kDungeonOffset.y) {
-      c->displacement_vector = vec3(0, kDungeonOffset.y - (obb_center.y - max_len), 0);
-      c->collided = true;
-      c->normal = vec3(0, 1, 0);
-      FillCollisionBlankFields(c);
-      return;
-    }
+  if (obb.center.y + c->obj1->position.y < height) {
+    c->obj1->position.y = height - obb.center.y + 0.1f;
+    c->obj1->speed.y = 0;
   }
-  if (c->polygon.vertices.empty()) return;
+  obb.center += c->obj1->position;
 
-  c->collided = TestTriangleAABB(polygon_in_obb_space, aabb_in_obb_space,
-      c->displacement_vector, c->point_of_contact);
-
-  if (obb_center.y < kWaterHeight) {
-    c->collided = true;
-    float h = 5.0f;
-    c->displacement_vector = vec3(
-      from_world_space * vec4(0, (h - (obb_center.y)), 0, 1));
-  }
+  c->collided = TestOBBPlane(obb, p, c->displacement_vector, 
+    c->point_of_contact);
 
   if (c->collided) {
-    c->displacement_vector = to_world_space * c->displacement_vector;
-    c->normal = c->polygon.normals[0];
-
-    const vec3 v = c->obj1->position - c->obj1->prev_position;
-    bool in_contact = false;
-    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, c->normal, v, in_contact, false);
-
-    if (in_contact) {
-      // TODO: in contact with terrain? Makes sense?
-      // c->obj1->in_contact_with = c->obj2;
-    }
-
-    FillCollisionBlankFields(c);
-  }
-
-  return;
-
-  BoundingSphere s = c->obj1->GetTransformedBoundingSphere();
-  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(s.center.x, s.center.z), &c->normal);
-  // c->collided = (s.center.y - s.radius < h);
-  c->collided = (s.center.y < h);
-  if (c->collided) {
-    vector<Polygon> polygons;
-    GetTerrainPolygons(resources_, vec2(s.center.x, s.center.z), polygons);
-
-    const vector<vec3>& v0 = polygons[0].vertices;
-    const vector<vec3>& v1 = polygons[1].vertices;
-    bool inside;
-
-    vec3 p1 = ClosestPtPointTriangle(s.center, v0[0], v0[1], v0[2], &inside);
-    vec3 p2 = ClosestPtPointTriangle(s.center, v1[0], v1[1], v1[2], &inside);
-
-    vec3 surface_normal;
-    if (length2(p1 - s.center) < length2(p2 - s.center)) {
-      c->displacement_vector = p1 - s.center;
-      c->point_of_contact = p1;
-      surface_normal = polygons[0].normals[0];
-    } else {
-      c->displacement_vector = p2 - s.center;
-      c->point_of_contact = p2;
-      surface_normal = polygons[1].normals[0];
-    }
-
-    const vec3 v = c->obj1->position - c->obj1->prev_position;
-    bool in_contact = false;
-    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, surface_normal, v, in_contact);
-
-    if (in_contact) {
-      // TODO: in contact with terrain? Makes sense?
-      // c->obj1->in_contact_with = c->obj2;
-    }
-
+    c->normal = p.normal;
     FillCollisionBlankFields(c);
   }
 }
@@ -1632,6 +1517,72 @@ void CollisionResolver::TestCollisionOA(shared_ptr<CollisionOA> c) {
       break;
     }
     t += step;
+  }
+}
+
+void CollisionResolver::TestCollisionOO(shared_ptr<CollisionOO> c) {
+  OBB obb1 = c->obj1->GetTransformedOBB();
+  obb1.center += c->obj1->position;
+  
+  OBB obb2 = c->obj2->GetTransformedOBB();
+  obb2.center += c->obj2->position;
+
+  c->collided = IntersectObbObb(obb1, obb2);
+  if (c->collided) {
+    bool invert = false;
+    ObjPtr small_obj = c->obj1;
+    ObjPtr big_obj = c->obj2;
+    if (c->obj1->GetBoundingSphere().radius > 
+      c->obj2->GetBoundingSphere().radius) {
+      small_obj = c->obj2;
+      big_obj = c->obj1;
+      invert = true;
+    }
+
+    OBB small_obb = small_obj->GetTransformedOBB();
+    small_obb.center += small_obj->position;
+
+    OBB big_obb = big_obj->GetTransformedOBB();
+    big_obb.center += big_obj->position;
+
+    Plane best_plane; 
+    float min_dist = 999999999.0f; 
+    for (int i = 0; i < 3; i++) {
+      Plane plane;
+      plane.normal = big_obb.axis[i];
+
+      vec3 p = big_obb.center + big_obb.axis[i] * big_obb.half_widths[i];
+      plane.d = dot(plane.normal, p);
+  
+      float dist = DistPointPlane(small_obb.center, plane);
+      if (dist < min_dist) {
+        best_plane.normal = plane.normal;
+        best_plane.d = plane.d;
+      }
+
+      plane.normal *= -1.0f;
+      p = big_obb.center - big_obb.axis[i] * big_obb.half_widths[i];
+      plane.d = dot(plane.normal, p);
+
+      dist = DistPointPlane(small_obb.center, plane);
+      if (dist < min_dist) {
+        best_plane.normal = plane.normal;
+        best_plane.d = plane.d;
+      }
+    }
+
+    c->collided = TestOBBPlane(small_obb, best_plane, c->displacement_vector, 
+      c->point_of_contact);
+
+    if (c->collided) {
+      c->normal = best_plane.normal;
+      if (invert) {
+        c->displacement_vector *= -1.0f;
+        c->normal  *= -1.0f;
+      }
+
+      FillCollisionBlankFields(c);
+    }
   }
 }
 
@@ -1675,8 +1626,24 @@ void CollisionResolver::TestCollision(ColPtr c) {
       TestCollisionOT(static_pointer_cast<CollisionOT>(c)); break;
     case CP_OA:
       TestCollisionOA(static_pointer_cast<CollisionOA>(c)); break;
+    case CP_OO:
+      TestCollisionOO(static_pointer_cast<CollisionOO>(c)); break;
     default: break;
   }
+}
+
+int CollisionResolver::CalculateMissileDamage(shared_ptr<Missile> missile) {
+  shared_ptr<GameAsset> asset = missile->GetAsset();
+  int dmg = ProcessDiceFormula(asset->damage);
+
+  cout << "Calculating damage: " << dmg << " with " << asset->name << endl;
+  if (asset->name == "magic_missile") {
+    auto spell = resources_->GetArcaneSpellData()[0];
+    dmg = dmg + spell->level * 100;
+    cout << "Calculating damage (2): " << dmg << endl;
+  }
+
+  return dmg;
 }
 
 void CollisionResolver::ResolveMissileCollision(ColPtr c) {
@@ -1769,10 +1736,8 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
           if (missile->hit_list.find(obj2->id) == missile->hit_list.end()) {
             missile->hit_list.insert(obj2->id);
 
-            shared_ptr<GameAsset> asset = missile->GetAsset();
-
-            cout << "Inflicting damage: " << DiceFormulaToStr(asset->damage) << endl;
-            obj2->DealDamage(missile->owner, ProcessDiceFormula(asset->damage), normal);
+            float damage = CalculateMissileDamage(missile);
+            obj2->DealDamage(missile->owner, damage, normal);
           }
 
           // resources_->CreateParticleEffect(10, position, normal * 1.0f, 
@@ -1904,20 +1869,99 @@ void CollisionResolver::ResolveParticleCollision(ColPtr c) {
   }
 }
 
-//  For every colliding pair. Resolve collision.
-//    To resolve collision. Apply equal force to both objects.
-// 
-//    Check material. 
-//      - If bouncy bounce off of surface
-//      - If rigid remove speed in object direction
-//      - If over and not very steep, cancel vector in the upwards direction.
-//      - If slippery and over reduce movement friction
-//      - If soft cancel height damage.
+void CollisionResolver::ApplyTorque(ColPtr c) {
+  switch (c->collision_pair) {
+    case CP_OT:
+    case CP_OP:
+    case CP_OO: {
+      ObjPtr displaced_obj = c->obj1;
+      OBB obb = displaced_obj->GetTransformedOBB();
+      obb.center += displaced_obj->position;
+  
+      vec3 new_torque = cross(obb.center - c->point_of_contact, c->displacement_vector);
+      displaced_obj->torque += cross(c->displacement_vector, obb.center - c->point_of_contact);
+      break;
+    }
+    default:
+      break;
+  } 
+}
 
-// TODO: use physics to resolve collision. Apply force when bounce, remove
-// speed when slide. When normal is steep, collide vertically. If both objects
-// are movable apply Newton's third law of motion (both objects are displaced,
-// according to their masses).
+void CollisionResolver::ApplyImpulse(ColPtr c) {
+  vec3 v = normalize(c->displacement_vector);
+  float k = dot(c->obj1->speed, v);
+  if (isnan(k)) return;
+
+  if (abs(k) > 5.0f) return;
+  c->obj1->speed += abs(k) * v;
+}
+
+void CollisionResolver::ResolveCollisionWithFixedObject(ColPtr c) {
+  if (IsNaN(c->displacement_vector)) return;
+
+  ObjPtr displaced_obj = c->obj1;
+  vec3 displacement_vector = c->displacement_vector;
+  vec3 normal = c->normal;
+  if (c->obj1->IsFixed()) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacement_vector = -c->displacement_vector;
+    normal = -c->normal;
+  }
+
+  displaced_obj->position += displacement_vector;
+  displaced_obj->target_position = displaced_obj->position;
+  if (dot(normal, vec3(0, 1, 0)) > 0.85) displaced_obj->can_jump = true;
+
+  resources_->UpdateObjectPosition(displaced_obj);
+}
+
+void CollisionResolver::ResolveDefaultCollision(ColPtr c) {
+  if (IsNaN(c->displacement_vector)) return;
+
+  if (!c->obj2) {
+    ResolveCollisionWithFixedObject(c);
+    return;
+  }
+
+  if (c->obj1->IsFixed() || c->obj2->IsFixed()) {
+    if (c->collision_pair == CP_OP) {
+      cout << "Just solved some stuff" << endl;
+    }
+    ResolveCollisionWithFixedObject(c);
+    return;
+  }
+
+  float mass1 = c->obj1->GetMass();
+  float mass2 = c->obj2->GetMass();
+  float total_mass = mass1 + mass2;
+
+  c->obj1->position += (mass1 / total_mass) * c->displacement_vector;
+  c->obj2->position += (mass2 / total_mass) * -c->displacement_vector;
+
+  if (dot(c->normal, vec3(0, 1, 0)) > 0.85) c->obj1->can_jump = true;
+  if (dot(-c->normal, vec3(0, 1, 0)) > 0.85) c->obj2->can_jump = true;
+
+  c->obj1->target_position = c->obj1->position;
+  resources_->UpdateObjectPosition(c->obj1);
+
+  c->obj2->target_position = c->obj2->position;
+  resources_->UpdateObjectPosition(c->obj2);
+
+  // Make objects turn up to normal.
+  // if (dot(normal, vec3(0, 1, 0)) > 0.6) {
+  //   if (displaced_obj->IsAsset("spider")) {
+  //     displaced_obj->up = normal;
+  //   }
+  // }
+
+  // Process collision events.
+  // if (obj2) {
+  //   resources_->ProcessOnCollisionEvent(obj1, obj2);
+  //   obj1->collisions.insert(obj2->name);
+  // }
+}
+
 void CollisionResolver::ResolveCollisions() {
   unordered_set<int> ids;
   while (!collisions_.empty()) {
@@ -1937,21 +1981,8 @@ void CollisionResolver::ResolveCollisions() {
       }
     }
 
-    if (obj1->GetPhysicsBehavior() != PHYSICS_FIXED) {
-      ids.insert(obj1->id);
-    }
-
-    if (obj2 && obj2->GetPhysicsBehavior() != PHYSICS_FIXED) {
-      ids.insert(obj2->id);
-    }
-
-
-
-
-
-    // Resolve.
-    const vec3& displacement_vector = c->displacement_vector;
-    vec3 normal = c->normal;
+    if (obj1->GetPhysicsBehavior() != PHYSICS_FIXED) ids.insert(obj1->id);
+    if (obj2 && obj2->GetPhysicsBehavior() != PHYSICS_FIXED) ids.insert(obj2->id);
 
     if (obj1->type == GAME_OBJ_MISSILE ||
         (obj2 && obj2->type == GAME_OBJ_MISSILE)) {
@@ -1964,68 +1995,10 @@ void CollisionResolver::ResolveCollisions() {
       continue;
     }
 
-    // TODO: replace all of these by collision events.
-    if (c->obj1->asset_group && c->obj1->GetAsset()->name == "dungeon_web_floor") {
-      if (c->collision_pair == CP_SB) {
-        if (c->obj2->IsPlayer()) {
-          c->obj2->AddTemporaryStatus(make_shared<SlowStatus>(0.5, 1.0f, 1));
-        }
-      }
-      continue;
-    }
+    ApplyTorque(c);
+    ApplyImpulse(c);
 
-    float magnitude2 = length2(displacement_vector);
-    if (magnitude2 < 0.0001f) {
-      continue;
-    }
-
-    if (IsNaN(displacement_vector)) continue;
-
-    if (obj2) {
-      resources_->ProcessOnCollisionEvent(obj1, obj2);
-      obj1->collisions.insert(obj2->name);
-    }
-
-    // ObjPtr displaced_obj = (!obj2 || obj1->GetMass() > obj2->GetMass()) ? obj1 : obj2;
-    ObjPtr displaced_obj = obj1;
-    if (displaced_obj->IsAsset("plank")) continue;
-
-    displaced_obj->position += displacement_vector;
-
-    if (dot(normal, vec3(0, 1, 0)) > 0.85) displaced_obj->can_jump = true;
-
-    vec3 v = normalize(displacement_vector);
-    float k = dot(displaced_obj->speed, v);
-    if (!isnan(k)) {
-      displaced_obj->speed += abs(k) * v;
-    }
-
-    if (dot(normal, vec3(0, 1, 0)) > 0.6) {
-      if (displaced_obj->IsAsset("spider")) {
-        displaced_obj->up = normal;
-      }
-    }
-
-    if (c->collision_pair == CP_OT) {
-      OBB obb = displaced_obj->GetTransformedOBB();
-      obb.center += displaced_obj->position;
-   
-      vec3 new_torque = cross(obb.center - c->point_of_contact, c->displacement_vector);
-      // if (length(new_torque) > 0.01f) {
-      //   displaced_obj->torque += cross(obb.center - c->point_of_contact, c->displacement_vector);
-      // }
-      displaced_obj->torque += cross(c->displacement_vector, obb.center - c->point_of_contact);
-    } 
-
-    displaced_obj->target_position = displaced_obj->position;
-    resources_->UpdateObjectPosition(displaced_obj);
-
-    // Fall damage.
-    // if (dot(normal, vec3(0, 1, 0)) > 0.6f) {
-    //   if (dot(obj1->speed, vec3(0, -1, 0)) > 50.0f * GRAVITY) {
-    //     obj1->life -= 10;
-    //   }
-    // }
+    ResolveDefaultCollision(c);
   }   
 }
 

@@ -1,9 +1,7 @@
 #version 330 core
 
 // Interpolated values from the vertex shaders.
-in vec4 clip_space;
 in vec2 UV;
-in vec4 particle_color;
 
 uniform sampler2D texture_sampler;
 uniform sampler2D depth_sampler;

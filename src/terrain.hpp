@@ -77,7 +77,7 @@ class Terrain {
 
   vector<shared_ptr<Clipmap>> clipmaps_;
   GLuint program_id_;
-  GLuint water_program_id_;
+  GLuint far_program_id_;
   GLuint vao_;
   GLuint subregion_buffers_[NUM_SUBREGIONS][2][2];
   GLuint subregion_uv_buffers_[NUM_SUBREGIONS][2][2];
@@ -92,8 +92,6 @@ class Terrain {
   GLuint texture5_;
   GLuint texture6_;
   GLuint texture7_;
-  GLuint water_texture_;
-  GLuint water_normal_texture_;
   GLuint shadow_textures_[3];
 
   vec3 clipping_point_ = vec3(0, 0, 0);
@@ -120,12 +118,11 @@ class Terrain {
   void UpdateLights(int level, vec3 player_pos);
 
  public:
-  Terrain(GLuint program_id, GLuint water_program_id);
+  Terrain(GLuint program_id, GLuint far_program_id);
 
   void UpdateClipmaps(vec3 player_pos);
   void Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
     mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, bool drawing_shadow, bool clip_against_plane = false);
-  void DrawWater(Camera& camera, mat4 ViewMatrix, vec3 player_pos);
   void Invalidate();
   void SetClippingPlane(const vec3& point, const vec3& normal) {
     clipping_point_ = point;

@@ -367,6 +367,29 @@ Camera PlayerInput::GetCamera() {
   return resources_->GetCamera();
 }
 
+bool PlayerInput::DecreaseCharges(int item_id) {
+  if (!resources_->InventoryHasItem(25)) {
+    return false;
+  }
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  int (&item_matrix)[10][5] = configs->item_matrix;
+  int (&item_quantities)[10][5] = configs->item_quantities;
+
+  ivec2 item_pos = resources_->GetInventoryItemPosition(item_id);
+
+  if (item_quantities[item_pos.x][item_pos.y] <= 0) {
+    item_matrix[item_pos.x][item_pos.y] = 0;
+    return false;
+  }
+
+  item_quantities[item_pos.x][item_pos.y]--;
+  if (item_quantities[item_pos.x][item_pos.y] <= 0) {
+    item_matrix[item_pos.x][item_pos.y] = 0;
+  }
+  return true;
+}
+
 bool PlayerInput::CastSpellOrUseItem() {
   shared_ptr<Player> player = resources_->GetPlayer();
   shared_ptr<Configs> configs = resources_->GetConfigs();
@@ -558,6 +581,8 @@ bool PlayerInput::CastSpellOrUseItem() {
       scepter->active_animation = "Armature|shoot_scepter";
       current_spell_ = resources_->GetArcaneSpellData()[0];
 
+      if (!DecreaseCharges(25)) return false;
+
       player->player_action = PLAYER_CASTING;
       obj->frame = 0;
       scepter->frame = 0;
@@ -635,6 +660,25 @@ bool PlayerInput::CastSpellOrUseItem() {
   return true;
 }
 
+void PlayerInput::ProcessPlayerDrawing() {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  obj->active_animation = "Armature|draw_scepter";
+  scepter->active_animation = "Armature|draw_scepter";
+
+  shared_ptr<Mesh> mesh = resources_->GetMesh(obj);
+  int num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
+  if (obj->frame >= num_frames-1) {
+    obj->frame = 0;
+    scepter->frame = 0;
+    obj->repeat_animation = true;
+    player->player_action = PLAYER_IDLE;
+  }
+}
+
 void PlayerInput::ProcessPlayerCasting() {
   shared_ptr<Player> player = resources_->GetPlayer();
   shared_ptr<Configs> configs = resources_->GetConfigs();
@@ -700,6 +744,18 @@ void PlayerInput::ProcessPlayerCasting() {
       }
     }
   }
+}
+
+void PlayerInput::StartDrawing() {
+  if (!resources_->IsHoldingScepter()) return;
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+  obj->frame = 0;
+  obj->repeat_animation = false;
+  scepter->frame = 0;
+
+  shared_ptr<Player> player = resources_->GetPlayer();
+  player->player_action = PLAYER_DRAWING;
 }
 
 Camera PlayerInput::ProcessInput(GLFWwindow* window) {
@@ -865,6 +921,10 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       ProcessPlayerCasting();
       break;
     }
+    case PLAYER_DRAWING: {
+      ProcessPlayerDrawing();
+      break;
+    }
     default: break;
   }
 
@@ -928,6 +988,64 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       obj->frame = 0;
       scepter->frame = 0;
       if (configs->selected_spell > 7) configs->selected_spell = 0;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_tile = 0;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 0;
+      configs->selected_tile = 1;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 1;
+      configs->selected_tile = 2;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 2;
+      configs->selected_tile = 3;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 3;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 4;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 5;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 6;
+      StartDrawing();
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_8) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      configs->selected_spell = 7;
+      StartDrawing();
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {

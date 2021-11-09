@@ -101,7 +101,11 @@ void GameObject::CalculateMonsterStats() {
   if (!asset_group) return;
 
   // Life.
-  max_life = ProcessDiceFormula(GetAsset()->base_life) * level;
+  max_life = ProcessDiceFormula(GetAsset()->base_life);
+  for (int i = 0; i < level; i++) {
+    max_life += ProcessDiceFormula(GetAsset()->base_life_upgrade);
+  }
+
   life = max_life;
 }
 
@@ -255,12 +259,11 @@ bool GameObject::IsItem() {
 
   if (!asset_group) return false;
   shared_ptr<GameAsset> asset = GetAsset();
-  return asset->type == ASSET_ITEM || type == GAME_OBJ_ACTIONABLE;
+  return asset->type == ASSET_ITEM || type == GAME_OBJ_ACTIONABLE || type == GAME_OBJ_DOOR;;
 }
 
 bool GameObject::IsPickableItem() {
-  if (!IsItem()) return false;
-  return item_id != -1;
+  return GetItemId() != -1;
 }
 
 bool GameObject::IsRotatingPlank() {
@@ -541,27 +544,32 @@ ObjPtr CreateGameObj(Resources* resources, const string& asset_name) {
 
   shared_ptr<GameAssetGroup> asset_group = 
     resources->GetAssetGroupByName(asset_name);
-  // if (asset_name == "line") {
-  //   shared_ptr<Particle> particle = make_shared<Particle>(resources);
-  //   particle->particle_type = resources->GetParticleTypeByName("string-attack");
-  //   obj = particle;
-  // } else 
-  if (asset_name == "door" || asset_name == "dungeon_door" || asset_name == "mausoleum_door" || asset_name == "bedroll") {
-    obj = make_shared<Door>(resources);
-  // TODO: change to extract from xml.
-  } else if (asset_name == "crystal" || asset_name == "metal-eye-dock" || asset_name == "chest") {
-    cout << "Create actionable: " << asset_name << endl;
-    obj = make_shared<Actionable>(resources);
-  } else if (asset_name == "line") {
-    shared_ptr<Particle> particle = make_shared<Particle>(resources);
-    particle->particle_type = resources->GetParticleTypeByName("string-attack");
-    obj = particle;
-    // obj->never_cull = true;
-  } else if (asset_group && asset_group->IsDestructible()) {
-    obj = make_shared<Destructible>(resources);
-  } else {
-    obj = make_shared<GameObject>(resources);
+  if (asset_group) {
+    switch (asset_group->assets[0]->type) {
+      case ASSET_DESTRUCTIBLE: {
+        obj = make_shared<Destructible>(resources);
+        break;
+      }
+      case ASSET_DOOR: {
+        obj = make_shared<Door>(resources);
+        break;
+      }
+      case ASSET_ACTIONABLE: {
+        obj = make_shared<Actionable>(resources);
+        break;
+      }
+      case ASSET_PARTICLE_3D: {
+        obj = make_shared<Particle>(resources);
+        break;
+      }
+      default: {
+        obj = make_shared<GameObject>(resources);
+        break;
+      }
+    }
   }
+
+  obj->created_at = glfwGetTime();
   return obj;
 }
 
@@ -1371,8 +1379,12 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
     frame = 0;
     
     if (attacker && attacker->IsPlayer()) {
-      cout << "Killed a unit, giving experience: " << GetAsset()->experience << endl;
-      resources_->GiveExperience(GetAsset()->experience);
+      int experience = GetAsset()->experience;
+      for (int i = 0; i < level; i++) {
+        experience += GetAsset()->experience_upgrade;
+      }
+
+      resources_->GiveExperience(experience);
     }
 
     // Drop.
@@ -1434,6 +1446,10 @@ void GameObject::MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal) {
   }
 
   float damage = ProcessDiceFormula(GetAsset()->base_attack);
+  for (int i = 0; i < obj->level; i++) {
+    damage += ProcessDiceFormula(GetAsset()->base_attack_upgrade);
+  }
+
   obj->DealDamage(shared_from_this(), damage, normal);
 }
 
@@ -1442,6 +1458,9 @@ void GameObject::RangedAttack(shared_ptr<GameObject> obj, vec3 normal) {
   if (!asset_group) {
   } else {
     damage = ProcessDiceFormula(GetAsset()->base_ranged_attack);
+    for (int i = 0; i < obj->level; i++) {
+      damage += ProcessDiceFormula(GetAsset()->base_attack_upgrade);
+    }
   }
   obj->DealDamage(shared_from_this(), damage, normal);
 }
@@ -1532,6 +1551,7 @@ void Destructible::Destroy() {
 }
 
 bool GameObject::GetRepeatAnimation() {
+  if (!repeat_animation) return repeat_animation;
   if (!asset_group) return true;
   return GetAsset()->repeat_animation;
 }
@@ -1539,4 +1559,8 @@ bool GameObject::GetRepeatAnimation() {
 bool GameObject::GetApplyTorque() {
   if (!asset_group) return true;
   return GetAsset()->apply_torque;
+}
+
+bool GameObject::IsFixed() {
+  return GetPhysicsBehavior() == PHYSICS_FIXED;
 }

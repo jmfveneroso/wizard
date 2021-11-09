@@ -39,8 +39,10 @@
 #define FIELD_OF_VIEW 45.0f
 // #define WINDOW_WIDTH 1280
 // #define WINDOW_HEIGHT 800
-#define WINDOW_WIDTH 960
-#define WINDOW_HEIGHT 600
+// #define WINDOW_WIDTH 960
+// #define WINDOW_HEIGHT 600
+#define WINDOW_WIDTH 1440
+#define WINDOW_HEIGHT 900
 #define LOD_DISTANCE 100.0f
 
 const int kMaxParticles = 1000;
@@ -80,6 +82,7 @@ struct Configs {
   float taking_hit = 0.0f; 
   float fading_out = -60.0f; 
   bool drifting_away = false;
+  bool dying = false;
   float time_of_day = 7.0f;
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
   bool disable_attacks = false;
@@ -177,7 +180,9 @@ struct Configs {
 
   // Player stats
   // ----------------------
-  int max_life = 10;
+  int max_life = 50;
+  int max_mana = 60;
+  int max_stamina = 100;
   int experience = 0;
   int level = 0;
   int skill_points = 5;
@@ -286,9 +291,11 @@ struct ArcaneSpellData {
   int index;
   int price;
   int max_stash;
+  int spell_level = 0;
   ivec2 spell_selection_pos;
   ivec2 spell_graph_pos;
   bool learned = false;
+  int level = 0;
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
@@ -426,34 +433,34 @@ class Resources {
 
   unordered_map<int, ItemData> item_data_ {
     { 0, { 0, "", "", "", "", 0, 0, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_USABLE, "health_potion", ivec2(1, 1) } },
-    { 4, { 4, "Skeleton Key", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_SCEPTER, "", ivec2(1, 1) } },
-    { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
-    { 18, { 18, "Earth Mana Crystal", "helmet-description", "earth_mana_crystal_icon", "earth_mana_crystal", 1, 1, true, ITEM_DEFAULT, "earth_mana_crystal", ivec2(1, 1) } },
-    { 19, { 19, "Fire Mana Crystal", "helmet-description", "fire_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "fire_mana_crystal", ivec2(1, 1) } },
-    { 20, { 20, "Water Mana Crystal", "helmet-description", "water_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "water_mana_crystal", ivec2(1, 1) } },
-    { 21, { 21, "Rock Mana Crystal", "rock_mana_description", "rock_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "rock_mana_crystal", ivec2(1, 1) } },
-    { 22, { 22, "Air Mana Crystal", "air_mana_description", "air_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "air_mana_crystal", ivec2(1, 1) } },
-    { 23, { 23, "Life Mana Crystal", "life_mana_description", "life_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "life_mana_crystal", ivec2(1, 1) } },
-    { 24, { 24, "Scroll", "life_mana_description", "scroll_icon", "scroll", 1, 1, true, ITEM_USABLE, "scroll", ivec2(2, 1) } },
-    { 25, { 25, "Scepter", "life_mana_description", "staff_icon", "scepter", 1, 1, true, ITEM_SCEPTER, "staff", ivec2(1, 4) } },
-    { 26, { 26, "Ring", "helmet-description", "ring_icon", "ring", 1, 1, true, ITEM_RING, "ring", ivec2(1, 1) } },
-    { 27, { 27, "Orb of Fire", "helmet-description", "orb_of_fire_icon", "orb", 1, 1, true, ITEM_ORB, "orb_of_fire", ivec2(2, 2) } },
-    { 28, { 28, "Armor", "helmet-description", "armor_icon", "armor", 1, 1, true, ITEM_ARMOR, "armor", ivec2(2, 3) } }
+    // { 1, { 1, "Magic Missile", "magic-missile-description", "blue_crystal_icon", "spell-crystal", 50, 100, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 2, { 2, "Iron Ingot", "iron-ingot-description", "ingot_icon", "iron-ingot", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 3, { 3, "Health potion", "health-potion-description", "health_potion_icon", "potion", 30, 1, true, ITEM_USABLE, "health_potion", ivec2(1, 1) } },
+    // { 4, { 4, "Skeleton Key", "minor-open-lock-description", "open_lock_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 5, { 5, "Rock fragment", "rock-fragment-description", "rock_fragment_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 6, { 6, "Burning Hands", "dispel-magic-description", "red_crystal_icon", "open-lock-crystal", 20, 200, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 7, { 7, "Harpoon", "harpoon-description", "harpoon_icon", "tiny-rock", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 8, { 8, "Fish", "fish-description", "fish_icon", "fish", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 9, { 9, "White Carp", "fish-description", "white_carp_icon", "white-carp", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 10, { 10, "Gold", "gold-description", "gold_icon", "gold", 10, 1000, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 11, { 11, "Heal", "heal-description", "purple_crystal_icon", "purple-crystal", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 12, { 12, "Darkvision", "darkvision-description", "green_crystal_icon", "green-crystal", 10, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 13, { 13, "Blue Crystal", "blue-description", "blue_crystal_icon", "blue-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 14, { 14, "Red Crystal", "red-description", "red_crystal_icon", "red-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 15, { 15, "Yellow Crystal", "yellow-description", "yellow_crystal_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 16, { 16, "Staff", "staff-description", "staff_icon", "staff", 1, 1, true, ITEM_SCEPTER, "", ivec2(1, 1) } },
+    // { 17, { 17, "Helmet", "helmet-description", "helmet_icon", "yellow-crystal", 1, 1, true, ITEM_DEFAULT, "", ivec2(1, 1) } },
+    // { 18, { 18, "Earth Mana Crystal", "helmet-description", "earth_mana_crystal_icon", "earth_mana_crystal", 1, 1, true, ITEM_DEFAULT, "earth_mana_crystal", ivec2(1, 1) } },
+    // { 19, { 19, "Fire Mana Crystal", "helmet-description", "fire_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "fire_mana_crystal", ivec2(1, 1) } },
+    // { 20, { 20, "Water Mana Crystal", "helmet-description", "water_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "water_mana_crystal", ivec2(1, 1) } },
+    // { 21, { 21, "Rock Mana Crystal", "rock_mana_description", "rock_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "rock_mana_crystal", ivec2(1, 1) } },
+    // { 22, { 22, "Air Mana Crystal", "air_mana_description", "air_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "air_mana_crystal", ivec2(1, 1) } },
+    // { 23, { 23, "Life Mana Crystal", "life_mana_description", "life_mana_crystal_icon", "true_seeing_gem", 1, 1, true, ITEM_DEFAULT, "life_mana_crystal", ivec2(1, 1) } },
+    // { 24, { 24, "Scroll", "life_mana_description", "scroll_icon", "scroll", 1, 1, true, ITEM_USABLE, "scroll", ivec2(2, 1) } },
+    // { 25, { 25, "Scepter", "life_mana_description", "staff_icon", "scepter", 1, 1, true, ITEM_SCEPTER, "staff", ivec2(1, 4) } },
+    // { 26, { 26, "Ring", "helmet-description", "ring_icon", "ring", 1, 1, true, ITEM_RING, "ring", ivec2(1, 1) } },
+    // { 27, { 27, "Orb of Fire", "helmet-description", "orb_of_fire_icon", "orb", 1, 1, true, ITEM_ORB, "orb_of_fire", ivec2(2, 2) } },
+    // { 28, { 28, "Armor", "helmet-description", "armor_icon", "armor", 1, 1, true, ITEM_ARMOR, "armor", ivec2(2, 3) } }
   };
 
   unordered_map<int, EquipmentData> equipment_data_ {
@@ -462,11 +469,12 @@ class Resources {
     { 28, { 28, DiceFormula(), 1 } }
   };
 
-  vector<shared_ptr<ArcaneSpellData>> arcane_spell_data_;
+  unordered_map<int, shared_ptr<ArcaneSpellData>> arcane_spell_data_;
   unordered_map<int, int> complex_to_spell_id_;
   unordered_map<int, int> layered_to_spell_id_;
   unordered_map<int, int> white_to_spell_id_;
   unordered_map<int, int> black_to_spell_id_;
+  unordered_map<int, shared_ptr<ArcaneSpellData>> item_id_to_spell_data_;
 
   // Aux loading functions.
   shared_ptr<GameObject> LoadGameObject(const pugi::xml_node& game_obj);
@@ -485,6 +493,8 @@ class Resources {
   void LoadObjects(const string& directory);
   void LoadPortals(const string& xml_filename);
   void LoadSectors(const string& xml_filename);
+  void LoadItem(const pugi::xml_node& item_xml);
+  void LoadSpell(const pugi::xml_node& spell_xml);
 
   void CreateOutsideSector();
   void Init();
@@ -520,6 +530,7 @@ class Resources {
   void CalculateArcaneSpells();
   void CreateRandomMonster(const vec3& pos);
   void ProcessDriftAwayEvent();
+  void ProcessPlayerDeathEvent();
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir, 
@@ -577,7 +588,7 @@ class Resources {
   string GetString(string name);
   unordered_map<int, ItemData>& GetItemData();
   unordered_map<int, EquipmentData>& GetEquipmentData();
-  vector<shared_ptr<ArcaneSpellData>>& GetArcaneSpellData();
+  unordered_map<int, shared_ptr<ArcaneSpellData>>& GetArcaneSpellData();
   double GetDeltaTime() { return delta_time_; }
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
   unordered_map<string, shared_ptr<Npc>>& GetNpcs() { return npcs_; }
@@ -750,6 +761,7 @@ class Resources {
   bool InventoryHasItem(const int item_id);
   void RemoveItemFromInventory(const ivec2& pos);
   Camera GetCamera();
+  void RestartGame();
 };
 
 #endif // __RESOURCES_HPP__

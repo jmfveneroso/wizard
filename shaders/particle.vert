@@ -7,9 +7,7 @@ layout(location = 2) in vec4 color;
 layout(location = 3) in vec2 uv;
 
 // Output data ; will be interpolated for each fragment.
-out vec4 clip_space;
 out vec2 UV;
-out vec4 particle_color;
 
 // Values that stay constant for the whole mesh.
 uniform vec3 camera_right_worldspace;
@@ -28,7 +26,7 @@ void main() {
     + camera_right_worldspace * square_vertices.x * particle_size
     + camera_up_worldspace * square_vertices.y * particle_size;
   
-  clip_space = VP * vec4(vertex_pos_worldspace, 1.0f);
+  vec4 clip_space = VP * vec4(vertex_pos_worldspace, 1.0f);
 
   if (is_fixed > 0) {
     clip_space = vec4(xyzs.xyz, 1.0f) + 
@@ -39,6 +37,4 @@ void main() {
   gl_Position = clip_space;
 
   UV = uv + square_vertices.xy * tile_size;
-  
-  particle_color = color;
 }

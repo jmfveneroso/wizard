@@ -47,6 +47,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   float distance;
   float scale = 1.0f;
   float animation_speed = 1.0f;
+  float created_at = 0;
 
   // TODO: remove.
   bool draw = true;
@@ -170,6 +171,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsCreatureCollider();
   AssetType GetType();
   int GetItemId();
+  bool IsFixed();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -196,6 +198,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   ConvexHull collision_hull; // TODO: should be removed.
 
   bool invisibility = false;
+  bool repeat_animation = true;
 
   BoundingSphere GetBoundingSphere();
   AABB GetAABB();

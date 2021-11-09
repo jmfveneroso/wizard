@@ -41,6 +41,8 @@ enum AssetType {
   ASSET_CREATURE,
   ASSET_ITEM,
   ASSET_PLATFORM,
+  ASSET_DOOR,
+  ASSET_ACTIONABLE,
   ASSET_DESTRUCTIBLE,
   ASSET_PARTICLE_3D,
   ASSET_MISSILE,
@@ -133,7 +135,7 @@ enum AiState {
 enum PlayerAction {
   PLAYER_IDLE,
   PLAYER_CASTING,
-  PLAYER_EXTRACTING,
+  PLAYER_DRAWING,
 };
 
 enum ActionType {
@@ -515,17 +517,28 @@ string AssetTypeToStr(const AssetType& type);
 
 AssetType StrToAssetType(const string& s);
 
+string ItemTypeToStr(const ItemType& type);
+
+ItemType StrToItemType(const string& s);
+
 BoundingSphere GetBoundingSphereFromVertices(
   const vector<vec3>& vertices);
 
 BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons);
 
+ivec2 LoadIVec2FromXml(const pugi::xml_node& node);
 vec3 LoadVec3FromXml(const pugi::xml_node& node);
 vec4 LoadVec4FromXml(const pugi::xml_node& node);
 string LoadStringFromXml(const pugi::xml_node& node);
 
+int LoadIntFromXml(const pugi::xml_node& node);
 float LoadFloatFromXml(const pugi::xml_node& node);
 bool LoadBoolFromXml(const pugi::xml_node& node);
+
+int LoadIntFromXmlOr(const pugi::xml_node& node, const string& name, int def);
+float LoadFloatFromXmlOr(const pugi::xml_node& node, const string& name, float def);
+bool LoadBoolFromXmlOr(const pugi::xml_node& node, const string& name, bool def);
+string LoadStringFromXmlOr(const pugi::xml_node& node, const string& name, const string& def);
 
 mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
   int bone_id, int frame);

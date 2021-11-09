@@ -54,6 +54,12 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     return;
   }
 
+  // Stabilize items after a few seconds.
+  if (obj->IsItem() && glfwGetTime() > obj->created_at + 10) {
+    obj->physics_behavior = PHYSICS_FIXED;
+    return;
+  }
+
   // Gravity.
   if (obj->name == "player" && configs->levitate) {
     obj->can_jump = true;

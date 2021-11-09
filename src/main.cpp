@@ -48,12 +48,12 @@ void InitOpenGl() {
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); 
 
   // Fullscreen.
-  // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
-  //   glfwGetPrimaryMonitor(), NULL);
+  window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
+    glfwGetPrimaryMonitor(), NULL);
 
   // Windowed.
-  window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
-    NULL, NULL);
+  // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
+  //   NULL, NULL);
 
   if (window_ == NULL) {
     glfwTerminate();

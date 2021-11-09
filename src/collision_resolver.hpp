@@ -203,6 +203,12 @@ struct CollisionOP : Collision {
     : Collision(CP_OP, o1, o2), polygon(polygon) {}
 };
 
+struct CollisionOO : Collision {
+  CollisionOO() {}
+  CollisionOO(ObjPtr o1, ObjPtr o2)
+    : Collision(CP_OO, o1, o2) {}
+};
+
 struct CollisionOT : Collision {
   Polygon polygon;
   CollisionOT() {}
@@ -269,6 +275,7 @@ class CollisionResolver {
   void TestCollisionOP(shared_ptr<CollisionOP> c);
   void TestCollisionOT(shared_ptr<CollisionOT> c);
   void TestCollisionOA(shared_ptr<CollisionOA> c);
+  void TestCollisionOO(shared_ptr<CollisionOO> c);
   void TestCollision(ColPtr c);
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);
@@ -288,6 +295,11 @@ class CollisionResolver {
   void FindCollisionsAsync();
   void ProcessTentativePairAsync();
   void CreateThreads();
+  void ApplyTorque(ColPtr c);
+  void ApplyImpulse(ColPtr c);
+  void ResolveCollisionWithFixedObject(ColPtr c);
+  void ResolveDefaultCollision(ColPtr c);
+  int CalculateMissileDamage(shared_ptr<Missile> missile);
 
  public:
   CollisionResolver(shared_ptr<Resources> asset_catalog);

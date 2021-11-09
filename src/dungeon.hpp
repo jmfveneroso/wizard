@@ -43,6 +43,7 @@ struct LevelData {
   vector<string> minisets;
   vector<int> theme_rooms;
 
+  LevelData() {}
   LevelData(
     int dungeon_area,
     int num_monsters,
@@ -184,15 +185,17 @@ class Dungeon {
     },
   };
 
-  const LevelData kLevelData[7] {
-    { 760,  30, 5, 2, { 62, 62, 62 , 65                        }, { 70, 70, 70, 72, 74     }, {                 }, { 1, 1 }, 42, 3 },            // Level 0.
-    { 760,  40, 8, 2, { 62, 75, 75, 65, 65, 73, 73             }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 0, 1, 1, 2, 3, 3 }, 56, 4 },   // Level 1.
-    { 840,  40, 8, 2, { 62, 75, 65, 73, 69                     }, { 70, 72, 74, 74, 78, 78 }, { "LARACNA"       }, { 0, 1, 1, 3, 3 }, 56, 4 },      // Level 2.
-    { 840,  40, 8, 2, { 62, 75, 65, 73, 69, 83, 83, 71, 89, 89 }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 5 }, 56, 4 },                  // Level 3.
-    { 840,  20, 0, 0, { 62, 62, 62, 65, 73, 73, 73, 91         }, { 88                     }, { "MINIBOSS_ROOM", "WORM_KING" }, { }, 56, 4 },       // Level 4.
-    { 840,  20, 1, 1,                                     { 95, 97 }, { 88 },                     { "MINIBOSS_ROOM" },              { 6 }, 56, 4 }, // Level 5.
-    { 1200, 5, 0, 0,                                     { 62 }, { },                     { },              { 6 }, 56, 4 }, // Level 6.
-  };
+  unordered_map<int, LevelData> level_data_;
+
+  // const LevelData kLevelData[7] {
+  //   { 760,  30, 5, 2, { 62, 62, 62 , 65                        }, { 70, 70, 70, 72, 72     }, {                 }, { 1, 1 }, 42, 3 },            // Level 0.
+  //   { 760,  40, 8, 2, { 62, 75, 75, 65, 65, 73, 73             }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 0, 1, 1, 2, 3, 3 }, 56, 4 },   // Level 1.
+  //   { 840,  40, 8, 2, { 62, 75, 65, 73, 69                     }, { 70, 72, 74, 74, 78, 78 }, { "LARACNA"       }, { 0, 1, 1, 3, 3 }, 56, 4 },      // Level 2.
+  //   { 840,  40, 8, 2, { 62, 75, 65, 73, 69, 83, 83, 71, 89, 89 }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 5 }, 56, 4 },                  // Level 3.
+  //   { 840,  20, 0, 0, { 62, 62, 62, 65, 73, 73, 73, 91         }, { 88                     }, { "MINIBOSS_ROOM", "WORM_KING" }, { }, 56, 4 },       // Level 4.
+  //   { 840,  20, 1, 1,                                     { 95, 97 }, { 88 },                     { "MINIBOSS_ROOM" },              { 6 }, 56, 4 }, // Level 5.
+  //   { 1200, 5, 0, 0,                                     { 62 }, { },                     { },              { 6 }, 56, 4 }, // Level 6.
+  // };
 
   vector<ivec2> code_to_offset_ {
     ivec2(+1, +1), ivec2(+0, +1), ivec2(-1, +1), 
@@ -307,6 +310,10 @@ class Dungeon {
   int GetRoom(const ivec2& tile);
   bool IsChamber(int x, int y);
   bool IsRayObstructed(vec3 start, vec3 end);
+  void SetLevelData(const LevelData& level_data);
+
+  unordered_map<int, LevelData>& GetLevelData() { return level_data_; }
+  void LoadLevelDataFromXml(const string& filename);
 };
 
 #endif // __DUNGEON_HPP__

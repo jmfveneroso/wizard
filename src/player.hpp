@@ -34,6 +34,9 @@ class PlayerInput {
   void EditObject(GLFWwindow* window, const Camera& c);
   bool CastSpellOrUseItem();
   void ProcessPlayerCasting();
+  void ProcessPlayerDrawing();
+  void StartDrawing();
+  bool DecreaseCharges(int item_id);
 
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 

@@ -1010,6 +1010,13 @@ BoundingSphere GetAssetBoundingSphere(const vector<Polygon>& polygons) {
   return GetBoundingSphereFromVertices(vertices);
 }
 
+ivec2 LoadIVec2FromXml(const pugi::xml_node& node) {
+  ivec2 v;
+  v.x = boost::lexical_cast<int>(node.attribute("x").value());
+  v.y = boost::lexical_cast<int>(node.attribute("y").value());
+  return v;
+}
+
 vec3 LoadVec3FromXml(const pugi::xml_node& node) {
   vec3 v;
   v.x = boost::lexical_cast<float>(node.attribute("x").value());
@@ -1027,6 +1034,10 @@ vec4 LoadVec4FromXml(const pugi::xml_node& node) {
   return v;
 }
 
+int LoadIntFromXml(const pugi::xml_node& node) {
+  return boost::lexical_cast<int>(node.text().get());
+}
+
 float LoadFloatFromXml(const pugi::xml_node& node) {
   return boost::lexical_cast<float>(node.text().get());
 }
@@ -1037,6 +1048,30 @@ bool LoadBoolFromXml(const pugi::xml_node& node) {
 
 string LoadStringFromXml(const pugi::xml_node& node) {
   return node.text().get();
+}
+
+int LoadIntFromXmlOr(const pugi::xml_node& node, const string& name, int def) {
+  const pugi::xml_node& n = node.child(name.c_str());
+  if (!n) return def;
+  return boost::lexical_cast<int>(n.text().get());
+}
+
+float LoadFloatFromXmlOr(const pugi::xml_node& node, const string& name, float def) {
+  const pugi::xml_node& n = node.child(name.c_str());
+  if (!n) return def;
+  return boost::lexical_cast<float>(n.text().get());
+}
+
+bool LoadBoolFromXmlOr(const pugi::xml_node& node, const string& name, bool def) {
+  const pugi::xml_node& n = node.child(name.c_str());
+  if (!n) return def;
+  return boost::lexical_cast<bool>(n.text().get());
+}
+
+string LoadStringFromXmlOr(const pugi::xml_node& node, const string& name, const string& def) {
+  const pugi::xml_node& n = node.child(name.c_str());
+  if (!n) return def;
+  return n.text().get();
 }
 
 mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
@@ -1319,12 +1354,38 @@ string ActionTypeToStr(const ActionType& type) {
   return action_type_to_str[type];
 }
 
+string ItemTypeToStr(const ItemType& type) {
+  static unordered_map<ItemType, string> item_type_to_str ({
+    { ITEM_DEFAULT, "default" }, 
+    { ITEM_ARMOR, "armor" },
+    { ITEM_RING, "ring" },
+    { ITEM_ORB, "orb" },
+    { ITEM_USABLE, "usable" },
+    { ITEM_SCEPTER, "scepter" },
+  });
+  return item_type_to_str[type];
+}
+
+ItemType StrToItemType(const string& s) {
+  static unordered_map<string, ItemType> str_to_item_type ({
+    { "default", ITEM_DEFAULT },
+    { "armor", ITEM_ARMOR },
+    { "ring", ITEM_RING },
+    { "orb", ITEM_ORB },
+    { "usable", ITEM_USABLE },
+    { "scepter", ITEM_SCEPTER },
+  });
+  return str_to_item_type[s];
+}
+
 string AssetTypeToStr(const AssetType& type) {
   static unordered_map<AssetType, string> asset_type_to_str ({
     { ASSET_DEFAULT, "default" }, 
     { ASSET_CREATURE, "creature" },
     { ASSET_ITEM, "item" },
     { ASSET_PLATFORM, "platform" },
+    { ASSET_ACTIONABLE, "actionable" },
+    { ASSET_DOOR, "door" },
     { ASSET_DESTRUCTIBLE, "destructible" },
     { ASSET_PARTICLE_3D, "3d_particle" },
     { ASSET_NONE, "none" }
@@ -1339,6 +1400,8 @@ AssetType StrToAssetType(const string& s) {
     { "item", ASSET_ITEM },
     { "platform", ASSET_PLATFORM },
     { "destructible", ASSET_DESTRUCTIBLE },
+    { "actionable", ASSET_ACTIONABLE },
+    { "door", ASSET_DOOR },
     { "3d_particle", ASSET_PARTICLE_3D },
     { "none", ASSET_NONE }
   });

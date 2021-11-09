@@ -130,8 +130,8 @@ ivec2 BufferToGridCoordinates(ivec2 p, unsigned int level, ivec2 hb_top_left,
   return top_left + toroidal_coords * GetTileSize(level);
 }
 
-Terrain::Terrain(GLuint program_id, GLuint water_program_id) 
-  : program_id_(program_id), water_program_id_(water_program_id) {
+Terrain::Terrain(GLuint program_id, GLuint far_program_id) 
+  : program_id_(program_id), far_program_id_(far_program_id) {
   glm::vec3 vertices[(CLIPMAP_SIZE+1) * (CLIPMAP_SIZE+1)];
   glGenBuffers(1, &vertex_buffer_);
   for (int z = 0; z <= CLIPMAP_SIZE; z++) {
@@ -148,29 +148,17 @@ Terrain::Terrain(GLuint program_id, GLuint water_program_id)
   glGenVertexArrays(1, &vao_);
   glBindVertexArray(vao_);
 
-  // texture_ = LoadTexture("resources/textures_png/grass.png");
-  // texture1_ = LoadTexture("resources/textures_png/dirt.png");
-  // texture2_ = LoadTexture("resources/textures_png/gravel.png");
-  // texture3_ = LoadTexture("resources/textures_png/mossy_stone.png");
-  // texture4_ = LoadTexture("resources/textures_png/leaves.png");
+  texture_ = LoadTexture("resources/textures_tga/grass_diffuse.tga");
+  texture4_ = LoadTexture("resources/textures_tga/grass_normal.tga");
 
-  texture_ = LoadTexture("resources/textures_png/grass_diffuse.png");
-  texture4_ = LoadTexture("resources/textures_png/grass_normal.png");
+  texture1_ = LoadTexture("resources/textures_tga/dirt_diffuse.tga");
+  texture5_ = LoadTexture("resources/textures_tga/dirt_normal.tga");
 
-  texture1_ = LoadTexture("resources/textures_png/dirt_diffuse.png");
-  texture5_ = LoadTexture("resources/textures_png/dirt_normal.png");
+  texture2_ = LoadTexture("resources/textures_tga/gravel_diffuse.tga");
+  texture6_ = LoadTexture("resources/textures_tga/gravel_normal.tga");
 
-  texture2_ = LoadTexture("resources/textures_png/gravel_diffuse.png");
-  texture6_ = LoadTexture("resources/textures_png/gravel_normal.png");
-
-  texture3_ = LoadTexture("resources/textures_png/cliff_rock_diffuse.png");
-  texture7_ = LoadTexture("resources/textures_png/cliff_rock_normal.png");
-
-  water_texture_ = LoadTexture("resources/textures_png/water_dudv.png");
-  water_normal_texture_ = LoadTexture("resources/textures_png/water_normal.png");
-  // texture_ = resources_->GetTextureByName("tiles");
-  // water_texture_ = resources_->GetTextureByName("water_dudv");
-  // water_normal_texture_ = resources_->GetTextureByName("water_normal");
+  texture3_ = LoadTexture("resources/textures_tga/cliff_rock_diffuse.tga");
+  texture7_ = LoadTexture("resources/textures_tga/cliff_rock_normal.tga");
 
   for (int i = 0; i < CLIPMAP_LEVELS; i++) {
     clipmaps_.push_back(make_shared<Clipmap>(i));
@@ -578,116 +566,6 @@ vec3 GetLightColor(vec3 sun_position) {
   return color;
 }
 
-void Terrain::DrawWater(Camera& camera, mat4 ViewMatrix, 
-  vec3 player_pos) {
-  static float move_factor = 0.0f;
-  move_factor += 0.0005f;
-
-  glBindVertexArray(vao_);
-  glUseProgram(water_program_id_);
-
-  vec3 normal;
-  float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
-  int last_visible_index = CLIPMAP_LEVELS-1;
-  const int kFirstIndex = 2;
-  for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
-    if (clipmaps_[i]->invalid) break;
-    int clipmap_size = (CLIPMAP_SIZE + 1) * TILE_SIZE * GetTileSize(i + 1);
-    if (2.5 * h > clipmap_size) break;
-    last_visible_index = i;
-  }
-
-  float delta_h = camera.position.y - h;
-  if (delta_h <= 500.0f) {
-    delta_h = 0;
-  }
-  mat4 ProjectionMatrix = glm::perspective(glm::radians(FIELD_OF_VIEW), 
-    4.0f / 3.0f, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
-
-  glUniform1f(GetUniformId(water_program_id_, "MAX_HEIGHT"), MAX_HEIGHT);
-  glUniform1i(GetUniformId(water_program_id_, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
-  glUniformMatrix4fv(GetUniformId(water_program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
-
-  shared_ptr<Configs> configs = resources_->GetConfigs();
-  vec3 light_position_worldspace = configs->sun_position * 1000.0f;
-  glUniform3fv(GetUniformId(water_program_id_, "light_position_worldspace"), 1,
-    (float*) &light_position_worldspace);
-
-  glUniform3fv(GetUniformId(water_program_id_, "sun_position"), 1,
-    (float*) &configs->sun_position);
-
-  vec3 light_color = GetLightColor(configs->sun_position);
-  glUniform3fv(GetUniformId(water_program_id_, "light_color"), 1,
-    (float*) &light_color);
-
-  for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
-    if (i < last_visible_index) break;
-
-    // int level = CLIPMAP_LEVELS - 1;
-    int level = i;
-    shared_ptr<Clipmap> clipmap = clipmaps_[level];
-
-    glUniform3fv(GetUniformId(water_program_id_, "camera_position"), 1, (float*) &player_pos);
-    BindBuffer(vertex_buffer_, 0, 3);
-
-    const glm::ivec2& top_left = clipmap->clipmap_top_left;
-    mat4 ModelMatrix = glm::translate(glm::mat4(1.0), glm::vec3(top_left.x * TILE_SIZE, 0, top_left.y * TILE_SIZE));
-    mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
-    mat3 ModelView3x3Matrix = glm::mat3(ModelViewMatrix);
-    mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-    glUniformMatrix4fv(GetUniformId(water_program_id_, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-    glUniformMatrix4fv(GetUniformId(water_program_id_, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
-    glUniformMatrix3fv(GetUniformId(water_program_id_, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
-
-    glUniform1i(GetUniformId(water_program_id_, "TILE_SIZE"), TILE_SIZE * GetTileSize(i + 1));
-    glUniform2iv(GetUniformId(water_program_id_, "buffer_top_left"), 1, (int*) &clipmaps_[i]->top_left);
-    glUniform1f(GetUniformId(water_program_id_, "move_factor"), move_factor);
-
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_RECTANGLE, clipmaps_[i]->height_texture);
-    glUniform1i(GetUniformId(water_program_id_, "height_sampler"), 0);
-
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, water_texture_);
-    glUniform1i(GetUniformId(water_program_id_, "dudv_map"), 1);
-
-    glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, water_normal_texture_);
-    glUniform1i(GetUniformId(water_program_id_, "normal_map"), 2);
-
-    ivec2 offset = ivec2(0, 0);
-    ivec2 grid_coords = WorldToGridCoordinates(player_pos);
-    int tile_size = GetTileSize(i + 1);
-    offset = ClampGridCoordinates(grid_coords, tile_size >> 1);
-    offset -= ClampGridCoordinates(grid_coords, tile_size);
-    offset /= GetTileSize(i + 1);
-
-    for (int region = 0 ; region < NUM_SUBREGIONS; region++) {
-      if (i != last_visible_index && region == 0) continue;
-
-      mat4 ModelMatrix = translate(mat4(1.0), player_pos);
-      mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
-      mat3 ModelView3x3Matrix = mat3(ModelViewMatrix);
-      mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-      // if (clipmap->min_height > 5) {
-      //   continue;
-      // }
-
-      // if (FrustumCullSubregion(clipmap, region, ivec2(0, 0), MVP, player_pos)) {
-      //   continue;
-      // }
-      int x = offset.x; int y = offset.y;
-      BindBuffer(subregion_uv_buffers_[region][x][y], 1, 2);
-
-      glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
-      glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 
-        GL_UNSIGNED_INT, (void*) 0);
-    }
-  }
-
-  glBindVertexArray(0);
-}
-
 mat4 Terrain::GetShadowMatrix(bool bias) {
   mat4 projection_matrix = ortho<float>(-200, 200, -200, 200, -10, 500);
 
@@ -718,43 +596,6 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, 
   bool drawing_shadow, bool clip_against_plane) {
   glBindVertexArray(vao_);
-  glUseProgram(program_id_);
-  glDisable(GL_BLEND);
-  // glEnable(GL_CULL_FACE);
-  // glEnable(GL_STENCIL_TEST);
-
-  // Remove this PURE_TILE_SIZE / TILE_SIZE mess.
-  // These uniforms can probably be bound with the VAO.
-  glUniform1i(GetUniformId(program_id_, "PURE_TILE_SIZE"), TILE_SIZE);
-  glUniform1i(GetUniformId(program_id_, "TILES_PER_TEXTURE"), TILES_PER_TEXTURE);
-  glUniform1i(GetUniformId(program_id_, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
-  glUniform1f(GetUniformId(program_id_, "MAX_HEIGHT"), MAX_HEIGHT);
-  glUniform3fv(GetUniformId(program_id_, "player_pos"), 1, (float*) &player_pos);
-  glUniformMatrix4fv(GetUniformId(program_id_, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
-  BindBuffer(vertex_buffer_, 0, 3);
-
-  shared_ptr<Configs> configs = resources_->GetConfigs();
-  int show_grid = -1;
-  if (configs->edit_terrain != "none" || 
-    resources_->GetGameState() == STATE_BUILD) {
-    show_grid = 1;
-  }
-
-  // Set clipping plane.
-  glUniform1i(GetUniformId(program_id_, "clip_against_plane"), 
-    (int) clip_against_plane);
-  glUniform1i(GetUniformId(program_id_, "show_grid"), 
-    (int) show_grid);
-  glUniform3fv(GetUniformId(program_id_, "clipping_point"), 1, 
-    (float*) &clipping_point_);
-  glUniform3fv(GetUniformId(program_id_, "clipping_normal"), 1, 
-    (float*) &clipping_normal_);
-
-  glUniform3fv(GetUniformId(program_id_, "light_direction"), 1,
-    (float*) &configs->sun_position);
-
-  glUniform3fv(GetUniformId(program_id_, "camera_position"), 1, 
-    (float*) &player_pos);
 
   vec3 normal;
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
@@ -768,11 +609,6 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     last_visible_index = i;
   }
 
-  GLuint program_id = program_id_;
-  if (drawing_shadow) {
-    program_id = resources_->GetShader("terrain_shadow");
-  }
-
   float delta_h = camera.position.y - h;
   if (delta_h <= 500.0f) {
     delta_h = 0;
@@ -781,9 +617,52 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   mat4 ProjectionMatrix = glm::perspective(glm::radians(FIELD_OF_VIEW), 
     4.0f / 3.0f, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
 
+
   // TODO: don't create buffers for clipmaps that won't be used.
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
     if (i < last_visible_index) break;
+
+  GLuint program_id = program_id_;
+  if (i > 4) {
+    program_id = far_program_id_;
+  }
+
+  {
+    glUseProgram(program_id);
+    glDisable(GL_BLEND);
+
+    // These uniforms can probably be bound with the VAO.
+    glUniform1i(GetUniformId(program_id, "PURE_TILE_SIZE"), TILE_SIZE);
+    glUniform1i(GetUniformId(program_id, "TILES_PER_TEXTURE"), TILES_PER_TEXTURE);
+    glUniform1i(GetUniformId(program_id, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
+    glUniform1f(GetUniformId(program_id, "MAX_HEIGHT"), MAX_HEIGHT);
+    glUniform3fv(GetUniformId(program_id, "player_pos"), 1, (float*) &player_pos);
+    glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
+    BindBuffer(vertex_buffer_, 0, 3);
+
+    shared_ptr<Configs> configs = resources_->GetConfigs();
+    int show_grid = -1;
+    if (configs->edit_terrain != "none" || 
+      resources_->GetGameState() == STATE_BUILD) {
+      show_grid = 1;
+    }
+
+    // Set clipping plane.
+    glUniform1i(GetUniformId(program_id, "clip_against_plane"), 
+      (int) clip_against_plane);
+    glUniform1i(GetUniformId(program_id, "show_grid"), 
+      (int) show_grid);
+    glUniform3fv(GetUniformId(program_id, "clipping_point"), 1, 
+      (float*) &clipping_point_);
+    glUniform3fv(GetUniformId(program_id, "clipping_normal"), 1, 
+      (float*) &clipping_normal_);
+
+    glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
+      (float*) &configs->sun_position);
+
+    glUniform3fv(GetUniformId(program_id, "camera_position"), 1, 
+      (float*) &player_pos);
+  }
 
     // Uncomment to only draw shadows in the last clipmap.
     // glUniform1i(GetUniformId(program_id_, "draw_shadows"), 
@@ -916,8 +795,6 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   }
 
   glBindVertexArray(0);
-
-  // DrawWater(camera, ViewMatrix, player_pos);
 }
 
 void Terrain::InvalidatePoint(ivec2 tile) {

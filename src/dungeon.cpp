@@ -208,7 +208,7 @@ void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height,
 }
 
 bool Dungeon::CheckRoom(int x, int y, int width, int height) {
-  const int dungeon_size = kLevelData[current_level_].dungeon_size;
+  const int dungeon_size = level_data_[current_level_].dungeon_size;
   for (int j = 0; j < height; j++) {
     for (int i = 0; i < width; i++) {
       const int cur_x = x + i;
@@ -257,7 +257,7 @@ bool Dungeon::GenerateChambers() {
 
   const int kMaxAdjacentTiles = (kDungeonCells <= 3) ? 5 : 3;
 
-  const int dungeon_cells = kLevelData[current_level_].dungeon_cells;
+  const int dungeon_cells = level_data_[current_level_].dungeon_cells;
   const int kMinNumSteps = (dungeon_cells * dungeon_cells) / 6;
   const int kMaxNumSteps = (dungeon_cells * dungeon_cells) / 3;
   int num_steps = Random(kMinNumSteps, kMaxNumSteps + 1);
@@ -925,8 +925,8 @@ bool Dungeon::IsValidPlaceLocation(int x, int y) {
 }
 
 int Dungeon::PlaceMonsterGroup(int x, int y) {
-  const int min_group_size = kLevelData[current_level_].min_group_size;
-  const int max_group_size = kLevelData[current_level_].max_group_size;
+  const int min_group_size = level_data_[current_level_].min_group_size;
+  const int max_group_size = level_data_[current_level_].max_group_size;
   int group_size = Random(min_group_size, max_group_size + 1);
 
   int monsters_placed = 0;
@@ -940,8 +940,8 @@ int Dungeon::PlaceMonsterGroup(int x, int y) {
     if (!IsValidPlaceLocation(cur_x, cur_y)) continue;
     if (!IsGoodPlaceLocation(cur_x, cur_y, 10.0f, 0.0f)) continue;
 
-    int index = Random(0, kLevelData[current_level_].monsters.size());
-    int monster_type = kLevelData[current_level_].monsters[index];
+    int index = Random(0, level_data_[current_level_].monsters.size());
+    int monster_type = level_data_[current_level_].monsters[index];
 
     if (current_level_ > 2 && monster_type == 62 && 
       IsTileNextToWall(ivec2(cur_x, cur_y))) {
@@ -995,7 +995,7 @@ bool Dungeon::IsGoodPlaceLocation(int x, int y,
 }
 
 void Dungeon::PlaceMonsters() {
-  const int num_monsters = kLevelData[current_level_].num_monsters;
+  const int num_monsters = level_data_[current_level_].num_monsters;
   
   int monsters_placed = 0;
   for (int tries = 0; tries < 5000; tries++) {
@@ -1014,9 +1014,9 @@ void Dungeon::PlaceMonsters() {
 }
 
 void Dungeon::PlaceObjects() {
-  const int num_objects = kLevelData[current_level_].num_objects;
+  const int num_objects = level_data_[current_level_].num_objects;
   if (num_objects == 0) return;
-  if (kLevelData[current_level_].objects.size() == 0) return;
+  if (level_data_[current_level_].objects.size() == 0) return;
   
   int objs_placed = 0;
   for (int tries = 0; tries < 100; tries++) {
@@ -1024,8 +1024,8 @@ void Dungeon::PlaceObjects() {
     int y = Random(0, kDungeonSize);
     if (!IsValidPlaceLocation(x, y)) continue;
 
-    int index = Random(0, kLevelData[current_level_].objects.size());
-    int object_code = kLevelData[current_level_].objects[index];
+    int index = Random(0, level_data_[current_level_].objects.size());
+    int object_code = level_data_[current_level_].objects[index];
     if (object_code == 78) { // Web floor.
       flags[x][y] |= DLRG_WEB_FLOOR;
     } else {
@@ -1347,8 +1347,8 @@ bool Dungeon::CreateThemeRoomRotatingPlatforms() {
 }
 
 bool Dungeon::CreateThemeRooms() {
-  const int num_theme_rooms = kLevelData[current_level_].num_theme_rooms;
-  const vector<int>& theme_room_types = kLevelData[current_level_].theme_rooms;
+  const int num_theme_rooms = level_data_[current_level_].num_theme_rooms;
+  const vector<int>& theme_room_types = level_data_[current_level_].theme_rooms;
   if (num_theme_rooms == 0 || theme_room_types.size() == 0) return true;
 
   unordered_set<int> selected_rooms;
@@ -1467,7 +1467,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   srand(random_num);
   cout << "Dungeon seed: " << random_num << endl;
 
-  const int min_area = kLevelData[current_level_].dungeon_area;
+  const int min_area = level_data_[current_level_].dungeon_area;
 
   bool done_flag = false;
   do {
@@ -1497,7 +1497,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
       done_flag = false;
     }
 
-    const vector<string>& minisets = kLevelData[current_level_].minisets;
+    const vector<string>& minisets = level_data_[current_level_].minisets;
     for (const string& miniset : minisets) { 
       if (!PlaceMiniSet(miniset)) {
         done_flag = false;
@@ -2291,4 +2291,61 @@ int Dungeon::GetRoom(const ivec2& tile) {
 bool Dungeon::IsSecretRoom(const ivec2& tile) {
   if (!IsValidTile(tile)) return false;
   return flags[tile.x][tile.y] & DLRG_SECRET;
+}
+
+void Dungeon::LoadLevelDataFromXml(const string& filename) {
+  pugi::xml_document doc;
+  pugi::xml_parse_result result = doc.load_file(filename.c_str());
+  if (!result) {
+    throw runtime_error(string("Could not load xml file: ") + filename);
+  }
+
+  const pugi::xml_node& xml = doc.child("xml");
+  for (pugi::xml_node node_xml = xml.child("dungeon-level"); node_xml; 
+    node_xml = node_xml.next_sibling("dungeon-level")) {
+
+    int level = boost::lexical_cast<int>(node_xml.attribute("level").value());
+    LevelData& l = level_data_[level];
+    
+    l.dungeon_area = LoadIntFromXmlOr(node_xml, "area", 0);
+    l.num_monsters = LoadIntFromXmlOr(node_xml, "num-monsters", 0);
+    l.num_objects = LoadIntFromXmlOr(node_xml, "num-objects", 0);
+    l.num_theme_rooms = LoadIntFromXmlOr(node_xml, "num-theme-rooms", 0);
+    l.min_group_size = LoadIntFromXmlOr(node_xml, "min-group-size", 0);
+    l.max_group_size = LoadIntFromXmlOr(node_xml, "max-group-size", 0);
+    l.dungeon_size = LoadIntFromXmlOr(node_xml, "dungeon-size", 0);
+    l.dungeon_cells = LoadIntFromXmlOr(node_xml, "dungeon-cells", 0);
+
+    const pugi::xml_node& xml_monsters = node_xml.child("monsters");
+    for (pugi::xml_node xml_monster = xml_monsters.child("monster"); xml_monster; 
+      xml_monster = xml_monster.next_sibling("monster")) {
+      int odds = boost::lexical_cast<int>(xml_monster.attribute("odds").value());
+      int monster_id = LoadIntFromXml(xml_monster);
+      for (int i = 0; i < odds; i++) l.monsters.push_back(monster_id);
+    }
+
+    const pugi::xml_node& objects_xml = node_xml.child("objects");
+    for (pugi::xml_node obj_xml = objects_xml.child("object"); obj_xml; 
+      obj_xml = obj_xml.next_sibling("object")) {
+      int odds = boost::lexical_cast<int>(obj_xml.attribute("odds").value());
+      int obj_id = LoadIntFromXml(obj_xml);
+      for (int i = 0; i < odds; i++) l.objects.push_back(obj_id);
+    }
+
+    const pugi::xml_node& minisets_xml = node_xml.child("minisets");
+    for (pugi::xml_node miniset_xml = minisets_xml.child("miniset"); miniset_xml; 
+      miniset_xml = miniset_xml.next_sibling("miniset")) {
+      int odds = boost::lexical_cast<int>(miniset_xml.attribute("odds").value());
+      string miniset_name = LoadStringFromXml(miniset_xml);
+      for (int i = 0; i < odds; i++) l.minisets.push_back(miniset_name);
+    }
+
+    const pugi::xml_node& theme_rooms_xml = node_xml.child("theme-rooms");
+    for (pugi::xml_node theme_room_xml = theme_rooms_xml.child("theme-room"); theme_room_xml; 
+      theme_room_xml = theme_room_xml.next_sibling("theme-room")) {
+      int odds = boost::lexical_cast<int>(theme_room_xml.attribute("odds").value());
+      int theme_room_id = LoadIntFromXml(theme_room_xml);
+      for (int i = 0; i < odds; i++) l.theme_rooms.push_back(theme_room_id);
+    }
+  }
 }

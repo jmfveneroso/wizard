@@ -95,6 +95,13 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   DiceFormula base_attack { 0, 0, 1 };
   DiceFormula base_ranged_attack { 0, 0, 1 };
 
+  DiceFormula base_attack_upgrade { 0, 0, 0 };
+  DiceFormula base_ranged_attack_upgrade { 0, 0, 0 };
+  float base_speed_upgrade = 0.0f;
+  float base_turn_rate_upgrade = 0.0f;
+  DiceFormula base_life_upgrade { 0, 0, 0 };
+  int experience_upgrade = 0;
+
   float base_speed = 0.05f;
   float base_turn_rate = 0.15;
   float mass = 1.0;
@@ -184,6 +191,18 @@ class DestructibleAsset : public GameAsset {
  public:
   DestructibleAsset(Resources* resources) 
     : GameAsset(resources, ASSET_DESTRUCTIBLE) {}
+};
+
+class ActionableAsset : public GameAsset {
+ public:
+  ActionableAsset(Resources* resources) 
+    : GameAsset(resources, ASSET_ACTIONABLE) {}
+};
+
+class DoorAsset : public GameAsset {
+ public:
+  DoorAsset(Resources* resources) 
+    : GameAsset(resources, ASSET_DOOR) {}
 };
 
 class Particle3dAsset : public GameAsset {

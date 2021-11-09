@@ -32,11 +32,10 @@ void Resources::Init() {
   player_ = CreatePlayer(this);
 
   LoadShaders(shaders_dir_);
-
   LoadMeshes(directory_ + "/models_fbx");
   LoadAssets(directory_ + "/assets");
 
-  // LoadConfig(directory_ + "/config.xml");
+  dungeon_.LoadLevelDataFromXml(directory_ + "/assets/dungeon.xml");
 
   // TODO: move to space partitioning.
   // GenerateOptimizedOctree();
@@ -314,6 +313,71 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
     }
   }
 
+  for (pugi::xml_node xml_item = xml.child("item"); xml_item; 
+    xml_item = xml_item.next_sibling("item")) {
+    LoadItem(xml_item);
+  }
+
+  for (pugi::xml_node xml_spell = xml.child("spell"); xml_spell; 
+    xml_spell = xml_spell.next_sibling("spell")) {
+    LoadSpell(xml_spell);
+  }
+}
+
+void Resources::LoadItem(const pugi::xml_node& item_xml) {
+  int item_id = boost::lexical_cast<int>(item_xml.attribute("id").value());
+  
+  ItemData& item_data = item_data_[item_id];
+  item_data.id = item_id;
+
+  pugi::xml_node xml = item_xml.child("name");
+  if (xml) item_data.name = xml.text().get();
+
+  xml = item_xml.child("type");
+  if (xml) item_data.type = StrToItemType(xml.text().get());
+
+  xml = item_xml.child("description");
+  if (xml) item_data.description = xml.text().get();
+
+  xml = item_xml.child("icon");
+  if (xml) item_data.icon = xml.text().get();
+
+  xml = item_xml.child("asset-name");
+  if (xml) item_data.asset_name = xml.text().get();
+
+  xml = item_xml.child("price");
+  if (xml) item_data.price = boost::lexical_cast<int>(xml.text().get());
+
+  xml = item_xml.child("image");
+  if (xml) item_data.image = xml.text().get();
+
+  xml = item_xml.child("size");
+  if (xml) item_data.size = LoadIVec2FromXml(xml);
+}
+
+void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
+  int spell_id = boost::lexical_cast<int>(spell_xml.attribute("id").value());
+
+  arcane_spell_data_[spell_id] = make_shared<ArcaneSpellData>();
+  shared_ptr<ArcaneSpellData> spell_data = arcane_spell_data_[spell_id];
+  spell_data->spell_id = spell_id;
+
+  pugi::xml_node xml = spell_xml.child("name");
+  if (xml) spell_data->name = xml.text().get();
+
+  xml = spell_xml.child("description");
+  if (xml) spell_data->description = xml.text().get();
+
+  xml = spell_xml.child("icon");
+  if (xml) spell_data->image_name = xml.text().get();
+
+  xml = spell_xml.child("item-id");
+  if (xml) spell_data->item_id = LoadIntFromXml(xml);
+
+  xml = spell_xml.child("spell-graph-pos");
+  if (xml) spell_data->spell_graph_pos = LoadIVec2FromXml(xml);
+
+  item_id_to_spell_data_[spell_data->item_id] = spell_data;
 }
 
 void Resources::LoadAssets(const std::string& directory) {
@@ -1231,7 +1295,7 @@ void Resources::DeleteAsset(shared_ptr<GameAsset> asset) {
 
 unordered_map<int, ItemData>& Resources::GetItemData() { return item_data_; }
 unordered_map<int, EquipmentData>& Resources::GetEquipmentData() { return equipment_data_; }
-vector<shared_ptr<ArcaneSpellData>>& Resources::GetArcaneSpellData() { return arcane_spell_data_; }
+unordered_map<int, shared_ptr<ArcaneSpellData>>& Resources::GetArcaneSpellData() { return arcane_spell_data_; }
 
 void Resources::DeleteObject(ObjPtr obj) {
   if (obj->octree_node) {
@@ -2302,6 +2366,7 @@ bool Resources::InsertItemInInventory(int item_id, int quantity) {
       if (!CanPlaceItem(ivec2(i, j), item_id)) continue;
 
       configs_->item_matrix[i][j] = item_id;
+      configs_->item_quantities[i][j] = quantity;
       const ivec2& size = item_data_[item_id].size;
       for (int x = 0; x < size.x; x++) {
         for (int y = 0; y < size.y; y++) {
@@ -2956,6 +3021,10 @@ void Resources::ProcessTempStatus() {
     if (!obj->IsCreature()) continue;
 
     obj->current_speed = obj->GetAsset()->base_speed;
+    for (int i = 0; i < obj->level; i++) {
+      obj->current_speed += obj->GetAsset()->base_speed_upgrade;
+    }
+
     obj->invisibility = false;
     for (auto& [status_type, temp_status] : obj->temp_status) {
       if (temp_status->duration == 0) continue;
@@ -3159,6 +3228,21 @@ void Resources::ProcessDriftAwayEvent() {
   }
 }
 
+void Resources::ProcessPlayerDeathEvent() {
+  if (configs_->dying) {
+    if (configs_->fading_out < 0.0f) {
+      configs_->dying = false;
+      RestartGame();
+    }
+    return;
+  }
+
+  if (player_->life <= 0.0f) {
+    configs_->dying = true;
+    configs_->fading_out = 60.0f;
+  }
+}
+
 void Resources::RunPeriodicEvents() {
   UpdateCooldowns();
   RemoveDead();
@@ -3176,6 +3260,7 @@ void Resources::RunPeriodicEvents() {
   UpdateParticles();
   ProcessEvents();
   ProcessDriftAwayEvent();
+  ProcessPlayerDeathEvent();
   ProcessTempStatus();
   ProcessRotatingPlanksOrientation();
 
@@ -3549,6 +3634,9 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         case 'c': {
           ObjPtr obj = CreateGameObjFromAsset(this, "chest", pos + vec3(0, 0, 0));
+
+          obj->rotation_matrix = rotate(mat4(1.0), Random(0, 100) * 0.0314f, 
+            vec3(0, 1, 0));
           
           // TODO: set drops based on dungeon level.
           shared_ptr<Actionable> a = static_pointer_cast<Actionable>(obj);
@@ -3595,7 +3683,8 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           }
 
           // TODO: level based on dungeon level. Some asset change for heroes?
-          int level = (Random(0, 50) == 0) ? 2 : 1;
+          int level = (Random(0, 50) == 0) ? 1 : 0;
+
           CreateMonster(this, monster_assets[code], pos + vec3(0, 3, 0), level);  
           break;
         }
@@ -3658,8 +3747,13 @@ void Resources::SaveGame() {
   AppendXmlNode(xml, "sun-position", configs_->sun_position);
   AppendXmlTextNode(xml, "time", configs_->time_of_day);
   AppendXmlTextNode(xml, "life", player->life);
+  AppendXmlTextNode(xml, "mana", player->mana);
+  AppendXmlTextNode(xml, "stamina", player->stamina);
   AppendXmlTextNode(xml, "render-scene", configs_->render_scene);
   AppendXmlTextNode(xml, "dungeon-level", configs_->dungeon_level);
+  AppendXmlTextNode(xml, "max-life", player_->max_life);
+  AppendXmlTextNode(xml, "max-mana", player_->max_mana);
+  AppendXmlTextNode(xml, "max-stamina", player_->max_stamina);
 
   if (dungeon_.IsInitialized()) {
     pugi::xml_node dungeon_node = xml.append_child("dungeon");
@@ -3744,6 +3838,18 @@ void Resources::SaveGame() {
     item_xml.append_attribute("id") = boost::lexical_cast<string>(configs_->spellbar[x]).c_str();
   }
 
+  pugi::xml_node learned_spells_node = xml.append_child("learned-spells");
+  for (auto& [id, spell] : arcane_spell_data_) {
+    if (!spell->learned) continue;
+     
+    pugi::xml_node spell_xml = learned_spells_node.append_child("spell");
+    spell_xml.append_child(pugi::node_pcdata).set_value(
+      boost::lexical_cast<string>(spell->spell_id).c_str());
+
+    spell_xml.append_attribute("level") = 
+      boost::lexical_cast<string>(spell->level).c_str();
+  }
+
   string xml_filename = directory_ + "/config.xml";
   doc.save_file(xml_filename.c_str());
 
@@ -3754,10 +3860,10 @@ void Resources::LoadGame(const string& config_filename,
   bool calculate_crystals) {
   DeleteAllObjects();
 
-  if (calculate_crystals) {
-    CalculateArcaneSpells();
-    LoadArcaneSpells();
-  }
+  // if (calculate_crystals) {
+  //   CalculateArcaneSpells();
+  //   // LoadArcaneSpells();
+  // }
 
   LoadConfig(directory_ + "/" + config_filename);
 
@@ -3789,6 +3895,19 @@ void Resources::CreateTown() {
 void Resources::CreateSafeZone() {
   LoadObjects(directory_ + "/safe_zone_objects");
   // LoadNpcs(directory_ + "/assets/npc2.xml");
+}
+
+void Resources::RestartGame() {
+  // DeleteAllObjects();
+  // CreateTown();
+  // LoadCollisionData("resources/objects/collision_data.xml");
+  // CalculateCollisionData();
+  // GenerateOptimizedOctree();
+  // GetConfigs()->render_scene = "town";
+  // GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
+  // GetScriptManager()->LoadScripts();
+  LoadGame("start_config.xml", false);
+  SaveGame();
 }
 
 void Resources::LoadConfig(const std::string& xml_filename) {
@@ -3832,6 +3951,30 @@ void Resources::LoadConfig(const std::string& xml_filename) {
 
   xml_node = xml.child("life");
   if (xml_node) player_->life = LoadFloatFromXml(xml_node);
+
+  xml_node = xml.child("mana");
+  if (xml_node) player_->mana = LoadFloatFromXml(xml_node);
+
+  xml_node = xml.child("stamina");
+  if (xml_node) player_->stamina = LoadFloatFromXml(xml_node);
+
+  xml_node = xml.child("max-life");
+  if (xml_node) {
+    player_->max_life = LoadFloatFromXml(xml_node);
+    configs_->max_life = player_->max_life;
+  }
+
+  xml_node = xml.child("max-mana");
+  if (xml_node) {
+    player_->max_mana = LoadFloatFromXml(xml_node);
+    configs_->max_mana = player_->max_mana;
+  }
+
+  xml_node = xml.child("max-stamina");
+  if (xml_node) {
+    player_->max_stamina = LoadFloatFromXml(xml_node);
+    configs_->max_stamina = player_->max_stamina;
+  }
 
   configs_->respawn_point = vec3(10045, 500, 10015);
   configs_->max_player_speed = 0.02;
@@ -3922,6 +4065,21 @@ void Resources::LoadConfig(const std::string& xml_filename) {
       configs_->spellbar[x] = id;
       configs_->spellbar_quantities[x] = quantity;
     }
+  }
+
+  for (auto [id, spell] : arcane_spell_data_) {
+    spell->learned = false;
+    spell->level = 0;
+  }
+
+  pugi::xml_node learned_spells_xml = xml.child("learned-spells");
+  for (pugi::xml_node spell_xml = learned_spells_xml.child("spell"); spell_xml; 
+    spell_xml = spell_xml.next_sibling("spell")) {
+    int spell_id = boost::lexical_cast<int>(spell_xml.text().get());
+    arcane_spell_data_[spell_id]->learned = true;
+
+    int level = boost::lexical_cast<int>(spell_xml.attribute("level").value());
+    arcane_spell_data_[spell_id]->level = true;
   }
 }
 
@@ -4657,80 +4815,6 @@ void Resources::CreateArcaneSpellCrystals() {
 }
 
 void Resources::LoadArcaneSpells() {
-  cout << "Loading arcane spells..." << endl;
-  CreateArcaneSpellCrystals();
-  cout << "Finished loading arcane spells." << endl;
-
-  // Complex spells.
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Magic Missile", 
-    "magic-missile-description", "magic_missile_icon", 0, 21, 0, 20, 10,
-    ivec2(4, 2), ivec2(96, 249)));
-
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Windslash", 
-    "burning-hands-description", "windslash_icon", 0, 22, 1, 22, 100,
-    ivec2(2, 4), ivec2(442, 850)));
-
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Heal", 
-    "lightning-ray-description", "healing_icon", 0, 23, 2, 20, 100,
-    ivec2(8, 5), ivec2(781, 236)));
-
-  // Layered crystals.
-  // for (int i = 0; i < 3; i++) {
-  //   int crystal_index = configs_->complex_spells[i];
-  //   int item_id = kArcaneSpellItemOffset + crystal_index;
-  //   item_data_[item_id].name = arcane_spell_data_[i]->name;
-  //   item_data_[item_id].description = arcane_spell_data_[i]->description;
-  //   item_data_[item_id].price = arcane_spell_data_[i]->price;
-  //   item_data_[item_id].max_stash = arcane_spell_data_[i]->max_stash;
-  //   arcane_spell_data_[i]->item_id = item_id;
-
-  //   // TODO: load from config.
-  //   // arcane_spell_data_[3+0]->learned = true;
-  // }
-
-  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Open Lock", 
-  //   "minor-open-lock-description", "magic_missile_icon", 1, 3, 3, 20, 1));
-
-  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Fireball", 
-  //   "fireball-description", "magic_missile_icon", 1, 4, 4, 20, 1));
-
-  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Bouncy Ball", 
-  //   "bouncy-ball-description", "magic_missile_icon", 1, 5, 5, 20, 1));
-
-  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Darkvision", 
-  //   "darkvision-description", "magic_missile_icon", 1, 6, 6, 20, 1));
-
-  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("String Attack", 
-  //   "string-attack-description", "magic_missile_icon", 1, 7, 7, 20, 20));
-
-  // arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Telekinesis", 
-  //   "telekinesis-description", "magic_missile_icon", 1, 8, 8, 20, 1));
-
-  // for (int i = 0; i < 6; i++) {
-  //   int crystal_index = configs_->layered_spells[i];
-  //   int item_id = kArcaneSpellItemOffset + crystal_index;
-  //   item_data_[item_id].name = arcane_spell_data_[3+i]->name;
-  //   item_data_[item_id].description = arcane_spell_data_[3+i]->description;
-  //   item_data_[item_id].price = arcane_spell_data_[3+i]->price;
-  //   item_data_[item_id].max_stash = arcane_spell_data_[3+i]->max_stash;
-  //   arcane_spell_data_[3+i]->item_id = item_id;
-  // }
-
-  // Complex crystals.
-
-
-  // Base spells.
-  arcane_spell_data_.push_back(make_shared<ArcaneSpellData>("Spell Shot", 
-    "spell_shot_description", "spell_shot_icon", 4, 9, 9, 20, 10, 
-    ivec2(5, 5), ivec2(0, 0)));
-
-  int item_id = kArcaneBaseOffset + 0;
-  item_data_[item_id].name = arcane_spell_data_[3+0]->name;
-  item_data_[item_id].description = arcane_spell_data_[3+0]->description;
-  item_data_[item_id].price = arcane_spell_data_[3+0]->price;
-  item_data_[item_id].max_stash = arcane_spell_data_[3+0]->max_stash;
-  arcane_spell_data_[3+0]->item_id = item_id;
-  arcane_spell_data_[3+0]->learned = true;
 }
 
 void Resources::CalculateArcaneSpells() {
@@ -4778,64 +4862,11 @@ void Resources::CalculateArcaneSpells() {
 }
 
 shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
-  if (item_id == 21) {
-    return arcane_spell_data_[0];
-  }
-
-  if (item_id == 22) {
-    return arcane_spell_data_[1];
-  }
-
-  if (item_id == 23) {
-    return arcane_spell_data_[2];
-  }
- 
-  int num_spells = arcane_spell_data_.size();
-  if (item_id < kArcaneSpellItemOffset) return nullptr;
-
-  // Complex and layered.
-  if (item_id < kArcaneWhiteOffset) {
-    int complex_id = item_id - kArcaneSpellItemOffset;
-    if (complex_to_spell_id_.find(complex_id) != complex_to_spell_id_.end()) {
-      int spell_id = complex_to_spell_id_[complex_id];
-      return arcane_spell_data_[spell_id];
-    }
-
-    if (layered_to_spell_id_.find(complex_id) != layered_to_spell_id_.end()) {
-      int spell_id = layered_to_spell_id_[complex_id];
-      return arcane_spell_data_[spell_id];
-    }
+  if (item_id_to_spell_data_.find(item_id) == item_id_to_spell_data_.end()) {
     return nullptr;
   }
 
-  // White.
-  if (item_id < kArcaneBlackOffset) {
-    int white_id = item_id - kArcaneWhiteOffset;
-    if (white_to_spell_id_.find(white_id) == white_to_spell_id_.end()) {
-      return nullptr;
-    }
-    int spell_id = white_to_spell_id_[white_id];
-    return arcane_spell_data_[spell_id];
-  }
-
-  // Black.
-  if (item_id < kArcaneBlackOffset + 5580) {
-    int white_id = item_id - kArcaneWhiteOffset;
-    int black_id = item_id - kArcaneBlackOffset;
-    if (black_to_spell_id_.find(black_id) == black_to_spell_id_.end()) {
-      return nullptr;
-    }
-    int spell_id = black_to_spell_id_[black_id];
-    return arcane_spell_data_[spell_id];
-  }
-
-  // Base.
-  if (item_id < kArcaneBaseOffset + 1) {
-    int base_id = item_id - kArcaneBaseOffset;
-    return arcane_spell_data_[3+base_id];
-  }
-
-  return nullptr;
+  return item_id_to_spell_data_[item_id];
 }
 
 int Resources::GetArcaneSpellType(int item_id) {
@@ -4929,7 +4960,7 @@ void Resources::GiveExperience(int exp_points) {
     player_->max_life += ProcessDiceFormula(configs_->base_hp_dice);
     player_->max_mana += ProcessDiceFormula(configs_->base_mana_dice);
     player_->max_stamina += ProcessDiceFormula(configs_->base_stamina_dice);
-    player_->life = configs_->max_life;
+    player_->life = player_->max_life;
 
     AddMessage(string("You leveled up!"));
     next_level = kLevelUps[configs_->level];
@@ -4992,7 +5023,7 @@ void Resources::DropItem(const vec3& position) {
 }
 
 void Resources::Rest() {
-  player_->life = configs_->max_life;
+  player_->life = player_->max_life;
 }
 
 
@@ -5139,6 +5170,11 @@ void Resources::CreateDrops(ObjPtr obj) {
     obj->torque = cross(normalize(obj->speed), vec3(1, 1, 0)) * 5.0f;
 
     obj->CalculateCollisionData();
+
+    // TODO: set scepter charges in xml.
+    if (obj->GetItemId() == 25) {
+      obj->quantity = 10;
+    }
   }
 }
 

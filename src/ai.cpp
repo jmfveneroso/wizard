@@ -1004,37 +1004,38 @@ void AI::Run() {
   resources_->GetDungeon().CalculateVisibility(
     resources_->GetPlayer()->position);
 
-  // while (!ai_tasks_.empty() || running_tasks_ > 0) {
-  //   this_thread::sleep_for(chrono::microseconds(200));
-  // }
-  // return;
+  // Async.
+  while (!ai_tasks_.empty() || running_tasks_ > 0) {
+    this_thread::sleep_for(chrono::microseconds(200));
+  }
+  return;
 
   // Sync.
-  while (!ai_tasks_.empty()) {
-    auto& obj = ai_tasks_.front();
-    ai_tasks_.pop();
-    running_tasks_++;
-    ai_mutex_.unlock();
+  // while (!ai_tasks_.empty()) {
+  //   auto& obj = ai_tasks_.front();
+  //   ai_tasks_.pop();
+  //   running_tasks_++;
+  //   ai_mutex_.unlock();
 
-    // TODO: maybe should go to physics.
-    // if (dot(obj->up, vec3(0, 1, 0)) < 0) {
-    //   obj->up = vec3(0, 1, 0);
-    // }
+  //   // TODO: maybe should go to physics.
+  //   // if (dot(obj->up, vec3(0, 1, 0)) < 0) {
+  //   //   obj->up = vec3(0, 1, 0);
+  //   // }
 
-    // Check status. If taking hit, dying, poisoned, etc.
-    if (ProcessStatus(obj)) {
-      ProcessNextAction(obj);
-    }
+  //   // Check status. If taking hit, dying, poisoned, etc.
+  //   if (ProcessStatus(obj)) {
+  //     ProcessNextAction(obj);
+  //   }
 
-    string ai_script = obj->GetAsset()->ai_script;
-    if (!ai_script.empty()) {
-      resources_->CallStrFn(ai_script, obj->name);
-    }
+  //   string ai_script = obj->GetAsset()->ai_script;
+  //   if (!ai_script.empty()) {
+  //     resources_->CallStrFn(ai_script, obj->name);
+  //   }
 
-    ai_mutex_.lock();
-    running_tasks_--;
-    ai_mutex_.unlock();
-  }
+  //   ai_mutex_.lock();
+  //   running_tasks_--;
+  //   ai_mutex_.unlock();
+  // }
 }
 
 void AI::ProcessUnitAiAsync() {
@@ -1074,6 +1075,6 @@ void AI::ProcessUnitAiAsync() {
 
 void AI::CreateThreads() {
   for (int i = 0; i < kMaxThreads; i++) {
-    // ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
+    ai_threads_.push_back(thread(&AI::ProcessUnitAiAsync, this));
   }
 }

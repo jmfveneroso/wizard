@@ -121,7 +121,7 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     GLuint texture_id = resources_->GetTextureByName(texture_filename);
     if (texture_id == 0) {
       bool poor_filtering = texture_xml.attribute("poor-filtering");
-      texture_id = LoadPng(texture_filename.c_str(), poor_filtering);
+      texture_id = LoadTexture(texture_filename.c_str(), poor_filtering);
       resources_->AddTexture(texture_filename, texture_id);
     }
     textures.push_back(texture_id);
@@ -134,7 +134,7 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     GLuint texture_id = resources_->GetTextureByName(texture_filename);
     if (texture_id == 0) {
       bool poor_filtering = bump_map_xml.attribute("poor-filtering");
-      texture_id = LoadPng(texture_filename.c_str(), poor_filtering);
+      texture_id = LoadTexture(texture_filename.c_str(), poor_filtering);
       resources_->AddTexture(texture_filename, texture_id);
     }
     bump_map_id = texture_id;
@@ -147,7 +147,7 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     GLuint texture_id = resources_->GetTextureByName(texture_filename);
     if (texture_id == 0) {
       bool poor_filtering = specular_xml.attribute("poor-filtering");
-      texture_id = LoadPng(texture_filename.c_str(), poor_filtering);
+      texture_id = LoadTexture(texture_filename.c_str(), poor_filtering);
       resources_->AddTexture(texture_filename, texture_id);
     }
     specular_id = texture_id;
@@ -201,6 +201,36 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     asset_xml.child("base-ranged-attack");
   if (base_ranged_attack_xml) {
     base_ranged_attack = ParseDiceFormula(base_ranged_attack_xml.text().get());
+  }
+
+  const pugi::xml_node& base_attack_upgrade_xml = asset_xml.child("base-attack-upgrade");
+  if (base_attack_upgrade_xml) {
+    base_attack_upgrade = ParseDiceFormula(base_attack_upgrade_xml.text().get());
+  }
+
+  const pugi::xml_node& base_ranged_attack_upgrade_xml = asset_xml.child("base-ranged-attack-upgrade");
+  if (base_ranged_attack_upgrade_xml) {
+    base_ranged_attack_upgrade = ParseDiceFormula(base_ranged_attack_upgrade_xml.text().get());
+  }
+
+  const pugi::xml_node& base_speed_upgrade_xml = asset_xml.child("base-speed-upgrade");
+  if (base_speed_upgrade_xml) {
+    base_speed_upgrade = LoadFloatFromXml(base_speed_upgrade_xml);
+  }
+
+  const pugi::xml_node& base_turn_rate_upgrade_xml = asset_xml.child("base-turn-rate-upgrade");
+  if (base_turn_rate_upgrade_xml) {
+    base_turn_rate_upgrade = LoadFloatFromXml(base_turn_rate_upgrade_xml);
+  }
+
+  const pugi::xml_node& base_life_upgrade_xml = asset_xml.child("base-life-upgrade");
+  if (base_life_upgrade_xml) {
+    base_life_upgrade = ParseDiceFormula(base_life_upgrade_xml.text().get());
+  }
+
+  const pugi::xml_node& experience_upgrade_xml = asset_xml.child("experience-upgrade");
+  if (experience_upgrade_xml) {
+    experience_upgrade = LoadIntFromXml(experience_upgrade_xml);
   }
 
   const pugi::xml_node& experience_xml = asset_xml.child("experience");
@@ -389,6 +419,12 @@ shared_ptr<GameAsset> CreateAsset(Resources* resources,
         break;
       case ASSET_PLATFORM:
         asset = make_shared<PlatformAsset>(resources);
+        break;
+      case ASSET_ACTIONABLE:
+        asset = make_shared<ActionableAsset>(resources);
+        break;
+      case ASSET_DOOR:
+        asset = make_shared<DoorAsset>(resources);
         break;
       case ASSET_DESTRUCTIBLE:
         asset = make_shared<DestructibleAsset>(resources);

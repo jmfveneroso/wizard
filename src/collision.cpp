@@ -915,11 +915,41 @@ bool TestAABBPlane(const AABB& aabb, const Plane& p,
     e[2] * abs(p.normal[2]);
 
   // Compute distance of box center from plane
-  float s = abs(dot(p.normal, c) - p.d);
+  float s = abs(dot(p.normal, c) - p.d);;
 
   if (s <= r) {
-    // TODO: determine point of contact for AABB.
     displacement_vector = p.normal * (r - s);
+
+    static const vector<vec3> points {
+      vec3(-1, -1, -1), vec3(-1, -1, 1), vec3(-1, 1, -1), vec3(-1, 1, 1),
+      vec3(1, -1, -1), vec3(1, -1, 1), vec3(1, 1, -1), vec3(1, 1, 1),
+    };
+
+    vector<vec3> colliding_points;
+    vector<float> magnitudes;
+    for (const auto& point : points) {
+      vec3 p_ = c;
+      for (int i = 0; i < 3; i++) {
+        vec3 axis = vec3(0); axis[i] = 1;
+        p_ += axis * point[i] * e[i];
+      }
+
+      float s = dot(p.normal, p_) - p.d;
+      if (abs(s) <= r) {
+        colliding_points.push_back(p_);
+        magnitudes.push_back(r - abs(s));
+      }
+    }
+
+    float total_magnitude = 0.0f;
+    for (int i = 0; i < magnitudes.size(); i++) total_magnitude += magnitudes[i];
+    for (int i = 0; i < magnitudes.size(); i++) magnitudes[i] /= total_magnitude;
+
+    point_of_contact = vec3(0);
+    for (int i = 0 ; i < colliding_points.size(); i++) {
+      point_of_contact += colliding_points[i] * magnitudes[i];
+    }
+    point_of_contact += displacement_vector;
     return true;
   }
   return false;
@@ -978,7 +1008,18 @@ bool TestTriangleAABB(const Polygon& polygon, const AABB& aabb,
   Plane p;
   p.normal = polygon.normals[0];
   p.d = dot(p.normal, v0_);
-  return TestAABBPlane(aabb, p, displacement_vector, point_of_contact);
+  // 
+  // return TestAABBPlane(aabb, p, displacement_vector, point_of_contact);
+
+  OBB obb;
+  obb.center = c;
+  obb.axis[0] = vec3(1, 0, 0);
+  obb.axis[1] = vec3(0, 1, 0);
+  obb.axis[2] = vec3(0, 0, 1);
+  obb.half_widths[0] = e0;
+  obb.half_widths[1] = e1;
+  obb.half_widths[2] = e2;
+  return TestOBBPlane(obb, p, displacement_vector, point_of_contact);
 }
 
 bool IntersectRaySphereAux(const Ray& ray, const BoundingSphere& sphere, 
@@ -1345,4 +1386,107 @@ bool IntersectRayAABBTree(vec3 p, vec3 d, shared_ptr<AABBTreeNode> node,
   t = closest_t;
   q = closest_q;
   return true;
+}
+
+bool IntersectObbObb(OBB& a, OBB& b) {
+  // Compute rotation matrix expressing b in a’s coordinate frame
+  mat3 r;
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      r[i][j] = dot(a.axis[i], b.axis[j]);
+    }
+  }
+
+  // Compute translation vector t
+  vec3 t = b.center - a.center;
+
+  // Bring translation into a’s coordinate frame
+  t = vec3(dot(t, a.axis[0]), dot(t, a.axis[1]), dot(t, a.axis[2]));
+
+  // Compute common subexpressions. Add in an epsilon term to
+  // counteract arithmetic errors when two edges are parallel and
+  // their cross product is (near) null (see text for details)
+  mat3 abs_r;
+  for (int i = 0; i < 3; i++) {
+    for (int j = 0; j < 3; j++) {
+      abs_r[i][j] = abs(r[i][j]) + 0.0001f;
+    }
+  }
+
+  // Test axes L = A0, L = A1, L = A2
+  float ra, rb;
+  for (int i = 0; i < 3; i++) {
+    ra = a.half_widths[i];
+    rb = b.half_widths[0] * abs_r[i][0] + b.half_widths[1] * abs_r[i][1] + 
+      b.half_widths[2] * abs_r[i][2];
+    if (abs(t[i]) > ra + rb) return 0;
+  }
+
+  // Test axes L = B0, L = B1, L = B2
+  for (int i = 0; i < 3; i++) {
+    ra = a.half_widths[0] * abs_r[0][i] + a.half_widths[1] * abs_r[1][i] +  
+      a.half_widths[2] * abs_r[2][i];
+    rb = b.half_widths[i];
+    if (abs(t[0] * r[0][i] + t[1] * r[1][i] + t[2] * r[2][i]) > ra + rb) {
+      return 0;
+    }
+  }
+
+  // Test axis L = A0 x B0
+  ra = a.half_widths[1] * abs_r[2][0] + a.half_widths[2] * abs_r[1][0];
+  rb = b.half_widths[1] * abs_r[0][2] + b.half_widths[2] * abs_r[0][1];
+  if (abs(t[2] * r[1][0] - t[1] * r[2][0]) > ra + rb) return 0;
+
+  // Test axis L = A0 x B1
+  ra = a.half_widths[1] * abs_r[2][1] + a.half_widths[2] * abs_r[1][1];
+  rb = b.half_widths[0] * abs_r[0][2] + b.half_widths[2] * abs_r[0][0];
+  if (abs(t[2] * r[1][1] - t[1] * r[2][1]) > ra + rb) return 0;
+
+  // Test axis L = A0 x B2
+  ra = a.half_widths[1] * abs_r[2][2] + a.half_widths[2] * abs_r[1][2];
+  rb = b.half_widths[0] * abs_r[0][1] + b.half_widths[1] * abs_r[0][0];
+  if (abs(t[2] * r[1][2] - t[1] * r[2][2]) > ra + rb) return 0;
+
+  // Test axis L = A1 x B0
+  ra = a.half_widths[0] * abs_r[2][0] + a.half_widths[2] * abs_r[0][0];
+  rb = b.half_widths[1] * abs_r[1][2] + b.half_widths[2] * abs_r[1][1];
+  if (abs(t[0] * r[2][0] - t[2] * r[0][0]) > ra + rb) return 0;
+
+  // Test axis L = A1 x B1
+  ra = a.half_widths[0] * abs_r[2][1] + a.half_widths[2] * abs_r[0][1];
+  rb = b.half_widths[0] * abs_r[1][2] + b.half_widths[2] * abs_r[1][0];
+  if (abs(t[0] * r[2][1] - t[2] * r[0][1]) > ra + rb) return 0;
+
+  // Test axis L = A1 x B2
+  ra = a.half_widths[0] * abs_r[2][2] + a.half_widths[2] * abs_r[0][2];
+  rb = b.half_widths[0] * abs_r[1][1] + b.half_widths[1] * abs_r[1][0];
+  if (abs(t[0] * r[2][2] - t[2] * r[0][2]) > ra + rb) return 0;
+
+  // Test axis L = A2 x B0
+  ra = a.half_widths[0] * abs_r[1][0] + a.half_widths[1] * abs_r[0][0];
+  rb = b.half_widths[1] * abs_r[2][2] + b.half_widths[2] * abs_r[2][1];
+  if (abs(t[1] * r[0][0] - t[0] * r[1][0]) > ra + rb) return 0;
+
+  // Test axis L = A2 x B1
+  ra = a.half_widths[0] * abs_r[1][1] + a.half_widths[1] * abs_r[0][1];
+  rb = b.half_widths[0] * abs_r[2][2] + b.half_widths[2] * abs_r[2][0];
+  if (abs(t[1] * r[0][1] - t[0] * r[1][1]) > ra + rb) return 0;
+
+  // Test axis L = A2 x B2
+  ra = a.half_widths[0] * abs_r[1][2] + a.half_widths[1] * abs_r[0][2];
+  rb = b.half_widths[0] * abs_r[2][1] + b.half_widths[1] * abs_r[2][0];
+  if (abs(t[1] * r[0][2] - t[0] * r[1][2]) > ra + rb) return 0;
+
+  // Since no separating axis is found, the OBBs must be intersecting
+  return 1;
+}
+
+vec3 ClosestPtPointPlane(const vec3& q, const Plane& p) {
+  float t = dot(p.normal, q) - p.d;
+  return q - t * p.normal;
+}
+
+float DistPointPlane(const vec3& q, const Plane& p) {
+  // return Dot(q, p.n) - p.d; if plane equation normalized (||p.n||==1)
+  return (dot(p.normal, q) - p.d) / dot(p.normal, p.normal);
 }

@@ -125,6 +125,12 @@ bool IntersectSegmentCapsule(const Segment& seg, const Capsule& capsule,
 bool IntersectRayAABBTree(vec3 p, vec3 d, shared_ptr<AABBTreeNode> node, 
   float& t, vec3& q, const vec3& base_position);
 
+bool IntersectObbObb(OBB& a, OBB& b);
+
+vec3 ClosestPtPointPlane(const vec3& q, const Plane& p);
+
+float DistPointPlane(const vec3& q, const Plane& p);
+
 // bool IntersectMovingSphereAABB(Sphere s, Vector d, AABB b, float &t);
 // https://github.com/vancegroup-mirrors/hapi/blob/master/src/CollisionObjects.cpp
 

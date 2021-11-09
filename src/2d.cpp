@@ -194,6 +194,18 @@ void Draw2D::DrawChar(char c, float x, float y, vec4 color, GLfloat scale,
   glBindVertexArray(0);
 }
 
+int AsciiToInt(char c) {
+  int n = int(c);
+  if (n >= 48 && n <= 57) { // Number.
+    return n - 48;
+  }
+
+  if (n >= 65 && n <= 70) { // A-F.
+    return 10 + n - 65;
+  }
+  return 0;
+}
+
 void Draw2D::DrawText(
   const string& text, float x, float y, vec4 color, GLfloat scale,
   bool center, const string& font_name
@@ -203,9 +215,32 @@ void Draw2D::DrawText(
     x -= (text.size() * step) / 2 + 1;
   }
 
+  bool using_custom_color = false;
+  vec4 custom_color;
+
   // Iterate through all characters
-  for (const auto& c : text) {
-    DrawChar(c, x, y, color, scale, font_name);
+  for (int i = 0; i < text.size(); i++) {
+    char c = text[i];
+
+    if (c == '|') {
+      if (using_custom_color) {
+        using_custom_color = false;
+      } else if (!using_custom_color) {
+        using_custom_color = true;
+        for (int j = 0; j < 4; j++) {
+          int c1 = AsciiToInt(text[++i]);
+          int c2 = AsciiToInt(text[++i]);
+          custom_color[j] = float(c1 * 16 + c2) / float(255);
+        }
+      }
+      continue;
+    }
+
+    if (using_custom_color) {
+      DrawChar(c, x, y, custom_color, scale, font_name);
+    } else {
+      DrawChar(c, x, y, color, scale, font_name);
+    }
 
     // Now advance cursors for next glyph (note that advance is number of 1/64 pixels)
     x += (characters_[font_name][c].Advance >> 6) * scale;

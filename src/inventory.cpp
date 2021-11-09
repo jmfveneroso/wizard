@@ -212,6 +212,7 @@ void Inventory::MoveItemBack() {
     vec3 position = camera_.position + camera_.direction * 5.0f;
     ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
       item_data[selected_item_].asset_name, position);
+    obj->quantity = selected_qnty_;
 
     float x = Random(0, 11) * .05f;
     float y = Random(0, 11) * .05f;
@@ -407,6 +408,7 @@ void Inventory::DrawItems(const ivec2& pos) {
             if (item_matrix[x][y] == 0) {
               if (resources_->CanPlaceItem(ivec2(x, y), selected_item_)) {
                 item_matrix[x][y] = selected_item_;
+                item_quantities[x][y] = selected_qnty_;
 
                 const ivec2& size = item_data[selected_item_].size;
                 for (int step_x = 0; step_x < size.x; step_x++) {
@@ -849,17 +851,19 @@ void Inventory::UseItem(int x, int y) {
   if (!spell->learned) {
     resources_->AddMessage(string("You learned ") + spell->name);
     spell->learned = true;
-    item_matrix[x][y] = 0;
-
-    ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;
-    int left = pos.x + 34 + kTileSize * x;
-    int top = pos.y + 547 + kTileSize * y;
-    crystal_combination_anim_name_ = "particle-smoke-0";
-    crystal_combination_pos_ = ivec2(left - 40, top - 27);
-    crystal_combination_frame_ = 0;
   } else {
-    resources_->AddMessage(string("You already learned ") + spell->name);
+    spell->level++;
+    resources_->AddMessage(string("You learned ") + spell->name + 
+      string("at level ") + boost::lexical_cast<string>(spell->level));
   }
+
+  item_matrix[x][y] = 0;
+  ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;
+  int left = pos.x + 34 + kTileSize * x;
+  int top = pos.y + 547 + kTileSize * y;
+  crystal_combination_anim_name_ = "particle-smoke-0";
+  crystal_combination_pos_ = ivec2(left - 40, top - 27);
+  crystal_combination_frame_ = 0;
 }
 
 void Inventory::DrawSpellbook() {
@@ -889,11 +893,11 @@ void Inventory::DrawSpellbook() {
     throttle_ = 20;
   }
 
-  vector<shared_ptr<ArcaneSpellData>>& arcane_spell_data = 
+  unordered_map<int, shared_ptr<ArcaneSpellData>>& arcane_spell_data = 
     resources_->GetArcaneSpellData();
 
   shared_ptr<ArcaneSpellData> selected_spell = nullptr;
-  for (auto spell : arcane_spell_data) {
+  for (auto [id, spell] : arcane_spell_data) {
     if (!spell->learned) continue;
     if (spell->spell_id == 9) continue;
 
@@ -910,13 +914,13 @@ void Inventory::DrawSpellDescription() {
   ivec2 pos = vec2(win_x_, win_y_) + spell_description_pos_;
   draw_2d_->DrawImage("inventory_spell_description", pos.x, pos.y, 900, 900, 1.0);
 
-  vector<shared_ptr<ArcaneSpellData>>& arcane_spell_data = 
+  unordered_map<int, shared_ptr<ArcaneSpellData>>& arcane_spell_data = 
     resources_->GetArcaneSpellData();
 
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
   shared_ptr<ArcaneSpellData> selected_spell = nullptr;
-  for (auto spell : arcane_spell_data) {
+  for (auto [id, spell] : arcane_spell_data) {
     if (!spell->learned) continue;
 
     string item_image_name = item_data[spell->item_id].image;
@@ -947,15 +951,25 @@ void Inventory::DrawSpellDescription() {
   int right = left + 76;
   int top = spellbook_pos.y + 38;
   int bottom = top + 76;
-  shared_ptr<ArcaneSpellData> spell_shot = nullptr;
   if (IsMouseInRectangle(left, right, bottom, top)) {
-    auto spell = arcane_spell_data[3];
+    auto spell = arcane_spell_data[9];
 
     draw_2d_->DrawImage(spell->image_name, pos.x + 731, pos.y + 136, 128, 128, 
       1.0); 
 
     const string& description = resources_->GetString(spell->description);
     DrawContextPanel(pos.x + 595, pos.y + 312, spell->name, description);
+
+    if (lft_click_ && selected_item_ == 0) {
+      selected_item_ = spell->item_id;
+      selected_qnty_ = 0;
+      old_pos_x_ = -1;
+      old_pos_y_ = -1;
+      hold_offset_x_ = -25;
+      hold_offset_y_ = -25;
+      dragged_item.origin = ITEM_ORIGIN_SPELL_GRAPH;
+      dragged_item.item_id = spell->item_id;
+    }
   }
 
 }

@@ -75,7 +75,7 @@ void Renderer::Init() {
   InitShadowFramebuffer();
 
   terrain_ = make_shared<Terrain>(resources_->GetShader("terrain"), 
-    resources_->GetShader("water"));
+    resources_->GetShader("far_terrain"));
   terrain_->set_asset_catalog(resources_);
   terrain_->set_shadow_texture(shadow_textures_[0], 0);
   terrain_->set_shadow_texture(shadow_textures_[1], 1);
@@ -1391,6 +1391,24 @@ void Renderer::DrawStatusBars() {
     boost::lexical_cast<string>(player->max_mana);
   draw_2d_->DrawText(mana_str, 1110, 900 - 818, 
     vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  int item_id =  configs->spellbar[configs->selected_spell];
+  shared_ptr<ArcaneSpellData> arcane_spell =  
+    resources_->WhichArcaneSpell(item_id);
+
+  string active_name;
+  if (arcane_spell) {
+    active_name = arcane_spell->name;
+  } else {
+    const ItemData& item_data = resources_->GetItemData()[item_id];
+    active_name = item_data.name;
+  }
+
+  if (!active_name.empty()) {
+    draw_2d_->DrawText(active_name, 1120, 900 - 870, 
+      vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+  }
 }
 
 void Renderer::DrawScreenEffects() {
@@ -1968,7 +1986,7 @@ void Renderer::DrawDungeonTiles() {
       float room_z = cz * size;
 
       AABB aabb;
-      aabb.point = kDungeonOffset + vec3(room_x, 0, room_z);
+      aabb.point = kDungeonOffset + vec3(room_x, 0, room_z) - vec3(5, 0, 5);
       aabb.dimensions = vec3(size, 50, size);
 
       // Min distance is more than light radius.
