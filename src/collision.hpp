@@ -131,6 +131,9 @@ vec3 ClosestPtPointPlane(const vec3& q, const Plane& p);
 
 float DistPointPlane(const vec3& q, const Plane& p);
 
+bool IntersectSpherePlane(BoundingSphere s, Plane p, vec3& displacement_vector, 
+  vec3& point_of_contact);
+
 // bool IntersectMovingSphereAABB(Sphere s, Vector d, AABB b, float &t);
 // https://github.com/vancegroup-mirrors/hapi/blob/master/src/CollisionObjects.cpp
 

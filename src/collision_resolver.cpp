@@ -581,6 +581,7 @@ vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1,
     for (const auto& [bone_id, bs] : obj1->bones) {
       cols.push_back(make_shared<CollisionBT>(obj1, bone_id, polygon));
     }
+    break;
   }
   return cols;
 }
@@ -969,19 +970,33 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
   const vec3 up = vec3(0, 1, 0);
 
   vec3 penetration = -displacement_vector;
-  float flatness = dot(surface_normal, up);
+  float flatness = dot(normalize(surface_normal), up);
 
   // Surface is too steep.
-  if (flatness < 0.6f && !allow_climb) {
-    return displacement_vector - dot(displacement_vector, up) * up;
-  }
-
-  // Surface is still too steep.
-  if (flatness < 0.7f) {
+  // if (flatness < 0.6f && !allow_climb) {
+  //   return displacement_vector - dot(displacement_vector, up) * up;
+  // }
+  if (allow_climb) {
+    displacement_vector.x = 0;
+    displacement_vector.z = 0;
     return displacement_vector;
   }
+
+  if (flatness < 0.7f) {
+    return displacement_vector;
+  } else if (flatness < 0.95f) {
+    displacement_vector.x = 0;
+    displacement_vector.z = 0;
+    return displacement_vector;
+  }
+
+  float k = 1.0f - (1.0f / (1 + exp(-(flatness - 0.85f) * 40.0f)));
+
+  displacement_vector.x *= k;
+  displacement_vector.z *= k;
+  return displacement_vector;
  
-  if (flatness < 0.9f) {
+  if (flatness < 0.7f) {
     vec3 left = normalize(cross(up, penetration)); 
     vec3 tan_upwards = normalize(cross(penetration, left));
 
@@ -1004,8 +1019,12 @@ vec3 CorrectDisplacementOnFlatSurfaces(vec3 displacement_vector,
       return displacement_vector;
     }
 
-    vec3 projection = v_penetration * tan_upwards;
-    displacement_vector += projection;
+    // vec3 projection = v_penetration * tan_upwards;
+    // displacement_vector += projection;
+
+    // displacement_vector.x = 0;
+    // displacement_vector.z = 0;
+    // displacement_vector - dot(displacement_vector, up) * up;
   }
 
   // If surface is too flat, displacement is already almost vertical.
@@ -1031,11 +1050,6 @@ void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
     bool in_contact;
     c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
       c->displacement_vector, surface_normal, v, in_contact);
-
-    if (in_contact) {
-      // c->displacement_vector += v2;
-      // c->obj1->in_contact_with = c->obj2;
-    }
 
     FillCollisionBlankFields(c);
   }
@@ -1125,7 +1139,8 @@ void CollisionResolver::TestCollisionBP(shared_ptr<CollisionBP> c) {
 
     bool in_contact;
     c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, surface_normal, v, in_contact);
+      c->displacement_vector, surface_normal, v, in_contact, 
+      c->obj2->IsClimbable());
 
     FillCollisionBlankFields(c);
   }
@@ -1157,17 +1172,17 @@ void CollisionResolver::TestCollisionBO(shared_ptr<CollisionBO> c) {
     c->displacement_vector = to_world_space * c->displacement_vector;
     c->normal = normalize(c->displacement_vector);
 
-    bool in_contact;
-    const vec3 v = c->obj1->position - c->obj1->prev_position;
+    // bool in_contact;
+    // const vec3 v = c->obj1->position - c->obj1->prev_position;
     // c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
     //   c->displacement_vector, c->normal, v, in_contact);
 
-    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, c->normal, v, in_contact);
+    // c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+    //   c->displacement_vector, c->normal, v, in_contact);
 
-    if (in_contact) {
-      c->obj1->in_contact_with = c->obj2;
-    }
+    // if (in_contact) {
+    //   c->obj1->in_contact_with = c->obj2;
+    // }
 
     FillCollisionBlankFields(c);
   }
@@ -1215,33 +1230,25 @@ void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
   }
   if (c->polygon.vertices.empty()) return;
 
+  static vector<vec2> sample_offsets {
+    { 2, -2 },
+    { -2, 2 },
+    { 2, 2 },
+    { -2, 2 },
+  };
+
+  vec2 obj1_pos = vec2(c->obj1->position.x, c->obj1->position.z);
   float h = resources_->GetHeightMap().GetTerrainHeight(
-    vec2(c->obj1->position.x, c->obj1->position.z), &normal);
-  if ((s1.center.y - s1.radius) < h) {
+    obj1_pos, &normal);
 
-    c->displacement_vector = vec3(0, h - (s1.center.y - s1.radius), 0);
-    c->point_of_contact = s1.center;
-    c->point_of_contact.y = kDungeonOffset.y;
-    c->collided = true;
-    c->normal = c->polygon.normals[0];
-
-    const vec3& surface_normal = c->polygon.normals[0];
-    const vec3 v = c->obj1->position - c->obj1->prev_position;
-
-    bool in_contact;
-    c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, surface_normal, v, in_contact, false);
-
-    FillCollisionBlankFields(c);
-
-    const vec3 up = vec3(0, 1, 0);
-    float flatness = dot(surface_normal, up);
-
-    // Surface is not too steep.
-    if (flatness > 0.6f) {
-      return;
-    }
+  vec3 avg_normal = normal * 0.2f;
+  for (int i = 0; i < 4; i++) {
+    h += resources_->GetHeightMap().GetTerrainHeight(
+      obj1_pos + sample_offsets[i], &normal);
+    avg_normal += normal * 0.2f;
   }
+  h *= 0.2f;
+  normal = avg_normal;
 
   if (c->obj1->position.y < h - 10) {
     c->collided = true;
@@ -1251,19 +1258,70 @@ void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
     return;
   }
 
-  c->collided = IntersectBoundingSphereWithTriangle(s1, c->polygon, 
-    c->displacement_vector, c->point_of_contact);
-  c->normal = c->polygon.normals[0];
+  Plane p;
+  p.normal = normal;
+  p.d = dot(p.normal, vec3(obj1_pos.x, h, obj1_pos.y));
+
+  c->collided = IntersectSpherePlane(s1, p, c->displacement_vector, 
+    c->point_of_contact);
+
   if (c->collided) {
-    const vec3& surface_normal = c->polygon.normals[0];
+    c->normal = normal;
     const vec3 v = c->obj1->position - c->obj1->prev_position;
 
     bool in_contact;
     c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
-      c->displacement_vector, surface_normal, v, in_contact, false);
+      c->displacement_vector, c->normal, v, in_contact, false);
 
+    float flatness = dot(c->normal, vec3(0, 1, 0));
+
+    // Sigmoid where 0.7 = 0, 0.85 = 0.5, 1 = 1.0.
+    // c->impulse_strength = (1.0f / (1 + exp(-(flatness - 0.85) * 40)));
+    // c->obj1->speed.y = 0;
+    
     FillCollisionBlankFields(c);
   }
+  return;
+
+
+  // if ((s1.center.y - s1.radius) < h) {
+  //   c->displacement_vector = vec3(0, h - (s1.center.y - s1.radius), 0);
+  //   c->point_of_contact = s1.center;
+  //   c->point_of_contact.y = kDungeonOffset.y;
+  //   c->collided = true;
+  //   c->normal = c->polygon.normals[0];
+
+  //   const vec3& surface_normal = c->polygon.normals[0];
+  //   const vec3 v = c->obj1->position - c->obj1->prev_position;
+
+  //   bool in_contact;
+  //   c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+  //     c->displacement_vector, surface_normal, v, in_contact, false);
+
+  //   FillCollisionBlankFields(c);
+
+  //   const vec3 up = vec3(0, 1, 0);
+  //   float flatness = dot(surface_normal, up);
+
+  //   // Surface is not too steep.
+  //   // if (flatness > 0.6f) {
+  //   //   return;
+  //   // }
+  // }
+
+  // c->collided = IntersectBoundingSphereWithTriangle(s1, c->polygon, 
+  //   c->displacement_vector, c->point_of_contact);
+  // c->normal = c->polygon.normals[0];
+  // if (c->collided) {
+  //   const vec3& surface_normal = c->polygon.normals[0];
+  //   const vec3 v = c->obj1->position - c->obj1->prev_position;
+
+  //   bool in_contact;
+  //   c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
+  //     c->displacement_vector, surface_normal, v, in_contact, false);
+
+  //   FillCollisionBlankFields(c);
+  // }
 }
 
 // Test Quick Sphere - Perfect.
@@ -1888,12 +1946,22 @@ void CollisionResolver::ApplyTorque(ColPtr c) {
 }
 
 void CollisionResolver::ApplyImpulse(ColPtr c) {
-  vec3 v = normalize(c->displacement_vector);
-  float k = dot(c->obj1->speed, v);
+  float k = dot(c->obj1->speed, c->displacement_vector);
   if (isnan(k)) return;
 
-  if (abs(k) > 5.0f) return;
-  c->obj1->speed += abs(k) * v;
+  vec3 cancel_v = -clamp(k, -2.0, 0.0) * c->displacement_vector;
+  if (IsNaN(cancel_v)) return;
+  if (length(cancel_v) > 1.0f) return;
+
+  // c->obj1->speed += c->impulse_strength * k * c->displacement_vector;
+  c->obj1->speed += c->impulse_strength * cancel_v;
+
+  // vec3 v = normalize(c->displacement_vector);
+  // float k = dot(c->obj1->speed, v);
+  // if (isnan(k)) return;
+
+  // vec3 cancel_v = abs(clamp(k, -1, 1)) * v;
+  // c->obj1->speed += c->impulse_strength * cancel_v;
 }
 
 void CollisionResolver::ResolveCollisionWithFixedObject(ColPtr c) {
@@ -1911,7 +1979,10 @@ void CollisionResolver::ResolveCollisionWithFixedObject(ColPtr c) {
 
   displaced_obj->position += displacement_vector;
   displaced_obj->target_position = displaced_obj->position;
-  if (dot(normal, vec3(0, 1, 0)) > 0.85) displaced_obj->can_jump = true;
+  if (dot(normal, vec3(0, 1, 0)) > 0.85) {
+    displaced_obj->can_jump = true;
+    displaced_obj->speed.y = 0;
+  }
 
   resources_->UpdateObjectPosition(displaced_obj);
 }

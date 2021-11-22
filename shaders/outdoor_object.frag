@@ -118,7 +118,7 @@ void main(){
   diffuse_color = texture(texture_sampler, in_data.UV).rgb;
 
   vec3 light_color = vec3(1.0, 1.0, 1.0);
-  float light_power = 0.6;
+  float light_power = 0.3;
 
   vec3 ambient_color = lighting_color * diffuse_color;
 

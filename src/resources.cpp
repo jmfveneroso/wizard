@@ -891,26 +891,29 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
 } 
 
 // TODO: this should definitely go elsewhere. 
-void Resources::CreateChargeMagicMissileEffect() {
+shared_ptr<Particle> Resources::CreateChargeMagicMissileEffect(const string& particle_name) {
   if (IsHoldingScepter()) {
     ObjPtr obj = GetObjectByName("scepter-001");
     for (const auto& [bone_id, bs] : obj->bones) {
       shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
-        "particle-sparkle", 0.5f);
+        particle_name, 0.5f);
       p->associated_obj = obj;
       p->offset = vec3(0);
       p->associated_bone = bone_id;
+      return p;
     }
   } else {
     ObjPtr obj = GetObjectByName("hand-001");
     for (const auto& [bone_id, bs] : obj->bones) {
       shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
-        "particle-sparkle", 0.5f);
+        particle_name, 0.5f);
       p->associated_obj = obj;
       p->offset = vec3(0);
       p->associated_bone = bone_id;
+      return p;
     }
   }
+  return nullptr;
 }
 
 void Resources::UpdateHand(const Camera& camera) {
@@ -1762,6 +1765,7 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
 ) {
   switch (obj->GetCollisionType()) {
     case COL_OBB: {
+      cout << "Colliding with obb: " << obj->GetDisplayName() << endl;
       OBB obb = obj->GetTransformedOBB();
       mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
       mat3 from_world_space = inverse(to_world_space);
@@ -2782,8 +2786,10 @@ void Resources::LearnSpell(const unsigned int spell_id) {
 void Resources::UpdateAnimationFrames() {
   float d = GetDeltaTime() / 0.016666f;
 
-  float speed = length(player_->speed);
-  if (speed > 0.01f && player_->can_jump) {
+  vec3 measure_speed = player_->speed;
+  measure_speed.y = 0;
+  float speed = length(measure_speed);
+  if (speed > 0.1f && player_->can_jump) {
     camera_jiggle += d * speed * 0.5f;
 
     if (camera_jiggle > 6.28f) {
@@ -3410,7 +3416,7 @@ void Resources::CreateRandomMonster(const vec3& pos) {
   int r = Random(0, 6);
   switch (r) {
     case 0: {
-      obj = CreateGameObjFromAsset(this, "worm", pos + vec3(0, 3, 0));
+      obj = CreateGameObjFromAsset(this, "blood_worm", pos + vec3(0, 3, 0));
       break;
     }
     case 1: {
@@ -3662,7 +3668,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'J': case 'K': case 'W': case 'r': case 'E': case 'Q': { // Is Monster.
           static unordered_map<char, string> monster_assets { 
             { 'L', "spider" },
-            { 'w', "worm" },
+            { 'w', "blood_worm" },
             { 's', "spiderling" },
             { 'S', "white_spine" },
             { 't', "spiderling" },
@@ -3670,7 +3676,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
             { 'Y', "dragonfly" },
             { 'J', "speedling" },
             { 'K', "lancet_spider" },
-            { 'W', "worm_king" },
+            { 'W', "wraith" },
             { 'r', "drider" },
             { 'E', "metal-eye" },
             { 'Q', "spider_queen" },
@@ -3878,11 +3884,11 @@ void Resources::LoadGame(const string& config_filename,
 }
 
 void Resources::LoadTownAssets() {
-  if (town_loaded_) return;
+  if (configs_->town_loaded) return;
   LoadMeshes(directory_ + "/town_models");
   LoadAssets(directory_ + "/assets/town_assets");
   CalculateCollisionData();
-  town_loaded_ = true;
+  configs_->town_loaded = true;
 }
 
 void Resources::CreateTown() {
@@ -4483,53 +4489,70 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
   vec3 up = cross(right, direction);
 
-  vec3 pos = position + direction * 0.5f;
-
-  if (owner->IsPlayer()) {
-    pos += right * 1.51f + up * -1.5f;
+  vec3 pos = position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    pos = s.center;
   }
 
   vec3 p2 = position + direction * 3000.0f;
   vec3 normal = normalize(p2 - pos);
-  pos += normal * 5.0f;
 
-  float t;
+  float t = 99999999999.9f;
   vec3 q;
   ObjPtr obj;
+  vec3 end = normal * 50.0f;
+
+  bool collided_dungeon = false;
+  if (dungeon_.IsRayObstructed(pos, pos + normal * 100.0f, t, true/*only_walls*/)) {
+    end = t * normal;
+    collided_dungeon = true;
+  } 
+
+  float other_t = 0;
   if (owner->IsPlayer()) {
-    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL, t, q);
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_ALL, other_t, q);
   } else {
-    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER, t, q);
+    obj = IntersectRayObjects(pos, normal, 100, INTERSECT_PLAYER, other_t, q);
   }
 
-  vec3 end = normal * 50.0f;
+  bool collided_obj = false;
   if (obj) {
-    if (obj->IsCreature() || obj->IsPlayer()) {
+    if (!collided_dungeon || other_t < t) {
+      end = other_t * normal;
+      collided_obj = true;
+      collided_dungeon = false;
+    }
+  } 
+
+  bool collided_plane = false;
+  float plane_t = 0.0f;
+  if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
+    Plane(vec3(0, 1, 0), kDungeonOffset.y), plane_t, q)) {
+    if ((!collided_dungeon && !collided_obj) || (collided_dungeon && plane_t * 100.0f < t)
+      || (collided_obj && plane_t * 100.0f < other_t)) {
+      end = plane_t * 100.0f * normal;
+      collided_plane = true;
+    }
+  }
+
+  float particle_size = 0.5f + 0.25 * Random(1, 6);
+  if (collided_obj) {
+    if (obj->IsCreature() && obj->life > 0.0f) {
+    // if (obj->IsCreature() || obj->IsPlayer()) {
       obj->DealDamage(owner, 0.1f, vec3(0, 1, 0), /*take_hit_animation=*/false);
     }
-
-    // end = q - pos;
-    end = t * normal;
-    CreateParticleEffect(1, pos + end, -normal, vec3(1.0, 1.0, 1.0), 0.5, 32.0f, 
-      3.0f);
-  } else {
-    if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
-      Plane(vec3(0, 1, 0), kDungeonOffset.y), t, q)) {
-      end = t * 100.0f * normal;
-      CreateParticleEffect(1, q, vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 0.25, 32.0f, 
-        3.0f);
-    }
+    CreateOneParticle(pos + end * 0.95f, 35.0f, "particle-fire", particle_size);
+  } else if (collided_dungeon) {
+    CreateOneParticle(pos + end, 35.0f, "particle-fire", particle_size);
+  } else if (collided_plane) {
+    CreateOneParticle(pos + end, 35.0f, "particle-fire", particle_size);
   }
 
-  Lock();
-  int index = 0;
-  // for (int i = 0; i < kMax3dParticles; i++) {
-  //   if (particles_3d_[i]->life > 0.0f) continue;
-  //   index = i;
-  //   break;
-  // }
+  shared_ptr<Particle> p = Create3dParticleEffect("particle_line", pos);
 
-  shared_ptr<Particle> p = particles_3d_[index];
+  Lock();
   MeshPtr mesh = meshes_[p->mesh_name];
   p->active_animation = "";
   p->existing_mesh_name = "";
@@ -4541,9 +4564,11 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vector<unsigned int> indices(12);
 
   mesh->polygons.clear();
-  CreateCylinder(vec3(0), end, 0.05f, vertices, uvs, indices,
+
+  float cylinder_size = 0.02f + 0.01f * Random(0, 5);
+  CreateCylinder(vec3(0), end, cylinder_size, vertices, uvs, indices,
     mesh->polygons);
-  
+ 
   UpdateMesh(*mesh, vertices, uvs, indices);
   Unlock();
 
@@ -4628,10 +4653,9 @@ void Resources::CastHeal(ObjPtr owner) {
   }
 }
 
-// TODO: this should probably go to main.
 void Resources::CastMissile(
-  ObjPtr owner, const MissileType& missile_type, const vec3& direction, 
-  const float& velocity) {
+  ObjPtr owner, const vec3& position, const MissileType& missile_type, 
+  const vec3& direction, const float& velocity) {
   shared_ptr<Missile> obj = GetUnusedMissile();
   obj->UpdateAsset("horn");
   obj->CalculateCollisionData();
@@ -4643,7 +4667,7 @@ void Resources::CastMissile(
   obj->scale_out = 0.0f;
   obj->associated_particles.clear();
 
-  obj->position = owner->position; 
+  obj->position = position; 
   obj->speed = direction * velocity;
   obj->life = 200.0f;
 
@@ -4893,6 +4917,8 @@ int Resources::CrystalCombination(int item_id1, int item_id2) {
   if (item_id1 == 18 && item_id2 == 19) return 21;
   if (item_id1 == 19 && item_id2 == 20) return 22;
   if (item_id1 == 18 && item_id2 == 20) return 23;
+  if (item_id1 == 19 && item_id2 == 21) return 29;
+  if (item_id1 == 19 && item_id2 == 22) return 30;
 
   int type1 = GetArcaneSpellType(item_id1);
   int type2 = GetArcaneSpellType(item_id2);

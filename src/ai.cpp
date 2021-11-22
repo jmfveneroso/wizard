@@ -261,6 +261,11 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
   if (creature->GetAsset()->name == "white_spine") {
     return WhiteSpineAttack(creature, action);
   }
+
+  if (creature->GetAsset()->name == "wraith") {
+    return WraithAttack(creature, action);
+  }
+
   return true;
 }
 
@@ -292,7 +297,44 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
         dir = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
       }
 
-      resources_->CastMissile(creature, MISSILE_HORN, dir, missile_speed);
+      resources_->CastMissile(creature, creature->position, MISSILE_HORN, dir, 
+        missile_speed);
+    }
+  }
+  return false;
+}
+
+bool AI::WraithAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const int num_missiles = boost::lexical_cast<int>(resources_->GetGameFlag("white_spine_num_missiles"));
+  const float missile_speed = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_speed"));
+  const float spread = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_spread"));
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 58) return true;
+
+  if (creature->frame >= 25 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    ObjPtr player = resources_->GetObjectByName("player");
+
+    BoundingSphere s = creature->GetBoneBoundingSphereByBoneName("R.hand");
+    vec3 dir = CalculateMissileDirectionToHitTarget(s.center,
+      player->position + vec3(0, -3.0f, 0), missile_speed);
+
+    for (int i = 0; i < num_missiles; i++) {
+      vec3 p2 = creature->position + dir * 200.0f;
+      vec3 dir = normalize(p2 - creature->position);
+
+      if (i > 0) {
+        float x_ang = (float) Random(-5, 6) * spread;
+        float y_ang = (float) Random(-5, 6) * spread;
+        vec3 right = cross(dir, vec3(0, 1, 0));
+        mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+        dir = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+      }
+
+      resources_->CastMissile(creature, s.center, MISSILE_HORN, dir, missile_speed);
     }
   }
   return false;
@@ -454,11 +496,7 @@ bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
     }
   }
 
-  if (physics_behavior == PHYSICS_FLY || physics_behavior == PHYSICS_SWIM) {
-    to_next_location.y = 0;
-  } else {
-    to_next_location.y = 0;
-  }
+  to_next_location.y = 0;
 
   float dist_next_location = length(to_next_location);
   if (dist_next_location < 1.0f) {

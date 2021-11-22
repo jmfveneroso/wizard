@@ -397,7 +397,6 @@ bool PlayerInput::CastSpellOrUseItem() {
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
   
   int item_id = configs->spellbar[configs->selected_spell];
-  cout << "item_id: " << item_id << endl;
   shared_ptr<ArcaneSpellData> arcane_spell =  
     resources_->WhichArcaneSpell(item_id);
 
@@ -408,8 +407,8 @@ bool PlayerInput::CastSpellOrUseItem() {
   // }
 
   if (arcane_spell) {
-    cout << "Arcane" << endl;
-    cout << "spell_id: " << arcane_spell->spell_id << endl;
+    // cout << "Arcane" << endl;
+    // cout << "spell_id: " << arcane_spell->spell_id << endl;
     current_spell_ = arcane_spell;
 
     Camera c = GetCamera();
@@ -481,6 +480,39 @@ bool PlayerInput::CastSpellOrUseItem() {
         }
         return false;
       }
+      case 3: { // Magma Ray.
+        // TODO: set spell cost in config.
+        if (player->stamina > 0.0f && player->mana >= 0.1f) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 3;
+          player->mana -= 0.1f;
+          debounce_ = 0;
+          return true;
+        }
+        return false;
+      }
+      case 4: { // Light.
+        // TODO: set spell cost in config.
+        if (player->stamina > 0.0f && player->mana >= 15.0f) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 4;
+          player->mana -= 15.0f;
+          player->stamina -= 20.0f;
+          debounce_ = 20;
+          return true;
+        }
+        return false;
+      }
       // case 2: {
       //   resources_->CastLightningRay(player, camera_.position, camera_.direction);
       //   if (Random(0, 5) == 0) {
@@ -492,36 +524,36 @@ bool PlayerInput::CastSpellOrUseItem() {
       //   debounce_ = -1;
       //   return true;
       // }
-      case 3: { // Open Lock.
-        ObjPtr item = configs->interacting_item;
-        if (item && item->type == GAME_OBJ_DOOR) {
-          shared_ptr<Door> door = static_pointer_cast<Door>(item);
-          if (door->state == 4) {
-            door->state = DOOR_CLOSED;
-            obj->active_animation = "Armature|shoot";
-            player->player_action = PLAYER_CASTING;
-            obj->frame = 0;
-            scepter->frame = 0;
-            animation_frame_ = 20;
-            player->selected_spell = 4;
-            configs->spellbar_quantities[configs->selected_spell]--;
-            if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-              configs->spellbar[configs->selected_spell] = 0;
-            }
-          }
-        }
-        debounce_ = 20;
-        return true;
-      }
-      case 4: { // Fireball.
-        resources_->CastFireball(c);
-        configs->spellbar_quantities[configs->selected_spell]--;
-        if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-          configs->spellbar[configs->selected_spell] = 0;
-        }
-        debounce_ = 20;
-        return true;
-      }
+      // case 3: { // Open Lock.
+      //   ObjPtr item = configs->interacting_item;
+      //   if (item && item->type == GAME_OBJ_DOOR) {
+      //     shared_ptr<Door> door = static_pointer_cast<Door>(item);
+      //     if (door->state == 4) {
+      //       door->state = DOOR_CLOSED;
+      //       obj->active_animation = "Armature|shoot";
+      //       player->player_action = PLAYER_CASTING;
+      //       obj->frame = 0;
+      //       scepter->frame = 0;
+      //       animation_frame_ = 20;
+      //       player->selected_spell = 4;
+      //       configs->spellbar_quantities[configs->selected_spell]--;
+      //       if (configs->spellbar_quantities[configs->selected_spell] == 0) {
+      //         configs->spellbar[configs->selected_spell] = 0;
+      //       }
+      //     }
+      //   }
+      //   debounce_ = 20;
+      //   return true;
+      // }
+      // case 4: { // Fireball.
+      //   resources_->CastFireball(c);
+      //   configs->spellbar_quantities[configs->selected_spell]--;
+      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
+      //     configs->spellbar[configs->selected_spell] = 0;
+      //   }
+      //   debounce_ = 20;
+      //   return true;
+      // }
       case 5: { // Bouncy ball.
         resources_->CastBouncyBall(player, c.position, c.direction);
         configs->spellbar_quantities[configs->selected_spell]--;
@@ -684,6 +716,7 @@ void PlayerInput::ProcessPlayerCasting() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+  Camera c = GetCamera();
 
   if (resources_->IsHoldingScepter()) {
     obj->active_animation = "Armature|shoot_scepter";
@@ -736,6 +769,12 @@ void PlayerInput::ProcessPlayerCasting() {
         case 2:
           resources_->CastHeal(player);
           break;
+        case 3:
+          player->player_action = PLAYER_CHANNELING;
+          break;
+        case 4:
+          resources_->CastDarkvision();
+          break;
         case 9:
           resources_->CastSpellShot(camera_);
           break;
@@ -743,6 +782,35 @@ void PlayerInput::ProcessPlayerCasting() {
           break;
       }
     }
+  }
+}
+
+void PlayerInput::ProcessPlayerChanneling() {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+  Camera c = GetCamera();
+
+  if (glfwGetKey(window_, GLFW_KEY_C) == GLFW_PRESS) {
+    obj->frame = 20;
+    scepter->frame = 20;
+    animation_frame_ = 0;
+    player->mana -= 0.1f;
+
+    if (!channeling_particle || channeling_particle->life < 0.0f) {
+      channeling_particle = 
+        resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+    }
+    resources_->CastLightningRay(player, c.position, c.direction);
+  } else {
+    obj->frame = 0;
+    scepter->frame = 0;
+    player->player_action = PLAYER_IDLE;
+    if (channeling_particle) {
+      channeling_particle->life = 0.0f;
+    }
+    channeling_particle = nullptr;
   }
 }
 
@@ -919,6 +987,10 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     }
     case PLAYER_CASTING: {
       ProcessPlayerCasting();
+      break;
+    }
+    case PLAYER_CHANNELING: {
+      ProcessPlayerChanneling();
       break;
     }
     case PLAYER_DRAWING: {

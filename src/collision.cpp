@@ -539,6 +539,18 @@ bool IntersectMovingSpherePlane(BoundingSphere s, vec3 v, Plane p, float &t,
   return false;
 }
 
+// Determine whether plane p intersects sphere s
+bool IntersectSpherePlane(BoundingSphere s, Plane p, vec3& displacement_vector, 
+  vec3& point_of_contact) {
+  float dist = dot(s.center, p.normal) - p.d;
+  if (abs(dist) <= s.radius) {
+    displacement_vector = p.normal * (s.radius - abs(dist));
+    point_of_contact = ClosestPtPointPlane(s.center, p);
+    return true;
+  }
+  return false;
+}
+
 bool IntersectMovingSphereTriangle(BoundingSphere s, vec3 v, 
   const Polygon& polygon, float &t, vec3& q) {
   const vec3& normal = polygon.normals[0];

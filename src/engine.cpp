@@ -445,141 +445,136 @@ void Engine::AfterFrame() {
 void Engine::BeforeFrameDebug() {
   unordered_map<string, shared_ptr<GameObject>>& objs = 
     resources_->GetObjects();
-  for (auto& [name, obj] : objs) {
-    // if (obj->type != GAME_OBJ_DOOR) continue;
-    if (obj->GetCollisionType() != COL_OBB) continue;
-
-    string obb_name = obj->name + "-obb";
-    OBB obb = obj->GetTransformedOBB();
-
-    vec3 w = obb.axis[0] * obb.half_widths[0];
-    vec3 h = obb.axis[1] * obb.half_widths[1];
-    vec3 d = obb.axis[2] * obb.half_widths[2];
-
-    const vector<vec3> offsets {
-      // Back face.
-      vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
-      // Front face.
-      vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
-    };
-
-    vector<vec3> v;
-    const vec3& c = obb.center;
-    for (const auto& o : offsets) {
-      v.push_back(c + w * o.x + h * o.y + d * o.z);
-    }
-
-    vector<vec3> vertices;
-    vector<vec2> uvs;
-    vector<unsigned int> indices(36);
-    Mesh mesh = CreateCube(v, vertices, uvs, indices);
-    if (door_obbs_.find(obb_name) == door_obbs_.end()) {
-      shared_ptr<GameObject> obb_obj = 
-        CreateGameObjFromPolygons(resources_.get(), mesh.polygons, obb_name,
-          obj->position);
-      door_obbs_[obb_name] = obb_obj;
-    } else {
-      ObjPtr obb_obj = door_obbs_[obb_name];
-      MeshPtr mesh = resources_->GetMesh(obb_obj);
-      UpdateMesh(*mesh, vertices, uvs, indices);
-    }
-  }
-
-
   // for (auto& [name, obj] : objs) {
-  //   if (!obj->IsCreature()) continue;
+  //   // if (obj->type != GAME_OBJ_DOOR) continue;
+  //   if (obj->GetCollisionType() != COL_OBB) continue;
 
-  //   cout << "Obj: " << obj->GetName() << endl;
+  //   string obb_name = obj->name + "-obb";
+  //   OBB obb = obj->GetTransformedOBB();
 
-  //   for (auto& [id, bone] : obj->bones) {
-  //     string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
-  //     cout << "obb: " << obb_name << endl;
-  //   
-  //     BoundingSphere bs = obj->GetBoneBoundingSphere(id);
-  //     if (door_obbs_.find(obb_name) == door_obbs_.end()) {
-  //     cout << "bs: " << bs << endl;
-  //       ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
-  //       bone_obj->never_cull = true;
-  //       door_obbs_[obb_name] = bone_obj;
-  //       resources_->UpdateObjectPosition(bone_obj);
-  //     } else {
-  //       ObjPtr bone_obj = door_obbs_[obb_name];
-  //       bone_obj->position = bs.center;
-  //       resources_->UpdateObjectPosition(bone_obj);
-  //     }
+  //   vec3 w = obb.axis[0] * obb.half_widths[0];
+  //   vec3 h = obb.axis[1] * obb.half_widths[1];
+  //   vec3 d = obb.axis[2] * obb.half_widths[2];
+
+  //   const vector<vec3> offsets {
+  //     // Back face.
+  //     vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
+  //     // Front face.
+  //     vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
+  //   };
+
+  //   vector<vec3> v;
+  //   const vec3& c = obb.center;
+  //   for (const auto& o : offsets) {
+  //     v.push_back(c + w * o.x + h * o.y + d * o.z);
+  //   }
+
+  //   vector<vec3> vertices;
+  //   vector<vec2> uvs;
+  //   vector<unsigned int> indices(36);
+  //   Mesh mesh = CreateCube(v, vertices, uvs, indices);
+  //   if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+  //     shared_ptr<GameObject> obb_obj = 
+  //       CreateGameObjFromPolygons(resources_.get(), mesh.polygons, obb_name,
+  //         obj->position);
+  //     door_obbs_[obb_name] = obb_obj;
+  //   } else {
+  //     ObjPtr obb_obj = door_obbs_[obb_name];
+  //     MeshPtr mesh = resources_->GetMesh(obb_obj);
+  //     UpdateMesh(*mesh, vertices, uvs, indices);
   //   }
   // }
 
-  shared_ptr<Configs> configs = resources_->GetConfigs();
-  Camera c = player_input_->GetCamera();
   for (auto& [name, obj] : objs) {
-    if (obj->type != GAME_OBJ_PARTICLE) continue;
-    if (!obj->Is3dParticle()) continue;
-    if (!configs->levitate) continue;
+    if (!obj->IsCreature()) continue;
 
-    vector<vec3> vertices;
-    vector<vec2> uvs;
-    vector<unsigned int> indices(12);
-    Mesh m;
-    // Mesh m = CreateLine(vec3(0), c.direction * 40.0f, vertices, uvs, indices);
-
-    // vec3 w = vec3(1, 0, 0);
-    // vec3 h = vec3(0, 1, 0);
-    // vec3 d = vec3(0, 0, 1);
-
-    // const vector<vec3> offsets {
-    //   // Back face.
-    //   vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
-    //   // Front face.
-    //   vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
-    // };
-
-    // static float bla = 0.01f;
-    // bla += 0.01;
-    // mat4 rotation_matrix = rotate(
-    //   mat4(1.0),
-    //   bla,
-    //   vec3(0.0f, 1.0f, 0.0f)
-    // );
-
-    // vector<vec3> v;
-    // const vec3& c = vec3(0, 0, 0);
-    // for (const auto& o : offsets) {
-    //   vec3 a = c + w * o.x + h * o.y + d * o.z;
-    //  a = vec3(rotation_matrix * vec4(a, 1.0));
-    //   v.push_back(a);
-    // }
-
-    // vector<vec3> vertices;
-    // vector<vec2> uvs;
-    // vector<unsigned int> indices(36);
-    // Mesh m = CreateCube(v, vertices, uvs, indices);
-
-    shared_ptr<Particle> p = static_pointer_cast<Particle>(obj);
-
-    // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
-    if (p->mesh_name.empty()) {
-      cout << "never should" << endl;
-      // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
-
-      p->mesh_name = resources_->GetRandomName();
-      resources_->AddMesh(p->mesh_name, m);
-      
-      // my_box_ = CreateGameObjFromPolygons(resources_.get(), m.polygons, "my-box",
-      //     obj->position + vec3(0, 10, 0));
-    } else {
-      // MeshPtr mesh = resources_->GetMesh(my_box_);
-      MeshPtr mesh = resources_->GetMesh(obj);
-      UpdateMesh(*mesh, vertices, uvs, indices);
+    for (auto& [id, bone] : obj->bones) {
+      string obb_name = obj->name + "-bone-" + boost::lexical_cast<string>(id);
+    
+      BoundingSphere bs = obj->GetBoneBoundingSphere(id);
+      if (door_obbs_.find(obb_name) == door_obbs_.end()) {
+        ObjPtr bone_obj = CreateSphere(resources_.get(), bs.radius, bs.center);
+        bone_obj->never_cull = true;
+        door_obbs_[obb_name] = bone_obj;
+        resources_->UpdateObjectPosition(bone_obj);
+      } else {
+        ObjPtr bone_obj = door_obbs_[obb_name];
+        bone_obj->position = bs.center;
+        resources_->UpdateObjectPosition(bone_obj);
+      }
     }
-
-    // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
-    // UpdateMesh(*mesh, vertices, uvs, indices);
-
-    // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
-    // MeshPtr mesh = resources_->GetMesh(obj);
-    // configs->levitate = false;
   }
+
+  // shared_ptr<Configs> configs = resources_->GetConfigs();
+  // Camera c = player_input_->GetCamera();
+  // for (auto& [name, obj] : objs) {
+  //   if (obj->type != GAME_OBJ_PARTICLE) continue;
+  //   if (!obj->Is3dParticle()) continue;
+  //   if (!configs->levitate) continue;
+
+  //   vector<vec3> vertices;
+  //   vector<vec2> uvs;
+  //   vector<unsigned int> indices(12);
+  //   Mesh m;
+  //   // Mesh m = CreateLine(vec3(0), c.direction * 40.0f, vertices, uvs, indices);
+
+  //   // vec3 w = vec3(1, 0, 0);
+  //   // vec3 h = vec3(0, 1, 0);
+  //   // vec3 d = vec3(0, 0, 1);
+
+  //   // const vector<vec3> offsets {
+  //   //   // Back face.
+  //   //   vec3(-1, 1, -1), vec3(1, 1, -1), vec3(-1, -1, -1), vec3(1, -1, -1), 
+  //   //   // Front face.
+  //   //   vec3(-1, 1,  1), vec3(1, 1,  1), vec3(-1, -1,  1), vec3(1, -1, 1 )
+  //   // };
+
+  //   // static float bla = 0.01f;
+  //   // bla += 0.01;
+  //   // mat4 rotation_matrix = rotate(
+  //   //   mat4(1.0),
+  //   //   bla,
+  //   //   vec3(0.0f, 1.0f, 0.0f)
+  //   // );
+
+  //   // vector<vec3> v;
+  //   // const vec3& c = vec3(0, 0, 0);
+  //   // for (const auto& o : offsets) {
+  //   //   vec3 a = c + w * o.x + h * o.y + d * o.z;
+  //   //  a = vec3(rotation_matrix * vec4(a, 1.0));
+  //   //   v.push_back(a);
+  //   // }
+
+  //   // vector<vec3> vertices;
+  //   // vector<vec2> uvs;
+  //   // vector<unsigned int> indices(36);
+  //   // Mesh m = CreateCube(v, vertices, uvs, indices);
+
+  //   shared_ptr<Particle> p = static_pointer_cast<Particle>(obj);
+
+  //   // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+  //   if (p->mesh_name.empty()) {
+  //     cout << "never should" << endl;
+  //     // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+
+  //     p->mesh_name = resources_->GetRandomName();
+  //     resources_->AddMesh(p->mesh_name, m);
+  //     
+  //     // my_box_ = CreateGameObjFromPolygons(resources_.get(), m.polygons, "my-box",
+  //     //     obj->position + vec3(0, 10, 0));
+  //   } else {
+  //     // MeshPtr mesh = resources_->GetMesh(my_box_);
+  //     MeshPtr mesh = resources_->GetMesh(obj);
+  //     UpdateMesh(*mesh, vertices, uvs, indices);
+  //   }
+
+  //   // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+  //   // UpdateMesh(*mesh, vertices, uvs, indices);
+
+  //   // MeshPtr mesh = resources_->GetMeshByName("rotating_quad");
+  //   // MeshPtr mesh = resources_->GetMesh(obj);
+  //   // configs->levitate = false;
+  // }
 }
 
 void Engine::BeforeFrame() {

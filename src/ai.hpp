@@ -37,6 +37,8 @@ class AI {
   bool WhiteSpineAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
 
+  bool WraithAttack(ObjPtr creature, shared_ptr<RangedAttackAction> action);
+
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
   bool ProcessRandomMoveAction(ObjPtr spider, shared_ptr<RandomMoveAction> action);
   bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);

@@ -172,6 +172,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   AssetType GetType();
   int GetItemId();
   bool IsFixed();
+  bool IsClimbable();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -209,6 +210,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   BoundingSphere GetTransformedBoundingSphere();
   OBB GetTransformedOBB();
   BoundingSphere GetBoneBoundingSphere(int bone_id);
+  BoundingSphere GetBoneBoundingSphereByBoneName(const string& name);
   CollisionType GetCollisionType();
   PhysicsBehavior GetPhysicsBehavior();
   float GetMass();

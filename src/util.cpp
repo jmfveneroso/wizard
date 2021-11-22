@@ -1258,16 +1258,16 @@ void AppendXmlNode(pugi::xml_node& node, const string& name, quat new_quat) {
   AppendXmlAttr(new_node, vec4(new_quat.x, new_quat.y, new_quat.z, new_quat.w));
 }
 
-Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle) {
+Mesh CreateSphere(float dome_radius, int num_circles, int num_points_in_circle) {
   vector<vec3> vertices;
   vector<vec2> uvs;
   vector<unsigned int> indices;
 
   float vert_angle = 3.141592f * 1.5f;
-  float vert_angle_step = 3.141592f / num_circles;
+  float vert_angle_step = 3.141592f / float(num_circles);
   vert_angle -= vert_angle_step;
 
-  float angle_step = (3.141592f * 2) / num_points_in_circle;
+  float angle_step = (3.141592f * 2.0f) / float(num_points_in_circle);
   float y = sin(vert_angle) * dome_radius;
 
   vertices.push_back(glm::vec3(0, -dome_radius, 0));
@@ -1275,14 +1275,14 @@ Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle) {
   uvs.push_back(glm::vec2(0.5, 0.5));
   for (int i = 0; i < num_circles; i++) {
     float radius = cos(asin(y / dome_radius)) * dome_radius;
-    float uv_radius = (i + 1) * (0.5f / num_circles);
+    float uv_radius = (i + 1) * (0.5f / float(num_circles));
     float angle = 0;
     for (int j = 0; j < num_points_in_circle; j++) {
       float x = radius * cos(angle);
       float z = radius * sin(angle);
       vertices.push_back(glm::vec3(x, y, z));
-      uvs.push_back(glm::vec2(0.5 + uv_radius * cos(angle), 
-        0.5 + uv_radius * sin(angle)));
+      uvs.push_back(glm::vec2(0.5f + uv_radius * cos(angle), 
+        0.5f + uv_radius * sin(angle)));
       angle += angle_step;
     }
 
@@ -1474,7 +1474,8 @@ void CreateCylinder(const vec3& source, const vec3& dest, float radius,
   int num_points_in_circle = 6;
   float angle_step = (3.141592f * 2) / num_points_in_circle;
 
-  vertices = vector<vec3>(num_points_in_circle * 6);
+  vertices.clear();
+  uvs.clear();
   vector<vec3> verts;
   vector<vec2> uvs_;
 
@@ -1494,7 +1495,7 @@ void CreateCylinder(const vec3& source, const vec3& dest, float radius,
   angle = 0;
   y = length(dest - source);
   uv_x = 0;
-  uv_y = 1;
+  uv_y = 1.0f;
   for (int i = 0; i < num_points_in_circle; i++) {
     float x = radius * cos(angle);
     float z = radius * sin(angle);

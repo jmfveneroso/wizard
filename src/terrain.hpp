@@ -20,9 +20,9 @@
 #include "collision.hpp"
 #include "resources.hpp"
 
-#define CLIPMAP_SIZE 202
+#define CLIPMAP_SIZE 102
 #define CLIPMAP_OFFSET ((CLIPMAP_SIZE - 2) / 2)
-#define CLIPMAP_LEVELS 8
+#define CLIPMAP_LEVELS 9
 #define MAX_HEIGHT 400.0f
 #define TILES_PER_TEXTURE 8
 #define NUM_SUBREGIONS 13

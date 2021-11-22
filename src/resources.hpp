@@ -207,6 +207,7 @@ struct Configs {
 
   bool disable_collision = false;
   bool disable_ai = false;
+  bool town_loaded = false;
 
   // Arcane spells.
   vector<int> complex_spells { 0, 1, 5 }; // 3 possible combinations.
@@ -386,7 +387,6 @@ class Resources {
   HeightMap height_map_;
   Dungeon dungeon_;
 
-  bool town_loaded_ = false;
   void LoadTownAssets();
 
   // Indices by name.
@@ -631,16 +631,16 @@ class Resources {
   void CastBouncyBall(ObjPtr owner, const vec3& position, 
     const vec3& direction);
 
-  void CastMissile(
-    ObjPtr owner, const MissileType& missile_type, const vec3& direction, 
-  const float& velocity);
+  void CastMissile(ObjPtr owner, const vec3& pos, 
+    const MissileType& missile_type, const vec3& direction,
+    const float& velocity);
   void UpdateMissiles();
   void UpdateHand(const Camera& camera);
   void UpdateParticles();
   void CreateParticleEffect(int num_particles, vec3 pos, vec3 normal, 
     vec3 color, float size, float life, float spread, 
     const string& type = "explosion");
-  void CreateChargeMagicMissileEffect();
+  shared_ptr<Particle> CreateChargeMagicMissileEffect(const string& particle_name = "particle-sparkle");
   void InitMissiles();
   void InitParticles();
   int FindUnusedParticle();

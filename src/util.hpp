@@ -136,6 +136,7 @@ enum PlayerAction {
   PLAYER_IDLE,
   PLAYER_CASTING,
   PLAYER_DRAWING,
+  PLAYER_CHANNELING,
 };
 
 enum ActionType {
@@ -577,7 +578,7 @@ void CreateLine(const vec3& source, const vec3& dest, vector<vec3>& vertices,
   vector<vec2>& uvs, vector<unsigned int>& indices, 
   vector<Polygon>& polygons);
 
-Mesh CreateSphere(int dome_radius, int num_circles, int num_points_in_circle);
+Mesh CreateSphere(float dome_radius, int num_circles, int num_points_in_circle);
 
 // void CreateSphere(int dome_radius, int num_circles, int num_points_in_circle,
 //   vector<vec3>& vertices, vector<vec2>& uvs, 

@@ -29,7 +29,6 @@ uniform mat4 joint_transforms[200];
 
 void main(){
   out_data.UV = tile_pos + vertexUV * tile_size;
-  // out_data.UV = vec2(0.5, 0.5) + vertexUV * 0.167;
   // out_data.UV = vertexUV;
 
   vec4 position = vec4(vertexPosition_modelspace, 1.0);

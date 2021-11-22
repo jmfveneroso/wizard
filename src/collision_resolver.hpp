@@ -79,6 +79,8 @@ struct Collision {
   float obj1_t;
   float obj2_t;
 
+  float impulse_strength = 1.0f;
+
   Collision() {}
   Collision(CollisionPair collision_pair, ObjPtr obj1, ObjPtr obj2) : 
     collision_pair(collision_pair), obj1(obj1), obj2(obj2) {}

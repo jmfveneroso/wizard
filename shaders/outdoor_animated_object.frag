@@ -75,7 +75,7 @@ void main(){
   vec3 out_color = ambient_color;
 
   vec3 light_color = vec3(1.0, 1.0, 1.0);
-  float light_power = 0.6;
+  float light_power = 0.3;
 
   float sun_intensity = (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
   if (enable_bump_map > 0) {

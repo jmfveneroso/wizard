@@ -536,10 +536,10 @@ void Renderer::DrawOutside() {
 
   terrain_->UpdateClipmaps(camera_.position);
 
-  if (clip_terrain_) {
-    terrain_->SetClippingPlane(terrain_clipping_point_, 
-      terrain_clipping_normal_);
-  }
+  // if (clip_terrain_) {
+  //   terrain_->SetClippingPlane(terrain_clipping_point_, 
+  //     terrain_clipping_normal_);
+  // }
 
   mat4 shadow_matrix0 = GetShadowMatrix(true, 0);
   mat4 shadow_matrix1 = GetShadowMatrix(true, 1);

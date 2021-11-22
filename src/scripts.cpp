@@ -880,7 +880,9 @@ static PyObject* can_hit_player(PyObject *self, PyObject *args) {
   ObjPtr player = gResources->GetPlayer();
 
   Dungeon& dungeon = gResources->GetDungeon();
-  bool obstructed = dungeon.IsRayObstructed(obj->position, player->position);
+
+  float t;
+  bool obstructed = dungeon.IsRayObstructed(obj->position, player->position, t);
 
   return PyBool_FromLong((obstructed) ? 0 : 1);
 }

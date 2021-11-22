@@ -45,6 +45,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   bool loaded_collision = false;
   string ai_script;
   bool apply_torque = true;
+  bool climbable = false;
 
   bool invisibility = false;
   float scale = 1.0f;

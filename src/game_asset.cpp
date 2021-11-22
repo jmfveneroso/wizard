@@ -333,6 +333,12 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     apply_torque = LoadBoolFromXml(apply_torque_xml);
   }
 
+  const pugi::xml_node& climbable_xml = 
+    asset_xml.child("climbable");
+  if (climbable_xml) {
+    climbable = LoadBoolFromXml(climbable_xml);
+  }
+
   const pugi::xml_node& creature_collider_xml = 
     asset_xml.child("creature-collider");
   if (creature_collider_xml) {

@@ -601,7 +601,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
 
-  const int kFirstIndex = 2;
+  const int kFirstIndex = 3;
   for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
     if (clipmaps_[i]->invalid) break;
     int clipmap_size = (CLIPMAP_SIZE + 1) * TILE_SIZE * GetTileSize(i + 1);
@@ -619,50 +619,50 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
 
 
   // TODO: don't create buffers for clipmaps that won't be used.
-  for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
+  for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
     if (i < last_visible_index) break;
 
-  GLuint program_id = program_id_;
-  if (i > 4) {
-    program_id = far_program_id_;
-  }
-
-  {
-    glUseProgram(program_id);
-    glDisable(GL_BLEND);
-
-    // These uniforms can probably be bound with the VAO.
-    glUniform1i(GetUniformId(program_id, "PURE_TILE_SIZE"), TILE_SIZE);
-    glUniform1i(GetUniformId(program_id, "TILES_PER_TEXTURE"), TILES_PER_TEXTURE);
-    glUniform1i(GetUniformId(program_id, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
-    glUniform1f(GetUniformId(program_id, "MAX_HEIGHT"), MAX_HEIGHT);
-    glUniform3fv(GetUniformId(program_id, "player_pos"), 1, (float*) &player_pos);
-    glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
-    BindBuffer(vertex_buffer_, 0, 3);
-
-    shared_ptr<Configs> configs = resources_->GetConfigs();
-    int show_grid = -1;
-    if (configs->edit_terrain != "none" || 
-      resources_->GetGameState() == STATE_BUILD) {
-      show_grid = 1;
+    GLuint program_id = program_id_;
+    if (i > 4) {
+      program_id = far_program_id_;
     }
 
-    // Set clipping plane.
-    glUniform1i(GetUniformId(program_id, "clip_against_plane"), 
-      (int) clip_against_plane);
-    glUniform1i(GetUniformId(program_id, "show_grid"), 
-      (int) show_grid);
-    glUniform3fv(GetUniformId(program_id, "clipping_point"), 1, 
-      (float*) &clipping_point_);
-    glUniform3fv(GetUniformId(program_id, "clipping_normal"), 1, 
-      (float*) &clipping_normal_);
+    {
+      glUseProgram(program_id);
+      glDisable(GL_BLEND);
 
-    glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
-      (float*) &configs->sun_position);
+      // These uniforms can probably be bound with the VAO.
+      glUniform1i(GetUniformId(program_id, "PURE_TILE_SIZE"), TILE_SIZE);
+      glUniform1i(GetUniformId(program_id, "TILES_PER_TEXTURE"), TILES_PER_TEXTURE);
+      glUniform1i(GetUniformId(program_id, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
+      glUniform1f(GetUniformId(program_id, "MAX_HEIGHT"), MAX_HEIGHT);
+      glUniform3fv(GetUniformId(program_id, "player_pos"), 1, (float*) &player_pos);
+      glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
+      BindBuffer(vertex_buffer_, 0, 3);
 
-    glUniform3fv(GetUniformId(program_id, "camera_position"), 1, 
-      (float*) &player_pos);
-  }
+      shared_ptr<Configs> configs = resources_->GetConfigs();
+      int show_grid = -1;
+      if (configs->edit_terrain != "none" || 
+        resources_->GetGameState() == STATE_BUILD) {
+        show_grid = 1;
+      }
+
+      // Set clipping plane.
+      glUniform1i(GetUniformId(program_id, "clip_against_plane"), 
+        (int) clip_against_plane);
+      glUniform1i(GetUniformId(program_id, "show_grid"), 
+        (int) show_grid);
+      glUniform3fv(GetUniformId(program_id, "clipping_point"), 1, 
+        (float*) &clipping_point_);
+      glUniform3fv(GetUniformId(program_id, "clipping_normal"), 1, 
+        (float*) &clipping_normal_);
+
+      glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
+        (float*) &configs->sun_position);
+
+      glUniform3fv(GetUniformId(program_id, "camera_position"), 1, 
+        (float*) &player_pos);
+    }
 
     // Uncomment to only draw shadows in the last clipmap.
     // glUniform1i(GetUniformId(program_id_, "draw_shadows"), 

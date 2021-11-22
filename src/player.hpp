@@ -23,6 +23,7 @@ class PlayerInput {
   Camera camera_;
   int debounce_ = 0;
   int animation_frame_ = 0;
+  shared_ptr<Particle> channeling_particle = nullptr;
   GLFWwindow* window_ = nullptr;
 
   void Extract(const Camera& c);
@@ -34,6 +35,7 @@ class PlayerInput {
   void EditObject(GLFWwindow* window, const Camera& c);
   bool CastSpellOrUseItem();
   void ProcessPlayerCasting();
+  void ProcessPlayerChanneling();
   void ProcessPlayerDrawing();
   void StartDrawing();
   bool DecreaseCharges(int item_id);

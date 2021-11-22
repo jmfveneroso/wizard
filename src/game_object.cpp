@@ -1351,6 +1351,8 @@ bool GameObject::IsDestructible(){
 
 void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, 
   bool take_hit_animation) {
+  if (life < 0.0f) return;
+
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
   // Reduce damage using armor class.
@@ -1563,4 +1565,18 @@ bool GameObject::GetApplyTorque() {
 
 bool GameObject::IsFixed() {
   return GetPhysicsBehavior() == PHYSICS_FIXED;
+}
+
+bool GameObject::IsClimbable() {
+  if (!asset_group) return false;
+  return GetAsset()->climbable;
+}
+
+BoundingSphere GameObject::GetBoneBoundingSphereByBoneName(const string& name) {
+  shared_ptr<Mesh> mesh = GetMesh();
+  if (mesh->bones_to_ids.find(name) == mesh->bones_to_ids.end()) {
+    throw runtime_error(string("Bone with name ") + name + " does not exist");
+  }
+
+  return GetBoneBoundingSphere(mesh->bones_to_ids[name]);
 }

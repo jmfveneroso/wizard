@@ -309,7 +309,7 @@ class Dungeon {
 
   int GetRoom(const ivec2& tile);
   bool IsChamber(int x, int y);
-  bool IsRayObstructed(vec3 start, vec3 end);
+  bool IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls=false);
   void SetLevelData(const LevelData& level_data);
 
   unordered_map<int, LevelData>& GetLevelData() { return level_data_; }

@@ -2025,19 +2025,36 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
   return false;
 }
 
-bool Dungeon::IsRayObstructed(vec3 start, vec3 end) {
+bool Dungeon::IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls) {
   const float delta = 0.1f;
 
   start.y = 0;
   end.y = 0;
   vec3 d = end - start;
-  vec3 step = normalize(d) * delta;
 
+  vec3 step = normalize(d);
+
+  t = 0;
   vec3 current = start;
   int num_steps = length(d) / delta;
   for (int i = 0; i < num_steps; i++) {
-    if (!IsTileTransparent(GetDungeonTile(current))) return true;
-    current += step;
+    current = start + t * step;
+
+    ivec2 tile = GetDungeonTile(current);
+    if (only_walls) {
+      switch (ascii_dungeon[tile.x][tile.y]) {
+        case '+':
+        case '-':
+        case '|':
+          return true;
+        default:
+          break;
+      }
+    } else if (!IsTileTransparent(tile)) {
+      return true;
+    }
+   
+    t += delta;
   }
   return false;
 }
