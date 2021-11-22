@@ -110,6 +110,7 @@ void main(){
 
   float light_power = 0.6;
   vec3 ambient_color = lighting_color * diffuse_color;
+  // vec3 ambient_color = light_color * diffuse_color;
 
   vec3 out_color = ambient_color;
 

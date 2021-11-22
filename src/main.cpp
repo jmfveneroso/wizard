@@ -49,7 +49,7 @@ void InitOpenGl() {
 
   // Fullscreen.
   window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
-    glfwGetPrimaryMonitor(), NULL);
+    NULL, NULL);
 
   // Windowed.
   // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 

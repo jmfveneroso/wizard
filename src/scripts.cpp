@@ -887,7 +887,6 @@ static PyObject* can_hit_player(PyObject *self, PyObject *args) {
   return PyBool_FromLong((obstructed) ? 0 : 1);
 }
 
-
 static PyObject* rest(PyObject *self, PyObject *args) {
   gResources->Rest();
   return PyBool_FromLong(0);

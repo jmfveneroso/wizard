@@ -810,12 +810,6 @@ shared_ptr<Region> Resources::GetRegion(vec3 position) {
 
 // TODO: move to particle file.
 int Resources::FindUnusedParticle(){
-  for (int i = last_used_particle_; i < kMaxParticles; i++) {
-    if (particle_container_[i]->life < 0) {
-      return i;
-    }
-  }
-
   for (int i = 0; i < kMaxParticles; i++) {
     if (particle_container_[i]->life < 0) {
       return i;
@@ -5265,3 +5259,4 @@ Camera Resources::GetCamera() {
   c.right = right;
   return c;
 }
+

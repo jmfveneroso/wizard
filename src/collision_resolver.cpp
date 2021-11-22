@@ -1878,8 +1878,10 @@ void CollisionResolver::ProcessInContactWith() {
     }
     if (!obj->IsPlayer()) continue;
 
-    vec3 v = obj->in_contact_with->position - obj->in_contact_with->prev_position;
-    obj->position += v;
+    auto& [obj1, obj2] = tentative_pairs_.front();
+    tentative_pairs_.pop();
+    running_test_tasks_++;
+    find_mutex_.unlock();
 
     float inertia = 1.0f;
     // float inertia = 1.0f / obj->in_contact_with->GetMass();
@@ -1889,9 +1891,9 @@ void CollisionResolver::ProcessInContactWith() {
       normalize(obj->in_contact_with->torque)
     );
 
-    vec3 relative_position = obj->position - obj->in_contact_with->position;
-    obj->position = obj->in_contact_with->position + vec3(rotation_matrix * 
-      vec4(relative_position, 1.0f));
+    find_mutex_.lock();
+    running_test_tasks_--;
+    find_mutex_.unlock();
   }
 }
 

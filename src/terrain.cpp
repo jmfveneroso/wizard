@@ -597,6 +597,9 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   bool drawing_shadow, bool clip_against_plane) {
   glBindVertexArray(vao_);
 
+  glUniform3fv(GetUniformId(program_id_, "camera_position"), 1, 
+    (float*) &player_pos);
+
   vec3 normal;
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
