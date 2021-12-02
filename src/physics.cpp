@@ -23,6 +23,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   }
 
   if (IsNaN(obj->rotation_matrix)) {
+    cout << "Say what 2: " << obj->GetDisplayName() << endl;
     obj->rotation_matrix = mat4(1.0f);
     obj->rotation_factor = 0;
     obj->torque = vec3(0.0);
@@ -34,6 +35,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   }
 
   if (IsNaN(obj->position) || IsNaN(obj->speed)) {
+    cout << "Say what: " << obj->GetDisplayName() << endl;
     obj->position = vec3(0);
     obj->speed = vec3(0);
   }
@@ -106,6 +108,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     ) * obj->rotation_matrix;
     obj->torque *= 0.96;
   }
+
   obj->updated_at = glfwGetTime();
 }
 

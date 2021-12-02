@@ -5,6 +5,7 @@ void GameObject::Load(const string& in_name, const string& asset_name,
   const vec3& in_position) {
   name = in_name;
   position = in_position;
+  target_position = in_position;
 
   asset_group = resources_->GetAssetGroupByName(asset_name);
   if (!asset_group) {
@@ -637,9 +638,7 @@ void Sector::Load(pugi::xml_node& xml) {
         v = rotation_matrix * vec4(v, 1.0);
       }
 
-      for (vec3& n : p.normals) {
-        n = rotation_matrix * vec4(n, 0.0);
-      }
+      p.normal = rotation_matrix * vec4(p.normal, 0.0);
     }
   }
 
@@ -715,9 +714,7 @@ void Portal::Load(pugi::xml_node& xml, shared_ptr<Sector> from_sector) {
         v = rotation_matrix * vec4(v, 1.0);
       }
 
-      for (vec3& n : p.normals) {
-        n = rotation_matrix * vec4(n, 0.0);
-      }
+      p.normal = rotation_matrix * vec4(p.normal, 0.0);
     }
   }
 
@@ -850,14 +847,14 @@ ObjPtr CreateMonster(Resources* resources, string asset_name, vec3 position,
 
 ObjPtr CreateSkydome(Resources* resources) {
   shared_ptr<Mesh> m = resources->AddMesh("skydome", CreateDome());
-  m->shader = resources->GetShader("sky");
 
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(resources);
   game_asset->name = "skydome";
-  game_asset->shader = resources->GetShader("sky");
   game_asset->lod_meshes[0] = "skydome";
   game_asset->SetCollisionType(COL_NONE);
   game_asset->physics_behavior = PHYSICS_NONE;
+  game_asset->name = "skydome";
+  game_asset->shader = resources->GetShader("sky");
   resources->AddAsset(game_asset);
   shared_ptr<GameAssetGroup> asset_group = 
     CreateAssetGroupForSingleAsset(resources, game_asset);
@@ -871,7 +868,6 @@ ObjPtr CreateSkydome(Resources* resources) {
 ObjPtr CreateSphere(Resources* resources, float radius, vec3 pos) {
   string name = resources->GetRandomName();
   shared_ptr<Mesh> m = resources->AddMesh(name + "-mesh", CreateSphere(radius, 32, 64));
-  m->shader = resources->GetShader("solid");
 
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(resources);
   game_asset->name = name + "-asset";
@@ -937,7 +933,6 @@ shared_ptr<Portal> CreatePortal(Resources* resources,
   portal->Load(xml, from_sector);
 
   shared_ptr<Mesh> m = resources->GetMeshByName(portal->mesh_name);
-  m->shader = resources->GetShader("solid");
 
   shared_ptr<GameAsset> game_asset = make_shared<GameAsset>(resources);
   game_asset->name = resources->GetRandomName();
@@ -1050,8 +1045,6 @@ void GameObject::CalculateCollisionData() {
   const string mesh_name = GetAsset()->lod_meshes[0];
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
 
-  cout << "Calculating collision data for object: " << GetDisplayName() << endl;
-
   // Bounding sphere and AABB are necessary to cull objects properly.
   collision_hull = game_asset->collision_hull;
   if (!collision_hull.empty()) {
@@ -1072,7 +1065,6 @@ void GameObject::CalculateCollisionData() {
       break;
     }
     case COL_OBB: {
-      cout << "I am here: OOB" << endl;
       collision_hull = game_asset->collision_hull;
       obb = GetOBBFromPolygons(collision_hull, position);
 
@@ -1100,9 +1092,7 @@ void GameObject::CalculateCollisionData() {
           v = rotation_matrix * vec4(v, 1.0);
         }
 
-        for (vec3& n : p.normals) {
-          n = rotation_matrix * vec4(n, 0.0);
-        }
+        p.normal = rotation_matrix * vec4(p.normal, 0.0);
       }
 
       BoundingSphere s;
@@ -1146,9 +1136,7 @@ void LoadCollisionDataAux(shared_ptr<AABBTreeNode> aabb_tree_node,
     }
 
     const pugi::xml_node& normal_xml = polygon_xml.child("normal");
-    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
-    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
-    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
+    aabb_tree_node->polygon.normal = LoadVec3FromXml(normal_xml);
     return;
   }
 
@@ -1553,7 +1541,7 @@ void Destructible::Destroy() {
 }
 
 bool GameObject::GetRepeatAnimation() {
-  if (!repeat_animation) return repeat_animation;
+  if (!repeat_animation) return false;
   if (!asset_group) return true;
   return GetAsset()->repeat_animation;
 }
@@ -1579,4 +1567,12 @@ BoundingSphere GameObject::GetBoneBoundingSphereByBoneName(const string& name) {
   }
 
   return GetBoneBoundingSphere(mesh->bones_to_ids[name]);
+}
+
+void GameObject::LockActions() {
+  action_mutex_.lock();
+}
+
+void GameObject::UnlockActions() {
+  action_mutex_.lock();
 }

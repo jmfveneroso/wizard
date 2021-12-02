@@ -106,26 +106,15 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 frag_pos,
 }
 
 void main(){
-  vec3 diffuse_color = vec3(0.0);
+  vec3 diffuse_color = texture(texture_sampler, in_data.UV).rgb;
 
-  // float weight = 0.01f;
-  // if (any(lessThan(in_data.barycentric, vec3(weight)))){
-  //   diffuse_color = vec3(0.0);
-  // } else {
-  //   diffuse_color = vec3(1.0);
-  // }
+  float sun_intensity = 1.0 * (1.0 + clamp(dot(light_direction, vec3(0, 1, 0)), 0, 1)) / 2.0;
 
-  diffuse_color = texture(texture_sampler, in_data.UV).rgb;
-
-  vec3 light_color = vec3(1.0, 1.0, 1.0);
-  float light_power = 0.3;
-
-  vec3 ambient_color = lighting_color * diffuse_color;
-
+  vec3 ambient_color = sun_intensity * lighting_color * diffuse_color;
   vec3 out_color = ambient_color;
 
-  float sun_intensity = outdoors * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
-  // float sun_intensity = 0.2 * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
+  vec3 light_color = vec3(1.0, 1.0, 1.0);
+  float light_power = 0.6;
 
   if (enable_bump_map > 0) {
     vec3 tex_normal_tangentspace = normalize(texture(bump_map_sampler, 

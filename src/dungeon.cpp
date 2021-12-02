@@ -15,6 +15,8 @@ const int DLRG_SECRET = 2048;
 const int DLRG_NO_CEILING = 4096;
 
 Dungeon::Dungeon() {
+  CreateThreads();
+
   char_map_[1] = '|';
   char_map_[2] = '-';
   char_map_[3] = '+';
@@ -261,8 +263,6 @@ bool Dungeon::GenerateChambers() {
   const int kMinNumSteps = (dungeon_cells * dungeon_cells) / 6;
   const int kMaxNumSteps = (dungeon_cells * dungeon_cells) / 3;
   int num_steps = Random(kMinNumSteps, kMaxNumSteps + 1);
-  cout << num_steps << endl;
-  cout << next_tile << endl;
 
   if (current_level_ == 6) {
     chambers_[2][1] = 1;
@@ -376,36 +376,37 @@ bool Dungeon::GenerateChambers() {
     }
   }
 
-  for (int y = 0; y < kDungeonCells; y++) {
-    for (int x = 0; x < kDungeonCells; x++) {
-      int bla = (int) chambers_[x][y];
-      char code;
-      switch (bla) {
-        case 0: {
-          code = ' ';
-          break;
-        }
-        case 1: {
-          code = '.';
-          break;
-        }
-        case 2: {
-          code = '-';
-          break;
-        }
-        case 3: {
-          code = '|';
-          break;
-        }
-        case 4: {
-          code = '+';
-          break;
-        }
-      }
-      cout << code << " ";
-    }
-    cout << endl;
-  }
+  // Print cells.
+  // for (int y = 0; y < kDungeonCells; y++) {
+  //   for (int x = 0; x < kDungeonCells; x++) {
+  //     int bla = (int) chambers_[x][y];
+  //     char code;
+  //     switch (bla) {
+  //       case 0: {
+  //         code = ' ';
+  //         break;
+  //       }
+  //       case 1: {
+  //         code = '.';
+  //         break;
+  //       }
+  //       case 2: {
+  //         code = '-';
+  //         break;
+  //       }
+  //       case 3: {
+  //         code = '|';
+  //         break;
+  //       }
+  //       case 4: {
+  //         code = '+';
+  //         break;
+  //       }
+  //     }
+  //     cout << code << " ";
+  //   }
+  //   cout << endl;
+  // }
 
   return true;
 }
@@ -1476,7 +1477,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
       GenerateChambers();
     } while (GetArea() < min_area);
 
-    PrintPreMap();
+    // PrintPreMap();
 
     MakeMarchingTiles();
 
@@ -1492,8 +1493,8 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
 
     // Place staircase.
     if (!PlaceMiniSet("STAIRS_UP")) {
-    } else if (!PlaceMiniSet("STAIRS_DOWN")) {
       done_flag = false; 
+    } else if (!PlaceMiniSet("STAIRS_DOWN")) {
       done_flag = false;
     }
 
@@ -1843,13 +1844,12 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
         ivec2 next_tile = tile + ivec2(off_x, off_y);
         if (!IsTileClear(tile, next_tile)) continue;
 
-        if (abs(dest.x - next_tile.x) + abs(dest.y - next_tile.y) > 15.0f) {
+        if (abs(dest.x - next_tile.x) + abs(dest.y - next_tile.y) > 10.0f) {
           continue; 
         }
       
         const float cost = move_to_cost_[move_type];
         const float new_distance  = distance + cost;
-        // if (new_distance > 2) continue;
 
         const float min_distance = min_distance_[dest.x][dest.y][next_tile.x][next_tile.y];
         if (new_distance >= min_distance) continue;
@@ -1858,77 +1858,28 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
       }
     }
   }
-
-  // cout << "=======================" << endl;
-  // for (int j = 0; j < kDungeonSize; j++) {
-  //   for (int i = 0; i < kDungeonSize; i++) {
-  //     const char dungeon_tile = dungeon_map[i][j];
-  //     switch (dungeon_tile) {
-  //       case ' ':
-  //       case '^':
-  //       case 's':
-  //       case 'S':
-  //       case 'Q':
-  //       case 'r':
-  //       case 'E':
-  //       case 'Y':
-  //       case 'w':
-  //       case 'K':
-  //       case 'o':
-  //       case 'O':
-  //       case 'd':
-  //       case 'D':
-  //         cout << dungeon_path_[i][j] << " ";
-  //         continue;
-  //       default: 
-  //         break;
-  //     }
-  //     cout << dungeon_tile << " ";
-  //   }
-  //   cout << endl;
-  // }
-  // cout << "----------------------------" << endl;
-  // for (int j = 0; j < kDungeonSize; j++) {
-  //   for (int i = 0; i < kDungeonSize; i++) {
-  //     const char dungeon_tile = dungeon_map[i][j];
-  //     switch (dungeon_tile) {
-  //       case ' ':
-  //       case '^':
-  //       case 's':
-  //       case 'S':
-  //       case 'Q':
-  //       case 'r':
-  //       case 'E':
-  //       case 'Y':
-  //       case 'w':
-  //       case 'K':
-  //       case 'o':
-  //       case 'O':
-  //       case 'd':
-  //       case 'D':
-  //         std::cout << std::setw(2);
-  //         cout << int(min_distance_[i][j]) << " ";
-  //         continue;
-  //       default: 
-  //         break;
-  //     }
-  //     std::cout << std::setw(2);
-  //     cout << dungeon_tile << " ";
-  //   }
-  //   cout << endl;
-  // }
 }
 
 void Dungeon::CalculateAllPaths() {
+  double start_time = glfwGetTime();
+
   ClearDungeonPaths();
 
   ivec2 last = ivec2(0, 0);
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
-      CalculatePathsToTile(ivec2(i, j), last);
-      last = ivec2(i, j);
+      calculate_path_mutex_.lock();
+      calculate_path_tasks_.push(ivec2(i, j));
+      calculate_path_mutex_.unlock();
     }
   }
+
+  while (!calculate_path_tasks_.empty() || running_calculate_path_tasks_ > 0) {
+    this_thread::sleep_for(chrono::microseconds(200));
+  }
+
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "CalculateAllPaths took " << elapsed_time << " seconds" << endl;
 }
 
 ivec2 Dungeon::GetClosestClearTile(const ivec2& tile) {
@@ -2168,41 +2119,6 @@ void Dungeon::CalculateVisibility(const vec3& player_position) {
     cur_ray = rotation_matrix * cur_ray;
     CastRay(player_pos, cur_ray);
   }
-
-  // cout << "=======================" << endl;
-  // for (int j = 0; j < kDungeonSize; j++) {
-  //   for (int i = 0; i < kDungeonSize; i++) {
-  //     const char dungeon_tile = dungeon_map[i][j];
-  //     switch (dungeon_tile) {
-  //       case ' ':
-  //       case '^':
-  //       case '/':
-  //       case '\\':
-  //       case 's':
-  //       case 'S':
-  //       case 'Q':
-  //       case 'r':
-  //       case 'E':
-  //       case 'Y':
-  //       case 'w':
-  //       case 'K':
-  //       case 'q':
-  //       case 'b':
-  //       case 'w':
-  //       case 'o':
-  //       case 'O':
-  //       case 'd':
-  //       case 'D':
-  //       case 'L':
-  //         cout << dungeon_visibility_[i][j] << " ";
-  //         continue;
-  //       default: 
-  //         break;
-  //     }
-  //     cout << dungeon_tile << " ";
-  //   }
-  //   cout << endl;
-  // }
 }
 
 vec3 Dungeon::GetDownstairs() {
@@ -2363,6 +2279,42 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
       int odds = boost::lexical_cast<int>(theme_room_xml.attribute("odds").value());
       int theme_room_id = LoadIntFromXml(theme_room_xml);
       for (int i = 0; i < odds; i++) l.theme_rooms.push_back(theme_room_id);
+    }
+  }
+}
+
+void Dungeon::CalculatePathsAsync() {
+  while (!terminate_) {
+    calculate_path_mutex_.lock();
+    if (calculate_path_tasks_.empty()) {
+      calculate_path_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(100));
+      continue;
+    }
+
+    ivec2 tile = calculate_path_tasks_.front();
+    calculate_path_tasks_.pop();
+    running_calculate_path_tasks_++;
+    calculate_path_mutex_.unlock();
+
+    CalculatePathsToTile(tile, ivec2(0, 0));
+
+    calculate_path_mutex_.lock();
+    running_calculate_path_tasks_--;
+    calculate_path_mutex_.unlock();
+  }
+}
+
+void Dungeon::CreateThreads() {
+  for (int i = 0; i < kMaxThreads; i++) {
+    calculate_path_threads_.push_back(thread(&Dungeon::CalculatePathsAsync, this));
+  }
+}
+
+void Dungeon::Reveal() {
+  for (int i = 0; i < kDungeonSize; ++i) {
+    for (int j = 0; j < kDungeonSize; ++j) {
+      dungeon_discovered_[i][j] = true;
     }
   }
 }

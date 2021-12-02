@@ -2,6 +2,8 @@
 #include <tga.h>
 #include <boost/algorithm/string/replace.hpp>
 
+mutex gTextureMutex;
+
 GLuint GetUniformId(GLuint program_id, string name) {
   return glGetUniformLocation(program_id, name.c_str());
 }
@@ -12,7 +14,7 @@ void BindBuffer(const GLuint& buffer_id, int slot, int dimension) {
   glVertexAttribPointer(slot, dimension, GL_FLOAT, GL_FALSE, 0, (void*) 0);
 }
 
-GLuint LoadPng(const char* file_name, bool poor_filtering) {
+GLuint LoadPng(const char* file_name, GLuint texture_id, GLFWwindow* window) {
   FILE* fp = fopen(file_name, "rb");
   if (!fp) {
     printf("[read_png_file] File %s could not be opened for reading", file_name);
@@ -54,9 +56,10 @@ GLuint LoadPng(const char* file_name, bool poor_filtering) {
     printf("[read_png_file] Error during read_image");
   }
 
-  png_bytep* row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * height);
+  // png_bytep* row_pointers = (png_bytep*) malloc(sizeof(png_bytep) * height);
+  png_bytep* row_pointers = new png_bytep[sizeof(png_bytep) * height];
   for (int y = 0; y < height; y++) {
-    row_pointers[y] = (png_byte*) malloc(png_get_rowbytes(png_ptr, info_ptr));
+    row_pointers[y] = new png_byte[png_get_rowbytes(png_ptr, info_ptr)];
   }
   png_read_image(png_ptr, row_pointers);
   fclose(fp);
@@ -80,35 +83,40 @@ GLuint LoadPng(const char* file_name, bool poor_filtering) {
         data[((height - y - 1)*height+x)*4+i] = ptr[i];
       }
     }
+    delete[] row_pointers[y];
   }
+  delete[] row_pointers;
+
+  gTextureMutex.lock();
+  if (window) glfwMakeContextCurrent(window);
 
   // Create one OpenGL texture
-  GLuint texture_id;
-  glGenTextures(1, &texture_id);
+  if (texture_id == 0) {
+    glGenTextures(1, &texture_id);
+  }
   glBindTexture(GL_TEXTURE_2D, texture_id);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
   
   // OpenGL has now copied the data. Free our own version
   delete[] data;
+
+  png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
   
-  // Poor filtering, or ...
-  if (poor_filtering) {
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
-  } else {
-    // Nice trilinear filtering ...
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-  }
+  // Trilinear filtering.
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glGenerateMipmap(GL_TEXTURE_2D);
 
   glBindTexture(GL_TEXTURE_2D, 0);
+
+  gTextureMutex.unlock();
+
   return texture_id;
 }
 
-GLuint LoadTga(const char* file_name, bool poor_filtering) {
+GLuint LoadTga(const char* file_name, GLuint texture_id, GLFWwindow* window) {
   TGA *in = TGAOpen(file_name, "r");
   TGAData data;
   bzero(&data, sizeof(data));
@@ -122,37 +130,50 @@ GLuint LoadTga(const char* file_name, bool poor_filtering) {
   const int width = in->hdr.width;
   const int height = in->hdr.height;
 
+  gTextureMutex.lock();
+  if (window) glfwMakeContextCurrent(window);
+
   // Create one OpenGL texture
-  GLuint texture_id;
-  glGenTextures(1, &texture_id);
+  if (texture_id == 0) {
+    glGenTextures(1, &texture_id);
+  }
   glBindTexture(GL_TEXTURE_2D, texture_id);
+
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, 
     GL_UNSIGNED_BYTE, (char*) data.img_data);
-  
-  // Poor filtering, or ...
-  if (poor_filtering) {
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
-  } else {
-    // Nice trilinear filtering ...
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-  }
-  glGenerateMipmap(GL_TEXTURE_2D);
 
+  TGAFreeTGAData(&data);
+  TGAClose(in);
+  
+  // Trilinear filtering.
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  glGenerateMipmap(GL_TEXTURE_2D);
   glBindTexture(GL_TEXTURE_2D, 0);
+
+  gTextureMutex.unlock();
+
   return texture_id;
 }
 
-GLuint LoadTexture(const char* file_name, bool poor_filtering) {
+GLuint LoadTexture(const char* file_name, GLuint texture_id) {
   if (boost::ends_with(file_name, ".png")) {
-    return LoadPng(file_name, poor_filtering);
+    return LoadPng(file_name, texture_id);
   } else if (boost::ends_with(file_name, ".tga")) {
-    return LoadTga(file_name, poor_filtering);
+    return LoadTga(file_name, texture_id);
   }
   return 0;
+}
+
+void LoadTextureAsync(const char* file_name, GLuint texture_id, 
+  GLFWwindow* window) {
+  if (boost::ends_with(file_name, ".png")) {
+    LoadPng(file_name, texture_id, window);
+  } else if (boost::ends_with(file_name, ".tga")) {
+    LoadTga(file_name, texture_id, window);
+  }
 }
 
 GLuint LoadShader(const std::string& directory, const std::string& name) {
@@ -349,9 +370,7 @@ ostream& operator<<(ostream& os, const shared_ptr<AABBTreeNode>&
 
 Polygon::Polygon(const Polygon &p2) {
   this->vertices = p2.vertices;
-  this->normals = p2.normals;
-  this->uvs = p2.uvs;
-  this->indices = p2.indices;
+  this->normal = p2.normal;
 }
 
 vec3 operator*(const mat4& m, const vec3& v) {
@@ -362,10 +381,11 @@ Polygon operator*(const mat4& m, const Polygon& poly) {
   Polygon p = poly;
   for (int i = 0; i < p.vertices.size(); i++) {
     vec3& v = p.vertices[i];
-    vec3& n = p.normals[i];
     v = vec3(m * vec4(v.x, v.y, v.z, 1.0));
-    n = vec3(m * vec4(n.x, n.y, n.z, 0.0));
   }
+
+  vec3& n = p.normal;
+  n = vec3(m * vec4(n.x, n.y, n.z, 0.0));
   return p;
 }
 
@@ -416,22 +436,21 @@ vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons) {
 Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices) {
   Mesh m;
-  m.shader = shader_id;
-  glGenBuffers(1, &m.vertex_buffer_);
-  glGenBuffers(1, &m.uv_buffer_);
-  glGenBuffers(1, &m.element_buffer_);
-  glGenBuffers(1, &m.tangent_buffer_);
-  glGenBuffers(1, &m.bitangent_buffer_);
+  glGenBuffers(1, &m.vertex_buffer);
+  glGenBuffers(1, &m.uv_buffer);
+  glGenBuffers(1, &m.element_buffer);
+  glGenBuffers(1, &m.tangent_buffer);
+  glGenBuffers(1, &m.bitangent_buffer);
 
   glGenVertexArrays(1, &m.vao_);
   glBindVertexArray(m.vao_);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer);
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
     &vertices[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer);
   glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
     GL_STATIC_DRAW);
 
@@ -455,14 +474,14 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
     bitangents.push_back(bitangent);
   }
 
-  glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer);
   glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
     &tangents[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, m.bitangent_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.bitangent_buffer);
   glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
     &bitangents[0], GL_STATIC_DRAW);
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer); 
   glBufferData(
     GL_ELEMENT_ARRAY_BUFFER, 
     indices.size() * sizeof(unsigned int), 
@@ -471,16 +490,14 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
   );
   m.num_indices = indices.size();
 
-  BindBuffer(m.vertex_buffer_, 0, 3);
-  BindBuffer(m.uv_buffer_, 1, 2);
+  BindBuffer(m.vertex_buffer, 0, 3);
+  BindBuffer(m.uv_buffer, 1, 2);
+  BindBuffer(m.tangent_buffer, 2, 3);
+  BindBuffer(m.bitangent_buffer, 3, 3);
 
-  // TODO: I'm using tangent instead of normal. This is wrong.
-  BindBuffer(m.tangent_buffer_, 2, 3);
-  BindBuffer(m.bitangent_buffer_, 3, 3);
-
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer);
   glBindVertexArray(0);
-  for (int slot = 0; slot < 2; slot++) {
+  for (int slot = 0; slot < 5; slot++) {
     glDisableVertexAttribArray(slot);
   }
   return m;
@@ -489,14 +506,12 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
 void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices) {
   glBindVertexArray(m.vao_);
-  // glEnable(GL_BLEND);
-  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer);
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), 
     &vertices[0], GL_STATIC_DRAW);
 
-  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.uv_buffer);
   glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
     GL_STATIC_DRAW);
 
@@ -520,15 +535,15 @@ void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs,
     bitangents.push_back(bitangent);
   }
 
-  glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.tangent_buffer);
   glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
     &tangents[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, m.bitangent_buffer_);
+  glBindBuffer(GL_ARRAY_BUFFER, m.bitangent_buffer);
   glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
     &bitangents[0], GL_STATIC_DRAW);
 
   if (!indices.empty()) {
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_); 
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer); 
     glBufferData(
       GL_ELEMENT_ARRAY_BUFFER, 
       indices.size() * sizeof(unsigned int), 
@@ -538,15 +553,15 @@ void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs,
     m.num_indices = indices.size();
   }
 
-  BindBuffer(m.vertex_buffer_, 0, 3);
-  BindBuffer(m.uv_buffer_, 1, 2);
-  BindBuffer(m.tangent_buffer_, 3, 3);
-  BindBuffer(m.bitangent_buffer_, 4, 3);
+  BindBuffer(m.vertex_buffer, 0, 3);
+  BindBuffer(m.uv_buffer, 1, 2);
+  BindBuffer(m.tangent_buffer, 3, 3);
+  BindBuffer(m.bitangent_buffer, 4, 3);
 
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer_);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m.element_buffer);
   glBindVertexArray(0);
 
-  for (int slot = 0; slot < 4; slot++) {
+  for (int slot = 0; slot < 5; slot++) {
     glDisableVertexAttribArray(slot);
   }
 }
@@ -1131,7 +1146,7 @@ void AppendXmlNode(pugi::xml_node& node, const string& name,
   for (int i = 0; i < polygon.vertices.size(); i++) {
     AppendXmlNode(new_node, "vertex", polygon.vertices[i]);
   }
-  AppendXmlNode(new_node, "normal", polygon.normals[0]);
+  AppendXmlNode(new_node, "normal", polygon.normal);
 }
 
 void AppendXmlNode(pugi::xml_node& node, const string& name, 
@@ -1230,9 +1245,6 @@ void CreateCube(vector<vec3>& vertices, vector<vec2>& uvs,
     p.vertices.push_back(vertices[i]);
     p.vertices.push_back(vertices[i+1]);
     p.vertices.push_back(vertices[i+2]);
-    p.indices.push_back(i);
-    p.indices.push_back(i+1);
-    p.indices.push_back(i+2);
     polygons.push_back(p);
   }
 
@@ -1679,4 +1691,21 @@ vec3 CalculateMissileDirectionToHitTarget(const vec3& pos, const vec3& target,
   float tan = (v2 - sqrt(v4 - g * (g * x2 + 2 * y * v2))) / (g * x);
   float angle = atan(tan); 
   return vec3(rotate(mat4(1.0f), angle, right) * vec4(forward, 1.0f));  
+}
+
+void SaveMeshToXml(const Mesh& m, pugi::xml_node& parent) {
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+  vector<unsigned int> indices;
+  vector<Polygon> polygons;
+
+  // Animation data.
+  vector<ivec3> bone_ids;
+  vector<vec3> bone_weights;
+
+  unordered_map<string, Animation> animations;
+  unordered_map<string, int> bones_to_ids;
+
+
 }

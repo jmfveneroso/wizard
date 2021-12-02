@@ -54,6 +54,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   // Mesh.
   // unordered_map<int, Mesh> lod_meshes;
   unordered_map<int, string> lod_meshes;
+  shared_ptr<Mesh> first_mesh;
 
   // Texture.
   vector<GLuint> textures;

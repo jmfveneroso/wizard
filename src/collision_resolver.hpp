@@ -239,7 +239,7 @@ class CollisionResolver {
 
   // Parallelism.
   bool terminate_ = false;
-  const int kMaxThreads = 1; // 16.
+  const int kMaxThreads = 16;
   vector<thread> find_threads_;
   vector<thread> test_threads_;
 
@@ -287,6 +287,8 @@ class CollisionResolver {
 
   void TestCollisionsWithDungeon();
   void TestCollisionsWithTerrain();
+  void FindCollisionsWithTerrain(vector<ColPtr>& collisions, ObjPtr obj);
+  void FindCollisionsWithDungeon(vector<ColPtr>& collisions, ObjPtr obj);
   void ResolveMissileCollision(ColPtr c);
   void ResolveParticleCollision(ColPtr c);
   void ResolveCollisions();

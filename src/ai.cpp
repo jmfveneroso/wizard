@@ -4,7 +4,8 @@
 
 const float kMinDistance = 500.0f;
 
-AI::AI(shared_ptr<Resources> asset_catalog) : resources_(asset_catalog) {
+AI::AI(shared_ptr<Resources> resources, shared_ptr<Monsters> monsters) 
+  : resources_(resources), monsters_(monsters) {
   CreateThreads();
 }
 
@@ -196,21 +197,7 @@ bool AI::ProcessStatus(ObjPtr spider) {
         // TODO: move drop logic to another class.
         int num_frames = GetNumFramesInAnimation(*mesh, "Armature|death");
         if (spider->frame >= num_frames - 2) {
-          ivec2 adj_tile = dungeon.GetRandomAdjTile(spider->position);
-          vec3 drop_pos = dungeon.GetTilePosition(adj_tile);
-
-          for (const auto& drop : spider->GetAsset()->drops) {
-            int r = Random(0, 1000);
-            r = 0;
-            if (r >= drop.chance) continue;
-
-            const int item_id = drop.item_id;
-            const int quantity = ProcessDiceFormula(drop.quantity);
-            ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-              item_data[item_id].asset_name, drop_pos + vec3(0, 5.0f, 0));
-            obj->CalculateCollisionData();
-            obj->quantity = quantity;
-          }
+          resources_->CreateDrops(spider);
           is_dead = true;
         }
       }
@@ -751,12 +738,11 @@ bool AI::ProcessUseAbilityAction(ObjPtr spider,
 
 // An action should be precise and direct to the point.
 void AI::ProcessNextAction(ObjPtr spider) {
-  if (spider->actions.empty()) return;
+  if (spider->actions.empty()) {
+    return;
+  }
 
-  resources_->Lock();
   shared_ptr<Action> action = spider->actions.front();
-  resources_->Unlock();
-
   switch (action->type) {
     case ACTION_MOVE: {
       shared_ptr<MoveAction> move_action =  
@@ -1090,20 +1076,16 @@ void AI::ProcessUnitAiAsync() {
     running_tasks_++;
     ai_mutex_.unlock();
 
-    // TODO: maybe should go to physics.
-    // if (dot(obj->up, vec3(0, 1, 0)) < 0) {
-    //   obj->up = vec3(0, 1, 0);
-    // }
-
     // Check status. If taking hit, dying, poisoned, etc.
     if (ProcessStatus(obj)) {
       ProcessNextAction(obj);
     }
 
-    string ai_script = obj->GetAsset()->ai_script;
-    if (!ai_script.empty()) {
-      resources_->CallStrFn(ai_script, obj->name);
-    }
+    // string ai_script = obj->GetAsset()->ai_script;
+    // if (!ai_script.empty()) {
+    //   resources_->CallStrFn(ai_script, obj->name);
+    // }
+    monsters_->RunMonsterAi(obj);
 
     ai_mutex_.lock();
     running_tasks_--;

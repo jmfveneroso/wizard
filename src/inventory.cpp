@@ -1001,8 +1001,9 @@ void Inventory::NextPhrase(GLFWwindow* window, const string& next_phrase_name) {
     current_dialog->dialog->phrases[current_dialog->current_phrase].name;
   if (current_dialog->dialog->on_finish_phrase_events.find(phrase_name) != 
     current_dialog->dialog->on_finish_phrase_events.end()) {
-    resources_->RunScriptFn(
-      current_dialog->dialog->on_finish_phrase_events[phrase_name]);
+  }
+  if (phrase_name == "buy-stuff") {
+    resources_->GetConfigs()->show_store = true;
   }
 
   if (next_phrase_name.empty()) {
@@ -1012,8 +1013,7 @@ void Inventory::NextPhrase(GLFWwindow* window, const string& next_phrase_name) {
     } else {
       if (current_dialog->on_finish_dialog_events.find(dialog_name) != 
         current_dialog->on_finish_dialog_events.end()) {
-        resources_->RunScriptFn(
-          current_dialog->on_finish_dialog_events[dialog_name]);
+
       }
       npc->ClearActions();
 

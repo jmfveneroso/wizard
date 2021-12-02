@@ -684,14 +684,14 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
     glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
-    mat4 DepthMVP = shadow_matrix0 * ModelMatrix;
-    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
+    // mat4 DepthMVP = shadow_matrix0 * ModelMatrix;
+    // glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
 
-    mat4 DepthMVP1 = shadow_matrix1 * ModelMatrix;
-    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP1"), 1, GL_FALSE, &DepthMVP1[0][0]);
+    // mat4 DepthMVP1 = shadow_matrix1 * ModelMatrix;
+    // glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP1"), 1, GL_FALSE, &DepthMVP1[0][0]);
 
-    mat4 DepthMVP2 = shadow_matrix1 * ModelMatrix;
-    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP2"), 1, GL_FALSE, &DepthMVP2[0][0]);
+    // mat4 DepthMVP2 = shadow_matrix1 * ModelMatrix;
+    // glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP2"), 1, GL_FALSE, &DepthMVP2[0][0]);
 
     glUniform1i(GetUniformId(program_id, "TILE_SIZE"), TILE_SIZE * GetTileSize(i + 1));
     glUniform2iv(GetUniformId(program_id, "buffer_top_left"), 1, (int*) &clipmaps_[i]->top_left);
@@ -787,7 +787,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
       int x = offset.x; int y = offset.y;
       BindBuffer(subregion_uv_buffers_[region][x][y], 1, 2);
 
-      AddPointLightsToProgram(clipmaps_[i], region, program_id);
+      // AddPointLightsToProgram(clipmaps_[i], region, program_id);
 
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
       glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 

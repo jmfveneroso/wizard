@@ -115,58 +115,33 @@ void main(){
   vec3 out_color = ambient_color;
 
   float sun_intensity = 1.0;
-  if (outdoors > 0.0f) {
-    sun_intensity = outdoors * (1.0 + dot(light_direction, vec3(0, 1, 0))) / 2.0;
-  }
 
-  if (enable_bump_map > 0) {
-    vec3 tex_normal_tangentspace = normalize(texture(bump_map_sampler, 
-      vec2(in_data.UV.x, in_data.UV.y)).rgb * 2.0 - 1.0);
-    vec3 n = tex_normal_tangentspace;
-    vec3 l = in_data.light_dir_tangentspace;
+  vec3 tex_normal_tangentspace = normalize(texture(bump_map_sampler, 
+    vec2(in_data.UV.x, in_data.UV.y)).rgb * 2.0 - 1.0);
+  vec3 n = tex_normal_tangentspace;
+  vec3 l = in_data.light_dir_tangentspace;
 
-    // How to set normal strength: https://computergraphics.stackexchange.com/questions/5411/correct-way-to-set-normal-strength/5412
-    n.xy *= normal_strength;
-    n = normalize(n);
-    float cos_theta = max(dot(n, l), 0.0);
+  // How to set normal strength: https://computergraphics.stackexchange.com/questions/5411/correct-way-to-set-normal-strength/5412
+  n.xy *= normal_strength;
+  n = normalize(n);
+  float cos_theta = max(dot(n, l), 0.0);
 
-    vec3 E = normalize(in_data.eye_dir_tangentspace);
-    cos_theta = 0.5 * clamp(dot(n, E), 0.0, 1) + 0.5 * cos_theta;
+  vec3 E = normalize(in_data.eye_dir_tangentspace);
+  cos_theta = 0.5 * clamp(dot(n, E), 0.0, 1) + 0.5 * cos_theta;
 
-    vec3 R = reflect(-l, n);
-    float cos_alpha = max(dot(E, R), 0.0);
-         
-    vec3 specular_color = texture(specular_sampler, in_data.UV).rgb * 
-      specular_component;
+  vec3 R = reflect(-l, n);
+  float cos_alpha = max(dot(E, R), 0.0);
+       
+  vec3 specular_color = texture(specular_sampler, in_data.UV).rgb * 
+    specular_component;
 
-    out_color += sun_intensity * ((diffuse_color * lighting_color * light_power * cos_theta)
-       + (specular_color * lighting_color * light_power * pow(cos_alpha, 5)));
-  } else {
-    // Sun light.
-    vec3 light_cameraspace = (V * vec4(light_direction, 0.0)).xyz;
-    vec3 n = normalize(in_data.normal);
-    vec3 l = normalize(light_cameraspace);
-    float brightness = clamp(dot(n, l), 0, 1);
-    out_color += sun_intensity * (diffuse_color * lighting_color * light_power * brightness);
+  out_color += sun_intensity * ((diffuse_color * lighting_color * light_power * cos_theta)
+     + (specular_color * lighting_color * light_power * pow(cos_alpha, 5)));
 
-    // Point lights.
-    for (int i = 0; i < NUM_POINT_LIGHTS; i++) {
-      out_color += CalcPointLight(point_lights[i], n, 
-        in_data.position, diffuse_color);    
-    }
-  }
-
-  if (outdoors > 0.0f) {
-    float d = distance(player_pos, in_data.position);
-    float depth = clamp(d / light_radius, 0, 1);
-    vec3 fog_color = outdoors * out_color + vec3(0, 0, 0);
-    out_color = mix(out_color, fog_color, depth);
-  } else {
-    float d = distance(player_pos, in_data.position);
-    float depth = clamp(d / light_radius, 0, 1);
-    vec3 fog_color = vec3(0, 0, 0);
-    out_color = mix(out_color, fog_color, depth);
-  }
+  float d = distance(player_pos, in_data.position);
+  float depth = clamp(d / light_radius, 0, 1);
+  vec3 fog_color = vec3(0, 0, 0);
+  out_color = mix(out_color, fog_color, depth);
 
   color = vec4(out_color, 1.0);
 }

@@ -276,56 +276,6 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   return false;
 }
 
-ConvexHull Renderer::CreateConvexHullFromOccluder(
-  const vector<Polygon>& polygons, const vec3& player_pos) {
-  ConvexHull convex_hull;
-
-  // Find occlusion hull edges.
-  unordered_map<string, Edge> edges;
-  for (const Polygon& p : polygons) {
-    const vec3& plane_point = p.vertices[0];
-    const vec3& normal = p.normals[0];
-    if (IsBehindPlane(player_pos, plane_point, normal)) {
-      continue;
-    }
-
-    convex_hull.push_back(p);
-
-    // If the polygon faces viewer, do the following for all its edges: 
-    // If the edge is already in the edge list, remove the edge from the 
-    // list. Otherwise, add the edge into the list.
-    const vector<vec3>& vertices = p.vertices;
-    const vector<vec3>& normals = p.normals;
-    const vector<unsigned int>& indices = p.indices;
-
-    // TODO: contemplate not triangular polygons. Maybe?
-    vector<pair<int, int>> comparisons { { 0, 1 }, { 1, 2 }, { 2, 0 } };
-    for (auto& [a, b] : comparisons) {
-      int i = (p.indices[a] < p.indices[b]) ? a : b;
-      int j = (p.indices[a] < p.indices[b]) ? b : a;
-      
-      string key = boost::lexical_cast<string>(indices[i]) + "-" + 
-        boost::lexical_cast<string>(indices[j]);
-      if (edges.find(key) == edges.end()) {
-        edges[key] = Edge(vertices[i], vertices[j], indices[i], indices[j], 
-          normals[i], normals[j]);
-      } else {
-        edges.erase(key);
-      }
-    }
-  }
-
-  if (edges.empty()) {
-    return convex_hull;
-  }
-
-  for (auto& [key, e] : edges) {
-    Polygon plane = CreatePolygonFrom3Points(player_pos, e.a, e.b, e.a_normal);
-    convex_hull.push_back(plane);
-  }
-  return convex_hull;
-}
-
 vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
   shared_ptr<Sector> sector, vec4 frustum_planes[6]) {
   vector<ObjPtr> visible_objects;
@@ -357,22 +307,6 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
       darkness_objs.push_back(obj);
     } else {
       visible_objects.push_back(obj);
-    }
-
-    if (obj->GetAsset()->occluder.empty()) continue;
-
-    // Add occlusion hull.
-    vector<Polygon> polygons = obj->GetAsset()->occluder;
-    for (auto& poly : polygons) {
-      for (auto& v : poly.vertices) {
-        v += obj->position;
-      }
-    }
-
-    ConvexHull convex_hull = CreateConvexHullFromOccluder(polygons, 
-      camera_.position);
-    if (!convex_hull.empty()) {
-      occluder_convex_hulls.push_back(convex_hull);
     }
   }
 
@@ -412,7 +346,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
 
   for (auto& poly : mesh->polygons) {
     vec3 portal_point = p->position + poly.vertices[0];
-    vec3 normal = poly.normals[0];
+    vec3 normal = poly.normal;
 
     // if (TestSphereTriangleIntersection(sphere - p->position, poly.vertices)) {
     //   in_frustum = true;
@@ -446,7 +380,7 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
 
     Polygon& poly = mesh->polygons[0];
     terrain_clipping_point_ = poly.vertices[0] + p->position;
-    terrain_clipping_normal_ = poly.normals[0];
+    terrain_clipping_normal_ = poly.normal;
   }
 
   return GetVisibleObjectsInStabbingTreeNode(node, frustum_planes);
@@ -534,6 +468,13 @@ void Renderer::DrawOutside() {
     return;
   }
 
+  ObjPtr player = resources_->GetPlayer();
+  ObjPtr skydome = resources_->GetObjectByName("skydome");
+  skydome->position = player->position;
+  skydome->position.y = -1000;
+
+  DrawObject(skydome);
+
   terrain_->UpdateClipmaps(camera_.position);
 
   // if (clip_terrain_) {
@@ -548,12 +489,6 @@ void Renderer::DrawOutside() {
   // TODO: pass frustum planes.
   terrain_->Draw(camera_, view_matrix_, camera_.position, shadow_matrix0, 
     shadow_matrix1, shadow_matrix2, false, clip_terrain_);
-
-  ObjPtr player = resources_->GetPlayer();
-  ObjPtr skydome = resources_->GetObjectByName("skydome");
-  skydome->position = player->position;
-  skydome->position.y = -1000;
-  DrawObject(skydome);
 }
 
 void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
@@ -1086,10 +1021,7 @@ void Renderer::Draw() {
     );
   }
 
-  // if (configs->render_scene != "dungeon") {
-  //   DrawShadows();
-  // }
-  DrawShadows();
+  // DrawShadows();
 
   vec3 clear_color = vec3(0.73, 0.81, 0.92);
   if (configs->render_scene == "dungeon") {
@@ -1722,7 +1654,12 @@ void Renderer::CreateThreads() {
   }
 }
 
+// void Renderer::UpdateDungeonBufferMatrices() {
+// }
+
 void Renderer::CreateDungeonBuffers() {
+  double start_time = glfwGetTime();
+
   vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
   vector<string> model_names { 
     "resources/models_fbx/dungeon_floor.fbx", 
@@ -1737,42 +1674,39 @@ void Renderer::CreateDungeonBuffers() {
   };
 
   vector<string> texture_names { 
-    "resources/textures_png/paving.png", 
-    // "resources/textures_png/stone_diffuse.png", 
-    "resources/textures_png/cathedral_wall_diffuse.png", 
-    "resources/textures_png/cathedral_wall_diffuse.png", 
-    "resources/textures_png/cathedral_wall_diffuse.png", 
-    "resources/textures_png/cathedral_wall_diffuse.png", 
-    "resources/textures_png/metal_diffuse.png",
-    "resources/textures_png/cathedral_wall_diffuse.png",
-    "resources/textures_png/granite_wall_diffuse.png",
-    "resources/textures_png/medieval_floor_diffuse.png",
+    "paving", 
+    "cathedral_wall_diffuse", 
+    "cathedral_wall_diffuse", 
+    "cathedral_wall_diffuse", 
+    "cathedral_wall_diffuse", 
+    "metal_diffuse",
+    "cathedral_wall_diffuse",
+    "granite_wall_diffuse",
+    "medieval_floor_diffuse",
    };
 
   vector<string> normal_texture_names { 
-    "resources/textures_png/paving_normal.png", 
-    // "resources/textures_png/stone_normal.png", 
-    "resources/textures_png/cathedral_wall_normal.png", 
-    "resources/textures_png/cathedral_wall_normal.png", 
-    "resources/textures_png/cathedral_wall_normal.png", 
-    "resources/textures_png/cathedral_wall_normal.png", 
-    "resources/textures_png/metal_normal.png",
-    "resources/textures_png/cathedral_wall_normal.png", 
-    "resources/textures_png/granite_wall_normal.png", 
-    "resources/textures_png/medieval_floor_normal.png",
+    "paving_normal", 
+    "cathedral_wall_normal", 
+    "cathedral_wall_normal", 
+    "cathedral_wall_normal", 
+    "cathedral_wall_normal", 
+    "metal_normal",
+    "cathedral_wall_normal", 
+    "granite_wall_normal", 
+    "medieval_floor_normal",
   };
 
   vector<string> specular_texture_names { 
-    "resources/textures_png/paving_roughness.png", 
-    // "resources/textures_png/stone_roughness.png", 
-    "resources/textures_png/cathedral_wall_roughness.png", 
-    "resources/textures_png/cathedral_wall_roughness.png", 
-    "resources/textures_png/cathedral_wall_roughness.png", 
-    "resources/textures_png/cathedral_wall_roughness.png", 
-    "resources/textures_png/metal_roughness.png",
-    "resources/textures_png/cathedral_wall_roughness.png", 
-    "resources/textures_png/granite_wall_roughness.png", 
-    "resources/textures_png/medieval_floor_roughness.png",
+    "paving_roughness", 
+    "cathedral_wall_roughness", 
+    "cathedral_wall_roughness", 
+    "cathedral_wall_roughness", 
+    "cathedral_wall_roughness", 
+    "metal_roughness",
+    "cathedral_wall_roughness", 
+    "granite_wall_roughness", 
+    "medieval_floor_roughness",
   };
 
   vector<FbxData> models;
@@ -1780,10 +1714,14 @@ void Renderer::CreateDungeonBuffers() {
   vector<GLuint> normal_textures;
   vector<GLuint> specular_textures;
   for (int tile = 0; tile < instanced_tiles.size(); tile++) {
-    models.push_back(FbxLoad(model_names[tile]));
-    textures.push_back(LoadPng(texture_names[tile].c_str()));
-    normal_textures.push_back(LoadPng(normal_texture_names[tile].c_str()));
-    specular_textures.push_back(LoadPng(specular_texture_names[tile].c_str()));
+    FbxData data;
+    FbxLoad(model_names[tile], data);
+
+    models.push_back(data);
+
+    textures.push_back(resources_->GetTextureByName(texture_names[tile]));
+    normal_textures.push_back(resources_->GetTextureByName(normal_texture_names[tile]));
+    specular_textures.push_back(resources_->GetTextureByName(specular_texture_names[tile]));
   }
 
   for (int cx = 0; cx < kDungeonCells; cx++) {
@@ -1808,8 +1746,8 @@ void Renderer::CreateDungeonBuffers() {
 
         vector<vec3> vertices;
         vector<unsigned int> indices;
-        for (int i = 0; i < data.indices.size(); i++) {
-          vertices.push_back(data.vertices[data.indices[i]]);
+        for (int i = 0; i < data.raw_mesh.indices.size(); i++) {
+          vertices.push_back(data.raw_mesh.vertices[data.raw_mesh.indices[i]]);
           indices.push_back(i);
         }
         dungeon_render_data[cx][cz].num_indices[tile] = indices.size();
@@ -1819,8 +1757,8 @@ void Renderer::CreateDungeonBuffers() {
         for (int i = 0; i < vertices.size(); i += 3) {
           vec3 delta_pos1 = vertices[i+1] - vertices[i+0];
           vec3 delta_pos2 = vertices[i+2] - vertices[i+0];
-          vec2 delta_uv1 = data.uvs[i+1] - data.uvs[i+0];
-          vec2 delta_uv2 = data.uvs[i+2] - data.uvs[i+0];
+          vec2 delta_uv1 = data.raw_mesh.uvs[i+1] - data.raw_mesh.uvs[i+0];
+          vec2 delta_uv2 = data.raw_mesh.uvs[i+2] - data.raw_mesh.uvs[i+0];
 
           float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
           vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
@@ -1838,12 +1776,12 @@ void Renderer::CreateDungeonBuffers() {
           &vertices[0], GL_STATIC_DRAW);
 
         glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].uvs[tile]);
-        glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(vec2), 
-          &data.uvs[0], GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.uvs.size() * sizeof(vec2), 
+          &data.raw_mesh.uvs[0], GL_STATIC_DRAW);
 
         glBindBuffer(GL_ARRAY_BUFFER, dungeon_render_data[cx][cz].normals[tile]);
-        glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(vec3), 
-          &data.normals[0], GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.normals.size() * sizeof(vec3), 
+          &data.raw_mesh.normals[0], GL_STATIC_DRAW);
 
         vector<mat4> model_matrices;
         char** dungeon_map = resources_->GetDungeonMap();
@@ -1972,6 +1910,9 @@ void Renderer::CreateDungeonBuffers() {
     }
   }
   created_dungeon_buffers = true;
+
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "CreateDungeonBuffers took " << elapsed_time << " seconds" << endl;
 }
 
 void Renderer::DrawDungeonTiles() {

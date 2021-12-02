@@ -65,6 +65,9 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     }
 
     lod_meshes[lod_level] = mesh_name;
+    if (lod_level == 0) {
+      first_mesh = mesh;
+    }
   }
 
   // Skeleton.
@@ -112,45 +115,6 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
   const pugi::xml_node& xml_physics = asset_xml.child("physics");
   if (xml_physics) {
     physics_behavior = StrToPhysicsBehavior(xml_physics.text().get());
-  }
-
-  // Texture.
-  for (pugi::xml_node texture_xml = asset_xml.child("texture"); texture_xml; 
-    texture_xml = texture_xml.next_sibling("texture")) {
-    const string& texture_filename = texture_xml.text().get();
-    GLuint texture_id = resources_->GetTextureByName(texture_filename);
-    if (texture_id == 0) {
-      bool poor_filtering = texture_xml.attribute("poor-filtering");
-      texture_id = LoadTexture(texture_filename.c_str(), poor_filtering);
-      resources_->AddTexture(texture_filename, texture_id);
-    }
-    textures.push_back(texture_id);
-  }
-
-  // Normal map.
-  const pugi::xml_node& bump_map_xml = asset_xml.child("bump-map");
-  if (bump_map_xml) {
-    const string& texture_filename = bump_map_xml.text().get();
-    GLuint texture_id = resources_->GetTextureByName(texture_filename);
-    if (texture_id == 0) {
-      bool poor_filtering = bump_map_xml.attribute("poor-filtering");
-      texture_id = LoadTexture(texture_filename.c_str(), poor_filtering);
-      resources_->AddTexture(texture_filename, texture_id);
-    }
-    bump_map_id = texture_id;
-  }
-
-  // Specular.
-  const pugi::xml_node& specular_xml = asset_xml.child("specular");
-  if (specular_xml) {
-    const string& texture_filename = specular_xml.text().get();
-    GLuint texture_id = resources_->GetTextureByName(texture_filename);
-    if (texture_id == 0) {
-      bool poor_filtering = specular_xml.attribute("poor-filtering");
-      texture_id = LoadTexture(texture_filename.c_str(), poor_filtering);
-      resources_->AddTexture(texture_filename, texture_id);
-    }
-    specular_id = texture_id;
   }
 
   const pugi::xml_node& specular_component_xml = 
@@ -513,9 +477,7 @@ void LoadAssetCollisionDataAux(shared_ptr<AABBTreeNode> aabb_tree_node,
     }
 
     const pugi::xml_node& normal_xml = polygon_xml.child("normal");
-    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
-    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
-    aabb_tree_node->polygon.normals.push_back(LoadVec3FromXml(normal_xml));
+    aabb_tree_node->polygon.normal = LoadVec3FromXml(normal_xml);
     return;
   }
 

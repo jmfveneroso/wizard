@@ -8,7 +8,6 @@
 #include "physics.hpp"
 #include "player.hpp"
 #include "inventory.hpp"
-#include "scripts.hpp"
 
 #include <thread>
 #include <mutex>

@@ -283,9 +283,7 @@ struct Edge {
 
 struct Polygon {
   vector<vec3> vertices;
-  vector<vec3> normals;
-  vector<vec2> uvs;
-  vector<unsigned int> indices;
+  vec3 normal;
   Polygon() {}
   Polygon(const Polygon &p2);
 };
@@ -319,33 +317,36 @@ struct AABBTreeNode {
   AABBTreeNode() {}
 };
 
+struct RawMesh {
+  // Mesh data.
+  vector<vec3> vertices;
+  vector<vec2> uvs;
+  vector<vec3> normals;
+  vector<unsigned int> indices;
+  vector<Polygon> polygons;
+
+  // Animation data.
+  vector<ivec3> bone_ids;
+  vector<vec3> bone_weights;
+  vector<Animation> animations;
+};
+
 struct Mesh {
-  GLuint shader;
-  GLuint vertex_buffer_;
-  GLuint uv_buffer_;
-  GLuint normal_buffer_;
-  GLuint tangent_buffer_;
-  GLuint bitangent_buffer_;
-  GLuint element_buffer_;
   GLuint vao_ = 0;
+
+  GLuint vertex_buffer;
+  GLuint uv_buffer;
+  GLuint tangent_buffer;
+  GLuint bitangent_buffer;
+  GLuint element_buffer;
   GLuint num_indices;
+
   vector<Polygon> polygons;
   unordered_map<string, Animation> animations;
   unordered_map<string, int> bones_to_ids;
   BoundingSphere bounding_sphere;
 
   Mesh() {}
-  // Mesh(const Mesh& mesh) {
-  //   shader            = mesh.shader;
-  //   vertex_buffer_    = mesh.vertex_buffer_;
-  //   uv_buffer_        = mesh.uv_buffer_;
-  //   normal_buffer_    = mesh.normal_buffer_;
-  //   tangent_buffer_   = mesh.tangent_buffer_;
-  //   bitangent_buffer_ = mesh.bitangent_buffer_;
-  //   element_buffer_   = mesh.element_buffer_;
-  //   vao_              = mesh.vao_;          
-  //   num_indices       = mesh.num_indices;          
-  // }
 };
 
 struct Event {
@@ -413,7 +414,7 @@ const int kHeightMapSize = 4000;
 // const vec3 kWorldCenter = vec3(10000, 0, 10000);
 const vec3 kWorldCenter = vec3(12000, 0, 8000);
 // const vec3 kDungeonOffset = vec3(10000, 300, 10000);
-const vec3 kDungeonOffset = vec3(11600, 500, 7600);
+const vec3 kDungeonOffset = vec3(11600, 0, 7600);
 
 // const int kDungeonSize = 42;
 // const int kDungeonCells = 3;
@@ -423,9 +424,10 @@ const int kDungeonCells = 6;
 
 GLuint GetUniformId(GLuint program_id, string name);
 void BindBuffer(const GLuint& buffer_id, int slot, int dimension);
-GLuint LoadPng(const char* file_name, bool poor_filtering=false);
-GLuint LoadTga(const char* file_name, bool poor_filtering=false);
-GLuint LoadTexture(const char* file_name, bool poor_filtering=false);
+GLuint LoadPng(const char* file_name, GLuint texture_id, GLFWwindow* window = nullptr);
+GLuint LoadTga(const char* file_name, GLuint texture_id, GLFWwindow* window = nullptr);
+GLuint LoadTexture(const char* file_name, GLuint texture_id = 0);
+void LoadTextureAsync(const char* file_name, GLuint texture_id, GLFWwindow* window);
 GLuint LoadShader(const std::string& directory, const std::string& name);
 vector<vec3> GetAllVerticesFromPolygon(const Polygon& polygon);
 vector<vec3> GetAllVerticesFromPolygon(const vector<Polygon>& polygons);

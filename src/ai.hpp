@@ -4,13 +4,13 @@
 #include <thread>
 #include <mutex>
 #include <random>
-#include "scripts.hpp"
 #include "resources.hpp"
+#include "monsters.hpp"
 
 class AI {
   shared_ptr<Resources> resources_;
   std::default_random_engine generator_;
-  shared_ptr<ScriptManager> script_manager_ = nullptr;
+  shared_ptr<Monsters> monsters_ = nullptr;
  
   // Parallelism. 
   bool terminate_ = false;
@@ -70,7 +70,7 @@ class AI {
   void CreateThreads();
 
  public:
-  AI(shared_ptr<Resources> asset_catalog);
+  AI(shared_ptr<Resources> resources, shared_ptr<Monsters> monsters);
   ~AI();
 
   void Run();

@@ -90,7 +90,7 @@ float HeightMap::GetTerrainHeight(vec2 pos, vec3* normal) {
 
 float HeightMap::GetHeightNoise(float x, float y) {
   // Gaussian.
-  float h = -500.0f;
+  float h = -1000.0f;
   if (abs(x + y) > 0.1f) {
     h += 100.0f * exp(-((x * x) / 2 + (y * y) / 2));
   }
@@ -112,13 +112,10 @@ TerrainPoint HeightMap::GetTerrainPoint(int x, int y, bool calculate_normal) {
   const float max_k = 1.0f;
 
   alpha_noise = (clamp(alpha_noise, min_k, max_k) - min_k) / (max_k - min_k);
-  // alpha_noise = 0;
-
   float h_noise = GetHeightNoise(x_, y_);
 
   hm_x += kHeightMapSize / 2;
   hm_y += kHeightMapSize / 2;
-
 
   TerrainPoint p;
   if (hm_x < 0 || hm_y < 0 || hm_x >= kHeightMapSize || 

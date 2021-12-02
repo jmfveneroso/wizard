@@ -5,6 +5,7 @@
 #include <iostream>
 #include <glm/glm.hpp>
 #include <unordered_map>
+#include <queue>
 // #include "util.hpp"
 
 using namespace std;
@@ -210,6 +211,13 @@ class Dungeon {
     1.4f, 1.0f, 1.4f
   };
 
+  mutex calculate_path_mutex_;
+  bool terminate_ = false;
+  const int kMaxThreads = 16;
+  queue<ivec2> calculate_path_tasks_;
+  int running_calculate_path_tasks_ = 0;
+  vector<thread> calculate_path_threads_;
+
   void DrawRoom(int x, int y, int w, int h, int add_flags = 0);
   bool IsChasm(int x, int y, int w, int h);
   bool HasStairs(int x, int y, int w, int h);
@@ -314,6 +322,10 @@ class Dungeon {
 
   unordered_map<int, LevelData>& GetLevelData() { return level_data_; }
   void LoadLevelDataFromXml(const string& filename);
+
+  void CalculatePathsAsync();
+  void CreateThreads();
+  void Reveal();
 };
 
 #endif // __DUNGEON_HPP__

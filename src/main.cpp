@@ -6,7 +6,7 @@
 #include "player.hpp"
 #include "inventory.hpp"
 #include "engine.hpp"
-#include "scripts.hpp"
+#include "monsters.hpp"
 
 shared_ptr<Resources> resources = nullptr;
 shared_ptr<Renderer> renderer = nullptr;
@@ -19,7 +19,7 @@ shared_ptr<AI> ai = nullptr;
 shared_ptr<Inventory> inventory = nullptr;
 shared_ptr<PlayerInput> player_input = nullptr;
 shared_ptr<Engine> engine = nullptr;
-shared_ptr<ScriptManager> script_manager = nullptr;
+shared_ptr<Monsters> monsters = nullptr;
 
 void PressCharCallback(GLFWwindow* window, unsigned int char_code) {
   text_editor->PressCharCallback(string(1, (char) char_code));
@@ -49,7 +49,7 @@ void InitOpenGl() {
 
   // Fullscreen.
   window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
-    NULL, NULL);
+    glfwGetPrimaryMonitor(), NULL);
 
   // Windowed.
   // window_ = glfwCreateWindow(window_width_, window_height_, APP_NAME, 
@@ -93,7 +93,8 @@ int main() {
     inventory, window_, window_width_, window_height_);
   physics = make_shared<Physics>(resources);
   collision_resolver = make_shared<CollisionResolver>(resources);
-  ai = make_shared<AI>(resources);
+  monsters = make_shared<Monsters>(resources);
+  ai = make_shared<AI>(resources, monsters);
   text_editor = make_shared<TextEditor>(draw_2d);
   player_input = make_shared<PlayerInput>(resources, project_4d, 
     inventory, renderer->terrain());

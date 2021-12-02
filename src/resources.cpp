@@ -1,6 +1,5 @@
 #include "resources.hpp"
 #include "debug.hpp"
-#include "scripts.hpp"
 #include <fstream>
 
 Resources::Resources(const string& resources_dir, 
@@ -9,13 +8,20 @@ Resources::Resources(const string& resources_dir,
   resources_dir_(resources_dir),
   height_map_(resources_dir + "/height_map.dat"),
   configs_(make_shared<Configs>()), window_(window) {
+
+  CreateThreads();
   Init();
 }
 
-void Resources::CreateOutsideSector() {
-  outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
-    vec3(kHeightMapSize/2, kHeightMapSize/2, kHeightMapSize/2));
+Resources::~Resources() {
+  terminate_ = true;
+  for (int i = 0; i < kMaxThreads; i++) {
+    load_mesh_threads_[i].join();
+    load_asset_threads_[i].join();
+  }
+}
 
+void Resources::CreateOutsideSector() {
   shared_ptr<Sector> new_sector = make_shared<Sector>(this);
   new_sector->name = "outside";
   new_sector->octree_node = outside_octree_;
@@ -25,14 +31,22 @@ void Resources::CreateOutsideSector() {
 }
 
 void Resources::Init() {
-  script_manager_ = make_shared<ScriptManager>(this);
+  // int half_map_size = kHeightMapSize / 2;
+  // int half_map_size = 400;
+  int half_map_size = 800;
+
+  outside_octree_ = make_shared<OctreeNode>(configs_->world_center,
+    vec3(half_map_size, half_map_size, half_map_size));
+  CreateOctree(outside_octree_, 1);
 
   CreateOutsideSector();
+  CountOctreeNodes();
 
   player_ = CreatePlayer(this);
 
   LoadShaders(shaders_dir_);
-  LoadMeshes(directory_ + "/models_fbx");
+  LoadMeshes(directory_ + "/assets");
+  LoadTextures(directory_ + "/assets");
   LoadAssets(directory_ + "/assets");
 
   dungeon_.LoadLevelDataFromXml(directory_ + "/assets/dungeon.xml");
@@ -94,30 +108,320 @@ void Resources::LoadShaders(const std::string& directory) {
   }
 }
 
-// TODO: lazy loading.
-void Resources::LoadMeshes(const std::string& directory) {
+void Resources::LoadMeshesFromAssetFile(pugi::xml_node xml) {
+  for (pugi::xml_node xml_mesh = xml.child("mesh"); xml_mesh; 
+    xml_mesh = xml_mesh.next_sibling("mesh")) {
+    const string& fbx_filename = xml_mesh.text().get();
+    string name = xml_mesh.attribute("name").value();
+
+    mesh_mutex_.lock();
+    mesh_loading_tasks_.push({ name, fbx_filename });
+    mesh_mutex_.unlock();
+  }
+
+  for (pugi::xml_node asset_xml = xml.child("asset"); asset_xml; 
+    asset_xml = asset_xml.next_sibling("asset")) {
+    const pugi::xml_node& mesh_xml = asset_xml.child("mesh");
+    for (int lod_level = 0; lod_level < 5; lod_level++) {
+      string s = string("lod-") + boost::lexical_cast<string>(lod_level);
+      pugi::xml_node lod = mesh_xml.child(s.c_str());
+      if (lod) {
+        const string name = lod.text().get();
+        mesh_mutex_.lock();
+        mesh_loading_tasks_.push({ name, "resources/models_fbx/" + name + ".fbx" });
+        mesh_mutex_.unlock(); 
+      }
+    }
+
+    const pugi::xml_node& collision_hull_xml = asset_xml.child("collision-hull");
+    if (collision_hull_xml) {
+      const string name = collision_hull_xml.text().get();
+      mesh_mutex_.lock();
+      mesh_loading_tasks_.push({ name, "resources/models_fbx/" + name + ".fbx" });
+      mesh_mutex_.unlock(); 
+    }
+
+    const pugi::xml_node& skeleton_xml = asset_xml.child("skeleton");
+    if (skeleton_xml) {
+      for (pugi::xml_node bone_xml = skeleton_xml.child("bone"); bone_xml; 
+        bone_xml = bone_xml.next_sibling("bone")) {
+        const string name = bone_xml.text().get();
+        mesh_mutex_.lock();
+        mesh_loading_tasks_.push({ name, "resources/models_fbx/" + name + ".fbx" });
+        mesh_mutex_.unlock(); 
+      }
+    }
+  }
+
+  for (pugi::xml_node asset_group_xml = xml.child("asset-group"); asset_group_xml; 
+    asset_group_xml = asset_group_xml.next_sibling("asset-group")) {
+    for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
+      asset_xml = asset_xml.next_sibling("asset")) {
+      const pugi::xml_node& mesh_xml = asset_xml.child("mesh");
+      for (int lod_level = 0; lod_level < 5; lod_level++) {
+        string s = string("lod-") + boost::lexical_cast<string>(lod_level);
+        pugi::xml_node lod = mesh_xml.child(s.c_str());
+        if (lod) {
+          const string name = lod.text().get();
+          mesh_mutex_.lock();
+          mesh_loading_tasks_.push({ name, "resources/models_fbx/" + name + ".fbx" });
+          mesh_mutex_.unlock();
+        }
+      }
+
+      const pugi::xml_node& collision_hull_xml = asset_xml.child("collision-hull");
+      if (collision_hull_xml) {
+        const string name = collision_hull_xml.text().get();
+        mesh_mutex_.lock();
+        mesh_loading_tasks_.push({ name, "resources/models_fbx/" + name + ".fbx" });
+        mesh_mutex_.unlock(); 
+      }
+
+      const pugi::xml_node& skeleton_xml = asset_xml.child("skeleton");
+      if (skeleton_xml) {
+        for (pugi::xml_node bone_xml = skeleton_xml.child("bone"); bone_xml; 
+          bone_xml = bone_xml.next_sibling("bone")) {
+          const string name = bone_xml.text().get();
+          mesh_mutex_.lock();
+          mesh_loading_tasks_.push({ name, "resources/models_fbx/" + name + ".fbx" });
+          mesh_mutex_.unlock(); 
+        }
+      }
+    }
+  }
+
+  while (!mesh_loading_tasks_.empty()) {
+    auto [name, fbx_filename] = mesh_loading_tasks_.front();
+    mesh_loading_tasks_.pop();
+
+    if (meshes_.find(name) != meshes_.end()) {
+      continue;
+    }
+
+    shared_ptr<Mesh> mesh = make_shared<Mesh>();
+    FbxData data;
+    LoadFbxData(fbx_filename, *mesh, data, false);
+    meshes_[name] = mesh;
+  }
+}    
+
+void Resources::LoadMeshesFromDir(const std::string& directory) {
   boost::filesystem::path p (directory);
   boost::filesystem::directory_iterator end_itr;
   for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
-    if (!is_regular_file(itr->path())) continue;
-    string current_file = itr->path().leaf().string();
-    if (!boost::ends_with(current_file, ".fbx")) {
+    if (!is_regular_file(itr->path())) {
+      LoadMeshesFromDir(itr->path().string());
       continue;
     }
- 
-    const string name = current_file.substr(0, current_file.size() - 4);
-    const string fbx_filename = directory + "/" + current_file;
 
-    // TODO: get this info from XML.
-    bool calculate_bs = current_file == "explosion.fbx";
-
-    shared_ptr<Mesh> mesh = make_shared<Mesh>();
-    FbxData data = LoadFbxData(fbx_filename, *mesh, calculate_bs);
-    if (meshes_.find(name) != meshes_.end()) {
-      ThrowError("Mesh with name ", name, " already exists Resources::146");
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
     }
-    meshes_[name] = mesh;
+
+    const string xml_filename = directory + "/" + current_file;
+
+    pugi::xml_document doc;
+    pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
+    if (!result) {
+      throw runtime_error(string("Could not load xml file: ") + xml_filename);
+    }
+
+    const pugi::xml_node& xml = doc.child("xml");
+    LoadMeshesFromAssetFile(xml);
   }
+}
+
+// TODO: lazy loading.
+void Resources::LoadMeshes(const std::string& directory) {
+  double start_time = glfwGetTime();
+
+  LoadMeshesFromDir(directory);
+
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "Load meshes took " << elapsed_time << " seconds" << endl;
+}
+
+void Resources::LoadTexturesFromAssetFile(pugi::xml_node xml) {
+  for (pugi::xml_node xml_texture = xml.child("texture"); xml_texture; 
+    xml_texture = xml_texture.next_sibling("texture")) {
+    const string& texture_filename = xml_texture.text().get();
+    string name = xml_texture.attribute("name").value();
+
+    GLuint texture_id = GetTextureByName(texture_filename);
+    if (texture_id == 0) {
+      glGenTextures(1, &texture_id);
+      AddTexture(name, texture_id);
+      AddTexture(texture_filename, texture_id);
+      texture_mutex_.lock();
+      texture_loading_tasks_.push({ texture_filename });
+      texture_mutex_.unlock();
+    }
+  }
+
+  for (pugi::xml_node asset_xml = xml.child("asset"); asset_xml; 
+    asset_xml = asset_xml.next_sibling("asset")) {
+    for (pugi::xml_node texture_xml = asset_xml.child("texture"); texture_xml; 
+      texture_xml = texture_xml.next_sibling("texture")) {
+      const string& texture_filename = texture_xml.text().get();
+      GLuint texture_id = GetTextureByName(texture_filename);
+      if (texture_id == 0) {
+        glGenTextures(1, &texture_id);
+        AddTexture(texture_filename, texture_id);
+      }
+
+      texture_mutex_.lock();
+      texture_loading_tasks_.push({ texture_filename });
+      texture_mutex_.unlock();
+    }
+
+    // Normal map.
+    const pugi::xml_node& bump_map_xml = asset_xml.child("bump-map");
+    if (bump_map_xml) {
+      const string& texture_filename = bump_map_xml.text().get();
+      GLuint texture_id = GetTextureByName(texture_filename);
+      if (texture_id == 0) {
+        glGenTextures(1, &texture_id);
+        AddTexture(texture_filename, texture_id);
+      }
+
+      texture_mutex_.lock();
+      texture_loading_tasks_.push({ texture_filename });
+      texture_mutex_.unlock();
+    }
+
+    // Specular.
+    const pugi::xml_node& specular_xml = asset_xml.child("specular");
+    if (specular_xml) {
+      const string& texture_filename = specular_xml.text().get();
+      GLuint texture_id = GetTextureByName(texture_filename);
+      if (texture_id == 0) {
+        glGenTextures(1, &texture_id);
+        AddTexture(texture_filename, texture_id);
+      }
+
+      texture_mutex_.lock();
+      texture_loading_tasks_.push({ texture_filename });
+      texture_mutex_.unlock();
+    }
+  }
+
+  for (pugi::xml_node asset_group_xml = xml.child("asset-group"); asset_group_xml; 
+    asset_group_xml = asset_group_xml.next_sibling("asset-group")) {
+    for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
+      asset_xml = asset_xml.next_sibling("asset")) {
+      for (pugi::xml_node texture_xml = asset_xml.child("texture"); texture_xml; 
+        texture_xml = texture_xml.next_sibling("texture")) {
+        const string& texture_filename = texture_xml.text().get();
+        GLuint texture_id = GetTextureByName(texture_filename);
+        if (texture_id == 0) {
+          glGenTextures(1, &texture_id);
+          AddTexture(texture_filename, texture_id);
+        }
+
+        texture_mutex_.lock();
+        texture_loading_tasks_.push({ texture_filename });
+        texture_mutex_.unlock();
+      }
+
+      // Normal map.
+      const pugi::xml_node& bump_map_xml = asset_xml.child("bump-map");
+      if (bump_map_xml) {
+        const string& texture_filename = bump_map_xml.text().get();
+        GLuint texture_id = GetTextureByName(texture_filename);
+        if (texture_id == 0) {
+          glGenTextures(1, &texture_id);
+          AddTexture(texture_filename, texture_id);
+        }
+
+        texture_mutex_.lock();
+        texture_loading_tasks_.push({ texture_filename });
+        texture_mutex_.unlock();
+      }
+
+      // Specular.
+      const pugi::xml_node& specular_xml = asset_xml.child("specular");
+      if (specular_xml) {
+        const string& texture_filename = specular_xml.text().get();
+        GLuint texture_id = GetTextureByName(texture_filename);
+        if (texture_id == 0) {
+          glGenTextures(1, &texture_id);
+          AddTexture(texture_filename, texture_id);
+        }
+
+        texture_mutex_.lock();
+        texture_loading_tasks_.push({ texture_filename });
+        texture_mutex_.unlock();
+      }
+    }
+  }
+
+  for (pugi::xml_node xml_particle = xml.child("particle-type"); xml_particle; 
+    xml_particle = xml_particle.next_sibling("particle-type")) {
+    shared_ptr<ParticleType> particle_type = make_shared<ParticleType>();
+    string name = xml_particle.attribute("name").value();
+    particle_type->name = name; 
+
+    const pugi::xml_node& xml_behavior = xml_particle.child("behavior");
+    if (xml_behavior) {
+      particle_type->behavior = StrToParticleBehavior(xml_behavior.text().get());
+    }
+
+    const pugi::xml_node& xml_texture = xml_particle.child("texture");
+    const string& texture_filename = xml_texture.text().get();
+
+    GLuint texture_id = GetTextureByName(texture_filename);
+    if (texture_id == 0) {
+      glGenTextures(1, &texture_id);
+      AddTexture(texture_filename, texture_id);
+    }
+
+    texture_mutex_.lock();
+    texture_loading_tasks_.push({ texture_filename });
+    texture_mutex_.unlock();
+  }
+}    
+
+void Resources::LoadTexturesFromDir(const std::string& directory) {
+  boost::filesystem::path p (directory);
+  boost::filesystem::directory_iterator end_itr;
+  for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
+    if (!is_regular_file(itr->path())) {
+      LoadTexturesFromDir(itr->path().string());
+      continue;
+    }
+
+    string current_file = itr->path().leaf().string();
+    if (!boost::ends_with(current_file, ".xml")) {
+      continue;
+    }
+
+    const string xml_filename = directory + "/" + current_file;
+
+    pugi::xml_document doc;
+    pugi::xml_parse_result result = doc.load_file(xml_filename.c_str());
+    if (!result) {
+      throw runtime_error(string("Could not load xml file: ") + xml_filename);
+    }
+
+    const pugi::xml_node& xml = doc.child("xml");
+    LoadTexturesFromAssetFile(xml);
+  }
+}
+
+void Resources::LoadTextures(const std::string& directory) {
+  double start_time = glfwGetTime();
+
+  LoadTexturesFromDir(directory);
+
+  // Async.
+  while (!texture_loading_tasks_.empty() || running_texture_loading_tasks_ > 0) {
+    this_thread::sleep_for(chrono::microseconds(200));
+  }
+  glfwMakeContextCurrent(window_);
+
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "Load textures took " << elapsed_time << " seconds" << endl;
 }
 
 void Resources::LoadNpcs(const string& xml_filename) {
@@ -140,12 +444,69 @@ void Resources::LoadNpcs(const string& xml_filename) {
 
     ObjPtr new_game_obj = CreateGameObj(this, asset_name);
  
-    vec3 pos = vec3(10970.5, 150.5, 7494);
+    vec3 pos = vec3(11615, 142, 7250);
     // vec3 pos = vec3(0);
     new_game_obj->Load(name, asset_name, pos);
 
     npcs_[name] = make_shared<Npc>(new_game_obj, dialog_fn, schedule_fn);
     cout << "Created NPC: " << name << endl;
+  }
+}
+
+void Resources::LoadAssetTextures(pugi::xml_node asset_xml, 
+  shared_ptr<GameAsset> asset) {
+  for (pugi::xml_node texture_xml = asset_xml.child("texture"); texture_xml; 
+    texture_xml = texture_xml.next_sibling("texture")) {
+    const string& texture_filename = texture_xml.text().get();
+    GLuint texture_id = GetTextureByName(texture_filename);
+    asset->textures.push_back(texture_id);
+  }
+
+  // Normal map.
+  const pugi::xml_node& bump_map_xml = asset_xml.child("bump-map");
+  if (bump_map_xml) {
+    const string& texture_filename = bump_map_xml.text().get();
+    GLuint texture_id = GetTextureByName(texture_filename);
+    asset->bump_map_id = texture_id;
+  }
+
+  // Specular.
+  const pugi::xml_node& specular_xml = asset_xml.child("specular");
+  if (specular_xml) {
+    const string& texture_filename = specular_xml.text().get();
+    GLuint texture_id = GetTextureByName(texture_filename);
+    asset->specular_id = texture_id;
+  }
+}
+
+void Resources::LoadParticleTypes(pugi::xml_node xml) {
+  for (pugi::xml_node xml_particle = xml.child("particle-type"); xml_particle; 
+    xml_particle = xml_particle.next_sibling("particle-type")) {
+    shared_ptr<ParticleType> particle_type = make_shared<ParticleType>();
+    string name = xml_particle.attribute("name").value();
+    particle_type->name = name; 
+
+    const pugi::xml_node& xml_behavior = xml_particle.child("behavior");
+    if (xml_behavior) {
+      particle_type->behavior = StrToParticleBehavior(xml_behavior.text().get());
+    }
+
+    const pugi::xml_node& xml_texture = xml_particle.child("texture");
+    const string& texture_filename = xml_texture.text().get();
+
+    GLuint texture_id = GetTextureByName(texture_filename);
+    particle_type->texture_id = texture_id;
+
+    particle_type->grid_size = boost::lexical_cast<int>(xml_particle.attribute("grid-size").value());
+    particle_type->first_frame = boost::lexical_cast<int>(xml_particle.attribute("first-frame").value()); 
+    particle_type->num_frames = boost::lexical_cast<int>(xml_particle.attribute("num-frames").value()); 
+    particle_type->keep_frame = boost::lexical_cast<int>(xml_particle.attribute("keep-frame").value()); 
+
+    if (particle_types_.find(particle_type->name) != particle_types_.end()) {
+      ThrowError("Particle with name ", particle_type->name, " already exists.");
+    }
+    particle_types_[particle_type->name] = particle_type;
+    particle_type->id = id_counter_++;
   }
 }
 
@@ -158,41 +519,78 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
 
   cout << "Loading asset: " << xml_filename << endl;
   const pugi::xml_node& xml = doc.child("xml");
+
+  // No need for this to be async.
   for (pugi::xml_node asset_xml = xml.child("asset"); asset_xml; 
     asset_xml = asset_xml.next_sibling("asset")) {
-    shared_ptr<GameAsset> asset = CreateAsset(this, asset_xml);
-    CreateAssetGroupForSingleAsset(this, asset);
+    asset_mutex_.lock();
+    asset_loading_tasks_.push(asset_xml);
+    asset_mutex_.unlock();
   }
 
   for (pugi::xml_node asset_group_xml = xml.child("asset-group"); asset_group_xml; 
     asset_group_xml = asset_group_xml.next_sibling("asset-group")) {
-    shared_ptr<GameAssetGroup> asset_group = make_shared<GameAssetGroup>();
+    asset_mutex_.lock();
+    asset_loading_tasks_.push(asset_group_xml);
+    asset_mutex_.unlock();
+  }
 
-    vector<Polygon> polygons;
-    int i = 0;
+  while (!asset_loading_tasks_.empty()) {
+    auto asset_group_xml = asset_loading_tasks_.front();
+    asset_loading_tasks_.pop();
+
+    if (string(asset_group_xml.name()) == "asset") {
+      shared_ptr<GameAsset> asset = CreateAsset(this, asset_group_xml);
+    
+      CreateAssetGroupForSingleAsset(this, asset);
+    } else {
+      shared_ptr<GameAssetGroup> asset_group = make_shared<GameAssetGroup>();
+
+      vector<Polygon> polygons;
+      int i = 0;
+      for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
+        asset_xml = asset_xml.next_sibling("asset")) {
+
+        shared_ptr<GameAsset> asset = CreateAsset(this, asset_xml);
+        asset->index = i;
+        asset_group->assets.push_back(asset);
+
+        const string mesh_name = asset->lod_meshes[0];
+        shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
+        if (!mesh) {
+          ThrowError("Collision hull ", mesh_name, " does not exist.");
+        }
+
+        polygons.insert(
+          polygons.begin(), mesh->polygons.begin(), mesh->polygons.end());
+        i++;
+      }
+      asset_group->bounding_sphere = GetAssetBoundingSphere(polygons);
+
+      string name = asset_group_xml.attribute("name").value();
+      asset_group->name = name;
+      AddAssetGroup(asset_group);
+    }
+  }
+
+  for (pugi::xml_node asset_xml = xml.child("asset"); asset_xml; 
+    asset_xml = asset_xml.next_sibling("asset")) {
+    string name = asset_xml.attribute("name").value();
+    shared_ptr<GameAsset> asset = GetAssetByName(name);
+    LoadAssetTextures(asset_xml, asset);
+  }
+
+  for (pugi::xml_node asset_group_xml = xml.child("asset-group"); asset_group_xml; 
+    asset_group_xml = asset_group_xml.next_sibling("asset-group")) {
     for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
       asset_xml = asset_xml.next_sibling("asset")) {
-      shared_ptr<GameAsset> asset = CreateAsset(this, asset_xml);
-      asset->index = i;
-      asset_group->assets.push_back(asset);
-
-      const string mesh_name = asset->lod_meshes[0];
-      shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
-      if (!mesh) {
-        ThrowError("Collision hull ", mesh_name, " does not exist.");
-      }
-
-      polygons.insert(
-        polygons.begin(), mesh->polygons.begin(), mesh->polygons.end());
-      i++;
+      string name = asset_xml.attribute("name").value();
+      shared_ptr<GameAsset> asset = GetAssetByName(name);
+      LoadAssetTextures(asset_xml, asset);
     }
-    asset_group->bounding_sphere = GetAssetBoundingSphere(polygons);
-
-    string name = asset_group_xml.attribute("name").value();
-    asset_group->name = name;
-    asset_groups_[name] = asset_group;
-    asset_group->id = id_counter_++;
   }
+
+  LoadParticleTypes(xml);
 
   for (pugi::xml_node string_xml = xml.child("string"); string_xml; 
     string_xml = string_xml.next_sibling("string")) {
@@ -257,60 +655,6 @@ void Resources::LoadAssetFile(const std::string& xml_filename) {
     string name = flag_xml.attribute("name").value();
     const string value = flag_xml.text().get();
     game_flags_[name] = value;
-  }
-
-  for (pugi::xml_node xml_particle = xml.child("particle-type"); xml_particle; 
-    xml_particle = xml_particle.next_sibling("particle-type")) {
-    shared_ptr<ParticleType> particle_type = make_shared<ParticleType>();
-    string name = xml_particle.attribute("name").value();
-    particle_type->name = name; 
-
-    const pugi::xml_node& xml_behavior = xml_particle.child("behavior");
-    if (xml_behavior) {
-      particle_type->behavior = StrToParticleBehavior(xml_behavior.text().get());
-    }
-
-    const pugi::xml_node& xml_texture = xml_particle.child("texture");
-    const string& texture_filename = xml_texture.text().get();
-    if (textures_.find(texture_filename) == textures_.end()) {
-      string name = xml_texture.attribute("name").value();
-
-      GLuint texture_id = LoadTexture(texture_filename.c_str());
-      textures_[name] = texture_id;
-      particle_type->texture_id = texture_id;
-    } else {
-      particle_type->texture_id = textures_[name];
-    }
-
-    particle_type->grid_size = boost::lexical_cast<int>(xml_particle.attribute("grid-size").value());
-    particle_type->first_frame = boost::lexical_cast<int>(xml_particle.attribute("first-frame").value()); 
-    particle_type->num_frames = boost::lexical_cast<int>(xml_particle.attribute("num-frames").value()); 
-    particle_type->keep_frame = boost::lexical_cast<int>(xml_particle.attribute("keep-frame").value()); 
-
-    if (particle_types_.find(particle_type->name) != particle_types_.end()) {
-      ThrowError("Particle with name ", particle_type->name, " already exists.");
-    }
-    particle_types_[particle_type->name] = particle_type;
-    particle_type->id = id_counter_++;
-  }
-
-  for (pugi::xml_node xml_texture = xml.child("texture"); xml_texture; 
-    xml_texture = xml_texture.next_sibling("texture")) {
-    const string& texture_filename = xml_texture.text().get();
-    string name = xml_texture.attribute("name").value();
-
-    GLuint texture_id = 0;
-    bool poor_filtering = xml_texture.attribute("poor-filtering");
-    if (textures_.find(texture_filename) == textures_.end()) {
-      texture_id = LoadTexture(texture_filename.c_str());
-      textures_[texture_filename] = texture_id;
-    } else {
-      texture_id = textures_[texture_filename];
-    }
-
-    if (textures_.find(name) == textures_.end()) {
-      textures_[name] = texture_id;
-    }
   }
 
   for (pugi::xml_node xml_item = xml.child("item"); xml_item; 
@@ -381,6 +725,8 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
 }
 
 void Resources::LoadAssets(const std::string& directory) {
+  double start_time = glfwGetTime();
+
   boost::filesystem::path p (directory);
   boost::filesystem::directory_iterator end_itr;
   for (boost::filesystem::directory_iterator itr(p); itr != end_itr; ++itr) {
@@ -391,6 +737,9 @@ void Resources::LoadAssets(const std::string& directory) {
     }
     LoadAssetFile(directory + "/" + current_file);
   }
+
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "Load assets took " << elapsed_time << " seconds" << endl;
 }
 
 void Resources::LoadObjects(const std::string& directory) {
@@ -444,6 +793,31 @@ const vector<vec3> kOctreeNodeOffsets = {
 
 const vector<int> kOctreeToQuadTreeIndex = { 0, 1, 0, 1, 4, 5, 4, 5 };
 
+void Resources::CreateOctree(shared_ptr<OctreeNode> octree_node, int depth) {
+  if (depth > max_octree_depth_) return;
+
+  int counter = 0;
+  for (int index = 0; index < 8; index++) {
+    if (use_quadtree_ && (index == 2 || index == 3 || index == 6 || index == 7)) continue;
+
+    vec3 new_pos = octree_node->center + kOctreeNodeOffsets[index] * 
+        octree_node->half_dimensions * 0.5f;
+    vec3 new_half_dimensions = octree_node->half_dimensions * 0.5f;
+
+    if (use_quadtree_) {
+      new_pos.y = configs_->world_center.y;
+      // new_half_dimensions.y = kHeightMapSize / 2;
+      new_half_dimensions.y = 400;
+    }
+
+    octree_node->children[index] = make_shared<OctreeNode>(new_pos, 
+      new_half_dimensions);
+    octree_node->children[index]->parent = octree_node;
+    CreateOctree(octree_node->children[index], depth + 1);
+    counter++;
+  }
+}
+
 void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
   ObjPtr object, int depth) {
   int index = 0, straddle = 0;
@@ -482,19 +856,26 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
   if (!straddle && depth < max_octree_depth_) {
     // Fully contained in existing child node; insert in that subtree
     if (octree_node->children[index] == nullptr) {
-      vec3 new_pos = octree_node->center + kOctreeNodeOffsets[index] * 
-          octree_node->half_dimensions * 0.5f;
-      vec3 new_half_dimensions = octree_node->half_dimensions * 0.5f;
+      cout << object->position << endl;
+      cout << "index: " << index << endl;
+      cout << "center: " << octree_node->center << endl;
+      cout << "half_dimensions: " << octree_node->half_dimensions << endl;
 
-      if (use_quadtree_) {
-        new_pos.y = configs_->world_center.y;
-        new_half_dimensions.y = kHeightMapSize/2;
-      }
+      throw runtime_error("Octree node does not exist");
+       
+      // vec3 new_pos = octree_node->center + kOctreeNodeOffsets[index] * 
+      //     octree_node->half_dimensions * 0.5f;
+      // vec3 new_half_dimensions = octree_node->half_dimensions * 0.5f;
 
-      octree_node->children[index] = make_shared<OctreeNode>(new_pos, 
-        new_half_dimensions);
+      // if (use_quadtree_) {
+      //   new_pos.y = configs_->world_center.y;
+      //   new_half_dimensions.y = kHeightMapSize/2;
+      // }
 
-      octree_node->children[index]->parent = octree_node;
+      // octree_node->children[index] = make_shared<OctreeNode>(new_pos, 
+      //   new_half_dimensions);
+
+      // octree_node->children[index]->parent = octree_node;
     }
     InsertObjectIntoOctree(octree_node->children[index], object, depth + 1);
   } else {
@@ -735,7 +1116,6 @@ void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
   obj->current_region = region;
 
   // Update position into octree.
-  // InsertObjectIntoOctree(sector->octree_node, obj, 0);
   InsertObjectIntoOctree(GetOctreeRoot(), obj, 0);
 
   shared_ptr<OctreeNode> octree_node = obj->octree_node;
@@ -1387,7 +1767,7 @@ void Resources::RemoveDead() {
 
   for (const string& name : dead_unit_names) {
     for (auto& event : on_unit_die_events_) {
-      script_manager_->CallStrFn(event->callback, name);
+      // script_manager_->CallStrFn(event->callback, name);
     }
   }
 
@@ -1412,15 +1792,6 @@ void Resources::RemoveDead() {
     RemoveObject(obj);
   }
 
-  for (ObjPtr obj : new_objects_) {
-    if (obj->asset_group == nullptr) continue;
-    if (obj->GetAsset()->name != "z-quad") continue;
-
-    shared_ptr<Mesh> mesh = GetMesh(obj);
-    int num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
-    if (obj->frame < num_frames - 1) continue;
-    RemoveObject(obj);
-  }
   Unlock();
 }
 
@@ -1746,7 +2117,8 @@ void Resources::SaveCollisionData() {
   }
 
   for (auto& [name, asset] : assets_) {
-    if (name == "hand" || name == "skydome") continue;
+    if (name == "hand" || name == "equipped_scepter" || name == "map_interface" || 
+      name == "skydome") continue;
     asset->CollisionDataToXml(game_objs);
   }
 
@@ -1759,7 +2131,6 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
 ) {
   switch (obj->GetCollisionType()) {
     case COL_OBB: {
-      cout << "Colliding with obb: " << obj->GetDisplayName() << endl;
       OBB obb = obj->GetTransformedOBB();
       mat3 to_world_space = mat3(obb.axis[0], obb.axis[1], obb.axis[2]);
       mat3 from_world_space = inverse(to_world_space);
@@ -1784,8 +2155,6 @@ bool IntersectRayObject(ObjPtr obj, const vec3& position, const vec3& direction,
       for (const auto& [bone_id, bs] : obj->bones) {
         BoundingSphere s = obj->GetBoneBoundingSphere(bone_id);
         if (IntersectRaySphere(position, direction, s, tmin, q)) {
-          cout << "Intersected bone t: " << tmin << endl;
-          cout << "Intersected bone q: " << q << endl;
           return true;
         }
       }
@@ -1894,9 +2263,6 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
 
       distance = length(q - position);
       if (!closest_item || distance < closest_distance) { 
-        cout << "Intersected " << item->GetName() << endl;
-        cout << "t: " << t << endl;
-        cout << "q: " << q << endl;
         closest_item = item;
         closest_distance = distance;
         closest_t = t;
@@ -2198,8 +2564,6 @@ void Resources::IssueMoveOrder(const string& unit_name,
 
   ObjPtr waypoint = GetWaypointByName(waypoint_name);
   if (!waypoint) return;
-
-  unit->actions.push(make_shared<MoveAction>(waypoint->position));
 }
 
 bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) {
@@ -2390,7 +2754,7 @@ void Resources::AddAsset(shared_ptr<GameAsset> asset) {
     throw runtime_error(string("Asset with name ") + asset->name + 
       " already exists.");
   }
-  
+ 
   assets_[asset->name] = asset;
   asset->id = id_counter_++;
 }
@@ -2617,7 +2981,6 @@ void Resources::ProcessMessages() {
 
 void Resources::ProcessNpcs() {
   for (const auto& [name, npc] : npcs_) {
-    script_manager_->CallStrFn(npc->schedule_fn);
   }
 }
 
@@ -2646,7 +3009,7 @@ void Resources::ProcessCallbacks() {
       hanging_floor->interacted_with_falling_floor = false;
     }
 
-    script_manager_->CallStrFn(s);
+    // script_manager_->CallStrFn(s);
     Lock();
 
     callbacks_.pop();
@@ -2708,16 +3071,10 @@ void Resources::AddEvent(shared_ptr<Event> e) {
 }
 
 shared_ptr<DialogChain> Resources::GetNpcDialog(const string& target_name) {
-  if (npcs_.find(target_name) == npcs_.end()) return nullptr;
- 
-  ObjPtr npc = GetObjectByName(target_name);
-  if (!npc) return nullptr;
-
-  string dialog_name = script_manager_->CallStrFn(npcs_[target_name]->dialog_fn);
-  cout << "DIALOG NAME: " << dialog_name << endl;
-
-  if (dialogs_.find(dialog_name) == dialogs_.end()) return nullptr;
-  return dialogs_[dialog_name];
+  return nullptr;
+  //if (npcs_.find(target_name) == npcs_.end()) return nullptr;
+  //if (dialogs_.find(dialog_name) == dialogs_.end()) return nullptr;
+  //return dialogs_[dialog_name];
 }
 
 void Resources::TalkTo(const string& target_name) {
@@ -2727,7 +3084,7 @@ void Resources::TalkTo(const string& target_name) {
   current_dialog_->npc = npc;
   current_dialog_->current_phrase = 0;
 
-  shared_ptr<DialogChain> dialog = GetNpcDialog(target_name);
+  shared_ptr<DialogChain> dialog = dialogs_["mammon-dialog-1"];
   if (!dialog) return;
 
   current_dialog_->enabled = true;
@@ -2744,7 +3101,7 @@ void Resources::SetGameFlag(const string& name, const string& value) {
 }
 
 void Resources::RunScriptFn(const string& script_fn_name) {
-  script_manager_->CallStrFn(script_fn_name);
+  // script_manager_->CallStrFn(script_fn_name);
 }
 
 void Resources::SetCallback(string script_name, vector<string> args, 
@@ -2934,19 +3291,21 @@ void Resources::UpdateAnimationFrames() {
     }
 
     shared_ptr<GameAsset> asset = obj->GetAsset();
-    const string mesh_name = asset->lod_meshes[0];
-    shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
+    shared_ptr<Mesh> mesh = asset->first_mesh;
     if (!mesh) {
-      throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+      const string mesh_name = asset->lod_meshes[0];
+      asset->first_mesh = GetMeshByName(mesh_name);
+      mesh = asset->first_mesh;
     }
 
-    const Animation& animation = mesh->animations[obj->active_animation];
     if (obj->status != STATUS_DEAD) {
       float animation_speed = 1.0f;
       if (obj->asset_group != nullptr) {
         animation_speed = obj->GetAsset()->animation_speed;
       }
 
+      // TODO: store pointer to active animation. (This lookup takes 1.6% of frame time).
+      const Animation& animation = mesh->animations[obj->active_animation];
       obj->frame += 1.0f * d * animation_speed;
       if (obj->frame >= animation.keyframes.size()) {
         if (obj->GetRepeatAnimation()) {
@@ -2973,27 +3332,27 @@ void Resources::ProcessEvents() {
         shared_ptr<RegionEvent> region_event = 
           static_pointer_cast<RegionEvent>(e);
         callback = region_event->callback; 
-        CallStrFn(callback);
+        // CallStrFn(callback);
         break;
       }
       case EVENT_ON_INTERACT_WITH_DOOR: {
         shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
         callback = door_event->callback; 
-        CallStrFn(callback);
+        // CallStrFn(callback);
         break;
       }
       case EVENT_COLLISION: {
         shared_ptr<CollisionEvent> collision_event = 
           static_pointer_cast<CollisionEvent>(e);
         callback = collision_event->callback; 
-        CallStrFn(callback, collision_event->obj2);
+        // CallStrFn(callback, collision_event->obj2);
         continue;
       }
       case EVENT_ON_PLAYER_MOVE: {
         shared_ptr<PlayerMoveEvent> player_move_event = 
           static_pointer_cast<PlayerMoveEvent>(e);
         callback = player_move_event->callback; 
-        CallStrFn(callback);
+        // CallStrFn(callback);
         continue;
       }
       default: {
@@ -3002,17 +3361,6 @@ void Resources::ProcessEvents() {
     } 
   }
   events_.clear();
-}
-
-void Resources::UpdateExpirables() {
-  for (auto& [name, obj] : objects_) {
-    if (!obj->asset_group) continue;
-    if (obj->GetAsset()->name != "spider-web") continue;
-    obj->life -= 0.1;
-    if (obj->life < 0) {
-      obj->status = STATUS_DEAD;
-    }
-  }
 }
 
 void Resources::ProcessTempStatus() {
@@ -3084,16 +3432,17 @@ void Resources::ProcessTempStatus() {
   configs_->darkvision = false;
   configs_->see_invisible = false;
 
+  const float stamina_regen = boost::lexical_cast<float>(GetGameFlag("stamina_recovery_rate"));
   if (player->stamina <= 0.0f) {
     player->stamina = 0.0f;
-    player->recover_stamina += 0.3f;
+    player->recover_stamina += stamina_regen;
     if (player->recover_stamina >= player->max_stamina) {
       player->stamina = player->max_stamina;
       player->recover_stamina = 0.0f;
     }
   } else {
     player->recover_stamina = 0.0f;
-    player->stamina += 0.3f;
+    player->stamina += stamina_regen;
     if (player->stamina > player->max_stamina) { 
       player->stamina = player->max_stamina;
     }
@@ -3161,7 +3510,7 @@ void Resources::ProcessTempStatus() {
 
   // Player equipment. 
   configs_->armor_class = configs_->base_armor_class;
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < 4; i++) {
     int item_id = configs_->equipment[i];
     if (item_id == 0) continue;
 
@@ -3211,6 +3560,8 @@ void Resources::ProcessRotatingPlanksOrientation() {
 }
 
 void Resources::ProcessDriftAwayEvent() {
+  if (configs_->render_scene == "dungeon") return;
+
   if (configs_->drifting_away) {
     if (configs_->fading_out < 0.0f) {
       player_->position = vec3(11492.41, 141, 7360);
@@ -3248,17 +3599,14 @@ void Resources::RunPeriodicEvents() {
   RemoveDead();
   ProcessMessages();
 
-  ProcessNpcs();
-
   ProcessCallbacks();
   ProcessSpawnPoints();
   UpdateAnimationFrames();
   UpdateHand(GetCamera());
-  UpdateExpirables();
   UpdateFrameStart();
   UpdateMissiles();
   UpdateParticles();
-  ProcessEvents();
+  // ProcessEvents();
   ProcessDriftAwayEvent();
   ProcessPlayerDeathEvent();
   ProcessTempStatus();
@@ -3267,10 +3615,6 @@ void Resources::RunPeriodicEvents() {
   // TODO: create time function.
   if (configs_->render_scene == "dungeon") {
     configs_->time_of_day = 12.0f;
-    // float radians = configs_->time_of_day * ((2.0f * 3.141592f) / 24.0f);
-    // configs_->sun_position = 
-    //   vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
-    //   vec4(0.0f, -1.0f, 0.0f, 1.0f));
   }
 
   if (!configs_->stop_time) {
@@ -3285,14 +3629,6 @@ void Resources::RunPeriodicEvents() {
       vec3(rotate(mat4(1.0f), radians, vec3(0.0, 0, 1.0)) *
       vec4(0.0f, -1.0f, 0.0f, 1.0f));
   }
-}
-
-void Resources::CallStrFn(const string& fn) {
-  script_manager_->CallStrFn(fn);
-}
-
-void Resources::CallStrFn(const string& fn, const string& arg) {
-  script_manager_->CallStrFn(fn, arg);
 }
 
 void Resources::RegisterOnUnitDieEvent(const string& fn) {
@@ -3437,6 +3773,8 @@ void Resources::CreateRandomMonster(const vec3& pos) {
 }
 
 void Resources::CreateDungeon(bool generate_dungeon) {
+  double start_time = glfwGetTime();
+
   if (generate_dungeon) {
     double time = glfwGetTime();
     int random_num = (int(time / 0.0001f) * 7919) % 1000000000;
@@ -3634,13 +3972,8 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         case 'c': {
           ObjPtr obj = CreateGameObjFromAsset(this, "chest", pos + vec3(0, 0, 0));
-
           obj->rotation_matrix = rotate(mat4(1.0), Random(0, 100) * 0.0314f, 
             vec3(0, 1, 0));
-          
-          // TODO: set drops based on dungeon level.
-          shared_ptr<Actionable> a = static_pointer_cast<Actionable>(obj);
-          a->drops.push_back(Drop(10, 1000, "100"));
           break;
         }
         case 'C': {
@@ -3715,22 +4048,13 @@ void Resources::CreateDungeon(bool generate_dungeon) {
     }
   }
 
-  // for (int x = 0; x < kDungeonSize; x++) {
-  //   for (int z = 0; z < kDungeonSize; z++) {
-  //     if (dungeon_map[x][z] != 's') continue;
-  //     float room_x = 10.0f * x;
-  //     float room_z = 10.0f * z;
-
-  //     vec3 pos = kDungeonOffset + vec3(room_x, y + 5.0f, room_z);
-  //     ObjPtr new_obj = CreateGameObjFromAsset(this, "metal-eye", pos);
-  //     new_obj->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
-  //   }
-  // }
-
   if (generate_dungeon) {
     GenerateOptimizedOctree();
     configs_->update_renderer = true;
   }
+
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "Create dungeon took " << elapsed_time << " seconds" << endl;
 }
 
 char** GetCurrentDungeonLevel() {
@@ -3858,28 +4182,23 @@ void Resources::SaveGame() {
 
 void Resources::LoadGame(const string& config_filename, 
   bool calculate_crystals) {
+  double start_time = glfwGetTime();
   DeleteAllObjects();
-
-  // if (calculate_crystals) {
-  //   CalculateArcaneSpells();
-  //   // LoadArcaneSpells();
-  // }
-
   LoadConfig(directory_ + "/" + config_filename);
+  double elapsed_time = glfwGetTime() - start_time;
+  cout << "Load config took " << elapsed_time << " seconds" << endl;
 
-  cout << "Loading collision data" << endl;
-  // LoadCollisionData(directory_ + "/objects/collision_data.xml");
-  cout << "Calculating collision data" << endl;
+  start_time = glfwGetTime();
+  LoadCollisionData(directory_ + "/objects/collision_data.xml");
   CalculateCollisionData();
-  cout << "Finished calculating collision data" << endl;
-
   GenerateOptimizedOctree();
-  player_->status = STATUS_NONE;
+  elapsed_time = glfwGetTime() - start_time;
+  cout << "Calculate collision took " << elapsed_time << " seconds" << endl;
 }
 
 void Resources::LoadTownAssets() {
   if (configs_->town_loaded) return;
-  LoadMeshes(directory_ + "/town_models");
+  // LoadMeshes(directory_ + "/town_models");
   LoadAssets(directory_ + "/assets/town_assets");
   CalculateCollisionData();
   configs_->town_loaded = true;
@@ -3898,14 +4217,6 @@ void Resources::CreateSafeZone() {
 }
 
 void Resources::RestartGame() {
-  // DeleteAllObjects();
-  // CreateTown();
-  // LoadCollisionData("resources/objects/collision_data.xml");
-  // CalculateCollisionData();
-  // GenerateOptimizedOctree();
-  // GetConfigs()->render_scene = "town";
-  // GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
-  // GetScriptManager()->LoadScripts();
   LoadGame("start_config.xml", false);
   SaveGame();
 }
@@ -3918,11 +4229,9 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   }
 
   const pugi::xml_node& xml = doc.child("xml");
-  pugi::xml_node xml_node = xml.child("world-center");
-  // if (xml_node) configs_->world_center = LoadVec3FromXml(xml_node);
   configs_->world_center = kWorldCenter;
 
-  xml_node = xml.child("initial-player-pos");
+  pugi::xml_node xml_node = xml.child("initial-player-pos");
   if (xml_node) player_->position = LoadVec3FromXml(xml_node);
 
   xml_node = xml.child("player-rotation");
@@ -4040,7 +4349,26 @@ void Resources::LoadConfig(const std::string& xml_filename) {
     configs_->update_renderer = true;
   }
 
-  script_manager_->LoadScripts();
+  // Clear item matrix.
+  for (int i = 0; i < 10; i++) {
+    for (int j = 0; j < 5; j++) {
+      configs_->item_matrix[i][j] = 0;
+      configs_->item_quantities[i][j] = 0;
+    }
+  }
+
+  for (int i = 0; i < 8; i++) {
+    configs_->spellbar[i] = 0;
+    configs_->spellbar_quantities[i] = 0;
+  }
+
+  // Clear equipment.
+  for (int i = 0; i < 4; i++) {
+    configs_->equipment[i] = 0;
+  }
+
+  configs_->armor_class = 0;
+  configs_->base_armor_class = 0;
 
   const pugi::xml_node& item_matrix_xml = xml.child("item-matrix");
   if (item_matrix_xml) {
@@ -4081,6 +4409,8 @@ void Resources::LoadConfig(const std::string& xml_filename) {
     int level = boost::lexical_cast<int>(spell_xml.attribute("level").value());
     arcane_spell_data_[spell_id]->level = true;
   }
+
+  player_->status = STATUS_NONE;
 }
 
 void Resources::CastFireball(const Camera& camera) {
@@ -4717,13 +5047,7 @@ void Resources::CastTelekinesis() {
   player_->AddTemporaryStatus(make_shared<TelekinesisStatus>(20.0f, 1));
 }
 
-struct OctreeCount {
-  int nodes = 0;
-  int static_objs[7] = { 0, 0, 0, 0, 0, 0, 0 };
-  int moving_objs[7] = { 0, 0, 0, 0, 0, 0, 0 };
-};
-
-OctreeCount CountOctreeNodesAux(shared_ptr<OctreeNode> octree_node, int depth) {
+OctreeCount Resources::CountOctreeNodesAux(shared_ptr<OctreeNode> octree_node, int depth) {
   OctreeCount octree_count;
   if (!octree_node) return octree_count;
 
@@ -4737,7 +5061,7 @@ OctreeCount CountOctreeNodesAux(shared_ptr<OctreeNode> octree_node, int depth) {
     OctreeCount child_count = CountOctreeNodesAux(octree_node->children[i], depth + 1);
     octree_count.nodes += child_count.nodes; 
 
-    for (int j = depth + 1; j < 7; j++) {
+    for (int j = depth + 1; j < max_octree_depth_; j++) {
       octree_count.static_objs[j] += child_count.static_objs[j]; 
       octree_count.moving_objs[j] += child_count.moving_objs[j]; 
     }
@@ -4748,7 +5072,7 @@ OctreeCount CountOctreeNodesAux(shared_ptr<OctreeNode> octree_node, int depth) {
 void Resources::CountOctreeNodes() {
   OctreeCount count = CountOctreeNodesAux(GetOctreeRoot(), 0);
   cout << "Octree nodes: " << count.nodes << endl;
-  for (int i = 0; i < 7; i++) {
+  for (int i = 0; i < max_octree_depth_; i++) {
     cout << "Static objs[" << i << "]: " << count.static_objs[i] << endl;
     cout << "Moving objs[" << i << "]: " << count.moving_objs[i] << endl;
   }
@@ -5260,3 +5584,122 @@ Camera Resources::GetCamera() {
   return c;
 }
 
+// Load meshes took 9.53833 seconds.
+void Resources::LoadMeshesAsync() {
+  return;
+  while (!terminate_) {
+    mesh_mutex_.lock();
+    if (mesh_loading_tasks_.empty()) {
+      mesh_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(100));
+      continue;
+    }
+
+    auto [name, fbx_filename] = mesh_loading_tasks_.front();
+    mesh_loading_tasks_.pop();
+    running_mesh_loading_tasks_++;
+    mesh_mutex_.unlock();
+
+    shared_ptr<Mesh> mesh = make_shared<Mesh>();
+    FbxData data;
+    LoadFbxData(fbx_filename, *mesh, data, false);
+    if (meshes_.find(name) != meshes_.end()) {
+      ThrowError("Mesh with name ", name, " already exists Resources::146");
+    }
+
+    mesh_mutex_.lock();
+    meshes_[name] = mesh;
+    running_mesh_loading_tasks_--;
+    mesh_mutex_.unlock();
+  }
+}
+
+// Load assets took 5.51015 seconds.
+void Resources::LoadAssetsAsync() {
+  return;
+  while (!terminate_) {
+    asset_mutex_.lock();
+    if (asset_loading_tasks_.empty()) {
+      asset_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(100));
+      continue;
+    }
+
+    auto asset_group_xml = asset_loading_tasks_.front();
+    asset_loading_tasks_.pop();
+    running_asset_loading_tasks_++;
+    asset_mutex_.unlock();
+
+    if (string(asset_group_xml.name()) == "asset") {
+      shared_ptr<GameAsset> asset = CreateAsset(this, asset_group_xml);
+    
+      CreateAssetGroupForSingleAsset(this, asset);
+    } else {
+      shared_ptr<GameAssetGroup> asset_group = make_shared<GameAssetGroup>();
+
+      vector<Polygon> polygons;
+      int i = 0;
+      for (pugi::xml_node asset_xml = asset_group_xml.child("asset"); asset_xml; 
+        asset_xml = asset_xml.next_sibling("asset")) {
+
+        shared_ptr<GameAsset> asset = CreateAsset(this, asset_xml);
+        asset->index = i;
+        asset_group->assets.push_back(asset);
+
+        const string mesh_name = asset->lod_meshes[0];
+        shared_ptr<Mesh> mesh = GetMeshByName(mesh_name);
+        if (!mesh) {
+          ThrowError("Collision hull ", mesh_name, " does not exist.");
+        }
+
+        polygons.insert(
+          polygons.begin(), mesh->polygons.begin(), mesh->polygons.end());
+        i++;
+      }
+      asset_group->bounding_sphere = GetAssetBoundingSphere(polygons);
+
+      string name = asset_group_xml.attribute("name").value();
+      asset_group->name = name;
+      asset_groups_[name] = asset_group;
+      asset_group->id = id_counter_++;
+      AddAssetGroup(asset_group);
+    }
+
+    asset_mutex_.lock();
+    running_asset_loading_tasks_--;
+    asset_mutex_.unlock();
+  }
+}
+
+void Resources::LoadTexturesAsync() {
+  while (!terminate_) {
+    texture_mutex_.lock();
+    if (texture_loading_tasks_.empty()) {
+      texture_mutex_.unlock();
+      this_thread::sleep_for(chrono::milliseconds(100));
+      continue;
+    }
+
+    string texture_filename = texture_loading_tasks_.front();
+    texture_loading_tasks_.pop();
+    running_texture_loading_tasks_++;
+    texture_mutex_.unlock();
+
+    GLuint texture_id = GetTextureByName(texture_filename);
+    if (texture_id != 0) {
+      LoadTextureAsync(texture_filename.c_str(), texture_id, window_);
+    }
+
+    texture_mutex_.lock();
+    running_texture_loading_tasks_--;
+    texture_mutex_.unlock();
+  }
+}
+
+void Resources::CreateThreads() {
+  for (int i = 0; i < kMaxThreads; i++) {
+    load_mesh_threads_.push_back(thread(&Resources::LoadMeshesAsync, this));
+    load_asset_threads_.push_back(thread(&Resources::LoadAssetsAsync, this));
+    load_texture_threads_.push_back(thread(&Resources::LoadTexturesAsync, this));
+  }
+}

@@ -122,9 +122,6 @@ class Renderer {
   vector<shared_ptr<GameObject>> 
     GetVisibleObjectsFromSector(shared_ptr<Sector> sector);
 
-  ConvexHull CreateConvexHullFromOccluder(const vector<Polygon>& polygons, 
-    const vec3& player_pos);
-
   // TODO: move.
   shared_ptr<GameObject> CreateMeshFromConvexHull(const ConvexHull& ch);
   shared_ptr<GameObject> CreateMeshFromAABB(const AABB& aabb);

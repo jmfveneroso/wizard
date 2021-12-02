@@ -46,46 +46,15 @@ struct SkeletonJoint {
   FbxNode* node; // Remove from here.
 };
 
-struct RawTexture {
-  vector<unsigned char> data;
-};
-
-struct RawAnimationData {
-  vector<ivec3> bone_ids;
-  vector<vec3> bone_weights;
-  shared_ptr<SkeletonJoint> skeleton;
-  vector<shared_ptr<SkeletonJoint>> joints;
-  vector<Animation> animations;
-};
-
-struct RawMeshData {
-  vector<vec3> vertices;
-  vector<vec2> uv;
-  vector<vec3> normals;
-  vector<unsigned int> indices;
-  vector<Polygon> polygons;
-};
-
-// TODO: should change this name to something more general. Maybe AnimatedMesh.
 struct FbxData {
-  // shared_ptr<RawMeshData> mesh_data;
-  // shared_ptr<RawAnimationData> animation_data;
+  RawMesh raw_mesh;
 
-  vector<vec3> vertices;
-  vector<vec2> uvs;
-  vector<vec3> normals;
-  vector<unsigned int> indices;
-  vector<Polygon> polygons;
-
-  vector<ivec3> bone_ids;
-  vector<vec3> bone_weights;
   shared_ptr<SkeletonJoint> skeleton;
   vector<shared_ptr<SkeletonJoint>> joints;
   unordered_map<string, shared_ptr<SkeletonJoint>> joint_map;
-  vector<Animation> animations;
 };
 
-FbxData FbxLoad(const std::string& filename);
-FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs = false);
+void FbxLoad(const std::string& filename, FbxData& data);
+void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calculate_bs = false);
 
 #endif // __FBX_LOADER_H__

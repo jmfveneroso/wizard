@@ -5,6 +5,8 @@
 using namespace std;
 using namespace glm;
 
+mutex gMutex;
+
 vec2 Get2DVector(FbxVector2 pValue) {
   return vec2(pValue[0], pValue[1]);
 }
@@ -201,37 +203,24 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
     }
   }
 
-  // Uncomment to produce non triangular polygons.
-  // Polygon polygon;
-  // for (int k = 0; k < polygon_size; k++) {
-  //   polygon.vertices.push_back(data->vertices[vertices[k]]);
-  //   polygon.normals.push_back(normals[k]);
-  // }
-  // data->polygons.push_back(polygon);
-
   // Triangulate the polygon with the triangle fan triangulation method.
   for (int j = 1; j < polygon_size - 1; j++) {
-    data->indices.push_back(vertices[0]);
-    data->uvs.push_back(uvs[0]);
-    data->normals.push_back(normals[0]);
-    data->indices.push_back(vertices[j]);
-    data->uvs.push_back(uvs[j]);
-    data->normals.push_back(normals[j]);
-    data->indices.push_back(vertices[j+1]);
-    data->uvs.push_back(uvs[j+1]);
-    data->normals.push_back(normals[j+1]);
+    data->raw_mesh.indices.push_back(vertices[0]);
+    data->raw_mesh.uvs.push_back(uvs[0]);
+    data->raw_mesh.normals.push_back(normals[0]);
+    data->raw_mesh.indices.push_back(vertices[j]);
+    data->raw_mesh.uvs.push_back(uvs[j]);
+    data->raw_mesh.normals.push_back(normals[j]);
+    data->raw_mesh.indices.push_back(vertices[j+1]);
+    data->raw_mesh.uvs.push_back(uvs[j+1]);
+    data->raw_mesh.normals.push_back(normals[j+1]);
 
     Polygon polygon;
-    polygon.vertices.push_back(data->vertices[vertices[0]]);
-    polygon.normals.push_back(normals[0]);
-    polygon.indices.push_back(vertices[0]);
-    polygon.vertices.push_back(data->vertices[vertices[j]]);
-    polygon.normals.push_back(normals[j+1]);
-    polygon.indices.push_back(vertices[j]);
-    polygon.vertices.push_back(data->vertices[vertices[j+1]]);
-    polygon.normals.push_back(normals[j+1]);
-    polygon.indices.push_back(vertices[j+1]);
-    data->polygons.push_back(polygon);
+    polygon.vertices.push_back(data->raw_mesh.vertices[vertices[0]]);
+    polygon.vertices.push_back(data->raw_mesh.vertices[vertices[j]]);
+    polygon.vertices.push_back(data->raw_mesh.vertices[vertices[j+1]]);
+    polygon.normal = normals[0];
+    data->raw_mesh.polygons.push_back(polygon);
   }
   // cout << "indices: " << data->indices.size() << endl;
   // cout << "uvs: " << data->uvs.size() << endl;
@@ -248,7 +237,7 @@ void ExtractMesh(FbxScene* scene, FbxData* data) {
   FbxVector4* vertices = mesh->GetControlPoints();
   int num_vertices = mesh->GetControlPointsCount();
   for (int i = 0; i < num_vertices; i++) {
-    data->vertices.push_back(Get3DVector(vertices[i]));
+    data->raw_mesh.vertices.push_back(Get3DVector(vertices[i]));
   }
 
   int vertex_id = 0;
@@ -300,7 +289,7 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
 
   unordered_map<string, shared_ptr<SkeletonJoint>>& joint_map = data->joint_map;
 
-  vector<vector<tuple<int, float>>> bone_weights(data->vertices.size());
+  vector<vector<tuple<int, float>>> bone_weights(data->raw_mesh.vertices.size());
   data->joints.resize(joint_map.size());
 
   mat4 geometry_transform = 
@@ -354,8 +343,8 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
     }
 
     weights = weights * (1.0f / (weights[0] + weights[1] + weights[2]));
-    data->bone_ids.push_back(ids);
-    data->bone_weights.push_back(weights);
+    data->raw_mesh.bone_ids.push_back(ids);
+    data->raw_mesh.bone_weights.push_back(weights);
   }
 }
 
@@ -405,14 +394,12 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
       animation.keyframes.push_back(keyframe);
     }
     // cout << "Extracted animation " << animation.name << endl;
-    data->animations.push_back(animation);
+    data->raw_mesh.animations.push_back(animation);
   }
 }
 
-FbxData FbxLoad(const std::string& filename) {
+void FbxLoad(const std::string& filename, FbxData& data) {
   FbxScene* scene = ImportScene(filename);
-
-  FbxData data;
 
   // cout << "Extracting FBX: " << filename << endl;
   ExtractMesh(scene, &data);
@@ -421,21 +408,20 @@ FbxData FbxLoad(const std::string& filename) {
   ExtractSkeleton(scene, &data);
   ExtractSkin(scene, &data);
   ExtractAnimations(scene, &data);
-
-  return data;
 }
 
-FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
-  FbxData data = FbxLoad(filename);
-  m.polygons = data.polygons;
+void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calculate_bs) {
+  FbxLoad(filename, data);
+
+  m.polygons = data.raw_mesh.polygons;
 
   GLuint buffers[8];
   glGenBuffers(8, buffers);
 
   vector<vec3> vertices;
   vector<unsigned int> indices;
-  for (int i = 0; i < data.indices.size(); i++) {
-    vertices.push_back(data.vertices[data.indices[i]]);
+  for (int i = 0; i < data.raw_mesh.indices.size(); i++) {
+    vertices.push_back(data.raw_mesh.vertices[data.raw_mesh.indices[i]]);
     indices.push_back(i);
   }
   m.num_indices = indices.size();
@@ -444,11 +430,11 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vec3), 
     &vertices[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, buffers[1]);
-  glBufferData(GL_ARRAY_BUFFER, data.uvs.size() * sizeof(vec2), 
-    &data.uvs[0], GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.uvs.size() * sizeof(vec2), 
+    &data.raw_mesh.uvs[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, buffers[2]);
-  glBufferData(GL_ARRAY_BUFFER, data.normals.size() * sizeof(vec3), 
-    &data.normals[0], GL_STATIC_DRAW);
+  glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.normals.size() * sizeof(vec3), 
+    &data.raw_mesh.normals[0], GL_STATIC_DRAW);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]); 
   glBufferData(
     GL_ELEMENT_ARRAY_BUFFER, 
@@ -472,8 +458,8 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   for (int i = 0; i < vertices.size(); i += 3) {
     vec3 delta_pos1 = vertices[i+1] - vertices[i+0];
     vec3 delta_pos2 = vertices[i+2] - vertices[i+0];
-    vec2 delta_uv1 = data.uvs[i+1] - data.uvs[i+0];
-    vec2 delta_uv2 = data.uvs[i+2] - data.uvs[i+0];
+    vec2 delta_uv1 = data.raw_mesh.uvs[i+1] - data.raw_mesh.uvs[i+0];
+    vec2 delta_uv2 = data.raw_mesh.uvs[i+2] - data.raw_mesh.uvs[i+0];
 
     float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
     vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
@@ -498,10 +484,10 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
 
   vector<ivec3> bone_ids;
   vector<vec3> bone_weights;
-  if (!data.bone_ids.empty()) {
-    for (int i = 0; i < data.indices.size(); i++) {
-      bone_ids.push_back(data.bone_ids[data.indices[i]]);
-      bone_weights.push_back(data.bone_weights[data.indices[i]]);
+  if (!data.raw_mesh.bone_ids.empty()) {
+    for (int i = 0; i < data.raw_mesh.indices.size(); i++) {
+      bone_ids.push_back(data.raw_mesh.bone_ids[data.raw_mesh.indices[i]]);
+      bone_weights.push_back(data.raw_mesh.bone_weights[data.raw_mesh.indices[i]]);
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, buffers[6]);
@@ -524,37 +510,38 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
   m.bounding_sphere = GetAssetBoundingSphere(m.polygons);
 
   // Animations.
-  if (data.animations.empty()) {
-    return data;
+  if (data.raw_mesh.animations.empty()) {
+    return;
   }
 
-  for (const Animation& animation : data.animations) {
+  for (const Animation& animation : data.raw_mesh.animations) {
     m.animations[animation.name] = animation;
 
-    if (!calculate_bs) continue;
-    for (int frame = 0; frame < m.animations[animation.name].keyframes.size(); frame++) {
-      vector<vec3> vertices;
+    // Calculate BS.
+    // if (!calculate_bs) continue;
+    // for (int frame = 0; frame < m.animations[animation.name].keyframes.size(); frame++) {
+    //   vector<vec3> vertices;
 
-      for (int j = 0; j < m.polygons.size(); j++) {
-        Polygon& p = m.polygons[j];
-        for (int k = 0; k < 3; k++) {
-          vec3 pos = p.vertices[k];
-          vec3 vertex = vec3(0);
-          unsigned int index = p.indices[k];
-          for (int n = 0; n < 3; n++) {
-            int bone_id = bone_ids[index][n];
-            if (bone_id == -1) continue;
-            float weight = bone_weights[index][n];
+    //   for (int j = 0; j < m.polygons.size(); j++) {
+    //     Polygon& p = m.polygons[j];
+    //     for (int k = 0; k < 3; k++) {
+    //       vec3 pos = p.vertices[k];
+    //       vec3 vertex = vec3(0);
+    //       unsigned int index = p.indices[k];
+    //       for (int n = 0; n < 3; n++) {
+    //         int bone_id = bone_ids[index][n];
+    //         if (bone_id == -1) continue;
+    //         float weight = bone_weights[index][n];
 
-            mat4 joint_transform = animation.keyframes[frame].transforms[bone_id];
-            vertex += vec3(joint_transform * vec4(pos, 1.0)) * weight;
-          }
-          vertices.push_back(vertex);
-        }
-      }
-      m.animations[animation.name].keyframes[frame].bounding_sphere =
-        GetBoundingSphereFromVertices(vertices);
-    }
+    //         mat4 joint_transform = animation.keyframes[frame].transforms[bone_id];
+    //         vertex += vec3(joint_transform * vec4(pos, 1.0)) * weight;
+    //       }
+    //       vertices.push_back(vertex);
+    //     }
+    //   }
+    //   m.animations[animation.name].keyframes[frame].bounding_sphere =
+    //     GetBoundingSphereFromVertices(vertices);
+    // }
     // cout << "Extracted animation 2: " << animation.name << endl;
   }
 
@@ -563,5 +550,4 @@ FbxData LoadFbxData(const std::string& filename, Mesh& m, bool calculate_bs) {
     if (!joint) continue;
     m.bones_to_ids[data.joints[i]->name] = i;
   }
-  return data;
 }

@@ -2,13 +2,25 @@ cmake_minimum_required (VERSION 3.0)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE "STATIC_LIBRARY")
 project (Fbx)
 set (CMAKE_CXX_STANDARD 17)
-set(CMAKE_BUILD_TYPE Debug)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+  set(CMAKE_CXX_FLAGS "-g")
+  set(CMAKE_CXX_FLAGS_DEBUG "-g")
+else()
+  set(CMAKE_CXX_FLAGS "-O3 -Wall -Wextra")
+endif()
 
 include(CTest)
 
 find_package(OpenGL REQUIRED)
-find_package(PythonInterp REQUIRED)
-find_package(PythonLibs REQUIRED)
+
+# set(CMAKE_CXX_FLAGS "-O3 -Wall -Wextra")
+# set(CMAKE_CXX_FLAGS_DEBUG "-g -Wall -Wextra")
+# set(CMAKE_CXX_FLAGS_DEBUG "-g")
 
 set(ALL_LIBS
   ${OPENGL_LIBRARY}
@@ -20,7 +32,6 @@ set(ALL_LIBS
   fbxsdk
   png
   pugixml
-  python3.8
   libtga
 )
 
@@ -34,7 +45,6 @@ set(INCLUDE_DIRS
   /usr/local/Cellar/boost/1.70.0/include
   /usr/local/opt/freetype/include/freetype2
   /Applications/Autodesk/FBX\ SDK/2020.0.1/include
-  /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/include/python3.8
   ${ZLIB_INCLUDE_DIR}
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
 )
@@ -46,7 +56,6 @@ set(LINK_DIRS
   /usr/local/Cellar/boost/1.70.0/lib
   /usr/local/opt/freetype/lib
   /Library/Developer/CommandLineTools/Library/Frameworks
-  /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib
   "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/"
   ${CMAKE_BINARY_DIR}/lib/libpng-1.6.37
   ${CMAKE_BINARY_DIR}/lib/libtga-1.0.1
@@ -54,9 +63,6 @@ set(LINK_DIRS
 add_definitions(-DAPPLE)
 
 file(COPY "/Applications/Autodesk/FBX\ SDK/2020.0.1/lib/clang/release/libfbxsdk.dylib"
-     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
-file(COPY /Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/Python3
      DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 # Include external libs
@@ -83,10 +89,10 @@ set(
   src/engine.cpp 
   src/game_asset.cpp 
   src/game_object.cpp 
-  src/scripts.cpp 
   src/height_map.cpp 
   src/dungeon.cpp 
   src/simplex_noise.cpp 
+  src/monsters.cpp 
 )
 
 include_directories(${INCLUDE_DIRS})

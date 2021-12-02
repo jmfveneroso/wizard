@@ -26,20 +26,31 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
   if (item) {
     if (interact) {
       if (item->type == GAME_OBJ_DOOR) {
-        shared_ptr<Door> door = static_pointer_cast<Door>(item);
-        if (door->state == DOOR_CLOSED) {
-          door->state = DOOR_OPENING;
-          if (door->dungeon_piece_type == 'd' || door->dungeon_piece_type == 'D') {
-            resources_->GetDungeon().SetDoorOpen(door->dungeon_tile);
-          }
-          for (shared_ptr<Event> e : door->on_open_events) {
-            shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
-            resources_->AddEvent(e);
-          }
-        } else if (door->state == DOOR_OPEN) {
-          door->state = DOOR_CLOSING;
-          if (door->dungeon_piece_type == 'd' || door->dungeon_piece_type == 'D') {
-            resources_->GetDungeon().SetDoorClosed(door->dungeon_tile);
+        if (item->name == "dungeon-entrance") {
+          configs->dungeon_level = 0;
+          resources_->DeleteAllObjects();
+          resources_->CreateDungeon();
+          Dungeon& dungeon = resources_->GetDungeon();
+          vec3 pos = dungeon.GetUpstairs();
+          resources_->GetPlayer()->ChangePosition(pos);
+          resources_->GetConfigs()->render_scene = "dungeon";
+          resources_->SaveGame();
+        } else {
+          shared_ptr<Door> door = static_pointer_cast<Door>(item);
+          if (door->state == DOOR_CLOSED) {
+            door->state = DOOR_OPENING;
+            if (door->dungeon_piece_type == 'd' || door->dungeon_piece_type == 'D') {
+              resources_->GetDungeon().SetDoorOpen(door->dungeon_tile);
+            }
+            for (shared_ptr<Event> e : door->on_open_events) {
+              shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
+              resources_->AddEvent(e);
+            }
+          } else if (door->state == DOOR_OPEN) {
+            door->state = DOOR_CLOSING;
+            if (door->dungeon_piece_type == 'd' || door->dungeon_piece_type == 'D') {
+              resources_->GetDungeon().SetDoorClosed(door->dungeon_tile);
+            }
           }
         }
       } else if (item->type == GAME_OBJ_ACTIONABLE) {
@@ -55,19 +66,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
            vec3 v = vec3(rotate(item->rotation_matrix, 0.01f * r, vec3(0, 1, 0)) * vec4(-5, 0, 0, 1));
            vec3 drop_pos = item->position + v;
 
-           // TODO: xml chest treasure.
-           for (const auto& drop : actionable->drops) {
-             // int r = Random(0, 1000);
-             // r = 0;
-             // if (r >= drop.chance) continue;
-
-             const int item_id = drop.item_id;
-             const int quantity = ProcessDiceFormula(drop.quantity);
-             ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-               item_data[item_id].asset_name, drop_pos);
-             obj->CalculateCollisionData();
-             obj->quantity = quantity;
-           }
+           resources_->CreateDrops(actionable);
          }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();
@@ -92,7 +91,6 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->CalculateCollisionData();
             resources_->GenerateOptimizedOctree();
             resources_->GetPlayer()->ChangePosition(vec3(11600, 510, 7600));
-            resources_->GetScriptManager()->LoadScripts();
             resources_->SaveGame();
           } else {
             resources_->DeleteAllObjects();
@@ -116,7 +114,6 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->GenerateOptimizedOctree();
             resources_->GetConfigs()->render_scene = "town";
             resources_->GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
-            resources_->GetScriptManager()->LoadScripts();
             resources_->SaveGame();
           } else {
             configs->dungeon_level--;

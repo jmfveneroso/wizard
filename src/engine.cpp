@@ -120,6 +120,9 @@ void Engine::RunCommand(string command) {
     player->status = STATUS_NONE;
   } else if (result[0] == "count-octree") {
     resources_->CountOctreeNodes();
+  } else if (result[0] == "reveal") {
+    Dungeon& dungeon = resources_->GetDungeon();
+    dungeon.Reveal();
   } else if (result[0] == "create") {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
@@ -132,12 +135,9 @@ void Engine::RunCommand(string command) {
         asset_name, position);
 
       configs->new_building->being_placed = true;
+      configs->new_building->life = 100;
       configs->place_object = true;
       resources_->AddNewObject(configs->new_building);
-
-      if (asset_name == "scepter") {
-        configs->new_building->torque = vec3(0.2, 0.2, 0);
-      }
     }
   } else if (result[0] == "create-particle") {
     string asset_name = result[1];
@@ -200,7 +200,6 @@ void Engine::RunCommand(string command) {
     resources_->GenerateOptimizedOctree();
     resources_->GetConfigs()->render_scene = "town";
     resources_->GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
-    resources_->GetScriptManager()->LoadScripts();
     resources_->SaveGame();
   } else if (result[0] == "delete-all") {
     cout << "im here" << endl;
@@ -292,32 +291,6 @@ bool Engine::ProcessGameInput() {
           text_editor_->Enable();
     
           stringstream ss;
-
-          Dungeon& dungeon = resources_->GetDungeon(); 
-          ivec2 player_pos = dungeon.GetDungeonTile(player->position);
-
-          char** dungeon_map = dungeon.GetDungeon();
-          char** monsters_and_objs = dungeon.GetMonstersAndObjs();
-          for (int y = 0; y < kDungeonSize; y++) {
-            for (int x = 0; x < kDungeonSize; x++) {
-              if (x == player_pos.x && y == player_pos.y) {
-                ss << "@ ";
-                text_editor_->SetCursorPos(x, y);
-                continue;
-              }
-              char code = dungeon_map[x][y];
-              if (code == ' ') { 
-                code = monsters_and_objs[x][y];
-                if (code == ' ' && dungeon.IsWebFloor(ivec2(x, y))) {
-                  code = '#';
-                }
-              }
-              ss << code;
-            }
-            ss << endl;
-          }
-
-          ss << "=============================" << endl;
           ss << "Player pos: " << player->position << endl;
           ss << "Dungeon level: " << configs->dungeon_level << endl;
           ss << "Time of day: " << configs->time_of_day << endl;

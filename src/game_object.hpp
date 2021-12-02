@@ -94,6 +94,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   // For falling floor.
   bool interacted_with_falling_floor = false;
   
+  mutex action_mutex_;
   AiState ai_state = IDLE;
   float state_changed_at = 0;
   queue<shared_ptr<Action>> actions;
@@ -229,6 +230,9 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void UpdateAsset(const string& asset_name);
   bool GetRepeatAnimation();
   bool GetApplyTorque();
+
+  void LockActions();
+  void UnlockActions();
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -320,7 +324,6 @@ struct Door : public GameObject {
 
 struct Actionable : public GameObject {
   int state = 0; // 0: off, 1: turning_on, 2: on, 3: turning_off
-  vector<Drop> drops;
 
   Actionable(Resources* resources) 
     : GameObject(resources, GAME_OBJ_ACTIONABLE) {}

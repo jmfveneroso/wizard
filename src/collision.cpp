@@ -208,7 +208,7 @@ bool IsBehindPlane(const vec3& p, const vec3& plane_point, const vec3& normal) {
 bool IsInConvexHull(const vec3& p, vector<Polygon> polygons) {
   for (const Polygon& poly : polygons) {
     const vec3& plane_point = poly.vertices[0];
-    const vec3& normal = poly.normals[0];
+    const vec3& normal = poly.normal;
     if (!IsBehindPlane(p, plane_point, normal)) {
       return false;
     }
@@ -258,7 +258,7 @@ OBB GetOBBFromPolygons(const vector<Polygon>& polygons, const vec3& position) {
 
   // Find all the unique edges that touch the pivot point.
   for (auto& poly : polygons) {
-    vec3 new_edge = poly.normals[0];
+    vec3 new_edge = poly.normal;
     bool unique = true;
     for (int j = 0; j < normals.size(); j++) {
       if (abs(dot(normals[j], new_edge)) > 0.99f) {
@@ -321,7 +321,6 @@ vector<Polygon> GetPolygonsFromOBB(const OBB& obb) {
     Polygon poly;
     for (int i = 0; i < 3; i++) {
       poly.vertices.push_back(vertices[i]);
-      poly.indices.push_back(count++);
     }
     polygons.push_back(poly);
   }
@@ -338,9 +337,7 @@ Polygon CreatePolygonFrom3Points(vec3 a, vec3 b, vec3 c, vec3 direction) {
   poly.vertices.push_back(a);
   poly.vertices.push_back(b);
   poly.vertices.push_back(c);
-  poly.normals.push_back(normal);
-  poly.normals.push_back(normal);
-  poly.normals.push_back(normal);
+  poly.normal = normal;
   return poly;
 }
 
@@ -349,7 +346,7 @@ bool IntersectBoundingSphereWithTriangle(const BoundingSphere& bounding_sphere,
   const vec3& pos = bounding_sphere.center;
   float r = bounding_sphere.radius;
 
-  const vec3& normal = polygon.normals[0];
+  const vec3& normal = polygon.normal;
   const vec3& a = polygon.vertices[0];
   const vec3& b = polygon.vertices[1];
   const vec3& c = polygon.vertices[2];
@@ -383,7 +380,7 @@ bool CollideSphereFrustum(const BoundingSphere& bounding_sphere,
 bool IsInConvexHull(const BoundingSphere& bounding_sphere, vector<Polygon> polygons) {
   for (const Polygon& poly : polygons) {
     const vec3& plane_point = poly.vertices[0];
-    const vec3& normal = poly.normals[0];
+    const vec3& normal = poly.normal;
     float d = dot(plane_point, normal);
 
     // Is behind plane.
@@ -553,7 +550,7 @@ bool IntersectSpherePlane(BoundingSphere s, Plane p, vec3& displacement_vector,
 
 bool IntersectMovingSphereTriangle(BoundingSphere s, vec3 v, 
   const Polygon& polygon, float &t, vec3& q) {
-  const vec3& normal = polygon.normals[0];
+  const vec3& normal = polygon.normal;
   float d = dot(polygon.vertices[0], normal);
 
   if (!IntersectMovingSpherePlane(s, v, Plane(normal, d), t, q)) {
@@ -1018,7 +1015,7 @@ bool TestTriangleAABB(const Polygon& polygon, const AABB& aabb,
 
   // Test separating axis corresponding to triangle face normal (category 2)
   Plane p;
-  p.normal = polygon.normals[0];
+  p.normal = polygon.normal;
   p.d = dot(p.normal, v0_);
   // 
   // return TestAABBPlane(aabb, p, displacement_vector, point_of_contact);
@@ -1381,7 +1378,7 @@ bool IntersectRayAABBTree(vec3 p, vec3 d, shared_ptr<AABBTreeNode> node,
   vec3 a = base_position + node->polygon.vertices[0];
   vec3 b = base_position + node->polygon.vertices[1];
   vec3 c = base_position + node->polygon.vertices[2];
-  vec3 normal = node->polygon.normals[0];
+  vec3 normal = node->polygon.normal;
   // if (!IntersectSegmentTriangle(p, p + d * 100.0f, a, b, c, normal,
   //   u, v, w, t)) {
   if (!IntersectLineTriangle(p, p + d * 100.0f, a, b, c, q)) {

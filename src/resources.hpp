@@ -8,7 +8,6 @@
 #include "particle.hpp"
 #include "space_partition.hpp"
 #include "height_map.hpp"
-#include "scripts.hpp"
 #include "dungeon.hpp"
 
 #include <chrono>
@@ -215,7 +214,7 @@ struct Configs {
   vector<int> white_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8 }; // 105 possible combinations.
   vector<int> black_spells { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }; // 5460 possible combinations.
 
-  int equipment[4] = { 26, 26, 27, 28 };
+  int equipment[4] = { 0, 0, 0, 0 };
 
   float level_up_frame = -1;
  
@@ -361,6 +360,12 @@ class CompareCallbacks {
     }
 };
 
+struct OctreeCount {
+  int nodes = 0;
+  int static_objs[7] = { 0, 0, 0, 0, 0, 0, 0 };
+  int moving_objs[7] = { 0, 0, 0, 0, 0, 0, 0 };
+};
+
 class Resources {
   string directory_;
   string shaders_dir_;
@@ -368,12 +373,11 @@ class Resources {
   int id_counter_ = 0;
   double frame_start_ = 0;
   double delta_time_ = 0;
-  int max_octree_depth_ = 6;
-  shared_ptr<ScriptManager> script_manager_ = nullptr;
+  int max_octree_depth_ = 4;
   unordered_map<string, shared_ptr<Npc>> npcs_;
   std::default_random_engine generator_;
   bool use_quadtree_ = true;
-  GLFWwindow* window_  ;
+  GLFWwindow* window_;
   int random_item_id = kRandomItemOffset;
 
   shared_ptr<Configs> configs_;
@@ -428,8 +432,26 @@ class Resources {
   vector<shared_ptr<DieEvent>> on_unit_die_events_;
   vector<shared_ptr<PlayerMoveEvent>> player_move_events_;
 
-  // Mutexes.
+  // Thread and mutexes.
   mutex mutex_;
+
+  bool terminate_ = false;
+  const int kMaxThreads = 16;
+
+  mutex mesh_mutex_;
+  int running_mesh_loading_tasks_= 0;
+  queue<tuple<string, string>> mesh_loading_tasks_;
+  vector<thread> load_mesh_threads_;
+
+  mutex asset_mutex_;
+  int running_asset_loading_tasks_= 0;
+  queue<pugi::xml_node> asset_loading_tasks_;
+  vector<thread> load_asset_threads_;
+
+  mutex texture_mutex_;
+  int running_texture_loading_tasks_= 0;
+  queue<string> texture_loading_tasks_;
+  vector<thread> load_texture_threads_;
 
   unordered_map<int, ItemData> item_data_ {
     { 0, { 0, "", "", "", "", 0, 0, false, ITEM_DEFAULT, "", ivec2(1, 1) } },
@@ -485,7 +507,11 @@ class Resources {
 
   // XML loading functions.
   void LoadShaders(const string& directory);
+  void LoadMeshesFromDir(const std::string& directory);
   void LoadMeshes(const string& directory);
+  void LoadTexturesFromAssetFile(pugi::xml_node xml);
+  void LoadTexturesFromDir(const std::string& directory);
+  void LoadTextures(const std::string& directory);
   void LoadNpcs(const string& xml_filename);
   void LoadAssetFile(const string& xml_filename);
   void LoadAssets(const string& directory);
@@ -502,7 +528,6 @@ class Resources {
   void RemoveDead();
   void UpdateCooldowns();
   void UpdateAnimationFrames();
-  void UpdateExpirables();
   void ProcessCallbacks();
   void ProcessOnCollisionEvent(ObjPtr obj);
   void ProcessEvents();
@@ -531,10 +556,16 @@ class Resources {
   void CreateRandomMonster(const vec3& pos);
   void ProcessDriftAwayEvent();
   void ProcessPlayerDeathEvent();
+  void LoadAssetTextures(pugi::xml_node asset_xml, shared_ptr<GameAsset> asset);
+  void LoadParticleTypes(pugi::xml_node xml);
+  void LoadMeshesFromAssetFile(pugi::xml_node xml);
+  void CreateOctree(shared_ptr<OctreeNode> octree_node, int depth = 0);
+  OctreeCount CountOctreeNodesAux(shared_ptr<OctreeNode> octree_node, int depth);
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir, 
     GLFWwindow* window_);
+  ~Resources();
 
   float camera_jiggle = 0.0f;
 
@@ -562,7 +593,6 @@ class Resources {
   double GetFrameStart();
   vector<shared_ptr<Particle>>& GetParticleContainer();
   shared_ptr<Player> GetPlayer();
-  shared_ptr<ScriptManager> GetScriptManager() { return script_manager_; }
   shared_ptr<Mesh> GetMesh(ObjPtr obj);
   vector<shared_ptr<GameObject>>& GetMovingObjects();
   vector<shared_ptr<GameObject>>& GetLights();
@@ -722,8 +752,6 @@ class Resources {
   void StartQuest(const string& quest_name);
   void LearnSpell(const unsigned int spell_id);
 
-  void CallStrFn(const string& fn);
-  void CallStrFn(const string& fn, const string& arg);
   void RegisterOnUnitDieEvent(const string& fn);
   void ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2);
   char** GetCurrentDungeonLevel();
@@ -762,6 +790,12 @@ class Resources {
   void RemoveItemFromInventory(const ivec2& pos);
   Camera GetCamera();
   void RestartGame();
+
+  void CreateThreads();
+  void LoadMeshesAsync();
+  void LoadTexturesAsync();
+  void LoadAssetsAsync();
+  FbxManager* GetSdkManager();
 };
 
 #endif // __RESOURCES_HPP__

@@ -125,12 +125,7 @@ void Project4D::BuildCube(int i, const vector<vec3>& v, const vec3& pos) {
     p.vertices.push_back(vertices[i]);
     p.vertices.push_back(vertices[i+1]);
     p.vertices.push_back(vertices[i+2]);
-    p.normals.push_back(normals[i]);
-    p.normals.push_back(normals[i]);
-    p.normals.push_back(normals[i]);
-    p.indices.push_back(i);
-    p.indices.push_back(i+1);
-    p.indices.push_back(i+2);
+    p.normal = normals[i];
     polygons.push_back(p);
   }
 
