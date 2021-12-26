@@ -36,10 +36,14 @@ class AI {
 
   bool WhiteSpineAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
+  bool SpiderWebAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
 
   bool WraithAttack(ObjPtr creature, shared_ptr<RangedAttackAction> action);
 
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
+  bool ProcessMoveAction(ObjPtr spider, vec3 destination);
+  bool ProcessLongMoveAction(ObjPtr spider, shared_ptr<LongMoveAction> action);
   bool ProcessRandomMoveAction(ObjPtr spider, shared_ptr<RandomMoveAction> action);
   bool ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action);
   bool ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action);
@@ -60,6 +64,12 @@ class AI {
     shared_ptr<MoveAwayFromPlayerAction> action);
   bool ProcessUseAbilityAction(ObjPtr spider, 
     shared_ptr<UseAbilityAction> action);
+  bool ProcessSpiderClimbAction(ObjPtr spider, 
+    shared_ptr<SpiderClimbAction> action);
+  bool ProcessSpiderJumpAction(ObjPtr spider, 
+    shared_ptr<SpiderJumpAction> action);
+  bool ProcessSpiderEggAction(ObjPtr spider, 
+    shared_ptr<SpiderEggAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);

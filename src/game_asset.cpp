@@ -15,6 +15,7 @@ void GameAsset::LoadBones(const pugi::xml_node& skeleton_xml) {
     }
 
     int bone_id = mesh->bones_to_ids[bone_name];
+
     const string bone_mesh_name = bone_xml.text().get();
     bone_to_mesh_name[bone_id] = bone_mesh_name;
   }
@@ -39,9 +40,21 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     item_icon = item_icon_xml.text().get();
   }
 
+  const pugi::xml_node& effect_on_collision_xml = 
+    asset_xml.child("effect-on-collision");
+  if (effect_on_collision_xml) {
+    effect_on_collision = effect_on_collision_xml.text().get();
+  }
+
   const pugi::xml_node& invisibility_xml = asset_xml.child("invisibility");
   if (invisibility_xml) {
     invisibility = string(invisibility_xml.text().get()) == "true";
+  }
+
+  const pugi::xml_node& missile_collision_xml = 
+    asset_xml.child("missile-collision");
+  if (missile_collision_xml) {
+    missile_collision = string(missile_collision_xml.text().get()) == "true";
   }
 
   const string& shader_name = asset_xml.child("shader").text().get();

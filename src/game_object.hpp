@@ -131,6 +131,10 @@ class GameObject : public enable_shared_from_this<GameObject> {
   float scale_out = 0.0f;
   bool touching_the_ground = false;
 
+  bool leader = false;
+  int monster_group = -1;
+  bool was_hit = false;
+
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
   set<string> collisions;
@@ -141,6 +145,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   float item_sparkle = 0.0f;
   unordered_set<int> hit_list;
+  shared_ptr<GameObject> line_obj = nullptr;
 
   GameObject(Resources* resources) : resources_(resources) {}
   GameObject(Resources* resources, GameObjectType type) 
@@ -233,6 +238,10 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   void LockActions();
   void UnlockActions();
+  void PopAction();
+
+  bool HasEffectOnCollision();
+  string GetEffectOnCollision();
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -450,17 +459,49 @@ struct MoveAction : Action {
     : Action(ACTION_MOVE), destination(destination) {}
 };
 
+struct LongMoveAction : Action {
+  vec3 destination;
+
+  LongMoveAction(vec3 destination) 
+    : Action(ACTION_LONG_MOVE), destination(destination) {}
+};
+
 struct RandomMoveAction : Action {
   RandomMoveAction() : Action(ACTION_RANDOM_MOVE) {}
 };
 
 struct IdleAction : Action {
   float duration;
+  string animation = "Armature|idle";
+
+  IdleAction(float duration, string animation) 
+    : Action(ACTION_IDLE), duration(duration), animation(animation) {}
 
   IdleAction(float duration) 
     : Action(ACTION_IDLE), duration(duration) {}
 };
 
+struct SpiderClimbAction : Action {
+  bool finished_jump = false;
+  float height = 50;
+  SpiderClimbAction(float height) 
+    : Action(ACTION_SPIDER_CLIMB), height(height) {}
+};
+
+struct SpiderEggAction : Action {
+  bool created_particle_effect = false;
+  float channel_end = 0.0f;
+  SpiderEggAction() 
+    : Action(ACTION_SPIDER_EGG) {}
+};
+
+struct SpiderJumpAction : Action {
+  bool finished_jump = false;
+  bool finished_rotating = false;
+  vec3 destination;
+  SpiderJumpAction(vec3 destination) 
+    : Action(ACTION_SPIDER_JUMP), destination(destination) {}
+};
 struct RangedAttackAction : Action {
   bool damage_dealt = false;
   RangedAttackAction() : Action(ACTION_RANGED_ATTACK) {}

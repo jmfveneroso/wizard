@@ -5,7 +5,7 @@
 
 struct TerrainPoint {
   float height = 0.0;
-  int tile = 0;
+  int tile = 3;
   int index = 0;
 
   vec3 blending = vec3(0, 0, 0);

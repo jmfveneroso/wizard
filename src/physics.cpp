@@ -23,7 +23,6 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   }
 
   if (IsNaN(obj->rotation_matrix)) {
-    cout << "Say what 2: " << obj->GetDisplayName() << endl;
     obj->rotation_matrix = mat4(1.0f);
     obj->rotation_factor = 0;
     obj->torque = vec3(0.0);
@@ -35,7 +34,6 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   }
 
   if (IsNaN(obj->position) || IsNaN(obj->speed)) {
-    cout << "Say what: " << obj->GetDisplayName() << endl;
     obj->position = vec3(0);
     obj->speed = vec3(0);
   }
@@ -82,10 +80,14 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     // obj->speed.x *= 0.99;
     // obj->speed.y *= 0.99;
     // obj->speed.z *= 0.99;
-  } else if (obj->IsCreature() || obj->IsPlayer() || obj->touching_the_ground) {
+  } else if (obj->touching_the_ground) {
     obj->speed.x *= 0.9;
     obj->speed.y *= 0.99;
     obj->speed.z *= 0.9;
+  // } else if (obj->IsCreature() || obj->IsPlayer()) {
+  //   obj->speed.x *= 0.95;
+  //   obj->speed.y *= 0.99;
+  //   obj->speed.z *= 0.95;
   } else {
     obj->speed.x *= 0.99;
     obj->speed.y *= 0.99;

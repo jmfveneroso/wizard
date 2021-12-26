@@ -152,7 +152,6 @@ class Renderer {
   void DrawOutside();
   void DrawObjects(vector<ObjPtr> objs);
   void DrawHand();
-  void DrawMap();
   void FindVisibleObjectsAsync();
   void CreateThreads();
 
@@ -168,6 +167,7 @@ class Renderer {
 
   GLFWwindow* window() { return window_; }
   shared_ptr<Terrain> terrain() { return terrain_; }
+  void DrawMap();
   void DrawScreenEffects();
 };
 

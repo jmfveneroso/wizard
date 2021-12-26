@@ -276,6 +276,12 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
   }
 
   ObjPtr obj = configs->new_building;
+  // cout << obj->position << endl;
+  // obj->position = obj->position + vec3(1.0, 0, 0);
+  // resources_->UpdateObjectPosition(obj);
+  // cout << obj->position << endl;
+  // cout << "==================" << endl;
+  // return;
 
   vec3 start = c.position;
   vec3 end = c.position + c.direction * 500.0f;
@@ -284,6 +290,8 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
     if (resources_->CollideRayAgainstTerrain(start, end, tile)) {
       TerrainPoint p = resources_->GetHeightMap().GetTerrainPoint(tile.x, tile.y);
       obj->position = vec3(tile.x, p.height, tile.y);
+      obj->target_position = obj->position;
+      obj->prev_position = obj->position;
       resources_->UpdateObjectPosition(obj);
     }
   } else {
@@ -331,9 +339,13 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
         UpdateMesh(*mesh, vertices, uvs, indices);
         mesh->polygons = polygons;
         obj->GetAsset()->aabb = GetAABBFromPolygons(polygons);
+        obj->target_position = obj->position;
+        obj->prev_position = obj->position;
         resources_->UpdateObjectPosition(obj);
       } else {
-        configs->new_building->position = q;
+        obj->position = q;
+        obj->target_position = obj->position;
+        obj->prev_position = obj->position;
         resources_->UpdateObjectPosition(obj);
       }
     }
@@ -396,22 +408,13 @@ bool PlayerInput::CastSpellOrUseItem() {
   int item_id = configs->spellbar[configs->selected_spell];
   shared_ptr<ArcaneSpellData> arcane_spell =  
     resources_->WhichArcaneSpell(item_id);
-
-
-  // if (resources_->GetConfigs()->render_scene != "dungeon") {
-  //   resources_->AddMessage(string("You cannot cast here."));   
-  //   return;
-  // }
-
   if (arcane_spell) {
-    // cout << "Arcane" << endl;
-    // cout << "spell_id: " << arcane_spell->spell_id << endl;
     current_spell_ = arcane_spell;
 
     Camera c = GetCamera();
     switch (arcane_spell->spell_id) {
       case 9: { // Spell shot.
-        if (player->stamina > 0.0f) {
+        if (player->stamina > 0.0f && player->mana >= 1.0f) {
           obj->active_animation = "Armature|shoot";
 
           player->player_action = PLAYER_CASTING;
@@ -419,6 +422,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           scepter->frame = 0;
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
+          player->mana -= 1;
           player->selected_spell = 0;
           player->stamina -= 50.0f;
           debounce_ = 20;
@@ -436,7 +440,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 0;
-          player->mana -= 5.0f;
+          player->mana -= arcane_spell->mana_cost;
           player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
@@ -453,7 +457,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 1;
-          player->mana -= 10.0f;
+          player->mana -= arcane_spell->mana_cost;
           player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
@@ -470,7 +474,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 2;
-          player->mana -= 15.0f;
+          player->mana -= arcane_spell->mana_cost;
           player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
@@ -487,7 +491,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
           player->selected_spell = 3;
-          player->mana -= 0.1f;
+          player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
         }
@@ -503,7 +507,7 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 4;
-          player->mana -= 15.0f;
+          player->mana -= arcane_spell->mana_cost;
           player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
@@ -723,7 +727,7 @@ void PlayerInput::ProcessPlayerCasting() {
     scepter->active_animation = "Armature|shoot";
   }
 
-  if (animation_frame_ == 0 && glfwGetKey(window_, GLFW_KEY_C) != GLFW_PRESS) {
+  if (animation_frame_ == 0 && !lft_click_) {
     if (resources_->IsHoldingScepter()) {
       obj->active_animation = "Armature|hold_scepter";
       scepter->active_animation = "Armature|hold_scepter";
@@ -736,7 +740,7 @@ void PlayerInput::ProcessPlayerCasting() {
 
     player->player_action = PLAYER_IDLE;
     current_spell_ = nullptr;
-  } else if (animation_frame_ <= 0 && glfwGetKey(window_, GLFW_KEY_C) == GLFW_PRESS) {
+  } else if (animation_frame_ <= 0 && lft_click_) {
     if (current_spell_ && current_spell_->spell_id == 0) {
       if (CastSpellOrUseItem()) {
         return;
@@ -789,11 +793,11 @@ void PlayerInput::ProcessPlayerChanneling() {
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
   Camera c = GetCamera();
 
-  if (glfwGetKey(window_, GLFW_KEY_C) == GLFW_PRESS) {
+  if (lft_click_) {
     obj->frame = 20;
     scepter->frame = 20;
     animation_frame_ = 0;
-    player->mana -= 0.1f;
+    player->mana -= current_spell_->mana_cost;
 
     if (!channeling_particle || channeling_particle->life < 0.0f) {
       channeling_particle = 
@@ -858,34 +862,13 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
 
   if (resources_->GetGameState() == STATE_EDITOR) return c;
 
+  lft_click_ = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+
   float player_speed = resources_->GetConfigs()->player_speed; 
   float jump_force = resources_->GetConfigs()->jump_force; 
 
   float d = resources_->GetDeltaTime() / 0.016666f;
-  if (resources_->GetGameState() == STATE_BUILD) {
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-      player->position += front * 10.0f * d;
-    }
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-      player->position -= front * 10.0f * d;
-    }
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-      player->position += right * 10.0f * d;
-    }
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-      player->position -= right * 10.0f * d;
-    }
-
-    if (player->position.x < 11200)
-      player->position.x = 11200;
-    if (player->position.x > 11800)
-      player->position.x = 11800;
-    if (player->position.z < 7400)
-      player->position.z = 7400;
-    if (player->position.z > 7900)
-      player->position.z = 7900;
-
-  } else if (resources_->GetGameState() == STATE_INVENTORY) {
+  if (resources_->GetGameState() == STATE_INVENTORY) {
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
       if (throttle_counter_ < 0) {
         inventory_->Disable();
@@ -894,29 +877,31 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       throttle_counter_ = 20;
     }
   } else {
-    // Move forward.
-    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-      player->speed += front * player_speed * d;
-    }
+    if (player->touching_the_ground) {
+      // Move forward.
+      if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+        player->speed += front * player_speed * d;
+      }
 
-    // Move backward.
-    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-      player->speed -= front * player_speed * d;
-    }
+      // Move backward.
+      if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        player->speed -= front * player_speed * d;
+      }
 
-    // Strafe right.
-    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-      player->speed += right * player_speed * d;
-    }
+      // Strafe right.
+      if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+        player->speed += right * player_speed * d;
+      }
 
-    // Strafe left.
-    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-      player->speed -= right * player_speed * d;
+      // Strafe left.
+      if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        player->speed -= right * player_speed * d;
+      }
     }
 
     // Move up.
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-      if (player->can_jump) {
+      if (player->can_jump || configs->levitate) {
         player->can_jump = false;
         player->speed.y += jump_force;
       }
@@ -961,7 +946,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         obj->active_animation = "Armature|idle.001";
       }
 
-      if (glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS) {
+      if (lft_click_) {
         if (debounce_ < 0) {
           CastSpellOrUseItem();
         } else {

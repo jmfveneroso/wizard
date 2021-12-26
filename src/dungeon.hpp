@@ -39,6 +39,7 @@ struct LevelData {
   int dungeon_size;
   int dungeon_cells;
   int num_secret_rooms = 0;
+  int max_room_gen = 10;
   vector<int> monsters;
   vector<int> objects;
   vector<string> minisets;
@@ -69,8 +70,11 @@ class Dungeon {
   bool initialized_ = false;
 
   int current_level_ = 0;
+  int current_monster_group_ = 0;
 
   int** dungeon;
+  int** monster_group;
+  int** relevance;
   unsigned int** flags;
   int** room;
   ivec2 downstairs;
@@ -186,6 +190,10 @@ class Dungeon {
     },
   };
 
+  const unordered_map<int, int> monster_type_to_leader_type_ {
+    { 62, 105 }
+  };
+
   unordered_map<int, LevelData> level_data_;
 
   // const LevelData kLevelData[7] {
@@ -227,7 +235,7 @@ class Dungeon {
   bool GenerateChambers();
   void ClearFlags();
   bool CheckRoom(int x, int y, int width, int height);
-  void RoomGen(int x, int y, int w, int h, int dir, bool secret = false);
+  void RoomGen(int x, int y, int w, int h, int dir, int counter = 0);
   int GetArea();
   void MakeMarchingTiles();
   void FillChambers();
@@ -294,18 +302,20 @@ class Dungeon {
   bool IsTileClear(const ivec2& tile, bool consider_door_state = false);
   bool IsTileClear(const ivec2& tile, const ivec2& next_tile);
   bool IsTileTransparent(const ivec2& tile);
+  bool IsTileVisible(const ivec2& tile);
   bool IsTileVisible(const vec3& position);
   bool IsTileDiscovered(const vec3& position);
   bool IsTileDiscovered(const ivec2& tile);
   bool IsTileNextToWall(const ivec2& tile);
   bool IsTileNextToDoor(const ivec2& tile);
-  ivec2 GetDungeonTile(const vec3& position);
+  ivec2 GetDungeonTile(const vec3 position);
   bool IsValidTile(const ivec2& tile_pos);
   vec3 GetTilePosition(const ivec2& tile);
   void SetDoorOpen(const ivec2& tile);
   void SetDoorClosed(const ivec2& tile);
   bool IsInitialized() { return initialized_; }
   void CalculateAllPaths();
+  void CalculateRelevance();
   void Clear();
   void ClearDungeonPaths();
   void ClearDungeonVisibility();
@@ -326,6 +336,8 @@ class Dungeon {
   void CalculatePathsAsync();
   void CreateThreads();
   void Reveal();
+  int GetMonsterGroup(const ivec2& tile);
+  int GetRelevance(const ivec2& tile);
 };
 
 #endif // __DUNGEON_HPP__

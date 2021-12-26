@@ -42,7 +42,7 @@ Renderer::Renderer(shared_ptr<Resources> asset_catalog,
 Renderer::~Renderer() {
   terminate_ = true;
   for (int i = 0; i < kMaxThreads; i++) {
-    find_threads_[i].join();
+    // find_threads_[i].join();
   }
 }
 
@@ -217,10 +217,10 @@ Renderer::GetVisibleObjectsFromSector(shared_ptr<Sector> sector) {
     GetVisibleObjects(node);
   }
 
-  // Sort from closest to farthest.
+  // Sort from farthest to closest.
   std::sort(visible_objects_.begin(), visible_objects_.end(), 
     [] (const auto& lhs, const auto& rhs) {
-    return lhs->distance < rhs->distance;
+    return lhs->distance > rhs->distance;
   });
 
   return visible_objects_;
@@ -295,10 +295,6 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInSector(
   // https://www.gamasutra.com/view/feature/2979/rendering_the_great_outdoors_fast_.php?print=1
   vector<vector<Polygon>> occluder_convex_hulls;
   for (auto& obj : objs) {
-    // if (CullObject(obj, occluder_convex_hulls)) {
-    //   continue;
-    // }
-
     if (obj->IsPartiallyTransparent()) { 
       transparent_objs.push_back(obj);
     } else if (obj->Is3dParticle()) {
@@ -475,6 +471,12 @@ void Renderer::DrawOutside() {
 
   DrawObject(skydome);
 
+  // static bool updated_clipmaps = true;
+  // if (updated_clipmaps) {
+  //   // terrain_->UpdateClipmaps(camera_.position + vec3(100, 0, 100));
+  //   terrain_->UpdateClipmaps(camera_.position);
+  //   updated_clipmaps = false;
+  // }
   terrain_->UpdateClipmaps(camera_.position);
 
   // if (clip_terrain_) {
@@ -1319,7 +1321,7 @@ void Renderer::DrawStatusBars() {
     mana_bar_width * 329, 329, 
     1.0, vec2(1 - mana_bar_width, 0), vec2(mana_bar_width, 1));
 
-  string mana_str = boost::lexical_cast<string>(player->mana) + " / " +
+  string mana_str = boost::lexical_cast<string>(int(player->mana)) + " / " +
     boost::lexical_cast<string>(player->max_mana);
   draw_2d_->DrawText(mana_str, 1110, 900 - 818, 
     vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
@@ -1449,6 +1451,30 @@ void Renderer::DrawHand() {
 
 void Renderer::DrawMap() {
   shared_ptr<GameObject> obj = resources_->GetObjectByName("map-001");
+  shared_ptr<GameAsset> asset = obj->GetAsset();
+  shared_ptr<Mesh> mesh = asset->first_mesh;
+  if (!mesh) {
+    const string mesh_name = asset->lod_meshes[0];
+    asset->first_mesh = resources_->GetMeshByName(mesh_name);
+    mesh = asset->first_mesh;
+  }
+
+  float animation_speed = 1.0f;
+  if (obj->asset_group != nullptr) {
+    animation_speed = obj->GetAsset()->animation_speed;
+  }
+
+  // TODO: store pointer to active animation. (This lookup takes 1.6% of frame time).
+  const Animation& animation = mesh->animations[obj->active_animation];
+  float d = resources_->GetDeltaTime() / 0.016666f;
+  obj->frame += 1.0f * d * animation_speed;
+  if (obj->frame >= animation.keyframes.size()) {
+    if (obj->GetRepeatAnimation()) {
+      obj->frame = 0;
+    } else {
+      obj->frame = animation.keyframes.size() - 1;
+    }
+  }
 
   shared_ptr<Player> player = shared_ptr<Player>(resources_->GetPlayer());
   mat4 rotation_matrix = rotate(
@@ -1828,6 +1854,7 @@ void Renderer::CreateDungeonBuffers() {
                 !resources_->GetDungeon().IsChamber(x, z)) { // Not upstairs. Draw ceiling.
                 // Create ceiling.
                 mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 50, 0));
+                // mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 25, 0));
                 model_matrices.push_back(ModelMatrix);
               }
             } else if (tile == ' ') {  

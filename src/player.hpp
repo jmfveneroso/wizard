@@ -25,6 +25,7 @@ class PlayerInput {
   int animation_frame_ = 0;
   shared_ptr<Particle> channeling_particle = nullptr;
   GLFWwindow* window_ = nullptr;
+  bool lft_click_;
 
   void Extract(const Camera& c);
   bool InteractWithItem(GLFWwindow* window, const Camera& c, 

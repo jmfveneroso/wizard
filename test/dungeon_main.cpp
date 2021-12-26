@@ -7,6 +7,7 @@ using namespace std::chrono;
 
 int main(int argc, char **argv) {
   Dungeon dungeon;
+  dungeon.LoadLevelDataFromXml("resources/assets/dungeon.xml");
 
   milliseconds ms = duration_cast< milliseconds >(
       system_clock::now().time_since_epoch()

@@ -15,6 +15,7 @@ enum CollisionPair {
   CP_ST,     // SPHERE -> TERRAIN
   CP_SO,     // SPHERE -> OBB
   CP_SA,     // SPHERE -> AABB (Not implemented)
+  CP_SR,     // SPHERE -> RAY (Not implemented)
   CP_BS,     // BONES -> SPHERE
   CP_BB,     // BONES -> BONES
   CP_BQ,     // BONES -> QUICK_SPHERE 
@@ -22,6 +23,7 @@ enum CollisionPair {
   CP_BT,     // BONES -> TERRAIN
   CP_BO,     // BONES -> OBB 
   CP_BA,     // BONES -> AABB (Not implemented)
+  CP_BR,     // BONES -> RAY (Not implemented)
   CP_QS,     // QUICK_SPHERE -> SPHERE
   CP_QB,     // QUICK_SPHERE -> BONES
   CP_QQ,     // QUICK_SPHERE -> QUICK_SPHERE (Not implemented)
@@ -29,6 +31,7 @@ enum CollisionPair {
   CP_QT,     // QUICK_SPHERE -> TERRAIN
   CP_QO,     // QUICK_SPHERE -> OBB
   CP_QA,     // QUICK_SPHERE -> AABB (Not implemented)
+  CP_QR,     // QUICK_SPHERE -> RAY (Not implemented)
   CP_PS,     // PERFECT -> SPHERE (Not implemented)
   CP_PB,     // PERFECT -> BONES (Not implemented)
   CP_PQ,     // PERFECT -> QUICK_SPHERE (Not implemented)
@@ -36,13 +39,7 @@ enum CollisionPair {
   CP_PT,     // PERFECT -> TERRAIN (Not implemented)
   CP_PO,     // PERFECT -> OBB (Not implemented)
   CP_PA,     // PERFECT -> AABB (Not implemented)
-  CP_TS,     // TERRAIN -> SPHERE (Not implemented)
-  CP_TB,     // TERRAIN -> BONES (Not implemented)
-  CP_TQ,     // TERRAIN -> QUICK_SPHERE (Not implemented)
-  CP_TP,     // TERRAIN -> PERFECT (Not implemented)             
-  CP_TT,     // TERRAIN -> TERRAIN (Not implemented)             
-  CP_TO,     // TERRAIN -> OBB (Not implemented)             
-  CP_TA,     // TERRAIN -> AABB (Not implemented)             
+  CP_PR,     // PERFECT -> RAY (Not implemented)
   CP_OS,     // OBB -> SPHERE (Not implemented)
   CP_OB,     // OBB -> BONES (Not implemented)
   CP_OQ,     // OBB -> QUICK_SPHERE
@@ -50,6 +47,7 @@ enum CollisionPair {
   CP_OT,     // OBB -> TERRAIN
   CP_OO,     // OBB -> OBB (Not implemented)             
   CP_OA,     // OBB -> AABB (Not implemented)             
+  CP_OR,     // OBB -> RAY (Not implemented)             
   CP_AS,     // AABB -> SPHERE (Not implemented)
   CP_AB,     // AABB -> BONES (Not implemented)
   CP_AQ,     // AABB -> QUICK_SPHERE (Not implemented)
@@ -57,6 +55,23 @@ enum CollisionPair {
   CP_AT,     // AABB -> TERRAIN (Not implemented)
   CP_AO,     // AABB -> OBB (Not implemented)             
   CP_AA,     // AABB -> AABB (Not implemented)             
+  CP_AR,     // AABB -> RAY (Not implemented)             
+  CP_TS,     // TERRAIN -> SPHERE (Not implemented)
+  CP_TB,     // TERRAIN -> BONES (Not implemented)
+  CP_TQ,     // TERRAIN -> QUICK_SPHERE (Not implemented)
+  CP_TP,     // TERRAIN -> PERFECT (Not implemented)             
+  CP_TT,     // TERRAIN -> TERRAIN (Not implemented)             
+  CP_TO,     // TERRAIN -> OBB (Not implemented)             
+  CP_TA,     // TERRAIN -> AABB (Not implemented)             
+  CP_TR,     // TERRAIN -> RAY (Not implemented)             
+  CP_RS,     // RAY -> SPHERE (Not implemented)
+  CP_RB,     // RAY -> BONES (Not implemented)
+  CP_RQ,     // RAY -> QUICK_SPHERE (Not implemented)
+  CP_RP,     // RAY -> PERFECT (Not implemented)
+  CP_RT,     // RAY -> TERRAIN (Not implemented)
+  CP_RO,     // RAY -> OBB (Not implemented)             
+  CP_RA,     // RAY -> AABB (Not implemented)             
+  CP_RR,     // RAY -> RAY (Not implemented)             
   CP_UNDEFINED 
 };
 
@@ -225,6 +240,45 @@ struct CollisionOA : Collision {
     : Collision(CP_OA, o1, nullptr), aabb(aabb) {}
 };
 
+struct CollisionRS : Collision {
+  CollisionRS() {}
+  CollisionRS(ObjPtr o1, ObjPtr o2) : Collision(CP_RS, o1, o2) {}
+};
+
+struct CollisionRB : Collision {
+  int bone;
+  CollisionRB() {}
+  CollisionRB(ObjPtr o1, ObjPtr o2, int bone)
+    : Collision(CP_RB, o1, o2), bone(bone) {}
+};
+
+struct CollisionRP : Collision {
+  Polygon polygon;
+  CollisionRP() {}
+  CollisionRP(ObjPtr o1, ObjPtr o2, Polygon polygon)
+    : Collision(CP_RP, o1, o2), polygon(polygon) {}
+};
+
+struct CollisionRO : Collision {
+  CollisionRO() {}
+  CollisionRO(ObjPtr o1, ObjPtr o2)
+    : Collision(CP_RO, o1, o2) {}
+};
+
+struct CollisionRA : Collision {
+  CollisionRA() {}
+  CollisionRA(ObjPtr o1, ObjPtr o2)
+    : Collision(CP_RA, o1, o2) {}
+};
+
+struct CollisionRT : Collision {
+  Polygon polygon;
+  CollisionRT() {}
+  CollisionRT(ObjPtr o1, Polygon polygon) 
+    : Collision(CP_RT, o1, nullptr), polygon(polygon) {}
+};
+
+
 class CollisionResolver {
   shared_ptr<Resources> resources_;
 
@@ -278,7 +332,19 @@ class CollisionResolver {
   void TestCollisionOT(shared_ptr<CollisionOT> c);
   void TestCollisionOA(shared_ptr<CollisionOA> c);
   void TestCollisionOO(shared_ptr<CollisionOO> c);
+  void TestCollisionRS(shared_ptr<CollisionRS> c);
+  void TestCollisionRB(shared_ptr<CollisionRB> c);
+  void TestCollisionRP(shared_ptr<CollisionRP> c);
+  void TestCollisionRA(shared_ptr<CollisionRA> c);
+  void TestCollisionRO(shared_ptr<CollisionRO> c);
+  void TestCollisionRT(shared_ptr<CollisionRT> c);
   void TestCollision(ColPtr c);
+
+  void ApplySlowEffectOnCollision(ColPtr col);
+  unordered_map<string, void (CollisionResolver::*)(ColPtr)> 
+    collision_effect_callbacks_ {
+    { "slow", &CollisionResolver::ApplySlowEffectOnCollision }
+  };
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);
 

@@ -9,11 +9,14 @@
 class Monsters {
   shared_ptr<Resources> resources_;
 
+  void MiniSpiderling(ObjPtr unit);
   void Spiderling(ObjPtr unit);
   void WhiteSpine(ObjPtr unit);
   void Wraith(ObjPtr unit);
   void BloodWorm(ObjPtr unit);
   bool IsAttackAction(shared_ptr<Action> action);
+  bool ShouldHoldback(ObjPtr unit);
+  ivec2 FindSafeTile(ObjPtr unit);
 
  public:
   Monsters(shared_ptr<Resources> resources);

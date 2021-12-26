@@ -442,7 +442,7 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
     clipmap->invalid = true;
   }
 
-  int max_updates_per_frame = 6;
+  int max_updates_per_frame = 10;
   for (int i = CLIPMAP_LEVELS-1; i >= 2; i--) {
     unsigned int level = i + 1;
     shared_ptr<Clipmap> clipmap = clipmaps_[i];
@@ -597,14 +597,13 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   bool drawing_shadow, bool clip_against_plane) {
   glBindVertexArray(vao_);
 
-  glUniform3fv(GetUniformId(program_id_, "camera_position"), 1, 
-    (float*) &player_pos);
+  // player_pos = kWorldCenter;
 
   vec3 normal;
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
 
-  const int kFirstIndex = 3;
+  const int kFirstIndex = 1;
   for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
     if (clipmaps_[i]->invalid) break;
     int clipmap_size = (CLIPMAP_SIZE + 1) * TILE_SIZE * GetTileSize(i + 1);
@@ -664,7 +663,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
         (float*) &configs->sun_position);
 
       glUniform3fv(GetUniformId(program_id, "camera_position"), 1, 
-        (float*) &player_pos);
+        (float*) &camera.position);
     }
 
     // Uncomment to only draw shadows in the last clipmap.
@@ -775,11 +774,12 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
       // Region 0 is the center.
       if (i != last_visible_index && region == 0) continue;
 
-      mat4 ModelMatrix = translate(glm::mat4(1.0), player_pos);
+      mat4 ModelMatrix = translate(glm::mat4(1.0), camera.position);
       mat4 ModelViewMatrix = ViewMatrix * ModelMatrix;
       mat3 ModelView3x3Matrix = glm::mat3(ModelViewMatrix);
       mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
-      if (FrustumCullSubregion(clipmaps_[i], region, offset, MVP, player_pos)) {
+
+      if (FrustumCullSubregion(clipmaps_[i], region, offset, MVP, camera.position)) {
         cull_count++;
         continue;
       }

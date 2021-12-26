@@ -1341,6 +1341,7 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
   bool take_hit_animation) {
   if (life < 0.0f) return;
 
+  was_hit = true;
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
   // Reduce damage using armor class.
@@ -1575,4 +1576,24 @@ void GameObject::LockActions() {
 
 void GameObject::UnlockActions() {
   action_mutex_.lock();
+}
+
+void GameObject::PopAction() {
+  resources_->Lock();
+  prev_action = actions.front();
+  actions.pop();
+  if (!actions.empty()) {
+    actions.front()->issued_at = glfwGetTime();
+  }
+  resources_->Unlock();
+}
+
+bool GameObject::HasEffectOnCollision() {
+  if (!asset_group) return false;
+  return !GetAsset()->effect_on_collision.empty();
+}
+
+string GameObject::GetEffectOnCollision() {
+  if (!asset_group) return "";
+  return GetAsset()->effect_on_collision;
 }

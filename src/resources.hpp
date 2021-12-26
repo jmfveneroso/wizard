@@ -296,6 +296,7 @@ struct ArcaneSpellData {
   ivec2 spell_graph_pos;
   bool learned = false;
   int level = 0;
+  float mana_cost = 0;
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
@@ -375,6 +376,7 @@ class Resources {
   double delta_time_ = 0;
   int max_octree_depth_ = 4;
   unordered_map<string, shared_ptr<Npc>> npcs_;
+  unordered_map<int, vector<ObjPtr>> monster_groups_;
   std::default_random_engine generator_;
   bool use_quadtree_ = true;
   GLFWwindow* window_;
@@ -413,6 +415,7 @@ class Resources {
   vector<shared_ptr<Missile>> missiles_;
   unordered_map<string, string> scripts_;
   vector<ObjPtr> effects_;
+  vector<shared_ptr<Ray>> rays_;
 
   // GameObject indices.
   vector<shared_ptr<GameObject>> new_objects_;
@@ -547,12 +550,6 @@ class Resources {
   void ProcessTempStatus();
   ObjPtr CreateBookshelf(const vec3& pos, const ivec2& tile);
 
-  void CreateArcaneSpellCrystal(int item_id, string name, 
-    string display_name, string icon_name, string description, 
-    string texture_name);
-  void CreateArcaneSpellCrystals();
-  void LoadArcaneSpells();
-  void CalculateArcaneSpells();
   void CreateRandomMonster(const vec3& pos);
   void ProcessDriftAwayEvent();
   void ProcessPlayerDeathEvent();
@@ -619,7 +616,6 @@ class Resources {
   unordered_map<int, ItemData>& GetItemData();
   unordered_map<int, EquipmentData>& GetEquipmentData();
   unordered_map<int, shared_ptr<ArcaneSpellData>>& GetArcaneSpellData();
-  double GetDeltaTime() { return delta_time_; }
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
   unordered_map<string, shared_ptr<Npc>>& GetNpcs() { return npcs_; }
   unordered_map<string, shared_ptr<Quest>>& GetQuests() { return quests_; }
@@ -767,7 +763,6 @@ class Resources {
   bool TakeGold(int quantity);
   void CountOctreeNodes();
   shared_ptr<ArcaneSpellData> WhichArcaneSpell(int item_id);
-  int GetArcaneSpellType(int item_id);
   int CrystalCombination(int item_id1, int item_id2);
 
   void GiveExperience(int exp_points);
@@ -796,6 +791,11 @@ class Resources {
   void LoadTexturesAsync();
   void LoadAssetsAsync();
   FbxManager* GetSdkManager();
+  double GetDeltaTime() { return delta_time_; }
+
+  vector<ObjPtr> GetMonstersInGroup(int monster_group);
+  void CastSpiderEgg(ObjPtr spider);
+  void CastSpiderWebShot(ObjPtr spider, vec3 dir);
 };
 
 #endif // __RESOURCES_HPP__

@@ -146,7 +146,6 @@ void Inventory::DrawSpellbar() {
       }
 
       if (select) {
-        cout << "Darling dariax: " << dragged_item.item_id << endl;
         spellbar[x] = dragged_item.item_id;
         spellbar_quantities[x] = 1;
         // dragged_item.origin = ITEM_ORIGIN_NONE;
@@ -1301,15 +1300,22 @@ void Inventory::DrawMap() {
     for (int x = dungeon_top_left.x; x < dungeon_top_left.x + 60; x++) {
       if (x < 0 || y < 0 || x >= kDungeonSize || y >= kDungeonSize) continue;
 
+      vec2 pos = dungeon_origin + vec2(x * 15, y * 15);
+
       char code = dungeon_map[x][y];
+      if (code != '.') {
+        int relevance = dungeon.GetRelevance(ivec2(x, y));
+        draw_2d_->DrawText(boost::lexical_cast<string>(relevance),
+          pos.x, kWindowHeight - pos.y, vec4(1), 0.5, false, 
+          "avenir_light_oblique");
+      }
+
       if (!dungeon.IsTileDiscovered(ivec2(x, y))) {
         code = '*';
         continue;
       }
 
       if (image_map.find(code) == image_map.end()) continue;
-
-      vec2 pos = dungeon_origin + vec2(x * 15, y * 15);
 
       float k = 1.0f - std::max(float(std::abs(x - dungeon_top_left.x - 30)) / 30.0f, 
         std::abs(float(y - dungeon_top_left.y - 20) / 20.0f));
@@ -1325,7 +1331,17 @@ void Inventory::DrawMap() {
  
   float rotation = -atan2(camera_.direction.x, camera_.direction.z);
   draw_2d_->DrawRotatedImage("map_interface_cursor", dungeon_origin.x + player_off.x, 
-    dungeon_origin.y + player_off.z, 20, 20, 1.0, rotation); 
+    dungeon_origin.y + player_off.z, 15, 15, 1.0, rotation); 
+
+  for (ObjPtr obj : resources_->GetMovingObjects()) {
+    if (!obj->IsCreature()) continue;
+    vec3 spider_off = (obj->position - kDungeonOffset - vec3(5, 0, 5)) * 1.5f;
+
+    vec3 dir = normalize(vec3(obj->speed.x, 0, obj->speed.z));
+    float rotation = -atan2(dir.x, dir.z);
+    draw_2d_->DrawRotatedImage("map_interface_spider", dungeon_origin.x + spider_off.x, 
+      dungeon_origin.y + spider_off.z, 15, 15, 1.0, rotation); 
+  }
 }
 
 void Inventory::Draw(const Camera& camera, int win_x, int win_y, 

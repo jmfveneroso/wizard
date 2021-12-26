@@ -25,7 +25,6 @@ void HeightMap::Save() {
     throw runtime_error(string("File ") + filename_ + " does not exist.");
   }
 
-  // fwrite(compressed_height_map_, sizeof(unsigned char), 192000000, f);
   fwrite(compressed_height_map_, sizeof(unsigned char), 48000000, f);
   fclose(f);
 }
@@ -90,7 +89,7 @@ float HeightMap::GetTerrainHeight(vec2 pos, vec3* normal) {
 
 float HeightMap::GetHeightNoise(float x, float y) {
   // Gaussian.
-  float h = -1000.0f;
+  float h = -200.0f;
   if (abs(x + y) > 0.1f) {
     h += 100.0f * exp(-((x * x) / 2 + (y * y) / 2));
   }
@@ -99,7 +98,6 @@ float HeightMap::GetHeightNoise(float x, float y) {
            2.0f * noise_.noise(2000 + x * 0.01, 2000 + y * 0.01) +
            100.0f * noise_.noise(1000 + x * 0.0001, 1000 + y * 0.0001);
 }
-
 
 TerrainPoint HeightMap::GetTerrainPoint(int x, int y, bool calculate_normal) {
   int hm_x = x - kWorldCenter.x;

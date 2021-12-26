@@ -721,6 +721,12 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
   xml = spell_xml.child("spell-graph-pos");
   if (xml) spell_data->spell_graph_pos = LoadIVec2FromXml(xml);
 
+  xml = spell_xml.child("spell-graph-pos");
+  if (xml) spell_data->spell_graph_pos = LoadIVec2FromXml(xml);
+
+  xml = spell_xml.child("mana-cost");
+  if (xml) spell_data->mana_cost = LoadFloatFromXml(xml);
+
   item_id_to_spell_data_[spell_data->item_id] = spell_data;
 }
 
@@ -821,21 +827,12 @@ void Resources::CreateOctree(shared_ptr<OctreeNode> octree_node, int depth) {
 void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node, 
   ObjPtr object, int depth) {
   int index = 0, straddle = 0;
-
   BoundingSphere bounding_sphere = object->GetTransformedBoundingSphere();
 
   for (int i = 0; i < 3; i++) {
     if (abs(object->position[i] - octree_node->center[i]) <
         octree_node->half_dimensions[i]) continue;
-
-    // cout << "Object " << object->name << " at pos " << object->position <<
-    //         " cannot be inserted in the octree with bounding sphere "
-    //         << bounding_sphere << endl;
     straddle = 1;
-    // ThrowError("Object ", object->name, " at position ", object->position, 
-    // ThrowError("Object ", object->name, " at position ", object->position, 
-    //   " cannot be inside the octree node at ", octree_node->center, 
-    //   " with half dimensions ", octree_node->half_dimensions);
   }
 
   // Compute the octant number [0..7] the object sphere center is in
@@ -856,26 +853,7 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
   if (!straddle && depth < max_octree_depth_) {
     // Fully contained in existing child node; insert in that subtree
     if (octree_node->children[index] == nullptr) {
-      cout << object->position << endl;
-      cout << "index: " << index << endl;
-      cout << "center: " << octree_node->center << endl;
-      cout << "half_dimensions: " << octree_node->half_dimensions << endl;
-
       throw runtime_error("Octree node does not exist");
-       
-      // vec3 new_pos = octree_node->center + kOctreeNodeOffsets[index] * 
-      //     octree_node->half_dimensions * 0.5f;
-      // vec3 new_half_dimensions = octree_node->half_dimensions * 0.5f;
-
-      // if (use_quadtree_) {
-      //   new_pos.y = configs_->world_center.y;
-      //   new_half_dimensions.y = kHeightMapSize/2;
-      // }
-
-      // octree_node->children[index] = make_shared<OctreeNode>(new_pos, 
-      //   new_half_dimensions);
-
-      // octree_node->children[index]->parent = octree_node;
     }
     InsertObjectIntoOctree(octree_node->children[index], object, depth + 1);
   } else {
@@ -1501,7 +1479,8 @@ void Resources::UpdateMissiles() {
       CreateOneParticle(s.center, 20.0f, "sparks", 5.0f);
     }
 
-    if (missile->type == MISSILE_HORN && int(missile->frame) % 10 == 0) {
+    if ((missile->type == MISSILE_HORN || missile->type == MISSILE_SPIDER_EGG) 
+      && int(missile->frame) % 10 == 0) {
       CreateOneParticle(missile->position, 20.0f, "sparks", 5.0f);
     }
  
@@ -1760,8 +1739,14 @@ void Resources::RemoveDead() {
     if (obj->type == GAME_OBJ_PLAYER) continue;
     if (obj->type == GAME_OBJ_PARTICLE) continue;
     if (!obj->IsCreature()) continue;
+
+    if (obj->ai_state != AMBUSH && obj->ai_state != HIDE && obj->line_obj) {
+      RemoveObject(obj->line_obj);
+    } 
+
     if (obj->status != STATUS_DEAD) continue;
     dead_unit_names.push_back(obj->name);
+
   }
   Unlock();
 
@@ -2202,7 +2187,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
   AABB aabb = AABB(node->center - node->half_dimensions, 
     node->half_dimensions * 2.0f);
 
-  // // Checks if the ray intersect the current node.
+  // Checks if the ray intersect the current node.
   if (!IntersectRayAABB(position, direction, aabb, t, q)) {
     return nullptr;
   }
@@ -2215,33 +2200,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
   float closest_t = 0;
   vec3 closest_q = vec3(0);
 
-  unordered_map<int, ObjPtr>* objs;
-  if (mode == INTERSECT_ITEMS) objs = &node->items;
-  else objs = &node->objects;
-
-  for (auto& [id, item] : *objs) {
-    // if (item->type != GAME_OBJ_DEFAULT && item->type != GAME_OBJ_WAYPOINT) continue;
-    if (item->status == STATUS_DEAD) continue;
-    if (item->name == "hand-001") continue;
-    if (item->name == "scepter-001") continue;
-    if (item->name == "map-001") continue;
- 
-    // float distance = std::max(length(position - item->position) - item->GetBoundingSphere().radius, 0.0f);
-    float distance = length(position - item->position);
-    if (distance > max_distance) continue;
-
-    if (!IntersectRayObject(item, position, direction, t, q)) continue;
-
-    distance = length(q - position);
-    if (!closest_item || distance < closest_distance) { 
-      closest_item = item;
-      closest_distance = distance;
-      closest_t = t;
-      closest_q = q;
-    }
-  }
-
-  if (mode == INTERSECT_ALL || mode == INTERSECT_EDIT || 
+  if (mode == INTERSECT_ALL || mode == INTERSECT_EDIT ||
     mode == INTERSECT_PLAYER || mode == INTERSECT_ITEMS) {
     for (auto& [id, item] : node->moving_objs) {
       if (item->status == STATUS_DEAD) continue;
@@ -2268,6 +2227,29 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
         closest_t = t;
         closest_q = q;
       }
+    }
+  }
+
+  unordered_map<int, ObjPtr>* objs;
+  if (mode == INTERSECT_ITEMS) objs = &node->items;
+  else objs = &node->objects;
+  for (auto& [id, item] : *objs) {
+    if (item->status == STATUS_DEAD) continue;
+    if (item->name == "hand-001") continue;
+    if (item->name == "scepter-001") continue;
+    if (item->name == "map-001") continue;
+ 
+    float distance = length(position - item->position);
+    if (distance > max_distance) continue;
+
+    if (!IntersectRayObject(item, position, direction, t, q)) continue;
+
+    distance = length(q - position);
+    if (!closest_item || distance < closest_distance) { 
+      closest_item = item;
+      closest_distance = distance;
+      closest_t = t;
+      closest_q = q;
     }
   }
 
@@ -3155,6 +3137,7 @@ void Resources::UpdateAnimationFrames() {
   }
 
   for (auto& [name, obj] : objects_) {
+    if (!obj) continue;
     if (obj->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(obj);
       switch (door->state) {
@@ -3681,6 +3664,7 @@ void Resources::DeleteAllObjects() {
   particle_container_.clear();
   regions_.clear();
   npcs_.clear();
+  monster_groups_.clear();
 
   ClearOctree(GetOctreeRoot());
   moving_objects_.push_back(GetPlayer());
@@ -3997,8 +3981,8 @@ void Resources::CreateDungeon(bool generate_dungeon) {
             { 'L', "spider" },
             { 'w', "blood_worm" },
             { 's', "spiderling" },
-            { 'S', "white_spine" },
             { 't', "spiderling" },
+            { 'S', "white_spine" },
             { 'V', "demon-vine" },
             { 'Y', "dragonfly" },
             { 'J', "speedling" },
@@ -4016,9 +4000,17 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           }
 
           // TODO: level based on dungeon level. Some asset change for heroes?
-          int level = (Random(0, 50) == 0) ? 1 : 0;
+          // int level = (Random(0, 50) == 0) ? 1 : 0;
+          int level = 0;
 
-          CreateMonster(this, monster_assets[code], pos + vec3(0, 3, 0), level);  
+          ObjPtr monster = CreateMonster(this, monster_assets[code], 
+            pos + vec3(0, 3, 0), level);  
+
+          if (code == 't') {
+            monster->leader = true;
+          }
+          monster->monster_group = dungeon_.GetMonsterGroup(ivec2(x, z));
+          monster_groups_[monster->monster_group].push_back(monster);
           break;
         }
       }
@@ -4189,7 +4181,7 @@ void Resources::LoadGame(const string& config_filename,
   cout << "Load config took " << elapsed_time << " seconds" << endl;
 
   start_time = glfwGetTime();
-  LoadCollisionData(directory_ + "/objects/collision_data.xml");
+  // LoadCollisionData(directory_ + "/objects/collision_data.xml");
   CalculateCollisionData();
   GenerateOptimizedOctree();
   elapsed_time = glfwGetTime() - start_time;
@@ -4201,6 +4193,7 @@ void Resources::LoadTownAssets() {
   // LoadMeshes(directory_ + "/town_models");
   LoadAssets(directory_ + "/assets/town_assets");
   CalculateCollisionData();
+  configs_->time_of_day = 8;
   configs_->town_loaded = true;
 }
 
@@ -4361,6 +4354,7 @@ void Resources::LoadConfig(const std::string& xml_filename) {
     configs_->spellbar[i] = 0;
     configs_->spellbar_quantities[i] = 0;
   }
+  configs_->spellbar[0] = 9;
 
   // Clear equipment.
   for (int i = 0; i < 4; i++) {
@@ -4829,7 +4823,8 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   vec3 end = normal * 50.0f;
 
   bool collided_dungeon = false;
-  if (dungeon_.IsRayObstructed(pos, pos + normal * 100.0f, t, true/*only_walls*/)) {
+  if (dungeon_.IsRayObstructed(pos, pos + normal * 100.0f, t, 
+    /*only_walls=*/true)) {
     end = t * normal;
     collided_dungeon = true;
   } 
@@ -4864,7 +4859,6 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   float particle_size = 0.5f + 0.25 * Random(1, 6);
   if (collided_obj) {
     if (obj->IsCreature() && obj->life > 0.0f) {
-    // if (obj->IsCreature() || obj->IsPlayer()) {
       obj->DealDamage(owner, 0.1f, vec3(0, 1, 0), /*take_hit_animation=*/false);
     }
     CreateOneParticle(pos + end * 0.95f, 35.0f, "particle-fire", particle_size);
@@ -5078,150 +5072,12 @@ void Resources::CountOctreeNodes() {
   }
 }
 
-void Resources::CreateArcaneSpellCrystal(int item_id, string name, 
-  string display_name, string icon_name, string description, 
-  string texture_name) {
-  item_data_[kArcaneSpellItemOffset + item_id] = 
-    { kArcaneSpellItemOffset + item_id, display_name, description, 
-      icon_name, name, 10, 0, true, ITEM_DEFAULT, icon_name, ivec2(1, 1) };
-
-  pugi::xml_document doc;
-  pugi::xml_node asset_xml = doc.append_child("asset");
-  AppendXmlAttr(asset_xml, "name", name);
-  AppendXmlTextNode(asset_xml, "type", "item");
-  AppendXmlTextNode(asset_xml, "display-name", display_name);
-  AppendXmlTextNode(asset_xml, "item-id", item_id);
-  pugi::xml_node mesh_xml = asset_xml.append_child("mesh");
-  AppendXmlTextNode(mesh_xml, "lod-0", "spell_crystal");
-  AppendXmlTextNode(asset_xml, "shader", "object");
-  AppendXmlTextNode(asset_xml, "collision-type", "obb");
-  AppendXmlTextNode(asset_xml, "collision-hull", "spell_crystal_hull");
-  AppendXmlTextNode(asset_xml, "physics", "normal");
-  AppendXmlTextNode(asset_xml, "texture", string("resources/textures_png/") + texture_name + ".png");
-
-  shared_ptr<GameAsset> asset = CreateAsset(this, asset_xml);
-  CreateAssetGroupForSingleAsset(this, asset);
-}
-
-void Resources::CreateArcaneSpellCrystals() {
-  // Complex and Layered spells. 
-  CreateArcaneSpellCrystal(0, "purple-crystal", // Blue + Red (complex).
-    "Purple crystal", "purple_crystal_icon", "complex-crystal-description", "purple");
-  CreateArcaneSpellCrystal(1, "green-crystal", // Blue + Yellow (complex).
-    "Green crystal", "green_crystal_icon", "complex-crystal-description", "green");
-  CreateArcaneSpellCrystal(2, "blue-purple-crystal", // Blue + Purple.
-    "Blue/Purple crystal", "blue_purple_crystal_icon", "complex-crystal-description", "blue_purple");
-  CreateArcaneSpellCrystal(3, "blue-green-crystal", // Blue + Green.
-    "Blue/Green crystal", "blue_green_crystal_icon", "complex-crystal-description", "blue_green");
-  CreateArcaneSpellCrystal(4, "blue-orange-crystal", // Blue + Orange.
-    "Blue/Orange crystal", "blue_orange_crystal_icon", "complex-crystal-description", "blue_orange");
-  CreateArcaneSpellCrystal(5, "orange-crystal", // Red + Yellow.
-    "Orange crystal", "orange_crystal_icon", "complex-crystal-description", "orange");
-  CreateArcaneSpellCrystal(6, "red-purple-crystal", // Red + Yellow.
-    "Red/Purple crystal", "red_purple_crystal_icon", "complex-crystal-description", "red_purple");
-  CreateArcaneSpellCrystal(7, "red-green-crystal", // Red + Green.
-    "Red/Green crystal", "red_green_crystal_icon", "complex-crystal-description", "red_green");
-  CreateArcaneSpellCrystal(8, "red-orange-crystal", // Red + Orange.
-    "Red/Orange crystal", "red_orange_crystal_icon", "complex-crystal-description", "red_orange");
-  CreateArcaneSpellCrystal(9, "yellow-purple-crystal", // Yellow + Purple.
-    "Yellow/Purple crystal", "yellow_purple_crystal_icon", "complex-crystal-description", "yellow_purple");
-  CreateArcaneSpellCrystal(10, "yellow-green-crystal", // Yellow + Green.
-    "Yellow/Green crystal", "yellow_green_crystal_icon", "complex-crystal-description", "yellow_green");
-  CreateArcaneSpellCrystal(11, "yellow-orange-crystal", // Yellow + Orange.
-    "Yellow/Orange crystal", "yellow_orange_crystal_icon", "complex-crystal-description", "yellow_orange");
-  CreateArcaneSpellCrystal(12, "purple-green-crystal", // Purple + Green.
-    "Purple/Green crystal", "purple_green_crystal_icon", "complex-crystal-description", "purple_green");
-  CreateArcaneSpellCrystal(13, "purple-orange-crystal", // Purple + Orange.
-    "Purple/Orange crystal", "purple_orange_crystal_icon", "complex-crystal-description", "purple_orange");
-  CreateArcaneSpellCrystal(14, "green-orange-crystal", // Green + Orange.
-    "Green/Orange crystal", "green_orange_crystal_icon", "complex-crystal-description", "green_orange");
-
-  // White spells. 
-  for (int i = 0; i < 105; i++) {
-    CreateArcaneSpellCrystal(15 + i, string("white-crystal-") + 
-      boost::lexical_cast<string>(i),
-      "White crystal", "white_crystal_icon", "white-crystal-description", "white");
-  }
-
-  // Black spells. 
-  for (int i = 0; i < 5460; i++) {
-    CreateArcaneSpellCrystal(120 + i, string("black-crystal-") + 
-      boost::lexical_cast<string>(i),
-      "Black crystal", "black_crystal_icon", "black-crystal-description", "black");
-  }
-
-  // Base spells. 
-  CreateArcaneSpellCrystal(kArcaneBaseOffset - kArcaneSpellItemOffset, string("base-crystal-") + 
-    boost::lexical_cast<string>(0),
-    "Spell Shot", "harpoon_icon", "black-crystal-description", "black");
-}
-
-void Resources::LoadArcaneSpells() {
-}
-
-void Resources::CalculateArcaneSpells() {
-  // Complex. 
-  set<int> complex_spells { 0, 1, 5 };
-  for (int i = 0; i < 3; i++) {
-    int idx = Random(0, complex_spells.size());
-    auto spell_index = std::next(complex_spells.begin(), idx);
-    configs_->complex_spells[i] = *spell_index;
-    complex_spells.erase(spell_index);
-    complex_to_spell_id_[*spell_index] = i;
-  }
-
-  // Layered. 
-  set<int> layered_spells { 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14 };
-  for (int i = 0; i < 6; i++) {
-    int idx = Random(0, layered_spells.size());
-    auto spell_index = std::next(layered_spells.begin(), idx);
-    configs_->layered_spells[i] = *spell_index;
-    layered_spells.erase(spell_index);
-    layered_to_spell_id_[*spell_index] = 3 + i;
-  }
-
-  // White. 
-  unordered_set<int> white_spells;
-  for (int i = 0; i < 105; i++) white_spells.insert(i);
-  for (int i = 0; i < 9; i++) {
-    int idx = Random(0, white_spells.size());
-    auto spell_index = std::next(white_spells.begin(), idx);
-    configs_->white_spells[i] = *spell_index;
-    white_spells.erase(spell_index);
-    white_to_spell_id_[*spell_index] = i;
-  }
-
-  // Black. 
-  vector<int> black_spells;
-  for (int i = 0; i < 5460; i++) black_spells.push_back(i);
-  for (int i = 0; i < 12; i++) {
-    int idx = Random(0, black_spells.size());
-    auto spell_index = std::next(black_spells.begin(), idx);
-    configs_->black_spells[i] = *spell_index;
-    black_spells.erase(spell_index);
-    black_to_spell_id_[*spell_index] = i;
-  }
-}
-
 shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
   if (item_id_to_spell_data_.find(item_id) == item_id_to_spell_data_.end()) {
     return nullptr;
   }
 
   return item_id_to_spell_data_[item_id];
-}
-
-int Resources::GetArcaneSpellType(int item_id) {
-  if (item_id >= 13 && item_id <= 15) return 0; // Primary.
-  if (item_id == kArcaneSpellItemOffset ||
-      item_id == kArcaneSpellItemOffset + 1||
-      item_id == kArcaneSpellItemOffset + 5) return 1; // Complex.
-
-  if (item_id < kArcaneSpellItemOffset) return -1;
-  if (item_id < kArcaneWhiteOffset) return 2; // Layered.
-  if (item_id < kArcaneBlackOffset) return 3; // White.
-  if (item_id < kArcaneBlackOffset + 5580) return 4; // Black.
-  return -1;
 }
 
 int Resources::CrystalCombination(int item_id1, int item_id2) {
@@ -5237,59 +5093,7 @@ int Resources::CrystalCombination(int item_id1, int item_id2) {
   if (item_id1 == 18 && item_id2 == 20) return 23;
   if (item_id1 == 19 && item_id2 == 21) return 29;
   if (item_id1 == 19 && item_id2 == 22) return 30;
-
-  int type1 = GetArcaneSpellType(item_id1);
-  int type2 = GetArcaneSpellType(item_id2);
-  if (type1 == -1 || type2 == -1) return -1; 
-  if ((type1 == 2 && type2 == 0) || (type1 == 0 && type2 == 2)) return -1; // Layered + Primary.
-  if (type1 != type2 && (type1 == 3 || type2 == 3)) return -1; // White + ?.
-  if (type1 == 4 || type2 == 4) return -1; // Black + Black.
-
-  // Primary + Primary = Complex.
-  if (type1 == 0 && type2 == 0) {
-    int a = item_id1 - 13;
-    int b = item_id2 - 13;
-    int index = GetIndexFromCombination({ a, b }, 6, 2);
-    return kArcaneSpellItemOffset + index;
-  }
-
-  if (configs_->arcane_level < 4) return -1;
-
-  // Primary/Complex + Primary/Complex = Complex/Layered.
-  if ((type1 == 0 || type1 == 1) && (type2 == 0 || type2 == 1)) {
-    int a = item_id1 - 13;
-    if (type1 == 1) {
-      a = item_id1 - kArcaneSpellItemOffset;
-      a = 3 + ((a > 1) ? 2 : a);
-    }
-
-    int b = item_id2 - 13;
-    if (type2 == 1) {
-      b = item_id2 - kArcaneSpellItemOffset;
-      b = 3 + ((b > 1) ? 2 : b);
-    }
-
-    int index = GetIndexFromCombination({ a, b }, 6, 2);
-    return kArcaneSpellItemOffset + index;
-  }
-
-  if (configs_->arcane_level < 7) return -1;
-
-  // Complex/Layered + Complex/Layered = White.
-  if ((type1 == 1 || type1 == 2) && (type2 == 1 || type2 == 2)) {
-    int a = item_id1 - kArcaneSpellItemOffset;
-    int b = item_id2 - kArcaneSpellItemOffset;
-    int index = GetIndexFromCombination({ a, b }, 15, 2);
-    return kArcaneWhiteOffset + index;
-  }
-
-  if (configs_->arcane_level < 10) return -1;
-
-  // White + White = Black.
-  int a = item_id1 - kArcaneWhiteOffset;
-  int b = item_id2 - kArcaneWhiteOffset;
-  int index = GetIndexFromCombination({ a, b }, 105, 2);
-  return kArcaneBlackOffset + index;
+  return -1;
 }
 
 void Resources::GiveExperience(int exp_points) {
@@ -5305,6 +5109,8 @@ void Resources::GiveExperience(int exp_points) {
     player_->max_mana += ProcessDiceFormula(configs_->base_mana_dice);
     player_->max_stamina += ProcessDiceFormula(configs_->base_stamina_dice);
     player_->life = player_->max_life;
+    player_->mana = player_->max_mana;
+    player_->stamina = player_->max_stamina;
 
     AddMessage(string("You leveled up!"));
     next_level = kLevelUps[configs_->level];
@@ -5465,7 +5271,7 @@ void Resources::CastSpellShot(const Camera& camera) {
   obj->CalculateCollisionData();
 
   obj->owner = player_;
-  obj->type = MISSILE_MAGIC_MISSILE;
+  obj->type = MISSILE_SPELL_SHOT;
   obj->physics_behavior = PHYSICS_NO_FRICTION;
   obj->scale_in = 1.0f;
   obj->scale_out = 0.0f;
@@ -5492,6 +5298,47 @@ void Resources::CastSpellShot(const Camera& camera) {
     vec3(0.0f, 0.0f, 1.0f)
   );
   obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+}
+
+void Resources::CastSpiderEgg(ObjPtr spider) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+
+  obj->UpdateAsset("spider_egg");
+  obj->CalculateCollisionData();
+
+  obj->owner = spider;
+  obj->type = MISSILE_SPIDER_EGG;
+  obj->physics_behavior = PHYSICS_NORMAL;
+  obj->speed = vec3(0);
+  obj->scale_in = 1.0f;
+  obj->scale_out = 0.0f;
+  obj->associated_particles.clear();
+
+  BoundingSphere s = spider->GetBoneBoundingSphere(23);
+  obj->position = s.center;
+
+  UpdateObjectPosition(obj);
+}
+
+void Resources::CastSpiderWebShot(ObjPtr spider, vec3 dir) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+
+  obj->UpdateAsset("spider_web_shot");
+  obj->CalculateCollisionData();
+
+  obj->owner = spider;
+  obj->type = MISSILE_SPIDER_WEB_SHOT;
+  obj->physics_behavior = PHYSICS_NO_FRICTION;
+  obj->scale_in = 1.0f;
+  obj->scale_out = 0.0f;
+  obj->associated_particles.clear();
+
+  BoundingSphere s = spider->GetBoneBoundingSphere(23);
+  obj->position = s.center;
+  vec3 p2 = obj->position + dir * 200.0f;
+  obj->speed = normalize(p2 - obj->position) * 2.0f;
+
   UpdateObjectPosition(obj);
 }
 
@@ -5702,4 +5549,9 @@ void Resources::CreateThreads() {
     load_asset_threads_.push_back(thread(&Resources::LoadAssetsAsync, this));
     load_texture_threads_.push_back(thread(&Resources::LoadTexturesAsync, this));
   }
+}
+
+vector<ObjPtr> Resources::GetMonstersInGroup(int monster_group) {
+  if (monster_groups_.find(monster_group) == monster_groups_.end()) return {};
+  return monster_groups_[monster_group];
 }

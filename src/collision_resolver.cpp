@@ -6,14 +6,15 @@
 const float kWaterHeight = 5.0f;
 
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
-  // Sphere / Bones / Quick Sphere / Perfect / OBB /  AABB / Terrain 
-  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SO, CP_SA, CP_ST }, // Sphere 
-  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BO, CP_BA, CP_BT }, // Bones
-  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QO, CP_QA, CP_QT }, // Quick Sphere 
-  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PO, CP_PA, CP_PT }, // Perfect
-  { CP_OS,    CP_OB,  CP_OQ,         CP_OP,    CP_OO, CP_OA, CP_OT }, // OBB
-  { CP_AS,    CP_AB,  CP_AQ,         CP_AP,    CP_AO, CP_AA, CP_AT }, // AABB 
-  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TO, CP_TA, CP_TT }  // Terrain
+  // Sphere / Bones / Quick Sphere / Perfect / OBB /  AABB / Terrain / Ray
+  { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SO, CP_SA, CP_ST, CP_SR }, // Sphere 
+  { CP_BS,    CP_BB,  CP_BQ,         CP_BP,    CP_BO, CP_BA, CP_BT, CP_BR }, // Bones
+  { CP_QS,    CP_QB,  CP_QQ,         CP_QP,    CP_QO, CP_QA, CP_QT, CP_QR }, // Quick Sphere 
+  { CP_PS,    CP_PB,  CP_PQ,         CP_PP,    CP_PO, CP_PA, CP_PT, CP_PR }, // Perfect
+  { CP_OS,    CP_OB,  CP_OQ,         CP_OP,    CP_OO, CP_OA, CP_OT, CP_OR }, // OBB
+  { CP_AS,    CP_AB,  CP_AQ,         CP_AP,    CP_AO, CP_AA, CP_AT, CP_AR }, // AABB 
+  { CP_TS,    CP_TB,  CP_TQ,         CP_TP,    CP_TO, CP_TA, CP_TT, CP_TR },  // Terrain
+  { CP_RS,    CP_RB,  CP_RQ,         CP_RP,    CP_RO, CP_RA, CP_RT, CP_RR }  // Ray
 };
 
 CollisionResolver::CollisionResolver(
@@ -119,7 +120,7 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
 
   if (IsMissileCollidingAgainstItsOwner(obj1, obj2)) return false;
   if (obj1->type == GAME_OBJ_MISSILE && obj2->asset_group && 
-       obj2->GetAsset()->name == "dungeon_arch_gate_hull") return false;
+       !obj2->GetAsset()->missile_collision) return false;
 
   if ((obj1->IsCreatureCollider() && !obj2->IsCreature() && !obj2->IsPlayer()) ||
       (obj2->IsCreatureCollider() && !obj1->IsCreature() && !obj1->IsPlayer()))
@@ -160,6 +161,7 @@ void CollisionResolver::Collide() {
     return;
   }
 
+  // Collision with the terrain.
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->IsCollidable()) continue;
     if (obj1->IsFixed()) continue;
@@ -169,25 +171,6 @@ void CollisionResolver::Collide() {
     tentative_pairs_.push({ obj1, nullptr });
     find_mutex_.unlock();
   }
-
-  // Find collisions async.
-  // while (true) {
-  //   find_mutex_.lock();
-  //   if (!find_tasks_.empty() || running_find_tasks_ > 0) {
-  //     find_mutex_.unlock();
-  //     this_thread::sleep_for(chrono::microseconds(100));
-  //     continue;
-  //   }
-  //   find_mutex_.unlock();
-  //   break;
-  // }
-
-  // cout << "Tentative pairs: " << tentative_pairs_.size() << endl;
-  // double mid_time = glfwGetTime();
-  // float duration_mid = mid_time - start_time;
-  // float percent_of_a_frame_mid = 100.0 * duration_mid / 0.0166666666;
-  // cout << "Tentative pairs took: " << duration_mid << " seconds " << percent_of_a_frame_mid
-  //   << "\% of a frame" << endl;
 
   // Test tentative pairs async.
   while (true) {
@@ -201,25 +184,6 @@ void CollisionResolver::Collide() {
     find_mutex_.unlock();
     break;
   }
-
-  // cout << "Collisions: " << collisions_.size() << endl;
-  // double time2 = glfwGetTime();
-  // float duration2 = time2 - start_time;
-  // float percent_of_a_frame2= 100.0 * duration2 / 0.0166666666;
-  // cout << "Test tentative pairs took: " << duration2 << " seconds " << percent_of_a_frame2
-  //   << "\% of a frame" << endl;
-
-  // TestCollisionsWithTerrain();
-
-  // if (resources_->GetConfigs()->render_scene == "dungeon") {
-  //   TestCollisionsWithDungeon();
-  // }
-
-  // double time3 = glfwGetTime();
-  // float duration3 = time3 - start_time;
-  // float percent_of_a_frame3 = 100.0 * duration3 / 0.0166666666;
-  // cout << "TestCollisionsWithTerrain took: " << duration3 << " seconds " << percent_of_a_frame3
-  //   << "\% of a frame" << endl;
 
   find_mutex_.lock();
   ResolveCollisions();
@@ -266,6 +230,7 @@ void CollisionResolver::UpdateObjectPositions() {
   vector<ObjPtr>& objs = resources_->GetMovingObjects();
   for (ObjPtr obj : objs) {
     obj->in_contact_with = nullptr;
+    obj->can_jump = false;
 
     if (obj->life < 0.0f) {
       continue;
@@ -340,8 +305,8 @@ void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node) {
   AABB aabb = AABB(octree_node->center - octree_node->half_dimensions, 
     octree_node->half_dimensions * 2.0f);
 
-  vec3 player_pos = resources_->GetPlayer()->position;
-  vec3 closest = ClosestPtPointAABB(player_pos, aabb);
+  // vec3 player_pos = resources_->GetPlayer()->position;
+  // vec3 closest = ClosestPtPointAABB(player_pos, aabb);
 
   resources_->Lock();
   for (auto [id, obj1] : octree_node->moving_objs) {
@@ -381,6 +346,110 @@ void CollisionResolver::FindCollisions(shared_ptr<OctreeNode> octree_node) {
     find_mutex_.unlock();
   }
 }
+
+// void CollisionResolver::FindRayCollisions(shared_ptr<OctreeNode> octree_node) {
+//   if (!node) return nullptr;
+// 
+//   AABB aabb = AABB(node->center - node->half_dimensions, 
+//     node->half_dimensions * 2.0f);
+// 
+//   // Checks if the ray intersect the current node.
+//   if (!IntersectRayAABB(position, direction, aabb, t, q)) {
+//     return nullptr;
+//   }
+// 
+//   if (t > max_distance) return nullptr;
+// 
+//   // TODO: maybe items should be called interactables instead.
+//   ObjPtr closest_item = nullptr;
+//   float closest_distance = 9999999.9f;
+//   float closest_t = 0;
+//   vec3 closest_q = vec3(0);
+// 
+//   if (mode == INTERSECT_ALL || mode == INTERSECT_EDIT ||
+//     mode == INTERSECT_PLAYER || mode == INTERSECT_ITEMS) {
+//     for (auto& [id, item] : node->moving_objs) {
+//       if (item->status == STATUS_DEAD) continue;
+//       if (mode != INTERSECT_ITEMS) {
+//         if (item->IsPlayer()) {
+//           if (mode != INTERSECT_ALL && mode != INTERSECT_PLAYER) continue;
+//         } else {
+//           if ((!item->IsCreature() && !item->IsDestructible()) || 
+//               mode == INTERSECT_PLAYER) continue;
+//         }
+//       } else {
+//         if (!item->IsNpc()) continue;
+//       }
+// 
+//       float distance = length(position - item->position);
+//       if (distance > max_distance) continue;
+// 
+//       if (!IntersectRayObject(item, position, direction, t, q)) continue;
+// 
+//       distance = length(q - position);
+//       if (!closest_item || distance < closest_distance) { 
+//         closest_item = item;
+//         closest_distance = distance;
+//         closest_t = t;
+//         closest_q = q;
+//       }
+//     }
+//   }
+// 
+//   unordered_map<int, ObjPtr>* objs;
+//   if (mode == INTERSECT_ITEMS) objs = &node->items;
+//   else objs = &node->objects;
+//   for (auto& [id, item] : *objs) {
+//     float distance = length(position - item->position);
+//     if (distance > max_distance) continue;
+// 
+//     if (!IntersectRayObject(item, position, direction, t, q)) continue;
+// 
+//     distance = length(q - position);
+//     if (!closest_item || distance < closest_distance) { 
+//       closest_item = item;
+//       closest_distance = distance;
+//       closest_t = t;
+//       closest_q = q;
+//     }
+//   }
+// 
+//   if (mode == INTERSECT_ALL || mode == INTERSECT_PLAYER) {
+//     for (const auto& sorted_obj : node->static_objects) {
+//       ObjPtr item = sorted_obj.obj;
+//       float distance = length(position - item->position);
+//       if (distance > max_distance) continue;
+// 
+//       if (!IntersectRayObject(item, position, direction, t, q)) continue;
+// 
+//       distance = length(q - position);
+//       if (!closest_item || distance < closest_distance) { 
+//         closest_item = item;
+//         closest_distance = distance;
+//         closest_t = t;
+//         closest_q = q;
+//       }
+//     }
+//   }
+// 
+//   for (int i = 0; i < 8; i++) {
+//     ObjPtr new_item = IntersectRayObjectsAux(node->children[i], position, 
+//       direction, max_distance, mode, t, q);
+//     if (!new_item) continue;
+// 
+//     float distance = length(q - position);
+//     if (!closest_item || distance < closest_distance) { 
+//       closest_item = new_item;
+//       closest_distance = distance;
+//       closest_t = t;
+//       closest_q = q;
+//     }
+//   }
+// 
+//   t = closest_t;
+//   q = closest_q;
+//   return closest_item;
+// }
 
 template <class T>
 void Merge(vector<ColPtr>& collisions, vector<shared_ptr<T>> collisions2) {
@@ -517,10 +586,6 @@ vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
 
 vector<shared_ptr<CollisionBP>> GetCollisionsBP(ObjPtr obj1, ObjPtr obj2) {
   vector<shared_ptr<CollisionBP>> collisions;
-
-  if (obj1->IsCreature() && obj2->GetAsset()->name == "dungeon_web_wall") {
-    return collisions;
-  }
 
   if (obj2->aabb_tree) {
     vector<shared_ptr<CollisionBP>> cols = 
@@ -758,6 +823,8 @@ vector<shared_ptr<CollisionOO>> GetCollisionsOO(ObjPtr obj1, ObjPtr obj2) {
 
 void CollisionResolver::FindCollisionsWithTerrain(
   vector<ColPtr>& collisions, ObjPtr obj) {
+  if (!obj) return;
+ 
   obj->touching_the_ground = false;
   switch (obj->GetCollisionType()) {
     case COL_SPHERE:       return Merge(collisions, GetCollisionsST(obj, resources_, in_dungeon_));
@@ -770,6 +837,8 @@ void CollisionResolver::FindCollisionsWithTerrain(
 
 void CollisionResolver::FindCollisionsWithDungeon(
   vector<ColPtr>& collisions, ObjPtr obj1) {
+  if (!obj1) return;
+
   Dungeon& dungeon = resources_->GetDungeon();
   char** dungeon_map = dungeon.GetDungeon();
 
@@ -1762,6 +1831,34 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
         vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
       return;
     }
+    case MISSILE_SPIDER_EGG: {
+      ObjPtr obj = CreateGameObjFromAsset(resources_.get(), "mini_spiderling",
+        c->point_of_contact);
+
+      resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+        "magical-explosion", 2.5f);
+      obj1->life = -1;
+      return;
+    }
+    case MISSILE_SPIDER_WEB_SHOT: {
+      if (!obj2) {
+        vec3 p = c->point_of_contact;
+        p.y = kDungeonOffset.y + 0.1f + 0.001f * Random(0, 200);
+        ObjPtr obj = CreateGameObjFromAsset(resources_.get(), "web", p);
+
+        int rotation = Random(0, 15);
+        obj->rotation_matrix = rotate(mat4(1.0), float(rotation) * 0.2f, vec3(0, 1, 0));
+        obj->cur_rotation = quat_cast(obj->rotation_matrix);
+        obj->dest_rotation = quat_cast(obj->rotation_matrix);
+
+        resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+          "magical-explosion", 2.5f);
+        obj->CalculateCollisionData();
+        resources_->GenerateOptimizedOctree();
+      }
+      obj1->life = -1;
+      return;
+    }
     default: {
       break;
     }
@@ -1781,7 +1878,10 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
             missile->hit_list.insert(obj2->id);
 
             float damage = CalculateMissileDamage(missile);
-            obj2->DealDamage(missile->owner, damage, normal);
+
+            bool take_hit = false;
+            take_hit = missile->type != MISSILE_SPELL_SHOT;
+            obj2->DealDamage(missile->owner, damage, normal, take_hit);
           }
 
           // resources_->CreateParticleEffect(10, position, normal * 1.0f, 
@@ -1812,16 +1912,9 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
         shared_ptr<Destructible> destructible = 
           static_pointer_cast<Destructible>(obj2);
         destructible->Destroy();
-
         resources_->CreateParticleEffect(10, obj2->position + vec3(0, 3, 0), 
           vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
-
         resources_->CreateDrops(obj2);
-        // vec3 position = obj2->position + vec3(0, 5.0f, 0);
-        // ObjPtr obj = CreateGameObjFromAsset(resources_.get(), 
-        //   "spell-crystal", position);
-        // obj->speed = vec3(.5f, .5f, 0);
-        // obj->CalculateCollisionData();
       } 
 
       if (missile->type == MISSILE_WIND_SLASH) {
@@ -1956,11 +2049,13 @@ void CollisionResolver::ResolveCollisionWithFixedObject(ColPtr c) {
   if (IsNaN(c->displacement_vector)) return;
 
   ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
   vec3 displacement_vector = c->displacement_vector;
   vec3 normal = c->normal;
   if (c->obj1->IsFixed()) {
     if (!c->obj2) return;
     displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
     displacement_vector = -c->displacement_vector;
     normal = -c->normal;
   }
@@ -1979,14 +2074,12 @@ void CollisionResolver::ResolveDefaultCollision(ColPtr c) {
   if (IsNaN(c->displacement_vector)) return;
 
   if (!c->obj2) {
+    c->obj1->touching_the_ground = true;
     ResolveCollisionWithFixedObject(c);
     return;
   }
 
   if (c->obj1->IsFixed() || c->obj2->IsFixed()) {
-    if (c->collision_pair == CP_OP) {
-      cout << "Just solved some stuff" << endl;
-    }
     ResolveCollisionWithFixedObject(c);
     return;
   }
@@ -2021,6 +2114,20 @@ void CollisionResolver::ResolveDefaultCollision(ColPtr c) {
   // }
 }
 
+void CollisionResolver::ApplySlowEffectOnCollision(ColPtr c) {
+  ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
+  if (c->obj1->IsFixed()) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
+  }
+
+  if (displaced_obj->IsPlayer()) {
+    displaced_obj->AddTemporaryStatus(make_shared<SlowStatus>(0.5, 2.0f, 1));
+  }
+}
+
 void CollisionResolver::ResolveCollisions() {
   unordered_set<int> ids;
   while (!collisions_.empty()) {
@@ -2042,6 +2149,18 @@ void CollisionResolver::ResolveCollisions() {
 
     if (obj1->GetPhysicsBehavior() != PHYSICS_FIXED) ids.insert(obj1->id);
     if (obj2 && obj2->GetPhysicsBehavior() != PHYSICS_FIXED) ids.insert(obj2->id);
+
+    string effect_on_collision;
+    if (obj1->HasEffectOnCollision()) {
+      effect_on_collision = obj1->GetEffectOnCollision();
+    } else if (obj2 && obj2->HasEffectOnCollision()) {
+      effect_on_collision = obj2->GetEffectOnCollision();
+    }
+
+    if (!effect_on_collision.empty()) {
+      (this->*collision_effect_callbacks_[effect_on_collision])(c);
+      continue;
+    }
 
     if (obj1->type == GAME_OBJ_MISSILE ||
         (obj2 && obj2->type == GAME_OBJ_MISSILE)) {

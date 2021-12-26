@@ -60,14 +60,16 @@ enum CollisionType {
 };
 
 enum MissileType {
-  MISSILE_MAGIC_MISSILE = 0,
+  MISSILE_SPELL_SHOT = 0,
+  MISSILE_MAGIC_MISSILE,
   MISSILE_FIREBALL,
   MISSILE_BOUNCYBALL,
   MISSILE_HOOK,
   MISSILE_ACID_ARROW,
-  MISSILE_SPELL_SHOT,
   MISSILE_WIND_SLASH,
   MISSILE_HORN,
+  MISSILE_SPIDER_EGG,
+  MISSILE_SPIDER_WEB_SHOT,
 };
 
 enum PhysicsBehavior {
@@ -129,7 +131,10 @@ enum AiState {
   WANDER = 5,
   CHASE = 6,
   SCRIPT = 7,
-  AMBUSH = 8
+  AMBUSH = 8,
+  HIDE = 9,
+  ACTIVE = 10,
+  DEFEND = 11
 };
 
 enum PlayerAction {
@@ -141,6 +146,7 @@ enum PlayerAction {
 
 enum ActionType {
   ACTION_MOVE = 0,
+  ACTION_LONG_MOVE,
   ACTION_RANDOM_MOVE,
   ACTION_IDLE,
   ACTION_MEELEE_ATTACK,
@@ -156,6 +162,9 @@ enum ActionType {
   ACTION_MOVE_TO_PLAYER,
   ACTION_MOVE_AWAY_FROM_PLAYER,
   ACTION_USE_ABILITY,
+  ACTION_SPIDER_CLIMB,
+  ACTION_SPIDER_EGG,
+  ACTION_SPIDER_JUMP,
 };
 
 enum ParticleBehavior {
@@ -238,7 +247,11 @@ struct Segment {
 struct Ray {
   vec3 origin;
   vec3 direction;
-  Ray(vec3 origin, vec3 direction) : origin(origin), direction(direction) {}
+  float distance;
+  Ray(vec3 origin, vec3 direction) : origin(origin), 
+    direction(direction), distance(100) {}
+  Ray(vec3 origin, vec3 direction, float distance) : origin(origin), 
+    direction(direction), distance(distance) {}
 };
 
 struct Capsule {

@@ -298,6 +298,13 @@ bool Engine::ProcessGameInput() {
             ss << "Name: " << configs->new_building->name << endl;
           }
 
+          for (ObjPtr obj : resources_->GetMovingObjects()) {
+            if (!obj->IsCreature()) continue;
+            ss << "Spider: " << obj->position << endl;
+          }
+          
+          ss << "Time of day: " << configs->time_of_day << endl;
+
           text_editor_->SetContent(ss.str());
           resources_->SetGameState(STATE_EDITOR);
         }
@@ -370,20 +377,6 @@ bool Engine::ProcessGameInput() {
       }
       if (!inventory_->enabled) {
         resources_->SetGameState(STATE_GAME);
-      }
-      return true;
-    }
-    case STATE_BUILD: {
-      Camera c = player_input_->ProcessInput(window);
-      renderer_->SetCamera(c);
-
-      if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-        resources_->SetGameState(STATE_GAME);
-        ObjPtr player = resources_->GetPlayer();
-        shared_ptr<Configs> configs = resources_->GetConfigs();
-        player->position = configs->old_position;
-        throttle_counter_ = 20;
-        resources_->RemoveObject(configs->new_building);
       }
       return true;
     }
@@ -554,10 +547,22 @@ void Engine::BeforeFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   {
     // BeforeFrameDebug();
-    physics_->Run();
-    collision_resolver_->Collide();
-    ai_->Run();
-    resources_->RunPeriodicEvents();
+    switch (resources_->GetGameState()) {
+      case STATE_GAME: {
+        physics_->Run();
+        collision_resolver_->Collide();
+        ai_->Run();
+        resources_->RunPeriodicEvents();
+        break;
+      }
+      case STATE_MAP: {
+        renderer_->DrawMap();
+        break;
+      }
+      default: {
+        break;
+      }
+    }
   }
 }
 

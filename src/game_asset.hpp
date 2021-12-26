@@ -64,6 +64,8 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
 
   float specular_component = 0.0f;
   float normal_strength = 1.0f;
+  string effect_on_collision;
+  bool missile_collision = true;
 
   // Rendering.
   GLuint shader;
