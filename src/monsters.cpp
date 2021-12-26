@@ -45,7 +45,7 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
   }
 
   return !group_is_attacking && distance_to_player > kChaseDistance &&
-    unit_relevance >= player_relevance;
+    (unit_relevance - player_relevance) > 3;
 }
 
 void Monsters::MiniSpiderling(ObjPtr unit) {
@@ -127,9 +127,37 @@ ivec2 Monsters::FindSafeTile(ObjPtr unit) {
   return ivec2(-1);
 }
 
+// ivec2 Monsters::FindTileInPlayerPath(ObjPtr unit) {
+//   Dungeon& dungeon = resources_->GetDungeon();
+//   ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+//   ivec2 unit_destination = dungeon.GetDungeonTile(unit->position);
+// 
+//   vector<ivec2> tiles = dungeon.GetPath(player->position, );
+// 
+//   for (int k = 0; k < 10; k++) {
+//     vector<ivec2> possible_tiles;
+//     for (int i = -1; i < 1; i++) {
+//       for (int j = -1; j < 1; j++) {
+//         if (i == j && i == 0) continue;
+//         ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
+//        
+//         if (!dungeon.IsTileClear(new_tile)) continue;
+//         if (dungeon.IsTileVisible(new_tile)) continue;
+//         possible_tiles.push_back(new_tile);
+//       }
+//     }
+// 
+//     if (possible_tiles.empty()) continue;
+// 
+//     int index = Random(0, possible_tiles.size());
+//     return possible_tiles[index];
+//   }
+//   return ivec2(-1);
+// }
+
 void Monsters::Spiderling(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
-  ObjPtr player = resources_->GetPlayer();
+  shared_ptr<Player> player = resources_->GetPlayer();
   double distance_to_player = length(player->position - unit->position);
 
   bool group_is_attacking = false;
@@ -242,20 +270,39 @@ void Monsters::Spiderling(ObjPtr unit) {
         break;
       }
      
-      if (!dungeon.IsTileVisible(unit->position)) {
-        unit->actions.push(make_shared<TakeAimAction>());
-        unit->actions.push(make_shared<RangedAttackAction>());
-      } else {
-        ivec2 safe_tile = FindSafeTile(unit);
-        if (safe_tile.x == -1) {
-          unit->ClearActions();
-          unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
-          break;
-        }
+      // if (dungeon.IsTileVisible(unit->position)) {
+      //   ivec2 safe_tile = FindSafeTile(unit);
+      //   if (safe_tile.x == -1) {
+      //     unit->ClearActions();
+      //     unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      //     break;
+      //   }
 
-        unit->actions.push(make_shared<LongMoveAction>(
-          dungeon.GetTilePosition(safe_tile)));
+      //   unit->actions.push(make_shared<LongMoveAction>(
+      //     dungeon.GetTilePosition(safe_tile)));
+      // } else {
+      //   unit->actions.push(make_shared<TakeAimAction>());
+      //   unit->actions.push(make_shared<RangedAttackAction>());
+
+      //   float rand_x = Random(-5, 5) * 0.1;
+      //   float rand_y = Random(-5, 5) * 0.1;
+      //   vec3 target = player->position + (unit->position - player->position) * 0.5f;
+      //   target += vec3(rand_x, 0, rand_y);
+
+      //   unit->actions.push(make_shared<SpiderWebAction>(target));
+      // }
+
+      if (!unit->actions.empty()) {
+        break;
       }
+
+      unit->actions.push(make_shared<TakeAimAction>());
+      unit->actions.push(make_shared<RangedAttackAction>());
+
+      float rand_x = Random(0, 101);
+      vec3 target = player->position + (unit->position - player->position) * (rand_x / 100.0f);
+      target -= vec3(0, 8, 0);
+      unit->actions.push(make_shared<SpiderWebAction>(target));
       break;
     }
     case HIDE: {
@@ -297,8 +344,7 @@ void Monsters::Spiderling(ObjPtr unit) {
         unit->ClearActions();
 
         int r = Random(0, 100);
-        if (r < 30) {
-          unit->ClearActions();
+        if (r <= 50) {
           unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
         } else {
           unit->actions.push(make_shared<ChangeStateAction>(HIDE));
@@ -330,7 +376,7 @@ void Monsters::Spiderling(ObjPtr unit) {
 
 void Monsters::WhiteSpine(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
-  ObjPtr player = resources_->GetPlayer();
+  shared_ptr<Player> player = resources_->GetPlayer();
   double distance_to_player = length(player->position - unit->position);
   bool visible = dungeon.IsTileVisible(unit->position);
 

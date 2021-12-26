@@ -165,6 +165,7 @@ enum ActionType {
   ACTION_SPIDER_CLIMB,
   ACTION_SPIDER_EGG,
   ACTION_SPIDER_JUMP,
+  ACTION_SPIDER_WEB,
 };
 
 enum ParticleBehavior {

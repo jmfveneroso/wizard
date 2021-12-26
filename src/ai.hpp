@@ -36,8 +36,6 @@ class AI {
 
   bool WhiteSpineAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
-  bool SpiderWebAttack(ObjPtr creature, 
-    shared_ptr<RangedAttackAction> action);
 
   bool WraithAttack(ObjPtr creature, shared_ptr<RangedAttackAction> action);
 
@@ -70,6 +68,8 @@ class AI {
     shared_ptr<SpiderJumpAction> action);
   bool ProcessSpiderEggAction(ObjPtr spider, 
     shared_ptr<SpiderEggAction> action);
+  bool ProcessSpiderWebAction(ObjPtr spider, 
+    shared_ptr<SpiderWebAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);

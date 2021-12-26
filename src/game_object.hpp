@@ -495,6 +495,13 @@ struct SpiderEggAction : Action {
     : Action(ACTION_SPIDER_EGG) {}
 };
 
+struct SpiderWebAction : Action {
+  bool cast_complete = false;
+  vec3 target;
+  SpiderWebAction(vec3 target) 
+    : Action(ACTION_SPIDER_WEB), target(target) {}
+};
+
 struct SpiderJumpAction : Action {
   bool finished_jump = false;
   bool finished_rotating = false;

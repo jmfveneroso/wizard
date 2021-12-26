@@ -246,10 +246,6 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
     return true;
   }
 
-  if (creature->GetAsset()->name == "spiderling") {
-    return SpiderWebAttack(creature, action);
-  }
-
   if (creature->GetAsset()->name == "white_spine") {
     return WhiteSpineAttack(creature, action);
   }
@@ -259,27 +255,6 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
   }
 
   return true;
-}
-
-bool AI::SpiderWebAttack(ObjPtr creature, 
-  shared_ptr<RangedAttackAction> action) {
-  // const int num_missiles = boost::lexical_cast<int>(resources_->GetGameFlag("white_spine_num_missiles"));
-  // const float missile_speed = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_speed"));
-  // const float spread = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_spread"));
-
-  resources_->ChangeObjectAnimation(creature, "Armature|attack");
-
-  if (int(creature->frame) >= 40) return true;
-
-  if (creature->frame >= 30 && !action->damage_dealt) {
-    action->damage_dealt = true;
-    ObjPtr player = resources_->GetObjectByName("player");
-    vec3 dir = CalculateMissileDirectionToHitTarget(creature->position,
-      player->position + vec3(0, -10.0f, 0), 2.0);
-
-    resources_->CastSpiderWebShot(creature, dir);
-  }
-  return false;
 }
 
 bool AI::WhiteSpineAttack(ObjPtr creature, 
@@ -713,6 +688,26 @@ bool AI::ProcessSpiderEggAction(ObjPtr spider,
   return false;
 }
 
+bool AI::ProcessSpiderWebAction(ObjPtr creature, 
+  shared_ptr<SpiderWebAction> action) {
+  if (resources_->GetConfigs()->disable_attacks) {
+    return true;
+  }
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 40) return true;
+
+  if (creature->frame >= 30 && !action->cast_complete) {
+    action->cast_complete = true;
+    ObjPtr player = resources_->GetObjectByName("player");
+    vec3 dir = CalculateMissileDirectionToHitTarget(creature->position,
+      action->target, 2.0);
+    resources_->CastSpiderWebShot(creature, dir);
+  }
+  return false;
+}
+
 bool AI::ProcessMoveAwayFromPlayerAction(
   ObjPtr spider, shared_ptr<MoveAwayFromPlayerAction> action) {
   Dungeon& dungeon = resources_->GetDungeon();
@@ -1007,6 +1002,21 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<SpiderEggAction> spider_egg_action =  
         static_pointer_cast<SpiderEggAction>(action);
       if (ProcessSpiderEggAction(spider, spider_egg_action)) {
+        spider->PopAction();
+
+        shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+          int num_frames = GetNumFramesInAnimation(*mesh, 
+            spider->active_animation);
+        if (spider->frame >= num_frames) {
+          spider->frame = 0;
+        }
+      }
+      break;
+    }
+    case ACTION_SPIDER_WEB: {
+      shared_ptr<SpiderWebAction> spider_web_action =  
+        static_pointer_cast<SpiderWebAction>(action);
+      if (ProcessSpiderWebAction(spider, spider_web_action)) {
         spider->PopAction();
 
         shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
