@@ -70,8 +70,6 @@ void Resources::Init() {
   // TODO: move to particle.
   InitMissiles();
   InitParticles();
-
-  LoadGame("config.xml");
 }
 
 shared_ptr<Mesh> Resources::GetMesh(ObjPtr obj) {
@@ -864,6 +862,10 @@ void Resources::InsertObjectIntoOctree(shared_ptr<OctreeNode> octree_node,
       octree_node->lights[object->id] = object;
     }
 
+    if (object->IsCreature()) {
+      octree_node->creatures[object->id] = object;
+    }
+
     if (object->IsItem()) {
       octree_node->items[object->id] = object;
     }
@@ -894,6 +896,10 @@ void Resources::AddGameObject(ObjPtr game_obj) {
 
   if (game_obj->IsMovingObject()) {
     moving_objects_.push_back(game_obj);
+  }
+
+  if (game_obj->IsCreature()) {
+    creatures_.push_back(game_obj);
   }
 
   if (game_obj->IsDestructible()) {
@@ -1026,6 +1032,9 @@ void Resources::UpdateObjectPosition(ObjPtr obj, bool lock) {
     obj->octree_node->objects.erase(obj->id);
     if (obj->IsMovingObject()) {
       obj->octree_node->moving_objs.erase(obj->id);
+    }
+    if (obj->IsCreature()) {
+      obj->octree_node->creatures.erase(obj->id);
     }
     if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
@@ -1363,9 +1372,10 @@ void Resources::UpdateParticles() {
   }
 
   float d = GetDeltaTime() / 0.016666f;
-  for (int i = 0; i < kMax3dParticles; i++) {
+  for (int i = 0; i < particles_3d_.size(); i++) {
     shared_ptr<Particle> p = particles_3d_[i];
     p->life -= 1.0f;
+
     if (p->scale_in < 1.0f) {
       p->scale_in += 0.05f;
     } else if (p->life <= 0 && p->scale_out > 0.0f) {
@@ -1627,6 +1637,7 @@ void ClearOctree(shared_ptr<OctreeNode> octree_node) {
 
     current->static_objects.clear();
     current->moving_objs.clear();
+    current->creatures.clear();
     current->objects.clear();
     current->lights.clear();
     current->items.clear();
@@ -1659,6 +1670,9 @@ void Resources::DeleteObject(ObjPtr obj) {
     if (obj->IsMovingObject()) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
+    if (obj->IsCreature()) {
+      obj->octree_node->creatures.erase(obj->id);
+    }
     if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
     }
@@ -1679,6 +1693,9 @@ void Resources::RemoveObject(ObjPtr obj) {
     if (obj->IsMovingObject()) {
       obj->octree_node->moving_objs.erase(obj->id);
     }
+    if (obj->IsCreature()) {
+      obj->octree_node->creatures.erase(obj->id);
+    }
     if (obj->IsLight()) {
       obj->octree_node->lights.erase(obj->id);
     }
@@ -1689,6 +1706,13 @@ void Resources::RemoveObject(ObjPtr obj) {
   }
 
   objects_.erase(obj->name);
+
+  for (int i = 0; i < creatures_.size(); i++) {
+    if (creatures_[i]->id == obj->id) {
+      creatures_.erase(creatures_.begin() + i);
+      break;
+    }
+  }
 
   for (int i = 0; i < moving_objects_.size(); i++) {
     if (moving_objects_[i]->id == obj->id) {
@@ -1729,6 +1753,13 @@ void Resources::RemoveObject(ObjPtr obj) {
   if (index != -1) {
     lights_.erase(lights_.begin() + index);
   }
+
+  for (auto& [status_type, temp_status] : obj->temp_status) {
+    if (temp_status->associated_particle) {
+      temp_status->associated_particle->life = -1;
+      temp_status->associated_particle = nullptr;
+    }
+  }
 }
 
 void Resources::RemoveDead() {
@@ -1740,9 +1771,9 @@ void Resources::RemoveDead() {
     if (obj->type == GAME_OBJ_PARTICLE) continue;
     if (!obj->IsCreature()) continue;
 
-    if (obj->ai_state != AMBUSH && obj->ai_state != HIDE && obj->line_obj) {
-      RemoveObject(obj->line_obj);
-    } 
+    // if (obj->ai_state != AMBUSH && obj->ai_state != HIDE && obj->line_obj) {
+    //   RemoveObject(obj->line_obj);
+    // } 
 
     if (obj->status != STATUS_DEAD) continue;
     dead_unit_names.push_back(obj->name);
@@ -2298,18 +2329,19 @@ ObjPtr Resources::IntersectRayObjects(const vec3& position,
     mode, t, q);
 }
 
-struct CompareLightPoints { 
+struct CompareObjects { 
   bool operator()(const tuple<ObjPtr, float>& t1, 
     const tuple<ObjPtr, float>& t2) { 
     return get<1>(t1) < get<1>(t2);
   } 
 }; 
 
-using LightMaxHeap = priority_queue<tuple<ObjPtr, float>, 
-  vector<tuple<ObjPtr, float>>, CompareLightPoints>;
+using ObjMaxHeap = priority_queue<tuple<ObjPtr, float>, 
+  vector<tuple<ObjPtr, float>>, CompareObjects>;
 
 void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
-  LightMaxHeap& light_heap, const vec3& position, int k, float max_distance) {
+  ObjMaxHeap& obj_heap, const vec3& position, int k, 
+  int mode, float max_distance) {
   if (!node) return;
 
   bool debug = false;
@@ -2335,8 +2367,8 @@ void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
     return;
   }
 
-  if (light_heap.size() >= k) {
-    auto& [light, distance2] = light_heap.top();
+  if (obj_heap.size() >= k) {
+    auto& [light, distance2] = obj_heap.top();
     if (distance2 < min_distance_to_node) {
       if (debug) {
         cout << "distance2: " << distance2 << endl;
@@ -2346,21 +2378,33 @@ void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
     }
   }
 
-  for (auto& [id, light] : node->lights) {
+  unordered_map<int, ObjPtr>* objs;
+  switch (mode) {
+    case 1: {
+      objs = &node->lights;
+    }
+    case 0:
+    default: {
+      objs = &node->lights;
+      objs = &node->creatures;
+    }
+  }
+
+  for (auto& [id, light] : *objs) {
     float distance2 = length(position - light->position);
     if (debug) {
       cout << "light: " << light->name << endl;
       cout << "distance2: " << distance2 << endl;
     }
-    if (light_heap.size() < k) {
+    if (obj_heap.size() < k) {
       if (debug) {
         cout << "light pushing: " << light->name << endl;
       }
-      light_heap.push({ light, distance2 });
+      obj_heap.push({ light, distance2 });
       continue;
     }
    
-    auto& [f_light, f_distance2] = light_heap.top();
+    auto& [f_light, f_distance2] = obj_heap.top();
     if (distance2 >= f_distance2) {
       if (debug) {
         cout << "Skipping: " << light->name << " because of " << f_light->name << endl;
@@ -2369,8 +2413,8 @@ void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
       continue;
     }
 
-    light_heap.pop();
-    light_heap.push({ light, distance2 });
+    obj_heap.pop();
+    obj_heap.push({ light, distance2 });
 
     if (debug) {
       cout << "popping: " << f_light->name << endl;
@@ -2379,23 +2423,23 @@ void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
   }
 
   for (int i = 0; i < 8; i++) {
-    GetKClosestLightPointsAux(node->children[i], light_heap, position, k, 
-      max_distance);
+    GetKClosestLightPointsAux(node->children[i], obj_heap, position, k, 
+      mode, max_distance);
   }
 }
 
 vector<ObjPtr> Resources::GetKClosestLightPoints(const vec3& position, int k, 
-  float max_distance) {
+  int mode, float max_distance) {
   shared_ptr<OctreeNode> root = GetSectorByName("outside")->octree_node;
 
-  LightMaxHeap light_heap;
-  GetKClosestLightPointsAux(root, light_heap, position, k, max_distance);
+  ObjMaxHeap obj_heap;
+  GetKClosestLightPointsAux(root, obj_heap, position, k, mode, max_distance);
 
   vector<ObjPtr> result;
-  while (!light_heap.empty()) {
-    auto& [light, distance2] = light_heap.top();
+  while (!obj_heap.empty()) {
+    auto& [light, distance2] = obj_heap.top();
     result.push_back(light);
-    light_heap.pop();
+    obj_heap.pop();
   }
   return result;
 }
@@ -2413,6 +2457,10 @@ double Resources::GetFrameStart() { return frame_start_; }
 
 vector<ObjPtr>& Resources::GetMovingObjects() { 
   return moving_objects_; 
+}
+
+vector<ObjPtr>& Resources::GetCreatures() { 
+  return creatures_; 
 }
 
 vector<ObjPtr>& Resources::GetLights() { return lights_; }
@@ -3356,9 +3404,20 @@ void Resources::ProcessTempStatus() {
       obj->current_speed += obj->GetAsset()->base_speed_upgrade;
     }
 
+    if (obj->status == STATUS_STUN || obj->status == STATUS_SPIDER_THREAD) {
+      obj->status = STATUS_NONE;
+    }
+
     obj->invisibility = false;
     for (auto& [status_type, temp_status] : obj->temp_status) {
-      if (temp_status->duration == 0) continue;
+      if (temp_status->duration == 0) {
+        if (temp_status->associated_particle) {
+          temp_status->associated_particle->life = -1;
+          temp_status->associated_particle = nullptr;
+        }
+        continue;
+      }
+
       if (cur_time > temp_status->issued_at + temp_status->duration) {
         temp_status->duration = 0;
         continue;
@@ -3385,6 +3444,38 @@ void Resources::ProcessTempStatus() {
           shared_ptr<InvisibilityStatus> invisibility_status = 
             static_pointer_cast<InvisibilityStatus>(temp_status);
           obj->invisibility = true;
+          break;
+        }
+        case STATUS_STUN: {
+          shared_ptr<StunStatus> stun_status = 
+            static_pointer_cast<StunStatus>(temp_status);
+          if (obj->status == STATUS_NONE) {
+            obj->status = STATUS_STUN;
+          }
+          if (!temp_status->associated_particle) {
+            shared_ptr<Particle> p = 
+              Create3dParticleEffect("particle_stun", obj->position);
+            p->associated_obj = obj;
+            p->offset = vec3(0, 3, 0);
+            temp_status->associated_particle = p;
+          }
+          break;
+        }
+        case STATUS_SPIDER_THREAD: {
+          shared_ptr<SpiderThreadStatus> spider_thread_status = 
+            static_pointer_cast<SpiderThreadStatus>(temp_status);
+          if (obj->status == STATUS_NONE) {
+            obj->status = STATUS_SPIDER_THREAD;
+          }
+          if (!temp_status->associated_particle) {
+            shared_ptr<Particle> p = 
+              Create3dParticleEffect("spider_thread", obj->position);
+            p->associated_obj = obj;
+            p->offset = vec3(0, 4, 0);
+            p->position += p->offset;
+            p->associated_bone = -1;
+            temp_status->associated_particle = p;
+          }
           break;
         }
         default:
@@ -3655,6 +3746,7 @@ void Resources::DeleteAllObjects() {
     ++it;
     objects_.erase(name);
   }
+  creatures_.clear();
   moving_objects_.clear();
   items_.clear();
   extractables_.clear();
@@ -4071,69 +4163,69 @@ void Resources::SaveGame() {
   AppendXmlTextNode(xml, "max-mana", player_->max_mana);
   AppendXmlTextNode(xml, "max-stamina", player_->max_stamina);
 
-  if (dungeon_.IsInitialized()) {
-    pugi::xml_node dungeon_node = xml.append_child("dungeon");
-    char** dungeon_map = dungeon_.GetDungeon();
-    for (int y = 0; y < kDungeonSize; y++) {
-      for (int x = 0; x < kDungeonSize; x++) {
-        pugi::xml_node item_xml = dungeon_node.append_child("tile");
-        item_xml.append_attribute("x") = boost::lexical_cast<string>(x).c_str();
-        item_xml.append_attribute("y") = boost::lexical_cast<string>(y).c_str();
-        string s = boost::lexical_cast<string>(dungeon_map[x][y]);
-        item_xml.append_child(pugi::node_pcdata).set_value(s.c_str());
-      }
-    }
+  // if (dungeon_.IsInitialized()) {
+  //   pugi::xml_node dungeon_node = xml.append_child("dungeon");
+  //   char** dungeon_map = dungeon_.GetDungeon();
+  //   for (int y = 0; y < kDungeonSize; y++) {
+  //     for (int x = 0; x < kDungeonSize; x++) {
+  //       pugi::xml_node item_xml = dungeon_node.append_child("tile");
+  //       item_xml.append_attribute("x") = boost::lexical_cast<string>(x).c_str();
+  //       item_xml.append_attribute("y") = boost::lexical_cast<string>(y).c_str();
+  //       string s = boost::lexical_cast<string>(dungeon_map[x][y]);
+  //       item_xml.append_child(pugi::node_pcdata).set_value(s.c_str());
+  //     }
+  //   }
 
-    pugi::xml_node dungeon_path_node = xml.append_child("dungeon-path");
-    int**** dungeon_path = dungeon_.GetDungeonPath();
-    for (int y = 0; y < kDungeonSize; y++) {
-      for (int x = 0; x < kDungeonSize; x++) {
-        ivec2 dest = ivec2(x, y);
-        if (!dungeon_.IsTileClear(dest)) continue;
+  //   pugi::xml_node dungeon_path_node = xml.append_child("dungeon-path");
+  //   int**** dungeon_path = dungeon_.GetDungeonPath();
+  //   for (int y = 0; y < kDungeonSize; y++) {
+  //     for (int x = 0; x < kDungeonSize; x++) {
+  //       ivec2 dest = ivec2(x, y);
+  //       if (!dungeon_.IsTileClear(dest)) continue;
 
-        for (int y2 = 0; y2 < kDungeonSize; y2++) {
-          for (int x2 = 0; x2 < kDungeonSize; x2++) {
-            ivec2 source = ivec2(x2, y2);
-            if (abs(dest.x - source.x) + abs(dest.y - source.y) > 15.0f)
-              continue; 
-            if (dungeon_path[x][y][x2][y2] == 9) continue;
+  //       for (int y2 = 0; y2 < kDungeonSize; y2++) {
+  //         for (int x2 = 0; x2 < kDungeonSize; x2++) {
+  //           ivec2 source = ivec2(x2, y2);
+  //           if (abs(dest.x - source.x) + abs(dest.y - source.y) > 15.0f)
+  //             continue; 
+  //           if (dungeon_path[x][y][x2][y2] == 9) continue;
 
-            pugi::xml_node item_xml = dungeon_path_node.append_child("tile");
-            item_xml.append_attribute("x") = boost::lexical_cast<string>(x).c_str();
-            item_xml.append_attribute("y") = boost::lexical_cast<string>(y).c_str();
-            item_xml.append_attribute("x2") = boost::lexical_cast<string>(x2).c_str();
-            item_xml.append_attribute("y2") = boost::lexical_cast<string>(y2).c_str();
-            string s = boost::lexical_cast<string>(dungeon_path[x][y][x2][y2]);
-            item_xml.append_child(pugi::node_pcdata).set_value(s.c_str());
-          }
-        }
-      }
-    }
-  }
+  //           pugi::xml_node item_xml = dungeon_path_node.append_child("tile");
+  //           item_xml.append_attribute("x") = boost::lexical_cast<string>(x).c_str();
+  //           item_xml.append_attribute("y") = boost::lexical_cast<string>(y).c_str();
+  //           item_xml.append_attribute("x2") = boost::lexical_cast<string>(x2).c_str();
+  //           item_xml.append_attribute("y2") = boost::lexical_cast<string>(y2).c_str();
+  //           string s = boost::lexical_cast<string>(dungeon_path[x][y][x2][y2]);
+  //           item_xml.append_child(pugi::node_pcdata).set_value(s.c_str());
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 
-  pugi::xml_node objs_xml = xml.append_child("objects");
-  for (auto& [name, obj] : GetObjects()) {
-    switch (obj->type) {
-      case GAME_OBJ_DOOR:
-      case GAME_OBJ_ACTIONABLE:
-      case GAME_OBJ_DESTRUCTIBLE:
-      case GAME_OBJ_DEFAULT:
-        break;
-      default:
-        continue;
-    }
+  // pugi::xml_node objs_xml = xml.append_child("objects");
+  // for (auto& [name, obj] : GetObjects()) {
+  //   switch (obj->type) {
+  //     case GAME_OBJ_DOOR:
+  //     case GAME_OBJ_ACTIONABLE:
+  //     case GAME_OBJ_DESTRUCTIBLE:
+  //     case GAME_OBJ_DEFAULT:
+  //       break;
+  //     default:
+  //       continue;
+  //   }
 
-    if (name == "hand-001" || name == "scepter-001" || name == "map-001" ||  
-        name == "skydome" || name == "player") continue;
-    if (obj->parent_bone_id != -1) {
-      continue;
-    }
+  //   if (name == "hand-001" || name == "scepter-001" || name == "map-001" ||  
+  //       name == "skydome" || name == "player") continue;
+  //   if (obj->parent_bone_id != -1) {
+  //     continue;
+  //   }
 
-    if (obj->dungeon_piece_type != '\0') continue;
+  //   if (obj->dungeon_piece_type != '\0') continue;
 
-    if (npcs_.find(name) != npcs_.end()) continue;
-    obj->ToXml(objs_xml);
-  }
+  //   if (npcs_.find(name) != npcs_.end()) continue;
+  //   obj->ToXml(objs_xml);
+  // }
 
   pugi::xml_node item_matrix_node = xml.append_child("item-matrix");
   for (int x = 0; x < 10; x++) {
@@ -4184,6 +4276,7 @@ void Resources::LoadGame(const string& config_filename,
   // LoadCollisionData(directory_ + "/objects/collision_data.xml");
   CalculateCollisionData();
   GenerateOptimizedOctree();
+  cout << ">>>>>>>>>>>>>>>> 2" << endl;
   elapsed_time = glfwGetTime() - start_time;
   cout << "Calculate collision took " << elapsed_time << " seconds" << endl;
 }
@@ -4287,58 +4380,13 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   } else if (configs_->render_scene == "safe-zone") {
     CreateSafeZone();
   } else {
+    CalculateCollisionData();
+
     dungeon_.Clear();
     dungeon_.ClearDungeonPaths();
-    const pugi::xml_node& dungeon_xml = xml.child("dungeon");
-    if (dungeon_xml) {
-      char** dungeon_map = dungeon_.GetDungeon();
-      for (pugi::xml_node tile_xml = dungeon_xml.child("tile"); tile_xml; 
-        tile_xml = tile_xml.next_sibling("tile")) {
-        int x = boost::lexical_cast<int>(tile_xml.attribute("x").value());
-        int y = boost::lexical_cast<int>(tile_xml.attribute("y").value());
-        string text = tile_xml.text().get();
-        char tile = ' ';
-        if (!text.empty()) tile = boost::lexical_cast<char>(text);
-
-        dungeon_map[x][y] = tile;
-        if (tile == '^' || tile == '_') dungeon_.SetChasm(ivec2(x, y));
-      }
-      CreateDungeon(false);
-      configs_->update_renderer = true;
-      dungeon_.PrintMap();
-    }
-
-    const pugi::xml_node& dungeon_path_xml = xml.child("dungeon-path");
-    if (dungeon_path_xml) {
-      int**** dungeon_path = dungeon_.GetDungeonPath();
-      for (pugi::xml_node tile_xml = dungeon_path_xml.child("tile"); tile_xml; 
-        tile_xml = tile_xml.next_sibling("tile")) {
-        int x = boost::lexical_cast<int>(tile_xml.attribute("x").value());
-        int y = boost::lexical_cast<int>(tile_xml.attribute("y").value());
-        int x2 = boost::lexical_cast<int>(tile_xml.attribute("x2").value());
-        int y2 = boost::lexical_cast<int>(tile_xml.attribute("y2").value());
-        string text = tile_xml.text().get();
-        dungeon_path[x][y][x2][y2] = boost::lexical_cast<int>(text);
-      }
-    }
-
-    const pugi::xml_node& objs_xml = xml.child("objects");
-    for (pugi::xml_node game_obj_xml = objs_xml.child("game-obj"); game_obj_xml; 
-      game_obj_xml = game_obj_xml.next_sibling("game-obj")) {
-      const pugi::xml_node& asset_xml = game_obj_xml.child("asset");
-      if (!asset_xml) {
-        throw runtime_error("Game object must have an asset.");
-      }
-
-      const string& asset_name = asset_xml.text().get();
-      ObjPtr new_game_obj = CreateGameObj(this, asset_name);
-      new_game_obj->Load(game_obj_xml);
-
-      shared_ptr<Sector> s = GetSectorByName("outside");
-      if (new_game_obj->GetCollisionType() == COL_PERFECT) {
-        s->AddGameObject(new_game_obj);
-      }
-    }
+    CreateDungeon();
+    vec3 pos = dungeon_.GetUpstairs();
+    player_->ChangePosition(pos);
     configs_->update_renderer = true;
   }
 
@@ -4785,6 +4833,8 @@ shared_ptr<Particle> Resources::Create3dParticleEffect(const string& asset_name,
   p->associated_obj = nullptr;
   p->associated_bone = -1;
   p->scale = asset->scale;
+  p->scale_in = 1.0f;
+  p->scale_out = 0.0f;
   p->animation_speed = asset->animation_speed;
 
   // p->damage = ProcessDiceFormula(ParseDiceFormula("6d6"));
@@ -4968,6 +5018,14 @@ void Resources::CastHeal(ObjPtr owner) {
   owner->life += 20.0f;
   if (owner->life >= owner->max_life) {
     owner->life = owner->max_life;
+  }
+}
+
+void Resources::CastFlash(ObjPtr owner) {
+  configs_->fading_out = 60.0f;
+  vector<ObjPtr> objs = GetKClosestLightPoints(owner->position, 3, 0, 30.0f);
+  for (ObjPtr creature : objs) {
+    creature->AddTemporaryStatus(make_shared<StunStatus>(3.0f, 20.0f));
   }
 }
 

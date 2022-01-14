@@ -165,6 +165,7 @@ void CollisionResolver::Collide() {
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->IsCollidable()) continue;
     if (obj1->IsFixed()) continue;
+
     obj1->touching_the_ground = false;
 
     find_mutex_.lock();

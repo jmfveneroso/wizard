@@ -38,14 +38,24 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
   int player_relevance = 
     dungeon.GetRelevance(dungeon.GetDungeonTile(player->position));
 
-  const float kChaseDistance = 50.0f;
+  float kChaseDistance = 50.0f;
+  int relevance_diff = 3;
+
+  if (unit->ai_state == AMBUSH) {
+    kChaseDistance = 10.0f;
+    relevance_diff = 0;
+  } 
+
+  if (unit_relevance == 99 && player_relevance == 99) {
+    relevance_diff = 0;
+  }
 
   if (unit->leader) {
     group_is_attacking = false;
   }
 
   return !group_is_attacking && distance_to_player > kChaseDistance &&
-    (unit_relevance - player_relevance) > 3;
+    (unit_relevance - player_relevance) > relevance_diff;
 }
 
 void Monsters::MiniSpiderling(ObjPtr unit) {
@@ -92,7 +102,7 @@ void Monsters::MiniSpiderling(ObjPtr unit) {
       }
       break;
     } 
-    case IDLE: {
+    case START: {
       unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
       break;
     }
@@ -200,13 +210,13 @@ void Monsters::Spiderling(ObjPtr unit) {
       if (next_action && next_action->type == ACTION_SPIDER_JUMP) break;
       if (!unit->can_jump) break;
 
-      bool can_hit_player = false;
+      bool movement_obstructed = false;
       if (visible) {
         float t;
-        can_hit_player = !dungeon.IsRayObstructed(unit->position, player->position, t);
+        movement_obstructed = dungeon.IsMovementObstructed(unit->position, player->position, t);
       }
 
-      if (distance_to_player > 50.0f && unit->can_jump) {
+      if (!movement_obstructed && distance_to_player > 30.0f && unit->can_jump) {
         unit->actions.push(make_shared<SpiderJumpAction>(player->position));
         break;
       }
@@ -243,21 +253,28 @@ void Monsters::Spiderling(ObjPtr unit) {
         break;
       }
 
-      if (!unit->line_obj) {
-        unit->line_obj = CreateGameObjFromAsset(resources_.get(), "spider_thread", 
-          unit->position);
-      } 
-      unit->line_obj->position = unit->position + vec3(0, 4.0f, 0);
+      shared_ptr<Action> next_action = nullptr;
+      if (!unit->actions.empty()) {
+        next_action = unit->actions.front();
+      }
+
+      if (next_action && next_action->type == ACTION_SPIDER_CLIMB) break;
+      unit->AddTemporaryStatus(make_shared<SpiderThreadStatus>(0.1f, 20.0f));
 
       if (!unit->actions.empty()) {
         break;
       }
 
       unit->levitating = true;
-      unit->actions.push(make_shared<TakeAimAction>());
-      unit->actions.push(make_shared<SpiderEggAction>());
 
-      for (int i = 0; i < 10; i++) {
+      if (distance_to_player < 80.0f) {
+        unit->actions.push(make_shared<TakeAimAction>());
+        unit->actions.push(make_shared<SpiderEggAction>());
+        for (int i = 0; i < 10; i++) {
+          unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
+          unit->actions.push(make_shared<TakeAimAction>());
+        }
+      } else {
         unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
         unit->actions.push(make_shared<TakeAimAction>());
       }
@@ -270,38 +287,32 @@ void Monsters::Spiderling(ObjPtr unit) {
         break;
       }
      
-      // if (dungeon.IsTileVisible(unit->position)) {
-      //   ivec2 safe_tile = FindSafeTile(unit);
-      //   if (safe_tile.x == -1) {
-      //     unit->ClearActions();
-      //     unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
-      //     break;
-      //   }
-
-      //   unit->actions.push(make_shared<LongMoveAction>(
-      //     dungeon.GetTilePosition(safe_tile)));
-      // } else {
-      //   unit->actions.push(make_shared<TakeAimAction>());
-      //   unit->actions.push(make_shared<RangedAttackAction>());
-
-      //   float rand_x = Random(-5, 5) * 0.1;
-      //   float rand_y = Random(-5, 5) * 0.1;
-      //   vec3 target = player->position + (unit->position - player->position) * 0.5f;
-      //   target += vec3(rand_x, 0, rand_y);
-
-      //   unit->actions.push(make_shared<SpiderWebAction>(target));
-      // }
-
       if (!unit->actions.empty()) {
         break;
       }
 
       unit->actions.push(make_shared<TakeAimAction>());
-      unit->actions.push(make_shared<RangedAttackAction>());
 
-      float rand_x = Random(0, 101);
-      vec3 target = player->position + (unit->position - player->position) * (rand_x / 100.0f);
-      target -= vec3(0, 8, 0);
+      vec3 target;
+      vector<ivec2> path = dungeon.GetPath(player->position, unit->position);
+
+      if (path.size() < 3 || !dungeon.IsTileVisible(unit->position)) {
+        ivec2 safe_tile = FindSafeTile(unit);
+        if (safe_tile.x == -1) {
+          unit->ClearActions();
+          unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+          break;
+        }
+
+        unit->ClearActions();
+        unit->actions.push(make_shared<LongMoveAction>(
+          dungeon.GetTilePosition(safe_tile)));
+        break;
+      } else {
+        target = dungeon.GetTilePosition(path[Random(1, path.size() - 2)]);
+      }
+      target += vec3(Random(-5, 5), 0, Random(-5, 5));
+
       unit->actions.push(make_shared<SpiderWebAction>(target));
       break;
     }
@@ -313,18 +324,6 @@ void Monsters::Spiderling(ObjPtr unit) {
       if (!holdback) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
-        break;
-      }
-
-      if (!dungeon.IsTileVisible(unit->position)) {
-        unit->ClearActions();
-        int r = Random(0, 100);
-        if (r < 30) {
-          unit->actions.push(make_shared<SpiderClimbAction>(Random(25, 41)));
-          unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
-        } else {
-          unit->actions.push(make_shared<IdleAction>(0.5));
-        }
         break;
       }
 
@@ -362,9 +361,22 @@ void Monsters::Spiderling(ObjPtr unit) {
       if (visible || room1 == room2) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(ACTIVE));
-        // unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
       } else if (unit->actions.empty()) {
         unit->actions.push(make_shared<IdleAction>(1));
+      }
+      break;
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (Random(0, 10) < 5) {
+        cout << "Ambush" << endl;
+        unit->actions.push(make_shared<SpiderClimbAction>(Random(25, 41)));
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+      } else {
+        unit->actions.push(make_shared<ChangeStateAction>(IDLE));
       }
       break;
     }

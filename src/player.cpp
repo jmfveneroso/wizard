@@ -449,7 +449,7 @@ bool PlayerInput::CastSpellOrUseItem() {
       }
       case 1: { // Windslash.
         // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 10.0f) {
+        if (player->stamina > 0.0f && player->mana >= 2.0f) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -466,7 +466,7 @@ bool PlayerInput::CastSpellOrUseItem() {
       }
       case 2: { // Heal.
         // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 15.0f) {
+        if (player->stamina > 0.0f && player->mana >= 2.0f) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -639,7 +639,8 @@ bool PlayerInput::CastSpellOrUseItem() {
       return true;
     }
     case 11: {
-      resources_->CastHeal(player);
+      resources_->CastFlash(player);
+      // resources_->CastHeal(player);
       configs->spellbar_quantities[configs->selected_spell]--;
       if (configs->spellbar_quantities[configs->selected_spell] == 0) {
         configs->spellbar[configs->selected_spell] = 0;
@@ -768,7 +769,8 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastWindslash(camera_);
           break;
         case 2:
-          resources_->CastHeal(player);
+          resources_->CastFlash(player);
+          // resources_->CastHeal(player);
           break;
         case 3:
           player->player_action = PLAYER_CHANNELING;

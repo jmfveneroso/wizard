@@ -1059,6 +1059,7 @@ void GameObject::CalculateCollisionData() {
     case COL_BONES: {
       for (const auto& [bone_id, bounding_sphere] : game_asset->bones) {
         bones[bone_id] = bounding_sphere;
+        cout << "blablation: " << GetDisplayName() << " " << bone_id << endl;
       }
       bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
       aabb = GetAABBFromPolygons(mesh->polygons); 
@@ -1319,6 +1320,14 @@ AssetType GameObject::GetType() {
   return GetAsset()->type;
 }
 
+void GameObject::ClearTemporaryStatus(Status status) {
+  if (temp_status.find(status) == temp_status.end()) {
+    return;
+  }
+
+  temp_status[status]->duration = 0;
+}
+
 void GameObject::AddTemporaryStatus(shared_ptr<TemporaryStatus> new_status) {
   if (temp_status.find(new_status->status) == temp_status.end()) {
     temp_status[new_status->status] = new_status;
@@ -1327,6 +1336,11 @@ void GameObject::AddTemporaryStatus(shared_ptr<TemporaryStatus> new_status) {
 
   if (temp_status[new_status->status]->strength > new_status->strength) {
     return;
+  }
+
+  if (temp_status[new_status->status]->associated_particle) {
+    temp_status[new_status->status]->associated_particle->life = -1;
+    temp_status[new_status->status]->associated_particle = nullptr;
   }
 
   temp_status[new_status->status] = new_status;

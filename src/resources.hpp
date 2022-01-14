@@ -420,6 +420,7 @@ class Resources {
   // GameObject indices.
   vector<shared_ptr<GameObject>> new_objects_;
   vector<shared_ptr<GameObject>> moving_objects_;
+  vector<shared_ptr<GameObject>> creatures_;
   vector<shared_ptr<GameObject>> destructibles_;
   vector<shared_ptr<GameObject>> lights_;
   vector<shared_ptr<GameObject>> items_;
@@ -592,6 +593,7 @@ class Resources {
   shared_ptr<Player> GetPlayer();
   shared_ptr<Mesh> GetMesh(ObjPtr obj);
   vector<shared_ptr<GameObject>>& GetMovingObjects();
+  vector<ObjPtr>& GetCreatures() ;
   vector<shared_ptr<GameObject>>& GetLights();
   vector<shared_ptr<GameObject>>& GetItems();
   vector<shared_ptr<GameObject>>& GetExtractables();
@@ -642,6 +644,7 @@ class Resources {
   void CastLightningRay(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastHeal(ObjPtr owner);
+  void CastFlash(ObjPtr owner);
   void CastDarkvision();
   void CastTrueSeeing();
   void CastFireExplosion(ObjPtr owner, const vec3& position, 
@@ -678,7 +681,7 @@ class Resources {
   ObjPtr IntersectRayObjects(const vec3& position, 
     const vec3& direction, float max_distance, 
     IntersectMode mode, float& t, vec3& q);
-  vector<ObjPtr> GetKClosestLightPoints(const vec3& position, int k, 
+  vector<ObjPtr> GetKClosestLightPoints(const vec3& position, int k, int mode,
     float max_distance=50);
   shared_ptr<Sector> GetSectorAux(shared_ptr<OctreeNode> octree_node, 
     vec3 position);

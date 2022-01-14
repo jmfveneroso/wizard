@@ -31,7 +31,8 @@ struct Miniset {
 
 struct LevelData {
   int dungeon_area;
-  int num_monsters;
+  int min_monsters;
+  int max_monsters;
   int num_objects;
   int num_theme_rooms;
   int min_group_size = 2;
@@ -48,7 +49,8 @@ struct LevelData {
   LevelData() {}
   LevelData(
     int dungeon_area,
-    int num_monsters,
+    int min_monsters,
+    int max_monsters,
     int num_objects,
     int num_theme_rooms,
     vector<int> monsters,
@@ -57,10 +59,10 @@ struct LevelData {
     vector<int> theme_rooms,
     int dungeon_size,
     int dungeon_cells
-  ) : dungeon_area(dungeon_area), num_monsters(num_monsters), 
-      num_objects(num_objects), num_theme_rooms(num_theme_rooms), 
-      monsters(monsters), objects(objects), minisets(minisets), 
-      theme_rooms(theme_rooms), dungeon_size(dungeon_size), 
+  ) : dungeon_area(dungeon_area), min_monsters(min_monsters), 
+      max_monsters(max_monsters), num_objects(num_objects), 
+      num_theme_rooms(num_theme_rooms), monsters(monsters), objects(objects), 
+      minisets(minisets), theme_rooms(theme_rooms), dungeon_size(dungeon_size), 
       dungeon_cells(dungeon_cells) {}
 };
 
@@ -233,6 +235,7 @@ class Dungeon {
   bool IsCorridorH(int x, int y);
   bool IsCorridorV(int x, int y);
   bool GenerateChambers();
+  bool GenerateRooms();
   void ClearFlags();
   bool CheckRoom(int x, int y, int width, int height);
   void RoomGen(int x, int y, int w, int h, int dir, int counter = 0);
@@ -248,7 +251,8 @@ class Dungeon {
   void L5VertWall(int i, int j, char p, int dy);
   void AddSecretWalls();
   void AddWalls();
-  bool PlaceMiniSet(const string& miniset);
+  bool PlaceMiniSet(const string& miniset, 
+    bool maximize_distance_to_stairs = false);
 
   int PlaceMonsterGroup(int x, int y);
   bool IsValidPlaceLocation(int x, int y);
@@ -273,8 +277,10 @@ class Dungeon {
   bool CreateThemeRooms();
   void FindRooms();
   int FillRoom(ivec2 tile, shared_ptr<Room> current_room);
+  void PrintChambers();
   void PrintPreMap();
   ivec2 GetClosestClearTile(const ivec2& tile);
+  float GetDistanceToStairs(const ivec2& tile);
 
  public:
   Dungeon();
@@ -327,6 +333,7 @@ class Dungeon {
 
   int GetRoom(const ivec2& tile);
   bool IsChamber(int x, int y);
+  bool IsMovementObstructed(vec3 start, vec3 end, float& t);
   bool IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls=false);
   void SetLevelData(const LevelData& level_data);
 
@@ -338,6 +345,7 @@ class Dungeon {
   void Reveal();
   int GetMonsterGroup(const ivec2& tile);
   int GetRelevance(const ivec2& tile);
+  vector<ivec2> GetPath(const vec3& start, const vec3& end);
 };
 
 #endif // __DUNGEON_HPP__

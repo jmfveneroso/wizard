@@ -57,6 +57,11 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     missile_collision = string(missile_collision_xml.text().get()) == "true";
   }
 
+  const pugi::xml_node& extractable_xml = asset_xml.child("extractable");
+  if (extractable_xml) {
+    extractable = string(extractable_xml.text().get()) == "true";
+  }
+
   const string& shader_name = asset_xml.child("shader").text().get();
   if (shader_name.size() > 0) {
     shader = resources_->GetShader(shader_name);

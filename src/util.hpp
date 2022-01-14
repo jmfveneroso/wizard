@@ -119,7 +119,9 @@ enum Status {
   STATUS_TELEKINESIS,
   STATUS_POISON,
   STATUS_INVISIBILITY,
-  STATUS_BLINDNESS
+  STATUS_BLINDNESS,
+  STATUS_STUN,
+  STATUS_SPIDER_THREAD
 };
 
 enum AiState {
@@ -134,7 +136,8 @@ enum AiState {
   AMBUSH = 8,
   HIDE = 9,
   ACTIVE = 10,
-  DEFEND = 11
+  DEFEND = 11,
+  START = 12
 };
 
 enum PlayerAction {

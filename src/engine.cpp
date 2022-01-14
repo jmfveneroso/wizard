@@ -582,6 +582,7 @@ void Engine::Run() {
   glfwSetCursorPos(window_, 0, 0);
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
+  resources_->LoadGame("config.xml", false);
 
   int frames = 0;
   double next_print_time = glfwGetTime();

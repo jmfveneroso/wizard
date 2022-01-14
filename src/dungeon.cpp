@@ -261,8 +261,9 @@ bool Dungeon::GenerateChambers() {
   const int kMaxAdjacentTiles = (kDungeonCells <= 3) ? 5 : 3;
 
   const int dungeon_cells = level_data_[current_level_].dungeon_cells;
-  const int kMinNumSteps = (dungeon_cells * dungeon_cells) / 6;
-  const int kMaxNumSteps = (dungeon_cells * dungeon_cells) / 3;
+  const int kMinNumSteps = clamp((float) (dungeon_cells * dungeon_cells) / 6, (float) dungeon_cells, (float) kDungeonCells * kDungeonCells);
+  const int kMaxNumSteps = clamp((float) (dungeon_cells * dungeon_cells) / 3, (float) dungeon_cells, (float) kDungeonCells * kDungeonCells);
+
   int num_steps = Random(kMinNumSteps, kMaxNumSteps + 1);
 
   if (current_level_ == 6) {
@@ -365,50 +366,33 @@ bool Dungeon::GenerateChambers() {
     }
   }
 
-  for (int y = 0; y < kDungeonCells; y++) {
-    for (int x = 0; x < kDungeonCells; x++) {
-      if (chambers_[x][y] == 0) continue;
-      int room_x = 1 + x * 14;
-      int room_y = 1 + y * 14;
+  return true;
+}
 
-      if (chambers_[x][y] == 1) {
-        RoomGen(room_x, room_y, 10, 10, Random(0, 2));
+bool Dungeon::GenerateRooms() {
+  const int dungeon_cells = level_data_[current_level_].dungeon_cells;
+
+  // PrintChambers();
+
+  if (dungeon_cells > 0) {
+    for (int y = 0; y < kDungeonCells; y++) {
+      for (int x = 0; x < kDungeonCells; x++) {
+        if (chambers_[x][y] == 0) continue;
+        int room_x = 1 + x * 14;
+        int room_y = 1 + y * 14;
+
+        if (chambers_[x][y] == 1) {
+          RoomGen(room_x, room_y, 10, 10, Random(0, 2));
+        }
       }
     }
+  } else {
+    int width = Random(6, 11);
+    int height = Random(6, 11);
+    DrawRoom(30, 30, width, height);
+    RoomGen(30, 30, width, height, Random(0, 2));
+    PrintPreMap();
   }
-
-  // Print cells.
-  // for (int y = 0; y < kDungeonCells; y++) {
-  //   for (int x = 0; x < kDungeonCells; x++) {
-  //     int bla = (int) chambers_[x][y];
-  //     char code;
-  //     switch (bla) {
-  //       case 0: {
-  //         code = ' ';
-  //         break;
-  //       }
-  //       case 1: {
-  //         code = '.';
-  //         break;
-  //       }
-  //       case 2: {
-  //         code = '-';
-  //         break;
-  //       }
-  //       case 3: {
-  //         code = '|';
-  //         break;
-  //       }
-  //       case 4: {
-  //         code = '+';
-  //         break;
-  //       }
-  //     }
-  //     cout << code << " ";
-  //   }
-  //   cout << endl;
-  // }
-
   return true;
 }
 
@@ -431,6 +415,40 @@ void Dungeon::PrintPreMap() {
     cout << endl;
   }
 }
+
+void Dungeon::PrintChambers() {
+  for (int y = 0; y < kDungeonCells; y++) {
+    for (int x = 0; x < kDungeonCells; x++) {
+      int bla = (int) chambers_[x][y];
+      char code;
+      switch (bla) {
+        case 0: {
+          code = ' ';
+          break;
+        }
+        case 1: {
+          code = '.';
+          break;
+        }
+        case 2: {
+          code = '-';
+          break;
+        }
+        case 3: {
+          code = '|';
+          break;
+        }
+        case 4: {
+          code = '+';
+          break;
+        }
+      }
+      cout << code << " ";
+    }
+    cout << endl;
+  }
+}
+
 
 void Dungeon::PrintMap() {
   for (int y = 0; y < kDungeonSize; y++) {
@@ -873,14 +891,22 @@ void Dungeon::ClearFlags() {
   }
 }
 
-bool Dungeon::PlaceMiniSet(const string& miniset_name) {
+float Dungeon::GetDistanceToStairs(const ivec2& tile) {
+  return length(vec2(tile) - vec2(downstairs));
+}
+
+bool Dungeon::PlaceMiniSet(const string& miniset_name, 
+  bool maximize_distance_to_stairs) {
   const Miniset& miniset = kMinisets.find(miniset_name)->second;
   const int w = miniset.search.size();
   const int h = miniset.search[0].size();
   const vector<vector<int>>& search = miniset.search;
   const vector<vector<int>>& replace = miniset.replace;
 
-  for (int tries = 0; tries < 10; tries++) {
+  vector<ivec2> possibilities;
+
+  int num_tries = (maximize_distance_to_stairs) ? 1000 : 10;
+  for (int tries = 0; tries < num_tries; tries++) {
     for (int y = Random(0, kDungeonSize - h); y < kDungeonSize - h; y++) {
       for (int x = Random(0, kDungeonSize - w); x < kDungeonSize - w; x++) {
         bool valid = true;
@@ -902,23 +928,43 @@ bool Dungeon::PlaceMiniSet(const string& miniset_name) {
         }
 
         if (valid && IsGoodPlaceLocation(x+w/2, y+h/2, 20.0f, 0.0f)) {
-          for (int step_y = 0; step_y < h; step_y++) {
-            for (int step_x = 0; step_x < w; step_x++) {
-              if (!replace[step_x][step_y]) continue;
-              dungeon[x + step_x][y + step_y] = replace[step_x][step_y]; 
-              flags[x + step_x][y + step_y] |= DLRG_MINISET;
-            }
-          }
-          if (miniset_name == "STAIRS_UP") {
-            // TODO: change downstairs to upstairs.
-            downstairs = ivec2(x+w/2, y+h/2);
-          }
-          return true;
+          possibilities.push_back(ivec2(x, y));
         }
       }
     }
   }
-  return false;
+
+  if (possibilities.empty()) return false;
+
+  ivec2 place_location;
+  if (maximize_distance_to_stairs) {
+    float max_distance_to_stairs = 0.0f;
+    for (auto& tile : possibilities) {
+      float d = GetDistanceToStairs(tile);
+      if (d > max_distance_to_stairs) {
+        max_distance_to_stairs = d;
+        place_location = tile;
+      }
+    }
+  } else {
+    place_location = possibilities[Random(0, possibilities.size())];
+  }
+
+  int x = place_location.x;
+  int y = place_location.y;
+  for (int step_y = 0; step_y < h; step_y++) {
+    for (int step_x = 0; step_x < w; step_x++) {
+      if (!replace[step_x][step_y]) continue;
+      dungeon[x + step_x][y + step_y] = replace[step_x][step_y]; 
+      flags[x + step_x][y + step_y] |= DLRG_MINISET;
+    }
+  }
+
+  if (miniset_name == "STAIRS_UP") {
+    // TODO: change downstairs to upstairs.
+    downstairs = ivec2(x+w/2, y+h/2);
+  }
+  return true;
 }
 
 bool Dungeon::IsValidPlaceLocation(int x, int y) {
@@ -1000,7 +1046,9 @@ bool Dungeon::IsGoodPlaceLocation(int x, int y, float min_dist_to_staircase,
 }
 
 void Dungeon::PlaceMonsters() {
-  const int num_monsters = level_data_[current_level_].num_monsters;
+  const int min_monsters = level_data_[current_level_].min_monsters;
+  const int max_monsters = level_data_[current_level_].max_monsters;
+  const int num_monsters = Random(min_monsters, max_monsters + 1);
   
   int monsters_placed = 0;
   for (int tries = 0; tries < 5000; tries++) {
@@ -1466,7 +1514,8 @@ void Dungeon::FindRooms() {
 void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   current_level_ = dungeon_level;
 
-  random_num = -557920586;
+  // if (dungeon_level == 0) random_num = -557920586;
+  // if (dungeon_level == 1) random_num = -48980802;
 
   initialized_ = true;
   srand(random_num);
@@ -1479,6 +1528,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
     do {
       Clear();
       GenerateChambers();
+      GenerateRooms();
     } while (GetArea() < min_area);
 
     // PrintPreMap();
@@ -1495,16 +1545,18 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
 
     done_flag = true;
 
+    
     // Place staircase.
     if (!PlaceMiniSet("STAIRS_UP")) {
       done_flag = false; 
-    } else if (!PlaceMiniSet("STAIRS_DOWN")) {
+    } else if (!PlaceMiniSet("STAIRS_DOWN", true)) {
+      cout << "Could not place downstairs" << endl;
       done_flag = false;
     }
 
     const vector<string>& minisets = level_data_[current_level_].minisets;
     for (const string& miniset : minisets) { 
-      if (!PlaceMiniSet(miniset)) {
+      if (!PlaceMiniSet(miniset, 0)) {
         done_flag = false;
       }
     }
@@ -2039,6 +2091,34 @@ bool Dungeon::IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls) {
   return false;
 }
 
+bool Dungeon::IsMovementObstructed(vec3 start, vec3 end, float& t) {
+  const float delta = 0.1f;
+
+  start.y = 0;
+  end.y = 0;
+  vec3 d = end - start;
+
+  vec3 step = normalize(d);
+
+  t = 0;
+  vec3 current = start;
+  int num_steps = length(d) / delta;
+  for (int i = 0; i < num_steps; i++) {
+    current = start + t * step;
+
+    ivec2 tile = GetDungeonTile(current);
+    switch (ascii_dungeon[tile.x][tile.y]) {
+      case ' ':
+        break;
+      default:
+        return true;
+    }
+   
+    t += delta;
+  }
+  return false;
+}
+
 void Dungeon::CastRay(const vec2& player_pos, const vec2& ray) {
   ivec2 start_tile = ivec2(player_pos);
   ivec2 end_tile = ivec2(player_pos + ray);
@@ -2274,7 +2354,8 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
     LevelData& l = level_data_[level];
     
     l.dungeon_area = LoadIntFromXmlOr(node_xml, "area", 0);
-    l.num_monsters = LoadIntFromXmlOr(node_xml, "num-monsters", 0);
+    l.min_monsters = LoadIntFromXmlOr(node_xml, "min-monsters", 0);
+    l.max_monsters = LoadIntFromXmlOr(node_xml, "max-monsters", 0);
     l.num_objects = LoadIntFromXmlOr(node_xml, "num-objects", 0);
     l.num_theme_rooms = LoadIntFromXmlOr(node_xml, "num-theme-rooms", 0);
     l.min_group_size = LoadIntFromXmlOr(node_xml, "min-group-size", 0);
@@ -2361,4 +2442,23 @@ int Dungeon::GetMonsterGroup(const ivec2& tile) {
 int Dungeon::GetRelevance(const ivec2& tile) {
   if (!IsValidTile(tile)) return -99;
   return -relevance[tile.x][tile.y]; 
+}
+
+vector<ivec2> Dungeon::GetPath(const vec3& start, const vec3& end) {
+  ivec2 source_tile = GetClosestClearTile(GetDungeonTile(start));
+  ivec2 dest_tile = GetClosestClearTile(GetDungeonTile(end));
+
+  vector<ivec2> path;
+  ivec2 cur_tile = source_tile;
+  for (int i = 0; i < 100; i++) {
+
+    path.push_back(cur_tile);
+    int code = dungeon_path_[dest_tile.x][dest_tile.y][cur_tile.x][cur_tile.y];
+    if (code == 9) return {};
+
+    const ivec2 tile_offset = code_to_offset_[code];
+    cur_tile = cur_tile + tile_offset;
+    if (cur_tile.x == dest_tile.x && cur_tile.y == dest_tile.y) break;
+  }
+  return path;
 }

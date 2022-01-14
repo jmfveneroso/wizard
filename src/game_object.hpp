@@ -95,7 +95,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool interacted_with_falling_floor = false;
   
   mutex action_mutex_;
-  AiState ai_state = IDLE;
+  AiState ai_state = START;
   float state_changed_at = 0;
   queue<shared_ptr<Action>> actions;
   shared_ptr<Action> prev_action = nullptr;
@@ -134,6 +134,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool leader = false;
   int monster_group = -1;
   bool was_hit = false;
+  bool stunned = false;
 
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
@@ -145,7 +146,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   float item_sparkle = 0.0f;
   unordered_set<int> hit_list;
-  shared_ptr<GameObject> line_obj = nullptr;
+  shared_ptr<GameObject> stun_obj = nullptr;
 
   GameObject(Resources* resources) : resources_(resources) {}
   GameObject(Resources* resources, GameObjectType type) 
@@ -228,6 +229,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void ChangePosition(const vec3& pos);
   void ClearActions();
   void AddTemporaryStatus(shared_ptr<TemporaryStatus> temp_status);
+  void ClearTemporaryStatus(Status status);
   void DealDamage(shared_ptr<GameObject> attacker, float damage, vec3 normal = vec3(0, 1, 0), bool take_hit_animation = true);
   void MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   void RangedAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
@@ -380,6 +382,7 @@ struct TemporaryStatus {
   float issued_at;
   float duration;
   int strength;
+  shared_ptr<Particle> associated_particle = nullptr;
 
   TemporaryStatus(Status status, float duration, int strength) : 
     status(status), duration(duration), strength(strength) {
@@ -436,6 +439,18 @@ struct InvisibilityStatus : TemporaryStatus {
 struct BlindnessStatus : TemporaryStatus {
   BlindnessStatus(float duration, int strength) 
     : TemporaryStatus(STATUS_BLINDNESS, duration, strength) {
+  }
+};
+
+struct StunStatus : TemporaryStatus {
+  StunStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_STUN, duration, strength) {
+  }
+};
+
+struct SpiderThreadStatus : TemporaryStatus {
+  SpiderThreadStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_SPIDER_THREAD, duration, strength) {
   }
 };
 

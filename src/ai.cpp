@@ -221,6 +221,10 @@ bool AI::ProcessStatus(ObjPtr spider) {
       spider->frame = num_frames - 1;
       return false;
     }
+    case STATUS_STUN: {
+      resources_->ChangeObjectAnimation(spider, "Armature|idle");
+      return false;
+    }
     case STATUS_NONE:
     default:
       break;
@@ -598,12 +602,7 @@ bool AI::ProcessSpiderClimbAction(ObjPtr spider,
   } else if (!action->finished_jump) {
     resources_->ChangeObjectAnimation(spider, "Armature|climb");
   } else {
-    if (!spider->line_obj) {
-      spider->line_obj = CreateGameObjFromAsset(resources_.get(), "spider_thread", 
-        spider->position);
-    } 
-    spider->line_obj->position = spider->position + vec3(0, 4.0f, 0);
-
+    spider->AddTemporaryStatus(make_shared<SpiderThreadStatus>(5.0f, 20.0f));
     resources_->ChangeObjectAnimation(spider, "Armature|climbing");
   }
 
@@ -615,10 +614,7 @@ bool AI::ProcessSpiderClimbAction(ObjPtr spider,
   // TODO: could be climbing speed.
   if (distance_to_ceiling < 1.0f) {
     spider->levitating = false;
-    if (spider->line_obj) {
-      resources_->RemoveObject(spider->line_obj);
-    }
-    spider->line_obj = nullptr;
+    spider->ClearTemporaryStatus(STATUS_SPIDER_THREAD);
     return true;
   }
 
@@ -668,19 +664,18 @@ bool AI::ProcessSpiderEggAction(ObjPtr spider,
   resources_->ChangeObjectAnimation(spider, "Armature|climbing");
 
   if (!action->created_particle_effect) {
-    auto bs = spider->bones[23];
-    shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 300.0f, 
-      "particle-sparkle-fire", 2.0f);
-    p->associated_obj = spider;
-    p->offset = vec3(0);
-    p->associated_bone = 23;
+    // auto bs = spider->bones[23];
+    // shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 300.0f, 
+    //   "particle-sparkle-fire", 2.0f);
+    // p->associated_obj = spider;
+    // p->offset = vec3(0);
+    // p->associated_bone = 23;
+
     action->channel_end = glfwGetTime() + 5.0f;
-    cout << "Chanell end: " << action->channel_end << endl;
     action->created_particle_effect = true;
   }
 
   if (glfwGetTime() > action->channel_end) {
-    cout << "End channel" << endl;
     resources_->CastSpiderEgg(spider);
     return true;
   }

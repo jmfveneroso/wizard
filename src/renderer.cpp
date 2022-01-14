@@ -243,7 +243,7 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
     return true;
   }
 
-  if (obj->Is3dParticle() && obj->life < 0) {
+  if (obj->Is3dParticle() && obj->life <= 0) {
     return true;
   }
 
