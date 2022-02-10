@@ -3,17 +3,6 @@
 #include <queue>
 #include <vector>
 
-const int DLRG_HDOOR = 1;
-const int DLRG_VDOOR = 2;
-const int DLRG_DOOR_CLOSED = 4;
-const int DLRG_CHAMBER = 64;
-const int DLRG_PROTECTED = 128;
-const int DLRG_WEB_FLOOR = 256;
-const int DLRG_MINISET = 512;
-const int DLRG_CHASM = 1024;
-const int DLRG_SECRET = 2048;
-const int DLRG_NO_CEILING = 4096;
-
 Dungeon::Dungeon() {
   CreateThreads();
 
@@ -73,7 +62,7 @@ Dungeon::Dungeon() {
   char_map_[95] = 'r'; // Drider.
   char_map_[97] = 'E'; // Evil Eye.
   char_map_[98] = 'Q'; // Spider Queen.
-  char_map_[99] = 'X'; // Statue.
+  char_map_[99] = 'X'; // Spell pedestal.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -114,6 +103,18 @@ Dungeon::Dungeon() {
       }
     }
   }
+
+  new_dungeon_path_ = new int***[kDungeonSize];
+  for (int i = 0; i < kDungeonSize; ++i) {
+    new_dungeon_path_[i] = new int**[kDungeonSize];
+    for (int j = 0; j < kDungeonSize; ++j) {
+      new_dungeon_path_[i][j] = new int*[kDungeonSize];
+      for (int k = 0; k < kDungeonSize; ++k) {
+        new_dungeon_path_[i][j][k] = new int[kDungeonSize];
+      }
+    }
+  }
+
 
   chambers_ = new char*[kDungeonCells];
   for (int i = 0; i < kDungeonCells; i++) {
@@ -790,7 +791,8 @@ void Dungeon::L5VertWall(int i, int j, char p, int dy) {
   char wt, dt;
 
   // Add webs.
-  int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
+  // int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
+  int k = 4;
   int type = Random(0, k);
 
   switch (type) {
@@ -972,9 +974,14 @@ bool Dungeon::IsValidPlaceLocation(int x, int y) {
   return dungeon[x][y] == 13;
 }
 
-int Dungeon::PlaceMonsterGroup(int x, int y) {
-  const int min_group_size = level_data_[current_level_].min_group_size;
-  const int max_group_size = level_data_[current_level_].max_group_size;
+int Dungeon::PlaceMonsterGroup(int x, int y, int size) {
+  int min_group_size = level_data_[current_level_].min_group_size;
+  int max_group_size = level_data_[current_level_].max_group_size;
+  if (size > 0) {
+    min_group_size = size;
+    max_group_size = size;
+  }
+ 
   int group_size = Random(min_group_size, max_group_size + 1);
 
   int monsters_placed = 0;
@@ -985,20 +992,21 @@ int Dungeon::PlaceMonsterGroup(int x, int y) {
     int off_x = Random(0, 3) - 1;
     int off_y = Random(0, 3) - 1;
 
-    cur_x += off_x;
-    cur_y += off_y;
-    if (!IsValidPlaceLocation(cur_x, cur_y)) continue;
-    if (!IsGoodPlaceLocation(cur_x, cur_y, 10.0f, 0.0f)) continue;
+    int cur_x2 = cur_x + off_x;
+    int cur_y2 = cur_y + off_y;
+    if (!IsValidPlaceLocation(cur_x2, cur_y2)) continue;
+    if (!IsGoodPlaceLocation(cur_x2, cur_y2, 10.0f, 0.0f)) continue;
 
     int index = Random(0, level_data_[current_level_].monsters.size());
     int monster_type = level_data_[current_level_].monsters[index];
 
     if (is_leader) {
-      dungeon[cur_x][cur_y] = monster_type_to_leader_type_.find(monster_type)->second;
+      dungeon[cur_x2][cur_y2] = monster_type_to_leader_type_.find(monster_type)->second;
     } else {
-      dungeon[cur_x][cur_y] = monster_type;
+      dungeon[cur_x2][cur_y2] = monster_type;
     }
-    monster_group[cur_x][cur_y] = current_monster_group_;
+    monster_group[cur_x2][cur_y2] = current_monster_group_;
+    cout << "A: " << cur_x2 << ", " << cur_y2 << endl;
 
     if (++monsters_placed >= group_size) break;
   }
@@ -1049,12 +1057,14 @@ void Dungeon::PlaceMonsters() {
   const int min_monsters = level_data_[current_level_].min_monsters;
   const int max_monsters = level_data_[current_level_].max_monsters;
   const int num_monsters = Random(min_monsters, max_monsters + 1);
+  cout << "num_monsters: " << num_monsters << endl;
   
   int monsters_placed = 0;
   for (int tries = 0; tries < 5000; tries++) {
     int x = Random(0, kDungeonSize);
     int y = Random(0, kDungeonSize);
-    if (!IsGoodPlaceLocation(x, y, 10.0f, 10.0f)) continue;
+    if (!IsGoodPlaceLocation(x, y, 10.0f, 0.0f)) continue;
+    cout << tries << endl;
 
     monsters_placed += PlaceMonsterGroup(x, y);
     if (monsters_placed >= num_monsters) break;
@@ -1063,6 +1073,7 @@ void Dungeon::PlaceMonsters() {
   if (current_level_ == 6) {
     dungeon[34][34] = 98;
   }
+  cout << "monsters_placed: " << monsters_placed << endl;
 }
 
 void Dungeon::PlaceObjects() {
@@ -1108,7 +1119,6 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'w':
         case 'K':
         case 'L':
-        case 'M':
         case 'I':
         case 'c':
         case 'C':
@@ -1124,6 +1134,10 @@ void Dungeon::GenerateAsciiDungeon() {
           ascii_dungeon[x][y] = ' ';
           monsters_and_objs[x][y] = ascii_code;
           continue;
+        case 'M':
+        case 'X':
+          monsters_and_objs[x][y] = ascii_code;
+          break;
         default:
           break;
       }
@@ -1144,18 +1158,18 @@ bool Dungeon::CreateThemeRoomLibrary(int room_num) {
   if (room_stats[room_num]->tiles.size() > max_tiles) return false;
 
   // Place bookshelves.
-  for (int i = 0; i < 100; i++) {
-    int tile_index = Random(0, room_stats[room_num]->tiles.size());
-    ivec2 tile = room_stats[room_num]->tiles[tile_index];
-    if (IsTileNextToDoor(tile) || !IsTileNextToWall(tile)) continue;
-    if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+  // for (int i = 0; i < 100; i++) {
+  //   int tile_index = Random(0, room_stats[room_num]->tiles.size());
+  //   ivec2 tile = room_stats[room_num]->tiles[tile_index];
+  //   if (IsTileNextToDoor(tile) || !IsTileNextToWall(tile)) continue;
+  //   if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
 
-    dungeon[tile.x][tile.y] = 66;
-    break;
-  }
+  //   dungeon[tile.x][tile.y] = 66;
+  //   break;
+  // }
 
   // Place pedestals.
-  int num_to_place = 2;
+  int num_to_place = 1;
   for (int i = 0; i < 100; i++) {
     int tile_index = Random(0, room_stats[room_num]->tiles.size());
     ivec2 tile = room_stats[room_num]->tiles[tile_index];
@@ -1163,16 +1177,19 @@ bool Dungeon::CreateThemeRoomLibrary(int room_num) {
     if (dungeon[tile.x][tile.y] == 66) continue;
     if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
 
-    dungeon[tile.x][tile.y] = 67;
+    dungeon[tile.x][tile.y] = 99;
     if (--num_to_place == 0) break;
   }
+
+  if (num_to_place > 0) return false;
 
   // Place monsters.
   for (int i = 0; i < 100; i++) {
     int tile_index = Random(0, room_stats[room_num]->tiles.size());
     ivec2 tile = room_stats[room_num]->tiles[tile_index];
     if (dungeon[tile.x][tile.y] != 13) continue;
-    PlaceMonsterGroup(tile.x, tile.y);
+    int num_monsters = PlaceMonsterGroup(tile.x, tile.y, 2);
+    if (num_monsters != 2) continue;
     break;
   }
   return true;
@@ -1453,8 +1470,7 @@ bool Dungeon::CreateThemeRooms() {
     }
 
     selected_rooms.insert(room_num);
-    if (rooms_placed >= num_theme_rooms) break;
-    rooms_placed++;
+    if (++rooms_placed >= num_theme_rooms) break;
   }
 
   cout << "rooms_placed: " << rooms_placed << endl;
@@ -1643,11 +1659,14 @@ int OffsetToCode(const ivec2& offset) {
 }
 
 struct CompareTiles { 
-  bool operator()(const tuple<ivec2, float, ivec2>& t1, 
-    const tuple<ivec2, float, ivec2>& t2) { 
+  bool operator()(const tuple<ivec2, float, float, ivec2>& t1, 
+    const tuple<ivec2, float, float, ivec2>& t2) { 
     return get<1>(t1) < get<1>(t2);
   } 
 }; 
+
+using TileMinHeap = priority_queue<tuple<ivec2, float, float, ivec2>, 
+  vector<tuple<ivec2, float, float, ivec2>>, CompareTiles>;
 
 }; // End of namespace;
 
@@ -1657,7 +1676,8 @@ void Dungeon::ClearDungeonPaths() {
       for (int k = 0; k < kDungeonSize; k++) {
         for (int l = 0; l < kDungeonSize; l++) {
           dungeon_path_[i][j][k][l] = 9;
-          min_distance_[i][j][k][l] = 99;
+          min_distance_[i][j][k][l] = 9999999;
+          new_dungeon_path_[i][j][k][l] = 9;
         }
       }
     }
@@ -1689,6 +1709,8 @@ bool Dungeon::IsRoomTile(const ivec2& tile) {
 bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
   if (tile.x < 0 || tile.x >= kDungeonSize || tile.y < 0 || tile.y >= kDungeonSize) return false;
 
+  if (GetFlag(tile, DLRG_SPELL_WALL)) return false;
+
   const char dungeon_tile = ascii_dungeon[tile.x][tile.y];
   switch (dungeon_tile) {
     case ' ':
@@ -1703,9 +1725,6 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case 'K':
     case 'o':
     case 'O':
-    case 'L':
-    case '(':
-    case ')':
       return true;
     case 'd':
     case 'D': {
@@ -1723,6 +1742,9 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
 bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
   if (tile.x < 0 || tile.x >= kDungeonSize || tile.y < 0 || tile.y >= kDungeonSize) return false;
   if (next_tile.x < 0 || next_tile.x >= kDungeonSize || next_tile.y < 0 || next_tile.y >= kDungeonSize) return false;
+
+  if (GetFlag(tile, DLRG_SPELL_WALL)) return false;
+  if (GetFlag(next_tile, DLRG_SPELL_WALL)) return false;
 
   char** dungeon_map = ascii_dungeon;
   const char dungeon_tile = dungeon_map[tile.x][tile.y];
@@ -1859,32 +1881,34 @@ bool Dungeon::IsTileNextToDoor(const ivec2& tile) {
   return false;
 }
 
-using TileHeap = priority_queue<tuple<ivec2, float, ivec2>, 
-  vector<tuple<ivec2, float, ivec2>>, CompareTiles>;
-
 void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
   if (!IsTileClear(dest)) return;
 
-  bool fast_calculate = false;
-  if (last.x != 0 && last.y != 0) {
-    fast_calculate = true;
-    for (int k = 0; k < kDungeonSize; k++) {
-      for (int l = 0; l < kDungeonSize; l++) {
-        dungeon_path_[dest.x][dest.y][k][l] = dungeon_path_[last.x][last.y][k][l];
-      }
+  // bool fast_calculate = false;
+  // if (last.x != 0 && last.y != 0) {
+  //   fast_calculate = true;
+  //   for (int k = 0; k < kDungeonSize; k++) {
+  //     for (int l = 0; l < kDungeonSize; l++) {
+  //       new_dungeon_path_[dest.x][dest.y][k][l] = new_dungeon_path_[last.x][last.y][k][l];
+  //     }
+  //   }
+  // }
+
+  for (int k = 0; k < kDungeonSize; ++k) {
+    for (int l = 0; l < kDungeonSize; ++l) {
+      min_distance_[dest.x][dest.y][k][l] = 9999999;
+      new_dungeon_path_[dest.x][dest.y][k][l] = 9;
     }
   }
 
-  char** dungeon_map = ascii_dungeon;
-
-  TileHeap tile_heap;
-  tile_heap.push({ dest, 0.0f, ivec2(0, 0) });
+  TileMinHeap tile_heap;
+  tile_heap.push({ dest, 0.0f, 0.0f, ivec2(0, 0) });
   while (!tile_heap.empty()) {
-    const auto [tile, distance, off] = tile_heap.top(); 
+    const auto [tile, distance, NOT_USED, off] = tile_heap.top(); 
     min_distance_[dest.x][dest.y][tile.x][tile.y] = distance;
 
     int code = OffsetToCode(off);
-    dungeon_path_[dest.x][dest.y][tile.x][tile.y] = code;
+    new_dungeon_path_[dest.x][dest.y][tile.x][tile.y] = code;
     tile_heap.pop();
 
     // if (fast_calculate && dungeon_path_[last.x][last.y][tile.x][tile.y] == code) continue;
@@ -1908,10 +1932,117 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
         const float min_distance = min_distance_[dest.x][dest.y][next_tile.x][next_tile.y];
         if (new_distance >= min_distance) continue;
 
-        tile_heap.push({ next_tile, new_distance, ivec2(off_x, off_y) });
+        tile_heap.push({ next_tile, new_distance, 0.0f, ivec2(off_x, off_y) });
       }
     }
   }
+
+  for (int k = 0; k < kDungeonSize; ++k) {
+    for (int l = 0; l < kDungeonSize; ++l) {
+      dungeon_path_[dest.x][dest.y][k][l] = new_dungeon_path_[dest.x][dest.y][k][l];
+    }
+  }
+}
+
+int DistanceHeuristic(const ivec2& a, const ivec2& b) {
+  // Optimistic score, assuming all cells are friendly.
+  int dy = std::abs(a.x - b.x);
+  int dx = std::abs(a.y - b.y);
+  return std::min(dx, dy) * 1.4 + std::abs(dx - dy) * 1.0;
+}
+
+vec3 Dungeon::GetPathToTile(const vec3& start, const vec3& end) {
+  ivec2 source_tile = GetClosestClearTile(GetDungeonTile(start));
+  ivec2 dest_tile = GetClosestClearTile(GetDungeonTile(end));
+
+
+  cout << "source_tile: " << source_tile << endl;
+  cout << "dest_tile: " << dest_tile << endl;
+
+  TileMinHeap tile_heap; // Open list.
+  tile_heap.push({ source_tile, 0.0f, 0.0f, ivec2(0, 0) });
+
+  int count = 0;
+
+  unordered_set<short> closed_set;
+  while (!tile_heap.empty()) {
+    if (++count > 500) { 
+      cout << ">>>>>>>> max reached" << endl;
+      break;
+    }
+
+    const auto [tile, h_distance, distance, off] = tile_heap.top(); 
+    min_distance_[dest_tile.x][dest_tile.y][tile.x][tile.y] = distance;
+    cout << "tile: " << tile << endl;
+    cout << "distance: " << distance << endl;
+    cout << "h_distance: " << h_distance << endl;
+
+    int code = OffsetToCode(off);
+    dungeon_path_[dest_tile.x][dest_tile.y][tile.x][tile.y] = code;
+    tile_heap.pop();
+
+    short key = tile.x * kDungeonSize + tile.y;
+    if (closed_set.count(key) > 0) {
+      cout << "closed_set: " << tile << endl;
+      continue;
+    }
+    closed_set.insert(key);
+
+    // Reached the destination.
+    if (tile.x == dest_tile.x && tile.y == dest_tile.y) {
+      int code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
+      const ivec2 tile_offset = code_to_offset_[code];
+      const ivec2 next_tile = source_tile + tile_offset;
+      cout << ">>>>>>>> FOUND it: " << next_tile << endl;
+
+      if (!IsTileClear(next_tile) || code == 9 || code == 4) {
+        return vec3(0);
+      }
+      return GetTilePosition(next_tile);
+    }
+
+    int move_type = -1;
+    for (int off_y = -1; off_y < 2; off_y++) {
+      for (int off_x = -1; off_x < 2; off_x++) {
+        move_type++;
+        if (off_x == 0 && off_y == 0) continue;
+
+        ivec2 next_tile = tile + ivec2(off_x, off_y);
+        if (!IsTileClear(tile, next_tile)) continue;
+    
+        cout << "testing next_tile: " << next_tile << endl;
+
+        const float cost = move_to_cost_[move_type];
+        const float new_distance  = distance + cost;
+
+        float min_distance = min_distance_[dest_tile.x][dest_tile.y][next_tile.x][next_tile.y];
+        if (min_distance > 0 && invert_distance_) {
+          min_distance = -99999999.0f;
+        } else if (min_distance < 0 && !invert_distance_) {
+          min_distance = 99999999.0f;
+        }
+
+        cout << "new distance: " << new_distance << endl;
+        cout << "min distance: " << min_distance << endl;
+        if (!invert_distance_ && new_distance >= min_distance) {
+          cout << "drop 1" << endl;
+          continue;
+        } else if (invert_distance_ && new_distance <= min_distance) {
+          cout << "drop 2" << endl;
+          continue;
+        }
+
+        // Get inverse movement.
+        dungeon_path_[dest_tile.x][dest_tile.y][next_tile.x][next_tile.y] = OffsetToCode(ivec2(-off_x, -off_y));
+        min_distance_[dest_tile.x][dest_tile.y][next_tile.x][next_tile.y] = new_distance;
+
+        int h = DistanceHeuristic(next_tile, dest_tile);
+        tile_heap.push({ next_tile, new_distance + h, new_distance, ivec2(off_x, off_y) });
+        cout << ">>>>>>>> next_tile: " << next_tile << endl;
+      }
+    }
+  }
+   return vec3(0);
 }
 
 void Dungeon::CalculateAllPaths() {
@@ -1934,6 +2065,16 @@ void Dungeon::CalculateAllPaths() {
 
   double elapsed_time = glfwGetTime() - start_time;
   cout << "CalculateAllPaths took " << elapsed_time << " seconds" << endl;
+}
+
+void Dungeon::CalculateAllPathsAsync() {
+  for (int i = 0; i < kDungeonSize; i++) {
+    for (int j = 0; j < kDungeonSize; j++) {
+      calculate_path_mutex_.lock();
+      calculate_path_tasks_.push(ivec2(i, j));
+      calculate_path_mutex_.unlock();
+    }
+  }
 }
 
 void Dungeon::CalculateRelevance() {
@@ -1987,6 +2128,14 @@ ivec2 Dungeon::GetClosestClearTile(const ivec2& tile) {
     }
   }
   throw runtime_error("Could not find closest valid tile.");
+}
+
+bool Dungeon::IsReachable(const vec3& source, const vec3& dest) {
+  ivec2 source_tile = GetClosestClearTile(GetDungeonTile(source));
+  ivec2 dest_tile = GetClosestClearTile(GetDungeonTile(dest));
+
+  int code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
+  return code != 9;
 }
 
 vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest, 
@@ -2091,6 +2240,52 @@ bool Dungeon::IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls) {
   return false;
 }
 
+ivec2 Dungeon::GetPortalTouchedByRay(vec3 start, vec3 end) {
+  const float delta = 0.1f;
+
+  start.y = 0;
+  end.y = 0;
+  vec3 d = end - start;
+
+  vec3 step = normalize(d);
+
+  ivec2 portal = ivec2(-1, -1);
+
+  float t = 0;
+  vec3 current = start;
+  int num_steps = length(d) / delta;
+  for (int i = 0; i < num_steps; i++) {
+    current = start + t * step;
+
+    ivec2 tile = GetDungeonTile(current);
+    for (int x = 0; x < 1; x++) {
+      for (int y = 0; y < 1; y++) {
+        ivec2 tile2 = tile + ivec2(x, y);
+        if (!IsValidTile(tile2)) continue;
+          
+        switch (ascii_dungeon[tile2.x][tile2.y]) {
+          case 'o':
+          case 'O':
+          case 'd':
+          case 'D': {
+            portal = tile2;
+            break;
+          }
+          case '|':
+          case '-':
+          case '+':
+            return portal;
+          default:
+            break;
+        }
+      }
+    }
+   
+    t += delta;
+  }
+  return portal;
+}
+
 bool Dungeon::IsMovementObstructed(vec3 start, vec3 end, float& t) {
   const float delta = 0.1f;
 
@@ -2109,11 +2304,16 @@ bool Dungeon::IsMovementObstructed(vec3 start, vec3 end, float& t) {
     ivec2 tile = GetDungeonTile(current);
     switch (ascii_dungeon[tile.x][tile.y]) {
       case ' ':
+      case 'o':
+      case 'O':
+      case 'd':
+      case 'D':
         break;
       default:
         return true;
     }
-   
+
+    if (GetFlag(tile, DLRG_SPELL_WALL)) return true;
     t += delta;
   }
   return false;
@@ -2461,4 +2661,23 @@ vector<ivec2> Dungeon::GetPath(const vec3& start, const vec3& end) {
     if (cur_tile.x == dest_tile.x && cur_tile.y == dest_tile.y) break;
   }
   return path;
+}
+
+void Dungeon::SetFlag(ivec2 tile, int flag) {
+  if (!IsValidTile(tile)) return;
+  flags[tile.x][tile.y] |= (unsigned int) flag;
+}
+
+void Dungeon::UnsetFlag(ivec2 tile, int flag) {
+  if (!IsValidTile(tile)) return;
+  flags[tile.x][tile.y] &= (unsigned int) ~(flag);
+}
+
+bool Dungeon::GetFlag(ivec2 tile, int flag) {
+  if (!IsValidTile(tile)) return false;
+  return (flags[tile.x][tile.y] & flag);
+}
+
+void Dungeon::ClearPaths() {
+  invert_distance_ = !invert_distance_;
 }

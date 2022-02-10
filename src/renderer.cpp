@@ -544,6 +544,11 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
   glUniform3fv(GetUniformId(program_id, "camera_pos"), 1,
     (float*) &camera_.position);
 
+  glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
+    (float*) &resources_->GetPlayer()->position);
+
+  glUniform1f(GetUniformId(program_id, "light_radius"), resources_->GetConfigs()->light_radius);
+
   if (!obj->active_animation.empty()) {
     glUniform1f(GetUniformId(program_id, "enable_animation"), 1);
     vector<mat4> joint_transforms;
@@ -1276,19 +1281,26 @@ void Renderer::DrawStatusBars() {
   draw_2d_->DrawImage("status_bars", 0, 0, 1440, 1440, 1.0);
 
   shared_ptr<Player> player = resources_->GetPlayer();
-  float hp_bar_width = player->life / player->max_life;
+
+  float armor = player->armor;
+  float hp_bar_width = player->life / (player->max_life + armor);
   hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
 
-  // Draw HP bar.
-  float w = 0.0108333 + 0.237777 * hp_bar_width;
-  float h = 0.584827;
-  draw_2d_->DrawImageWithMask("red", "spellbar_hp_mask", 0, 598, w * 1440, h * 1440, 
-    1.0, vec2(0, 0), vec2(w, h));
+  // Draw HP / armor bar.
+  float armor_width = (player->life + armor) / (player->max_life + armor);
+  draw_2d_->DrawImageWithMask("brass", "spellbar_hp_mask", 29, 824, armor_width * 330, 330, 1.0, vec2(0, 0), vec2(armor_width, 1));
+  draw_2d_->DrawImageWithMask("red", "spellbar_hp_mask", 29, 824, hp_bar_width * 330, 330, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
   
   string hp_str = boost::lexical_cast<string>(player->life) + " / " +
     boost::lexical_cast<string>(player->max_life);
+  if (armor > 0) { 
+    hp_str += " (" + boost::lexical_cast<string>(armor) + ")";
+  }
+
   draw_2d_->DrawText(hp_str, 300, 900 - 818, 
     vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+
+  float w, h;
 
   // Draw stamina.
   float stamina_bar_width = player->stamina / player->max_stamina;

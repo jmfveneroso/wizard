@@ -26,6 +26,7 @@ class PlayerInput {
   shared_ptr<Particle> channeling_particle = nullptr;
   GLFWwindow* window_ = nullptr;
   bool lft_click_;
+  vec3 spell_wall_pos_;
 
   void Extract(const Camera& c);
   bool InteractWithItem(GLFWwindow* window, const Camera& c, 

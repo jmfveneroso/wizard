@@ -38,7 +38,7 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     obj->speed = vec3(0);
   }
 
-  if (obj->life <= 0 || obj->freeze) {
+  if (obj->freeze) {
     return;
   }
 

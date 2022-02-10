@@ -236,54 +236,49 @@ void Inventory::DrawCogs() {
 
 void Inventory::DrawEquipment(const ivec2& pos) {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  int (&equipment)[4] = configs->equipment;
+  int (&passive_items)[3] = configs->passive_items;
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
-  vector<tuple<ivec2, ivec2, ItemType, string>> slots { 
-    { pos + ivec2(83, 405), ivec2(61, 61), ITEM_RING, "inventory_ring1_hint" }, 
-    { pos + ivec2(182, 405), ivec2(61, 61), ITEM_RING, "inventory_ring2_hint" }, 
-    { pos + ivec2(381, 381), ivec2(112, 112), ITEM_ORB, "inventory_orb_hint" }, 
-    { pos + ivec2(379, 153), ivec2(136, 171), ITEM_ARMOR, "inventory_armor_hint" }, 
+  vector<tuple<ivec2, ivec2, ItemType>> slots { 
+    { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
+    { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
+    { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
   };
 
-  for (int i = 0; i < 4; i++) {
-    const auto& [slot, dimensions, type, hint] = slots[i];
+  for (int i = 0; i < 3; i++) {
+    const auto& [slot, dimensions, type] = slots[i];
 
     int left = slot.x;
     int right = left + dimensions.x;
     int top = slot.y;
     int bottom = top + dimensions.y;
-
-    int equipment_id = equipment[i];
+    
+    int equipment_id = passive_items[i];
 
     if (IsMouseInRectangle(left, right, bottom, top)) {
       if (!lft_click_ && selected_item_ != 0) { // Drop.
         const ItemData& item_data = resources_->GetItemData()[selected_item_];
         if (item_data.type != type) continue;
-        equipment[i] = selected_item_;
+        passive_items[i] = selected_item_;
         selected_item_ = 0;
         selected_qnty_ = 0;
       } else if (lft_click_ && equipment_id != 0 && selected_item_ == 0) { // Drag.
         dragged_item.origin = ITEM_ORIGIN_EQUIPMENT;
         selected_item_ = equipment_id;
         selected_qnty_ = 1;
-        equipment[i] = 0;
+        passive_items[i] = 0;
         old_pos_x_ = i;
       }
     }
 
     if (equipment_id == 0) {
-      draw_2d_->DrawImage(hint, pos.x, pos.y, 900, 900, 1.0);
       continue;
     }
 
     const ItemData& item = resources_->GetItemData()[equipment_id];
 
     const string& icon = item.icon;
-    const ivec2& size = item.size;
-
-    float max_side = std::max(size.x, size.y);
-    draw_2d_->DrawImage(item.icon, left, top, max_side * 51, max_side * 51, 1.0);
+    draw_2d_->DrawImage(item.icon, left, top, 112, 112, 1.0);
   }
 }
 
@@ -844,17 +839,7 @@ void Inventory::UseItem(int x, int y) {
   int (&item_matrix)[10][5] = configs->item_matrix;
 
   int item_id = item_matrix[x][y];
-  auto spell = resources_->WhichArcaneSpell(item_id);
-  if (!spell) return;
-
-  if (!spell->learned) {
-    resources_->AddMessage(string("You learned ") + spell->name);
-    spell->learned = true;
-  } else {
-    spell->level++;
-    resources_->AddMessage(string("You learned ") + spell->name + 
-      string("at level ") + boost::lexical_cast<string>(spell->level));
-  }
+  resources_->LearnSpell(item_id);
 
   item_matrix[x][y] = 0;
   ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;

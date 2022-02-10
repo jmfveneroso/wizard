@@ -199,7 +199,7 @@ void Engine::RunCommand(string command) {
     resources_->CalculateCollisionData();
     resources_->GenerateOptimizedOctree();
     resources_->GetConfigs()->render_scene = "town";
-    resources_->GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
+    resources_->GetPlayer()->ChangePosition(vec3(11628, 141, 7246));
     resources_->SaveGame();
   } else if (result[0] == "delete-all") {
     cout << "im here" << endl;
@@ -300,7 +300,21 @@ bool Engine::ProcessGameInput() {
 
           for (ObjPtr obj : resources_->GetMovingObjects()) {
             if (!obj->IsCreature()) continue;
-            ss << "Spider: " << obj->position << endl;
+            ss << "Spider: " << obj->position << " - " << AiStateToStr(obj->ai_state) << endl;
+
+            shared_ptr<Action> next_action = nullptr;
+            if (!obj->actions.empty()) {
+              next_action = obj->actions.front();
+            }
+             
+            if (next_action) {        
+              ss << "next_action: " << ActionTypeToStr(next_action->type) << endl;
+              if (next_action->type == ACTION_LONG_MOVE) {
+                shared_ptr<LongMoveAction> move_action =  
+                  static_pointer_cast<LongMoveAction>(next_action);
+                ss << "long move to: " << move_action->destination << endl;
+              }
+            }
           }
           
           ss << "Time of day: " << configs->time_of_day << endl;

@@ -81,6 +81,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   float recover_stamina = 0.0f;
   float mana = 50.0f;
   float max_mana = 50.0f;
+  float armor = 0.0f;
 
   float current_speed = 0.0f;
   vec3 speed = vec3(0);
@@ -180,6 +181,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   int GetItemId();
   bool IsFixed();
   bool IsClimbable();
+  bool CanCollideWithPlayer();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -244,6 +246,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
 
   bool HasEffectOnCollision();
   string GetEffectOnCollision();
+  bool CanUseAbility(const string& ability);
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -476,9 +479,12 @@ struct MoveAction : Action {
 
 struct LongMoveAction : Action {
   vec3 destination;
+  float last_update;
+  vec3 last_position;
 
   LongMoveAction(vec3 destination) 
-    : Action(ACTION_LONG_MOVE), destination(destination) {}
+    : Action(ACTION_LONG_MOVE), destination(destination), last_update(0), 
+      last_position(vec3(0)) {}
 };
 
 struct RandomMoveAction : Action {

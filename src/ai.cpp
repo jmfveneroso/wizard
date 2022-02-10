@@ -542,21 +542,20 @@ bool AI::ProcessMoveToPlayerAction(
 
   vec3 next_pos;
   float t;
-  if (dungeon.IsRayObstructed(spider->position, player_pos, t, 
-    /*only_walls=*/true)) {
+  if (dungeon.IsMovementObstructed(spider->position, player_pos, t)) {
     next_pos = dungeon.GetNextMove(spider->position, player_pos, 
       min_distance);
 
     // Use direct pathfinding when the monster is very close.
-    if (length2(next_pos) < 0.0001f || min_distance < 2.0f) {
-      next_pos = player_pos;
+    if (length2(next_pos) < 0.0001f) {
+      next_pos = spider->position + normalize(player_pos - spider->position) * 1.0f;
     }
   } else {
     vec3 v = player_pos - spider->position;
-    if (length(v) < 10.0f) {
+    if (length(v) < 3.0f) {
       next_pos = player_pos;
     } else {
-      next_pos = spider->position + normalize(v) * 10.0f;
+      next_pos = spider->position + normalize(v) * 3.0f;
     }
   }
 
@@ -571,23 +570,34 @@ bool AI::ProcessLongMoveAction(
 
   float min_distance = 0.0f;
 
+  float current_time = glfwGetTime();
+  if (current_time > action->last_update + 1) { 
+    // The spider has practically not moved in 1 second. No point in proceeding 
+    // with this action.
+    if (length(spider->position - action->last_position) < 0.2f) {
+      return true;
+    }
+
+    action->last_update = current_time;
+    action->last_position = spider->position;
+  }
+
   vec3 next_pos;
   float t;
-  if (dungeon.IsRayObstructed(spider->position, dest, t, 
-    /*only_walls=*/false)) {
+  if (dungeon.IsMovementObstructed(spider->position, dest, t)) {
     next_pos = dungeon.GetNextMove(spider->position, dest, 
       min_distance);
+    // next_pos = dungeon.GetPathToTile(spider->position, dest);
 
-    // Use direct pathfinding when the monster is very close.
-    if (length2(next_pos) < 0.0001f || min_distance < 2.0f) {
-      next_pos = dest;
+    if (length2(next_pos) < 0.0001f) {
+      next_pos = spider->position + normalize(dest - spider->position) * 1.0f;
     }
   } else {
     vec3 v = dest - spider->position;
-    if (length(v) < 10.0f) {
+    if (length(v) < 3.0f) {
       next_pos = dest;
     } else {
-      next_pos = spider->position + normalize(v) * 10.0f;
+      next_pos = spider->position + normalize(v) * 3.0f;
     }
   }
 
@@ -641,8 +651,7 @@ bool AI::ProcessSpiderJumpAction(ObjPtr spider,
   if (!action->finished_jump) {
     Dungeon& dungeon = resources_->GetDungeon();
     float t;
-    if (dungeon.IsRayObstructed(spider->position, action->destination, t, 
-      /*only_walls=*/false)) {
+    if (dungeon.IsMovementObstructed(spider->position, action->destination, t)) {
       return true;
     }
 
@@ -689,6 +698,10 @@ bool AI::ProcessSpiderWebAction(ObjPtr creature,
     return true;
   }
 
+  if (!creature->CanUseAbility("spider-web")) {
+    return true;
+  }
+
   resources_->ChangeObjectAnimation(creature, "Armature|attack");
 
   if (int(creature->frame) >= 40) return true;
@@ -699,6 +712,7 @@ bool AI::ProcessSpiderWebAction(ObjPtr creature,
     vec3 dir = CalculateMissileDirectionToHitTarget(creature->position,
       action->target, 2.0);
     resources_->CastSpiderWebShot(creature, dir);
+    creature->cooldowns["spider-web"] = glfwGetTime() + 5;
   }
   return false;
 }
@@ -1208,7 +1222,7 @@ void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
 void AI::Run() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   if (configs->disable_ai) return;
- 
+
   RunAiInOctreeNode(resources_->GetOctreeRoot());
   ProcessPlayerAction(resources_->GetPlayer());
 

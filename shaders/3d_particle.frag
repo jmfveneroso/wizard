@@ -25,5 +25,11 @@ uniform float light_radius;
 void main(){
   vec4 out_color = vec4(0.0);
   out_color = texture(texture_sampler, in_data.UV).rgba;
+
+  float d = distance(player_pos, in_data.position);
+  float depth = clamp(d / light_radius, 0, 1);
+  vec4 fog_color = vec4(0, 0, 0, 1);
+  out_color = mix(out_color, fog_color, depth);
+
   color = out_color;
 }

@@ -114,7 +114,9 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
     (obj1->IsPickableItem() && obj2->IsCreature()) ||
     (obj1->IsPickableItem() && obj2->IsPickableItem()) ||
     (obj1->IsPlayer() && obj2->IsPickableItem()) ||
-    (obj1->IsPickableItem() && obj2->IsPlayer())) {
+    (obj1->IsPickableItem() && obj2->IsPlayer()) ||
+    (obj1->IsPlayer() && !obj2->CanCollideWithPlayer()) ||
+    (!obj1->CanCollideWithPlayer() && obj2->IsPlayer())) {
     return false;
   }
 
@@ -1749,14 +1751,6 @@ void CollisionResolver::TestCollision(ColPtr c) {
 int CollisionResolver::CalculateMissileDamage(shared_ptr<Missile> missile) {
   shared_ptr<GameAsset> asset = missile->GetAsset();
   int dmg = ProcessDiceFormula(asset->damage);
-
-  cout << "Calculating damage: " << dmg << " with " << asset->name << endl;
-  if (asset->name == "magic_missile") {
-    auto spell = resources_->GetArcaneSpellData()[0];
-    dmg = dmg + spell->level * 100;
-    cout << "Calculating damage (2): " << dmg << endl;
-  }
-
   return dmg;
 }
 
@@ -1856,7 +1850,17 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
           "magical-explosion", 2.5f);
         obj->CalculateCollisionData();
         resources_->GenerateOptimizedOctree();
+
+        Dungeon& dungeon = resources_->GetDungeon();
+        dungeon.SetFlag(dungeon.GetDungeonTile(c->point_of_contact), DLRG_WEB_FLOOR);
       }
+      obj1->life = -1;
+      return;
+    }
+    case MISSILE_FLASH: {
+      resources_->CastFlash(c->point_of_contact);
+      resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+        "magical-explosion", 2.5f);
       obj1->life = -1;
       return;
     }

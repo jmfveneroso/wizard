@@ -125,6 +125,10 @@ struct Configs {
     { 0, 0, 0, 0, 0 },
   };
 
+  int passive_items[3] = {
+    0, 0, 0 
+  };
+
   int store_matrix[10][5] = {
     { 18, 19, 20, 21, 0 },
     {   3, 0,  0,  0, 0 },
@@ -179,8 +183,8 @@ struct Configs {
 
   // Player stats
   // ----------------------
-  int max_life = 50;
-  int max_mana = 60;
+  int max_life = 3;
+  int max_mana = 10;
   int max_stamina = 100;
   int experience = 0;
   int level = 0;
@@ -219,6 +223,7 @@ struct Configs {
   float level_up_frame = -1;
  
   int gold = 0;
+  float rest_bar = 0.0f;
 };
 
 struct ItemBonus {
@@ -644,7 +649,7 @@ class Resources {
   void CastLightningRay(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastHeal(ObjPtr owner);
-  void CastFlash(ObjPtr owner);
+  void CastFlash(const vec3& position);
   void CastDarkvision();
   void CastTrueSeeing();
   void CastFireExplosion(ObjPtr owner, const vec3& position, 
@@ -749,7 +754,7 @@ class Resources {
     bool periodic = false);
   void GenerateOptimizedOctree();
   void StartQuest(const string& quest_name);
-  void LearnSpell(const unsigned int spell_id);
+  void LearnSpell(int item_id);
 
   void RegisterOnUnitDieEvent(const string& fn);
   void ProcessOnCollisionEvent(ObjPtr obj1, ObjPtr obj2);
@@ -799,6 +804,12 @@ class Resources {
   vector<ObjPtr> GetMonstersInGroup(int monster_group);
   void CastSpiderEgg(ObjPtr spider);
   void CastSpiderWebShot(ObjPtr spider, vec3 dir);
+  vec3 GetSpellWallRayCollision(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
+
+  bool CastSpellWall(ObjPtr owner, const vec3& position);
+  bool CanRest();
+  void CastFlashMissile(const Camera& camera);
 };
 
 #endif // __RESOURCES_HPP__

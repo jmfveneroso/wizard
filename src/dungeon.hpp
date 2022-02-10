@@ -96,6 +96,7 @@ class Dungeon {
   int hr1_, hr2_, hr3_;
 
   int**** dungeon_path_;
+  int**** new_dungeon_path_;
   float**** min_distance_;
 
   char** chambers_;
@@ -254,7 +255,7 @@ class Dungeon {
   bool PlaceMiniSet(const string& miniset, 
     bool maximize_distance_to_stairs = false);
 
-  int PlaceMonsterGroup(int x, int y);
+  int PlaceMonsterGroup(int x, int y, int size = 0);
   bool IsValidPlaceLocation(int x, int y);
   void PlaceMonsters();
   void PlaceObjects();
@@ -281,6 +282,8 @@ class Dungeon {
   void PrintPreMap();
   ivec2 GetClosestClearTile(const ivec2& tile);
   float GetDistanceToStairs(const ivec2& tile);
+
+  bool invert_distance_ = false;
 
  public:
   Dungeon();
@@ -346,6 +349,14 @@ class Dungeon {
   int GetMonsterGroup(const ivec2& tile);
   int GetRelevance(const ivec2& tile);
   vector<ivec2> GetPath(const vec3& start, const vec3& end);
+  ivec2 GetPortalTouchedByRay(vec3 start, vec3 end);
+  void SetFlag(ivec2 tile, int flag);
+  void UnsetFlag(ivec2 tile, int flag);
+  bool GetFlag(ivec2 tile, int flag);
+  vec3 GetPathToTile(const vec3& start, const vec3& end);
+  void ClearPaths();
+  void CalculateAllPathsAsync();
+  bool IsReachable(const vec3& source, const vec3& dest);
 };
 
 #endif // __DUNGEON_HPP__

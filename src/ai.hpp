@@ -14,7 +14,8 @@ class AI {
  
   // Parallelism. 
   bool terminate_ = false;
-  const int kMaxThreads = 16;
+  const int kMaxThreads = 1;
+  // const int kMaxThreads = 16;
   vector<thread> ai_threads_;
   mutex ai_mutex_;
   queue<ObjPtr> ai_tasks_;

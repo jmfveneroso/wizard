@@ -823,6 +823,13 @@ shared_ptr<Player> CreatePlayer(Resources* resources) {
 
 ObjPtr CreateGameObjFromAsset(Resources* resources,
   string asset_name, vec3 position, const string obj_name) {
+  shared_ptr<GameAssetGroup> asset_group = 
+    resources->GetAssetGroupByName(asset_name);
+  if (!asset_group) {
+    throw runtime_error(string("Asset ") + asset_name + " does not exist");
+  }
+
+
   string name = obj_name;
   if (name.empty()) {
     int id = resources->GenerateNewId();
@@ -1359,21 +1366,18 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
   // Reduce damage using armor class.
-  if (IsPlayer()) {
-    configs->taking_hit = 30.0f;
-    if (configs->invincible) return;
-
-    float dmg_reduction = 30.0f / (float) (30.0f + configs->armor_class);
-    damage *= dmg_reduction;
-  } else if (IsCreature()) {
-    shared_ptr<CreatureAsset> creature =
-      static_pointer_cast<CreatureAsset>(GetAsset());
-    float dmg_reduction = 30.0f / (float) (30.0f + creature->armor_class);
-    damage *= dmg_reduction; 
-  }
-
   damage = int(damage);
   if (damage == 0) damage = 1;
+
+  if (armor > 0) {
+    if (damage > armor) {
+      damage -= armor;
+      armor= 0;
+    } else {
+      armor -= damage;
+      damage = 0;
+    }
+  }
 
   life -= damage;
 
@@ -1610,4 +1614,20 @@ bool GameObject::HasEffectOnCollision() {
 string GameObject::GetEffectOnCollision() {
   if (!asset_group) return "";
   return GetAsset()->effect_on_collision;
+}
+
+bool GameObject::CanCollideWithPlayer() {
+  return true;
+  // if (!asset_group) return true;
+  // return GetAsset()->name == "spell_door_block";
+}
+
+bool GameObject::CanUseAbility(const string& ability) {
+  float current_time = glfwGetTime();
+  if (cooldowns.find(ability) != cooldowns.end()) {
+    if (cooldowns[ability] > current_time) {
+      return false;
+    }
+  }
+  return true;
 }

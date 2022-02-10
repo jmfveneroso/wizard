@@ -36,6 +36,18 @@
 using namespace std;
 using namespace glm;
 
+const int DLRG_HDOOR = 1;
+const int DLRG_VDOOR = 2;
+const int DLRG_DOOR_CLOSED = 4;
+const int DLRG_CHAMBER = 64;
+const int DLRG_PROTECTED = 128;
+const int DLRG_WEB_FLOOR = 256;
+const int DLRG_MINISET = 512;
+const int DLRG_CHASM = 1024;
+const int DLRG_SECRET = 2048;
+const int DLRG_NO_CEILING = 4096;
+const int DLRG_SPELL_WALL = 8192;
+
 enum AssetType {
   ASSET_DEFAULT = 0,
   ASSET_CREATURE,
@@ -70,6 +82,7 @@ enum MissileType {
   MISSILE_HORN,
   MISSILE_SPIDER_EGG,
   MISSILE_SPIDER_WEB_SHOT,
+  MISSILE_FLASH,
 };
 
 enum PhysicsBehavior {
@@ -137,7 +150,8 @@ enum AiState {
   HIDE = 9,
   ACTIVE = 10,
   DEFEND = 11,
-  START = 12
+  START = 12,
+  FLEE = 13
 };
 
 enum PlayerAction {

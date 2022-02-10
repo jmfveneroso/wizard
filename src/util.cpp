@@ -968,7 +968,12 @@ string AiStateToStr(const AiState& ai_state) {
     { TURN_TOWARD_TARGET, "turn-toward-target" },
     { WANDER, "wander" },
     { CHASE, "chase" },
-    { SCRIPT, "script" }
+    { SCRIPT, "script" },
+    { FLEE, "flee" },
+    { HIDE, "hide" },
+    { ACTIVE, "active" },
+    { DEFEND, "defend" },
+    { START, "start" },
   });
   return ai_state_to_str[ai_state];
 }
@@ -1347,6 +1352,7 @@ int RandomEven(int low, int high) {
 string ActionTypeToStr(const ActionType& type) {
   static unordered_map<ActionType, string> action_type_to_str ({
     { ACTION_MOVE, "action-move" }, 
+    { ACTION_LONG_MOVE, "action-long-move" }, 
     { ACTION_RANDOM_MOVE, "action-random-move" },
     { ACTION_IDLE, "action-idle" },
     { ACTION_MEELEE_ATTACK, "action-meelee-attack" },
@@ -1362,6 +1368,10 @@ string ActionTypeToStr(const ActionType& type) {
     { ACTION_MOVE_TO_PLAYER, "action-move-to-player" },
     { ACTION_MOVE_AWAY_FROM_PLAYER, "action-move-away-from-player" },
     { ACTION_USE_ABILITY, "action-use-ability" },           
+    { ACTION_SPIDER_CLIMB, "action-spider-climb" },           
+    { ACTION_SPIDER_EGG, "action-spider-egg" },           
+    { ACTION_SPIDER_JUMP, "action-spider-jump" },           
+    { ACTION_SPIDER_WEB, "action-spider-web" },           
   });
   return action_type_to_str[type];
 }

@@ -65,6 +65,9 @@ void Resources::Init() {
   ObjPtr map_obj = CreateGameObj(this, "map_interface");
   map_obj->Load("map-001", "map_interface", player_->position);
 
+  ObjPtr waypoint_obj = CreateGameObj(this, "waypoint");
+  waypoint_obj->Load("waypoint-001", "waypoint", vec3(0));
+
   CreateSkydome(this);
 
   // TODO: move to particle.
@@ -1900,6 +1903,7 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->name == "hand-001") continue;
     if (obj->name == "scepter-001") continue;
     if (obj->name == "map-001") continue;
+    if (obj->name == "waypoint-001") continue;
  
     if (!IntersectRaySphere(position, direction, 
       obj->GetTransformedBoundingSphere(), t, q)) {
@@ -1923,6 +1927,7 @@ ObjPtr CollideRayAgainstObjectsAux(
     if (obj->name == "hand-001") continue;
     if (obj->name == "scepter-001") continue;
     if (obj->name == "map-001") continue;
+    if (obj->name == "waypoint-001") continue;
 
     if (!IntersectRaySphere(position, direction, 
       obj->GetTransformedBoundingSphere(), t, q)) {
@@ -1989,7 +1994,7 @@ void Resources::SaveObjects() {
     }
 
     if (name == "hand-001" || name == "scepter-001" || name == "map-001" || 
-        name == "skydome" || name == "player") continue;
+        name == "waypoint-001" || name == "skydome" || name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -2085,7 +2090,8 @@ void Resources::CalculateCollisionData(bool recalculate) {
 
     obj->CalculateCollisionData();
 
-    if (name == "hand-001" || name == "scepter-001" || name == "map-001") {
+    if (name == "hand-001" || name == "waypoint-001" || name == "scepter-001" || 
+        name == "map-001") {
       obj->collision_type_ = COL_NONE;
     }
 
@@ -2119,8 +2125,8 @@ void Resources::SaveCollisionData() {
         continue;
     }
 
-    if (name == "hand-001" || name == "scepter-001" || name == "map-001" || 
-        name == "skydome" || name == "player") continue;
+    if (name == "hand-001" || name == "waypoint-001" || name == "scepter-001" || 
+        name == "map-001" || name == "skydome" || name == "player") continue;
     if (obj->parent_bone_id != -1) {
       continue;
     }
@@ -2269,6 +2275,7 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     if (item->name == "hand-001") continue;
     if (item->name == "scepter-001") continue;
     if (item->name == "map-001") continue;
+    if (item->name == "waypoint-001") continue;
  
     float distance = length(position - item->position);
     if (distance > max_distance) continue;
@@ -3151,17 +3158,30 @@ void Resources::StartQuest(const string& quest_name) {
   AddMessage(string("Quest " + quests_[quest_name]->title + " started."));
 }
 
-void Resources::LearnSpell(const unsigned int spell_id) {
-  // if (spell_id > configs_->learned_spells.size() - 1) {
-  //   ThrowError("Learned spell for id ", spell_id, " does not exist.");
-  // }
+void Resources::LearnSpell(int item_id) {
+  auto spell = WhichArcaneSpell(item_id);
+  if (!spell) return;
 
-  // configs_->learned_spells[spell_id] = 1;
-  // if (spell_id > arcane_spell_data_.size() - 1) {
-  //   ThrowError("Spell data for id ", spell_id, " does not exist.");
-  // }
+  if (!spell->learned) {
+    AddMessage(string("You learned ") + spell->name);
+    spell->learned = true;
 
-  // AddMessage(string("You learned to cast ") + arcane_spell_data_[spell_id].name);
+    // Add the spell to the first empty place in the spellbar.
+    for (int x = 0; x < 8; x++) {
+      if (configs_->spellbar[x] == 0) {
+        configs_->spellbar[x] = item_id;
+        break;
+      }
+    }
+  } else {
+    AddMessage(string("You gained one mana."));
+    player_->max_mana++;
+    player_->mana++;
+
+    // spell->level++;
+    // AddMessage(string("You learned ") + spell->name + 
+    //   string("at level ") + boost::lexical_cast<string>(spell->level));
+  }
 }
 
 void Resources::UpdateAnimationFrames() {
@@ -3583,13 +3603,20 @@ void Resources::ProcessTempStatus() {
   }
 
   // Player equipment. 
-  configs_->armor_class = configs_->base_armor_class;
-  for (int i = 0; i < 4; i++) {
-    int item_id = configs_->equipment[i];
-    if (item_id == 0) continue;
+  // configs_->armor_class = configs_->base_armor_class;
+  // for (int i = 0; i < 4; i++) {
+  //   int item_id = configs_->equipment[i];
+  //   if (item_id == 0) continue;
 
-    EquipmentData& data = equipment_data_[item_id];
-    configs_->armor_class += data.armor_class_bonus;
+  //   EquipmentData& data = equipment_data_[item_id];
+  //   configs_->armor_class += data.armor_class_bonus;
+  // }
+
+  player_->max_life = configs_->max_life;
+  for (int i = 0; i < 3; i++) {
+    if (configs_->passive_items[i] == 28) {
+      player_->max_life += 1;
+    }
   }
 
   if (player->stamina <= 0.01f) {
@@ -3638,7 +3665,7 @@ void Resources::ProcessDriftAwayEvent() {
 
   if (configs_->drifting_away) {
     if (configs_->fading_out < 0.0f) {
-      player_->position = vec3(11492.41, 141, 7360);
+      player_->position = vec3(11628, 141, 7246);
       player_->rotation = vec3(1, 0, 0);
       player_->speed = vec3(0);
       AddMessage(string("You drifted among the hills and found your way up after many hours."));
@@ -3738,7 +3765,7 @@ void Resources::DeleteAllObjects() {
   auto it = objects_.begin();
   while (it != objects_.end()) {
     auto& [name, obj] = *it;
-    if (name == "hand-001" || name == "scepter-001" || name == "map-001" || 
+    if (name == "hand-001" || name == "waypoint-001" || name == "scepter-001" || name == "map-001" || 
         name == "skydome"  || name == "player") {
       ++it;
       continue;
@@ -3966,20 +3993,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           tile = CreateRoom(this, "dungeon_pre_platform", pos, 0);
           break;
         }
-        case '(': {
-          tile = CreateRoom(this, "dungeon_web_wall", pos, 0);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
-        case ')': {
-          tile = CreateRoom(this, "dungeon_web_wall", pos, 1);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
-          break;
-        }
         case '/': {
           tile = CreateRoom(this, "dungeon_plank", pos, 0);
           tile->torque = vec3(0, 0, 1) * float(Random(3, 6)) * 0.002f;
@@ -3998,13 +4011,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           tile = CreateRoom(this, "lolth_statue", pos, 0);
           tile = CreateRoom(this, "dungeon_long_plank", pos, 0);
           tile->torque = vec3(0, 1, 0) * float(Random(3, 6)) * 0.002f;
-          break;
-        }
-        case 'X': {
-          tile = CreateRoom(this, "statue", pos, 0);
-          ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
-          tile3->dungeon_tile = ivec2(x, z);
           break;
         }
         default: {
@@ -4046,6 +4052,25 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           ObjPtr obj = CreateGameObjFromAsset(this, "barrel", pos + vec3(0, 0, 0));
           break;
         }
+        case 'X': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "pedestal", pos + vec3(0, 0, 0));
+
+          switch (Random(0, 3)) {
+            case 0:
+              obj = CreateGameObjFromAsset(this, "life_mana_crystal", pos + vec3(0, 5.3, 0));
+              break;
+            case 1:
+              obj = CreateGameObjFromAsset(this, "air_mana_crystal", pos + vec3(0, 5.3, 0));
+              break;
+            case 2:
+              obj = CreateGameObjFromAsset(this, "magma_mana_crystal", pos + vec3(0, 5.3, 0));
+              break;
+          }
+
+          obj->CalculateCollisionData();
+          obj->physics_behavior = PHYSICS_FIXED;
+          break;
+        }
         case 'c': {
           ObjPtr obj = CreateGameObjFromAsset(this, "chest", pos + vec3(0, 0, 0));
           obj->rotation_matrix = rotate(mat4(1.0), Random(0, 100) * 0.0314f, 
@@ -4078,7 +4103,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
             { 'V', "demon-vine" },
             { 'Y', "dragonfly" },
             { 'J', "speedling" },
-            { 'K', "lancet_spider" },
+            { 'K', "lancet" },
             { 'W', "wraith" },
             { 'r', "drider" },
             { 'E', "metal-eye" },
@@ -4117,7 +4142,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
       }
 
       if (dungeon_.IsWebFloor(ivec2(x, z))) {
-        ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_web_floor", pos + vec3(0, 0, 0));
+        // ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_web_floor", pos + vec3(0, 0, 0));
       }
 
       if (tile) {
@@ -4159,7 +4184,8 @@ void Resources::SaveGame() {
   AppendXmlTextNode(xml, "stamina", player->stamina);
   AppendXmlTextNode(xml, "render-scene", configs_->render_scene);
   AppendXmlTextNode(xml, "dungeon-level", configs_->dungeon_level);
-  AppendXmlTextNode(xml, "max-life", player_->max_life);
+  // AppendXmlTextNode(xml, "max-life", player_->max_life);
+  AppendXmlTextNode(xml, "max-life", configs_->max_life);
   AppendXmlTextNode(xml, "max-mana", player_->max_mana);
   AppendXmlTextNode(xml, "max-stamina", player_->max_stamina);
 
@@ -4305,6 +4331,12 @@ void Resources::CreateSafeZone() {
 void Resources::RestartGame() {
   LoadGame("start_config.xml", false);
   SaveGame();
+
+  shared_ptr<GameObject> obj = GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = GetObjectByName("scepter-001");
+  obj->active_animation = "Armature|idle.001";
+  scepter->active_animation = "Armature|idle.001";
+  player_->player_action = PLAYER_IDLE;
 }
 
 void Resources::LoadConfig(const std::string& xml_filename) {
@@ -4409,8 +4441,7 @@ void Resources::LoadConfig(const std::string& xml_filename) {
     configs_->equipment[i] = 0;
   }
 
-  configs_->armor_class = 0;
-  configs_->base_armor_class = 0;
+  // player_->armor = 1;
 
   const pugi::xml_node& item_matrix_xml = xml.child("item-matrix");
   if (item_matrix_xml) {
@@ -4852,6 +4883,40 @@ shared_ptr<Particle> Resources::Create3dParticleEffect(const string& asset_name,
   return p;
 }
 
+vec3 Resources::GetSpellWallRayCollision(ObjPtr owner, const vec3& position, 
+  const vec3& direction) {
+  vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
+  vec3 up = cross(right, direction);
+
+  vec3 pos = position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    pos = s.center;
+  }
+
+  vec3 p2 = position + direction * 3000.0f;
+  vec3 normal = normalize(p2 - pos);
+
+  float t = 99999999999.9f;
+  vec3 q;
+  ObjPtr obj;
+  vec3 end = normal * 100.0f;
+
+  float plane_t = 0.0f;
+  if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
+    Plane(vec3(0, 1, 0), kDungeonOffset.y), plane_t, q)) {
+    end = plane_t * 100.0f * normal;
+  }
+
+  ivec2 tile = dungeon_.GetPortalTouchedByRay(pos, pos + end);
+  if (tile.x == -1) {
+    return vec3(0);
+  }
+
+  return dungeon_.GetTilePosition(tile);
+}
+
 void Resources::CastLightningRay(ObjPtr owner, const vec3& position, 
   const vec3& direction) {
   vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
@@ -5021,9 +5086,45 @@ void Resources::CastHeal(ObjPtr owner) {
   }
 }
 
-void Resources::CastFlash(ObjPtr owner) {
-  configs_->fading_out = 60.0f;
-  vector<ObjPtr> objs = GetKClosestLightPoints(owner->position, 3, 0, 30.0f);
+void Resources::CastFlashMissile(const Camera& camera) {
+  shared_ptr<Missile> obj = GetUnusedMissile();
+
+  obj->UpdateAsset("flash_shot");
+  obj->CalculateCollisionData();
+
+  obj->owner = player_;
+  obj->type = MISSILE_FLASH;
+  obj->physics_behavior = PHYSICS_NO_FRICTION;
+  obj->scale_in = 1.0f;
+  obj->scale_out = 0.0f;
+  obj->associated_particles.clear();
+
+  obj->position = camera.position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    obj->position = s.center;
+  }
+
+  vec3 p2 = camera.position + camera.direction * 200.0f;
+  obj->speed = normalize(p2 - obj->position) * 4.0f;
+
+  mat4 rotation_matrix = rotate(
+    mat4(1.0),
+    camera.rotation.y + 4.70f,
+    vec3(0.0f, 1.0f, 0.0f)
+  );
+  rotation_matrix = rotate(
+    rotation_matrix,
+    camera.rotation.x,
+    vec3(0.0f, 0.0f, 1.0f)
+  );
+  obj->rotation_matrix = rotation_matrix;
+  UpdateObjectPosition(obj);
+}
+
+void Resources::CastFlash(const vec3& position) {
+  vector<ObjPtr> objs = GetKClosestLightPoints(position, 3, 0, 30.0f);
   for (ObjPtr creature : objs) {
     creature->AddTemporaryStatus(make_shared<StunStatus>(3.0f, 20.0f));
   }
@@ -5612,4 +5713,54 @@ void Resources::CreateThreads() {
 vector<ObjPtr> Resources::GetMonstersInGroup(int monster_group) {
   if (monster_groups_.find(monster_group) == monster_groups_.end()) return {};
   return monster_groups_[monster_group];
+}
+
+bool Resources::CastSpellWall(ObjPtr owner, const vec3& position) {
+  ivec2 tile = dungeon_.GetDungeonTile(position);
+  if (!dungeon_.IsValidTile(tile)) return false;
+
+  bool should_rotate = false;
+  char** dungeon_map = dungeon_.GetDungeon();
+  switch (dungeon_map[tile.x][tile.y]) {
+    case 'D':
+    case 'O': {
+      should_rotate = true;
+    }
+    case 'd':
+    case 'o':
+      break;
+    default:
+      return false;
+  }
+
+  vec3 pos = dungeon_.GetTilePosition(tile);
+  ObjPtr obj = CreateGameObjFromAsset(this, "spell_door_block", pos);
+  
+  if (should_rotate) {
+    mat4 rotation_matrix = rotate(
+      mat4(1.0f),
+      1.57f,
+      vec3(0.0f, 1.0f, 0.0f)
+    );
+    obj->rotation_matrix = rotation_matrix;
+  }
+
+  CalculateCollisionData();
+  GenerateOptimizedOctree();
+
+  // dungeon_map[tile.x][tile.y] = '+';
+  dungeon_.SetFlag(tile, DLRG_SPELL_WALL);
+  dungeon_.CalculateAllPathsAsync();
+  return true;
+}
+
+bool Resources::CanRest() {
+  return true;
+  if (configs_->render_scene == "town") return true;
+
+  const float min_distance = 100.0f;
+  vector<ObjPtr> objs = GetKClosestLightPoints(player_->position, 1, 0, min_distance); if (objs.empty()) return true;
+
+  if (length(objs[0]->position - player_->position) > min_distance) return true;
+  return false;
 }

@@ -3,3 +3,6 @@ src/*.swp
 resources
 *.swp
 *.swo
+.DS_Store
+lib/.DS_Store
+src/.DS_Store

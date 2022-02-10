@@ -82,6 +82,13 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           resources_->AddMessage("You learned to cast minor open lock.");
         } else if (item->name == "mammon") {
           resources_->TalkTo(item->name);
+        } else if (item->GetAsset()->name == "spell_door_block") {
+          Dungeon& dungeon = resources_->GetDungeon();
+          dungeon.UnsetFlag(dungeon.GetDungeonTile(item->position), DLRG_SPELL_WALL);
+          dungeon.CalculateAllPathsAsync();
+          resources_->RemoveObject(item);
+          resources_->CalculateCollisionData();
+          resources_->GenerateOptimizedOctree();
         } else if (item->GetAsset()->name == "stairs_down_hull") {
           if (++configs->dungeon_level == 7) {
             resources_->GetConfigs()->render_scene = "safe-zone";
@@ -113,7 +120,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->CalculateCollisionData();
             resources_->GenerateOptimizedOctree();
             resources_->GetConfigs()->render_scene = "town";
-            resources_->GetPlayer()->ChangePosition(vec3(11787, 300, 7742));
+            resources_->GetPlayer()->ChangePosition(vec3(11628, 141, 7246));
             resources_->SaveGame();
           } else {
             configs->dungeon_level--;
@@ -127,12 +134,38 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           }
         } else {
           int item_id = item->GetItemId();
+          shared_ptr<ArcaneSpellData> arcane_spell =  
+            resources_->WhichArcaneSpell(item_id);
 
-          int quantity = item->quantity;
-          if (resources_->InsertItemInInventory(item_id, quantity)) {
+          if (arcane_spell) { 
+            resources_->LearnSpell(item_id);
             resources_->RemoveObject(item);
-            resources_->AddMessage(string("You picked a " + 
-              item->GetDisplayName()));
+          } else if (item_id == 20) { 
+            resources_->GetPlayer()->mana += 3;
+            if (resources_->GetPlayer()->mana > 
+              resources_->GetPlayer()->max_mana) {
+              resources_->GetPlayer()->mana = resources_->GetPlayer()->max_mana;
+            }
+            resources_->RemoveObject(item);
+          } else if (item_id == 40) { 
+            resources_->GetPlayer()->life += 1;
+            if (resources_->GetPlayer()->life > 
+              resources_->GetPlayer()->max_life) {
+              resources_->GetPlayer()->life = resources_->GetPlayer()->max_life;
+            }
+            resources_->RemoveObject(item);
+          } else if (item_id == 27) { // +1 life.
+            resources_->GetPlayer()->max_life++;
+            resources_->GetConfigs()->max_life++;
+            resources_->GetPlayer()->life++;
+            resources_->RemoveObject(item);
+          } else {
+            int quantity = item->quantity;
+            if (resources_->InsertItemInInventory(item_id, quantity)) {
+              resources_->RemoveObject(item);
+              resources_->AddMessage(string("You picked a " + 
+                item->GetDisplayName()));
+            }
           }
         }
       }
@@ -404,6 +437,10 @@ bool PlayerInput::CastSpellOrUseItem() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  if (configs->render_scene == "town") {
+    return false;
+  }
   
   int item_id = configs->spellbar[configs->selected_spell];
   shared_ptr<ArcaneSpellData> arcane_spell =  
@@ -464,9 +501,9 @@ bool PlayerInput::CastSpellOrUseItem() {
         }
         return false;
       }
-      case 2: { // Heal.
+      case 2: { // Flash.
         // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 2.0f) {
+        if (player->stamina > 0.0f && player->mana >= 1.0f) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -639,12 +676,8 @@ bool PlayerInput::CastSpellOrUseItem() {
       return true;
     }
     case 11: {
-      resources_->CastFlash(player);
+      resources_->CastFlashMissile(camera_);
       // resources_->CastHeal(player);
-      configs->spellbar_quantities[configs->selected_spell]--;
-      if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-        configs->spellbar[configs->selected_spell] = 0;
-      }
       debounce_ = 20;
       break;
     } 
@@ -769,11 +802,12 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastWindslash(camera_);
           break;
         case 2:
-          resources_->CastFlash(player);
-          // resources_->CastHeal(player);
+          // resources_->CastFlash(player);
+          resources_->CastFlashMissile(camera_);
           break;
         case 3:
-          player->player_action = PLAYER_CHANNELING;
+          resources_->CastSpellWall(player, spell_wall_pos_);
+          // player->player_action = PLAYER_CHANNELING;
           break;
         case 4:
           resources_->CastDarkvision();
@@ -879,46 +913,83 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       throttle_counter_ = 20;
     }
   } else {
-    if (player->touching_the_ground) {
-      // Move forward.
-      if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-        player->speed += front * player_speed * d;
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+      if (throttle_counter_ < 0) {
+        if (resources_->CanRest()) {
+          float d = resources_->GetDeltaTime() / 0.016666f;
+          configs->rest_bar += d;
+
+          if (configs->rest_bar > 60.0f) {
+            configs->rest_bar = 0.0f;
+            // if (++resources_->GetPlayer()->life > resources_->GetPlayer()->max_life) {
+            //   resources_->GetPlayer()->life = resources_->GetPlayer()->max_life;
+            // }
+
+            if (++resources_->GetPlayer()->mana > resources_->GetPlayer()->max_mana) {
+              resources_->GetPlayer()->mana = resources_->GetPlayer()->max_mana;
+            }
+          }
+          throttle_counter_ = 0;
+        } else {
+          resources_->AddMessage(string("You can't rest now."));
+          throttle_counter_ = 20;
+        }
+      }
+    } else {
+      configs->rest_bar = 0.0f;
+
+      if (player->touching_the_ground) {
+        int num_keys = 0;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) num_keys++;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) num_keys++;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) num_keys++;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) num_keys++;
+ 
+        float speed = player_speed;
+        if (num_keys > 1) {
+          speed *= 0.707106781;
+        }
+
+        // Move forward.
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+          player->speed += front * speed * d;
+        }
+
+        // Move backward.
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+          player->speed -= front * speed * d;
+        }
+
+        // Strafe right.
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+          player->speed += right * speed * d;
+        }
+
+        // Strafe left.
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+          player->speed -= right * speed * d;
+        }
       }
 
-      // Move backward.
-      if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-        player->speed -= front * player_speed * d;
+      // Move up.
+      if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+        if (player->can_jump || configs->levitate) {
+          player->can_jump = false;
+          player->speed.y += jump_force;
+        }
       }
 
-      // Strafe right.
-      if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-        player->speed += right * player_speed * d;
+      // Move down.
+      player->running = false;
+      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+        if (player->stamina > 0.0f) {
+          player->running = true;
+        }
       }
 
-      // Strafe left.
-      if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        player->speed -= right * player_speed * d;
+      if (glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) {
+        player->speed.y -= jump_force;
       }
-    }
-
-    // Move up.
-    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-      if (player->can_jump || configs->levitate) {
-        player->can_jump = false;
-        player->speed.y += jump_force;
-      }
-    }
-
-    // Move down.
-    player->running = false;
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-      if (player->stamina > 0.0f) {
-        player->running = true;
-      }
-    }
-
-    if (glfwGetKey(window, GLFW_KEY_RIGHT_SHIFT) == GLFW_PRESS) {
-      player->speed.y -= jump_force;
     }
   }
 
@@ -937,8 +1008,12 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   if (player->rotation.x >  1.57f) player->rotation.x = +1.57f;
   last_time = current_time;
 
-  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
-  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  ObjPtr waypoint_obj = resources_->GetObjectByName("waypoint-001");
+  waypoint_obj->draw = false;
+
+  ObjPtr obj = resources_->GetObjectByName("hand-001");
+  ObjPtr scepter = resources_->GetObjectByName("scepter-001");
   switch (player->player_action) {
     case PLAYER_IDLE: {
       if (resources_->IsHoldingScepter()) {
@@ -946,6 +1021,21 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         scepter->active_animation = "Armature|hold_scepter";
       } else {
         obj->active_animation = "Armature|idle.001";
+      }
+
+      int item_id = configs->spellbar[configs->selected_spell];
+      shared_ptr<ArcaneSpellData> arcane_spell =  
+        resources_->WhichArcaneSpell(item_id);
+      if (arcane_spell && configs->render_scene != "town") {
+        if (arcane_spell->spell_id == 3) {
+          spell_wall_pos_ = resources_->GetSpellWallRayCollision(player, c.position, 
+            c.direction);
+          waypoint_obj->draw = true;
+
+          waypoint_obj->position = spell_wall_pos_;
+          if (obj->position.y < 0) obj->position.y = 0;
+          resources_->UpdateObjectPosition(obj);
+        }
       }
 
       if (lft_click_) {

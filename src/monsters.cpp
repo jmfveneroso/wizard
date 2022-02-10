@@ -18,6 +18,10 @@ bool Monsters::IsAttackAction(shared_ptr<Action> action) {
 }
 
 bool Monsters::ShouldHoldback(ObjPtr unit) {
+  if (!IsPlayerReachable(unit)) { 
+    return true;
+  }
+
   Dungeon& dungeon = resources_->GetDungeon();
   ObjPtr player = resources_->GetPlayer();
   double distance_to_player = length(player->position - unit->position);
@@ -26,7 +30,7 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
   vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
   for (auto& m : monsters) {
     if (m == unit) continue;
-    if (m->ai_state == AI_ATTACK) {
+    if (m->ai_state == AI_ATTACK && m->leader) {
       group_is_attacking = true;
       break;
     }
@@ -112,6 +116,14 @@ void Monsters::MiniSpiderling(ObjPtr unit) {
   }
 }
 
+bool Monsters::IsPlayerReachable(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  bool reachable = dungeon.IsReachable(unit->position, player->position);
+  // cout << "reachable: " << reachable << endl;
+  return reachable;
+}
+
 ivec2 Monsters::FindSafeTile(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
@@ -120,7 +132,7 @@ ivec2 Monsters::FindSafeTile(ObjPtr unit) {
     vector<ivec2> possible_tiles;
     for (int i = -1; i < 1; i++) {
       for (int j = -1; j < 1; j++) {
-        if (i == j && i == 0) continue;
+        if (i == 0 && j == 0) continue;
         ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
        
         if (!dungeon.IsTileClear(new_tile)) continue;
@@ -133,6 +145,65 @@ ivec2 Monsters::FindSafeTile(ObjPtr unit) {
 
     int index = Random(0, possible_tiles.size());
     return possible_tiles[index];
+  }
+  return ivec2(-1);
+}
+
+ivec2 Monsters::FindFleeTile(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  char** dungeon_map = dungeon.GetDungeon();
+
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+
+  ObjPtr player = resources_->GetPlayer();
+
+  ivec2 tile = ivec2(-1);
+  float max_dist_from_player = 0;
+  int k = 5;
+  for (int i = -k; i <= k; i++) {
+    for (int j = -k; j <= k; j++) {
+      if (i == 0 && j == 0) continue;
+      ivec2 new_tile = unit_tile_pos + ivec2(i, j);
+
+      if (dungeon_map[new_tile.x][new_tile.y] != ' ') continue;
+      if (!dungeon.IsValidTile(new_tile)) continue;
+      if (!dungeon.IsTileClear(new_tile)) continue;
+      if (!dungeon.IsReachable(unit->position, dungeon.GetTilePosition(new_tile))) continue;
+
+      double dist = length(dungeon.GetTilePosition(new_tile) - player->position);
+      if (dist <= max_dist_from_player) continue;
+
+      max_dist_from_player = dist;
+      tile = new_tile;
+    }
+  }
+
+  return tile;
+}
+
+ivec2 Monsters::FindClosestPassage(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+
+  char** dungeon_map = dungeon.GetDungeon();
+  for (int k = 0; k < 5; k++) {
+    for (int i = -1; i < 1; i++) {
+      for (int j = -1; j < 1; j++) {
+        if (i == 0 && j == 0) continue;
+        ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
+        if (!dungeon.IsValidTile(new_tile)) continue;
+  
+        switch (dungeon_map[new_tile.x][new_tile.y]) {
+          case 'o':
+          case 'O':
+          case 'd':
+          case 'D':
+            return new_tile;
+          default:
+            break;
+        }
+      }
+    }
   }
   return ivec2(-1);
 }
@@ -181,6 +252,7 @@ void Monsters::Spiderling(ObjPtr unit) {
   }
 
   bool visible = dungeon.IsTileVisible(unit->position);
+  bool player_reachable = IsPlayerReachable(unit);
 
   int unit_relevance = 
     dungeon.GetRelevance(dungeon.GetTilePosition(unit->position));
@@ -202,6 +274,12 @@ void Monsters::Spiderling(ObjPtr unit) {
 
   switch (unit->ai_state) {
     case AI_ATTACK: {
+      if (!player_reachable) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(FLEE));
+        break;
+      }
+
       shared_ptr<Action> next_action = nullptr;
       if (!unit->actions.empty()) {
         next_action = unit->actions.front();
@@ -269,11 +347,13 @@ void Monsters::Spiderling(ObjPtr unit) {
 
       if (distance_to_player < 80.0f) {
         unit->actions.push(make_shared<TakeAimAction>());
-        unit->actions.push(make_shared<SpiderEggAction>());
-        for (int i = 0; i < 10; i++) {
-          unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
-          unit->actions.push(make_shared<TakeAimAction>());
-        }
+
+        // Create spiderlings.
+        // unit->actions.push(make_shared<SpiderEggAction>());
+        // for (int i = 0; i < 10; i++) {
+        //   unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
+        //   unit->actions.push(make_shared<TakeAimAction>());
+        // }
       } else {
         unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
         unit->actions.push(make_shared<TakeAimAction>());
@@ -321,6 +401,7 @@ void Monsters::Spiderling(ObjPtr unit) {
         break;
       }
 
+      // if (!holdback || visible) {
       if (!holdback) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
@@ -338,20 +419,316 @@ void Monsters::Spiderling(ObjPtr unit) {
         dungeon.GetTilePosition(safe_tile)));
       break;
     }
+    case FLEE: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (distance_to_player > 100.0f) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<SpiderClimbAction>(Random(25, 41)));
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+        break;
+      }
+
+      if (!holdback) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      ivec2 safe_tile = FindFleeTile(unit);
+      cout << "safe_tile: " << safe_tile << endl;
+      if (safe_tile.x == -1) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+        break;
+      }
+
+      unit->actions.push(make_shared<LongMoveAction>(
+        dungeon.GetTilePosition(safe_tile)));
+      break;
+    }
     case ACTIVE: {
       if (holdback) {
         unit->ClearActions();
 
-        int r = Random(0, 100);
-        if (r <= 50) {
-          unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
-        } else {
-          unit->actions.push(make_shared<ChangeStateAction>(HIDE));
-        }
+        // int r = Random(0, 100);
+        // if (r <= 50) {
+        //   unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
+        // } else {
+        //   unit->actions.push(make_shared<ChangeStateAction>(HIDE));
+        // }
+        unit->actions.push(make_shared<ChangeStateAction>(HIDE));
         break;
       }
 
       unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      break;
+    }
+    case IDLE: {
+      int room1 = dungeon.GetRoom(dungeon.GetDungeonTile(unit->position));
+      int room2 = dungeon.GetRoom(dungeon.GetDungeonTile(player->position));
+
+      if (visible || room1 == room2) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(ACTIVE));
+      } else if (unit->actions.empty()) {
+        unit->actions.push(make_shared<IdleAction>(1));
+      }
+      break;
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (Random(0, 10) < 5) {
+        cout << "Ambush" << endl;
+        unit->actions.push(make_shared<SpiderClimbAction>(Random(25, 41)));
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+      } else {
+        unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+      }
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+void Monsters::Lancet(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  double distance_to_player = length(player->position - unit->position);
+
+  bool group_is_attacking = false;
+  vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
+  for (auto& m : monsters) {
+    if (m == unit) continue;
+    if (m->ai_state == AI_ATTACK) {
+      group_is_attacking = true;
+      break;
+    }
+  }
+
+  bool visible = dungeon.IsTileVisible(unit->position);
+  bool player_reachable = IsPlayerReachable(unit);
+
+  int unit_relevance = 
+    dungeon.GetRelevance(dungeon.GetTilePosition(unit->position));
+
+  int player_relevance = 
+    dungeon.GetRelevance(dungeon.GetTilePosition(player->position));
+
+  const float kChaseDistance = 50.0f;
+
+  bool holdback = ShouldHoldback(unit);
+
+  if (unit->was_hit) {
+    unit->levitating = false;
+    unit->was_hit = false;
+    resources_->ChangeObjectAnimation(unit, "Armature|taking_hit");
+    unit->ClearActions();
+    unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+  }
+
+  switch (unit->ai_state) {
+    case AI_ATTACK: {
+      if (!player_reachable) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(FLEE));
+        break;
+      }
+
+      shared_ptr<Action> next_action = nullptr;
+      if (!unit->actions.empty()) {
+        next_action = unit->actions.front();
+      }
+
+      int r = Random(0, 100);
+      if (unit->actions.empty()) {
+        if (distance_to_player < 11.0f) {
+          unit->actions.push(make_shared<TakeAimAction>());
+          unit->actions.push(make_shared<MeeleeAttackAction>());
+        } else {
+          unit->actions.push(make_shared<MoveToPlayerAction>());
+        }
+      } else if (distance_to_player < 11.0f && !IsAttackAction(next_action)) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<TakeAimAction>());
+        unit->actions.push(make_shared<MeeleeAttackAction>());
+      } else if (distance_to_player > 30.0f &&  
+        unit->CanUseAbility("spider-web")) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
+      } else if (next_action->type == ACTION_MOVE) {
+        shared_ptr<MoveAction> move_action =  
+          static_pointer_cast<MoveAction>(next_action);
+        vec3 next_move = move_action->destination;
+        double distance = length(next_move - player->position);
+        if (distance > distance_to_player) {
+          unit->ClearActions();
+        }
+      }
+      break;
+    } 
+    case AMBUSH: {
+      if (!holdback) {
+        unit->levitating = false;
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        resources_->ChangeObjectAnimation(unit, "Armature|walking");
+        break;
+      }
+
+      shared_ptr<Action> next_action = nullptr;
+      if (!unit->actions.empty()) {
+        next_action = unit->actions.front();
+      }
+
+      if (next_action && next_action->type == ACTION_SPIDER_CLIMB) break;
+      unit->AddTemporaryStatus(make_shared<SpiderThreadStatus>(0.1f, 20.0f));
+
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->levitating = true;
+
+      if (distance_to_player < 80.0f) {
+        unit->actions.push(make_shared<TakeAimAction>());
+
+        // Create spiderlings.
+        // unit->actions.push(make_shared<SpiderEggAction>());
+        // for (int i = 0; i < 10; i++) {
+        //   unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
+        //   unit->actions.push(make_shared<TakeAimAction>());
+        // }
+      } else {
+        unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
+        unit->actions.push(make_shared<TakeAimAction>());
+      }
+      break;
+    }
+    case DEFEND: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      bool found_target = false;
+      vec3 target_pos;
+      ivec2 target;
+
+      // Try to cast web in the player path.
+      vec3 dir = player->speed;
+      dir.y = 0;
+      target_pos = player->position + normalize(dir) * 10.0f;
+      target = dungeon.GetDungeonTile(target_pos);
+      if (!dungeon.GetFlag(target, DLRG_WEB_FLOOR)) {
+        found_target = true;
+      }
+    
+      // Try to cast web in the closest passage.
+      if (!found_target) { 
+        target = FindClosestPassage(player);
+        if (target.x != -1 &&
+            !dungeon.GetFlag(target, DLRG_WEB_FLOOR)) {
+          target_pos = dungeon.GetTilePosition(target);
+          found_target = true;
+        }
+      } 
+
+      // Try to cast web some place near the player.
+      if (!found_target) { 
+        vector<ivec2> possible_tiles;
+        for (int i = -1; i < 1; i++) {
+          for (int j = -1; j < 1; j++) {
+            if (i == 0 && j == 0) continue;
+            ivec2 new_tile = dungeon.GetDungeonTile(player->position) +
+              ivec2(i, j);
+           
+            if (!dungeon.IsTileClear(new_tile)) continue;
+            if (dungeon.GetFlag(new_tile, DLRG_WEB_FLOOR)) continue;
+            possible_tiles.push_back(new_tile);
+          }
+        }
+
+        if (!possible_tiles.empty()) {
+          int index = Random(0, possible_tiles.size());
+          target = possible_tiles[index];
+          target_pos = dungeon.GetTilePosition(target);
+          found_target = true;
+        }
+      }
+
+      if (found_target) {
+        target_pos.y = 0.15f;
+        unit->actions.push(make_shared<TakeAimAction>());
+        unit->actions.push(make_shared<SpiderWebAction>(target_pos));
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      } else {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        unit->cooldowns["spider-web"] = glfwGetTime() + 5;
+      }
+      break;
+    }
+    case HIDE: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (!holdback) {
+      // if (!holdback || visible) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      ivec2 safe_tile = FindSafeTile(unit);
+      if (safe_tile.x == -1) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      unit->actions.push(make_shared<LongMoveAction>(
+        dungeon.GetTilePosition(safe_tile)));
+      break;
+    }
+    case ACTIVE: {
+      // if (holdback) {
+      //   unit->ClearActions();
+
+      //   unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
+      //   break;
+      // }
+
+      unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      break;
+    }
+    case FLEE: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (!holdback) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      ivec2 safe_tile = FindFleeTile(unit);
+      if (safe_tile.x == -1) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+        break;
+      }
+
+      unit->actions.push(make_shared<LongMoveAction>(
+        dungeon.GetTilePosition(safe_tile)));
       break;
     }
     case IDLE: {
@@ -543,6 +920,8 @@ void Monsters::BloodWorm(ObjPtr unit) {
 void Monsters::RunMonsterAi(ObjPtr obj) {
   if (obj->GetAsset()->name == "spiderling") {
     Spiderling(obj); 
+  } else if (obj->GetAsset()->name == "lancet") {
+    Lancet(obj); 
   } else if (obj->GetAsset()->name == "mini_spiderling") {
     MiniSpiderling(obj); 
   } else if (obj->GetAsset()->name == "white_spine") {
