@@ -1351,6 +1351,17 @@ void Renderer::DrawStatusBars() {
     active_name = item_data.name;
   }
 
+  float t;
+  vec3 q;
+  ObjPtr obj = resources_->IntersectRayObjects(camera_.position, 
+    camera_.direction, 50, INTERSECT_ALL, t, q);
+  if (obj) {
+    stringstream ss;
+    ss << obj->name << " (" << obj->GetDisplayName() << ")" << endl;
+    draw_2d_->DrawText(ss.str(), 100, 900 - 800, 
+      vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+  }
+
   if (!active_name.empty()) {
     draw_2d_->DrawText(active_name, 1120, 900 - 870, 
       vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");

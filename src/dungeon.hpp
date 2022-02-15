@@ -224,12 +224,12 @@ class Dungeon {
 
   mutex calculate_path_mutex_;
   bool terminate_ = false;
-  const int kMaxThreads = 16;
+  const int kMaxThreads = 4;
   queue<ivec2> calculate_path_tasks_;
   int running_calculate_path_tasks_ = 0;
   vector<thread> calculate_path_threads_;
 
-  void DrawRoom(int x, int y, int w, int h, int add_flags = 0);
+  void DrawRoom(int x, int y, int w, int h, int add_flags, int code = 1);
   bool IsChasm(int x, int y, int w, int h);
   bool HasStairs(int x, int y, int w, int h);
   void DrawChasm(int x, int y, int w, int h, bool horizontal);
@@ -270,18 +270,13 @@ class Dungeon {
 
   bool CreateThemeRoomChest(int room_num);
   bool CreateThemeRoomLibrary(int room_num);
-  bool CreateThemeRoomDarkroom(int room_num);
-  bool CreateThemeRoomWebFloor(int room_num);
-  bool CreateThemeRoomChasm();
-  bool CreateThemeRoomSpinner();
-  bool CreateThemeRoomRotatingPlatforms();
   bool CreateThemeRooms();
   void FindRooms();
   int FillRoom(ivec2 tile, shared_ptr<Room> current_room);
   void PrintChambers();
   void PrintPreMap();
-  ivec2 GetClosestClearTile(const ivec2& tile);
   float GetDistanceToStairs(const ivec2& tile);
+  shared_ptr<Room> CreateEmptyRoom();
 
   bool invert_distance_ = false;
 
@@ -355,8 +350,10 @@ class Dungeon {
   bool GetFlag(ivec2 tile, int flag);
   vec3 GetPathToTile(const vec3& start, const vec3& end);
   void ClearPaths();
-  void CalculateAllPathsAsync();
+  void CalculateAllPathsAsync(const ivec2& tile);
   bool IsReachable(const vec3& source, const vec3& dest);
+  void PrintPathfindingMap(const vec3& position);
+  ivec2 GetClosestClearTile(const vec3& position);
 };
 
 #endif // __DUNGEON_HPP__

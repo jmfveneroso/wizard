@@ -2241,15 +2241,23 @@ ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
     mode == INTERSECT_PLAYER || mode == INTERSECT_ITEMS) {
     for (auto& [id, item] : node->moving_objs) {
       if (item->status == STATUS_DEAD) continue;
-      if (mode != INTERSECT_ITEMS) {
-        if (item->IsPlayer()) {
-          if (mode != INTERSECT_ALL && mode != INTERSECT_PLAYER) continue;
-        } else {
-          if ((!item->IsCreature() && !item->IsDestructible()) || 
-              mode == INTERSECT_PLAYER) continue;
+      switch (mode) {
+        case INTERSECT_PLAYER: {
+          if (!item->IsPlayer()) continue;
+          break;
         }
-      } else {
-        if (!item->IsNpc()) continue;
+        case INTERSECT_EDIT:
+        case INTERSECT_ALL: {
+          if (!item->IsCreature() && !item->IsDestructible()) continue;
+          break;
+        }
+        case INTERSECT_ITEMS: {
+          if (!item->IsNpc()) continue;
+          break;
+        }
+        default: {
+          continue;
+        }
       }
 
       float distance = length(position - item->position);
@@ -3542,6 +3550,11 @@ void Resources::ProcessTempStatus() {
     }
   }
 
+  player->mana += configs_->mana_regen;
+  if (player->mana > player->max_mana) { 
+    player->mana = player->max_mana;
+  }
+
   for (auto& [status_type, temp_status] : player->temp_status) {
     if (temp_status->duration == 0) continue;
     if (cur_time > temp_status->issued_at + temp_status->duration) {
@@ -4055,7 +4068,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'X': {
           ObjPtr obj = CreateGameObjFromAsset(this, "pedestal", pos + vec3(0, 0, 0));
 
-          switch (Random(0, 3)) {
+          switch (Random(0, 4)) {
             case 0:
               obj = CreateGameObjFromAsset(this, "life_mana_crystal", pos + vec3(0, 5.3, 0));
               break;
@@ -4064,6 +4077,9 @@ void Resources::CreateDungeon(bool generate_dungeon) {
               break;
             case 2:
               obj = CreateGameObjFromAsset(this, "magma_mana_crystal", pos + vec3(0, 5.3, 0));
+              break;
+            case 3:
+              obj = CreateGameObjFromAsset(this, "sun_mana_crystal", pos + vec3(0, 5.3, 0));
               break;
           }
 
@@ -4095,7 +4111,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'L': case 'w': case 's': case 'S': case 'V': case 'Y':
         case 'J': case 'K': case 'W': case 'r': case 'E': case 'Q': { // Is Monster.
           static unordered_map<char, string> monster_assets { 
-            { 'L', "spider" },
+            { 'L', "broodmother" },
             { 'w', "blood_worm" },
             { 's', "spiderling" },
             { 't', "spiderling" },
@@ -5460,6 +5476,26 @@ void Resources::CastSpellShot(const Camera& camera) {
   UpdateObjectPosition(obj);
 }
 
+void Resources::CastShotgun(const Camera& camera) {
+  const int num_missiles = 8;
+  const float missile_speed = 2.0f;
+  const float spread = 0.01f;
+
+  vec3 p2 = camera.position + camera.direction * 200.0f;
+  vec3 dir = normalize(p2 - camera.position);
+  for (int i = 0; i < num_missiles; i++) {
+    if (i > 0) {
+      float x_ang = (float) Random(-5, 6) * spread;
+      float y_ang = (float) Random(-3, 4) * spread;
+      vec3 right = cross(dir, vec3(0, 1, 0));
+      mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+      dir = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+    }
+
+    CastSpellShot(Camera(camera.position, dir, vec3(0, 1, 0)));
+  }
+}
+
 void Resources::CastSpiderEgg(ObjPtr spider) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
@@ -5750,7 +5786,7 @@ bool Resources::CastSpellWall(ObjPtr owner, const vec3& position) {
 
   // dungeon_map[tile.x][tile.y] = '+';
   dungeon_.SetFlag(tile, DLRG_SPELL_WALL);
-  dungeon_.CalculateAllPathsAsync();
+  dungeon_.CalculateAllPathsAsync(tile);
   return true;
 }
 

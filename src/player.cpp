@@ -84,8 +84,9 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           resources_->TalkTo(item->name);
         } else if (item->GetAsset()->name == "spell_door_block") {
           Dungeon& dungeon = resources_->GetDungeon();
-          dungeon.UnsetFlag(dungeon.GetDungeonTile(item->position), DLRG_SPELL_WALL);
-          dungeon.CalculateAllPathsAsync();
+          ivec2 tile = dungeon.GetDungeonTile(item->position);
+          dungeon.UnsetFlag(tile, DLRG_SPELL_WALL);
+          dungeon.CalculateAllPathsAsync(tile);
           resources_->RemoveObject(item);
           resources_->CalculateCollisionData();
           resources_->GenerateOptimizedOctree();
@@ -461,7 +462,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           resources_->CreateChargeMagicMissileEffect();
           player->mana -= 1;
           player->selected_spell = 0;
-          player->stamina -= 50.0f;
           debounce_ = 20;
           return true;
         }
@@ -469,7 +469,7 @@ bool PlayerInput::CastSpellOrUseItem() {
       }
       case 0: {
         // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 5.0f) {
+        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -478,7 +478,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 0;
           player->mana -= arcane_spell->mana_cost;
-          player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
         }
@@ -495,7 +494,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 1;
           player->mana -= arcane_spell->mana_cost;
-          player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
         }
@@ -512,7 +510,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 2;
           player->mana -= arcane_spell->mana_cost;
-          player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
         }
@@ -545,7 +542,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 4;
           player->mana -= arcane_spell->mana_cost;
-          player->stamina -= 20.0f;
           debounce_ = 20;
           return true;
         }
@@ -796,7 +792,8 @@ void PlayerInput::ProcessPlayerCasting() {
     if (current_spell_) {
       switch (current_spell_->spell_id) {
         case 0:
-          resources_->CastMagicMissile(camera_);
+          // resources_->CastMagicMissile(camera_);
+          resources_->CastShotgun(camera_);
           break;
         case 1:
           resources_->CastWindslash(camera_);
@@ -888,15 +885,30 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
 
   Camera c = GetCamera();
   camera_ = c;
-  if (!player->actions.empty()) {
-    return c;
-  }
 
   if (player->status == STATUS_DEAD) {
     return c;
   }
 
   if (resources_->GetGameState() == STATE_EDITOR) return c;
+
+  // Change orientation.
+  double x_pos = 0, y_pos = 0;
+  int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
+  if (focused) {
+    glfwGetCursorPos(window, &x_pos, &y_pos);
+    glfwSetCursorPos(window, 0, 0);
+  }
+
+  float mouse_sensitivity = 0.003f;
+  player->rotation.y += mouse_sensitivity * float(-x_pos);
+  player->rotation.x += mouse_sensitivity * float(-y_pos);
+  if (player->rotation.x < -1.57f) player->rotation.x = -1.57f;
+  if (player->rotation.x >  1.57f) player->rotation.x = +1.57f;
+
+  if (!player->actions.empty()) {
+    return c;
+  }
 
   lft_click_ = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
 
@@ -913,7 +925,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       throttle_counter_ = 20;
     }
   } else {
-    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+    if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS && false) { // This is disabled.
       if (throttle_counter_ < 0) {
         if (resources_->CanRest()) {
           float d = resources_->GetDeltaTime() / 0.016666f;
@@ -983,7 +995,9 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->running = false;
       if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
         if (player->stamina > 0.0f) {
-          player->running = true;
+          if (configs->can_run) {
+            player->running = true;
+          }
         }
       }
 
@@ -993,19 +1007,6 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     }
   }
 
-  double x_pos = 0, y_pos = 0;
-  int focused = glfwGetWindowAttrib(window, GLFW_FOCUSED);
-  if (focused) {
-    glfwGetCursorPos(window, &x_pos, &y_pos);
-    glfwSetCursorPos(window, 0, 0);
-  }
-
-  // Change orientation.
-  float mouse_sensitivity = 0.003f;
-  player->rotation.y += mouse_sensitivity * float(-x_pos);
-  player->rotation.x += mouse_sensitivity * float(-y_pos);
-  if (player->rotation.x < -1.57f) player->rotation.x = -1.57f;
-  if (player->rotation.x >  1.57f) player->rotation.x = +1.57f;
   last_time = current_time;
 
 
@@ -1053,7 +1054,8 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         if (debounce_ < 0) {
           // resources_->CastBouncyBall(player, c.position, c.direction);
           // resources_->CastBurningHands(c);
-          resources_->CastWindslash(c);
+          // resources_->CastWindslash(c);
+          resources_->CastShotgun(c);
           debounce_ = 20;
         }
       }

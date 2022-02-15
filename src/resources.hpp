@@ -185,6 +185,8 @@ struct Configs {
   // ----------------------
   int max_life = 3;
   int max_mana = 10;
+  float mana_regen = 0.003f;
+  bool can_run = false;
   int max_stamina = 100;
   int experience = 0;
   int level = 0;
@@ -810,6 +812,7 @@ class Resources {
   bool CastSpellWall(ObjPtr owner, const vec3& position);
   bool CanRest();
   void CastFlashMissile(const Camera& camera);
+  void CastShotgun(const Camera& camera);
 };
 
 #endif // __RESOURCES_HPP__

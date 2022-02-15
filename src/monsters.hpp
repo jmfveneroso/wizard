@@ -12,6 +12,7 @@ class Monsters {
   void MiniSpiderling(ObjPtr unit);
   void Spiderling(ObjPtr unit);
   void Lancet(ObjPtr unit);
+  void Broodmother(ObjPtr unit);
   void WhiteSpine(ObjPtr unit);
   void Wraith(ObjPtr unit);
   void BloodWorm(ObjPtr unit);

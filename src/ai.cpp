@@ -570,24 +570,26 @@ bool AI::ProcessLongMoveAction(
 
   float min_distance = 0.0f;
 
-  float current_time = glfwGetTime();
-  if (current_time > action->last_update + 1) { 
-    // The spider has practically not moved in 1 second. No point in proceeding 
-    // with this action.
-    if (length(spider->position - action->last_position) < 0.2f) {
-      return true;
-    }
+  // float current_time = glfwGetTime();
+  // if (current_time > action->last_update + 1) { 
+  //   // The spider has practically not moved in 1 second. No point in proceeding 
+  //   // with this action.
+  //   if (length(spider->position - action->last_position) < 0.2f) {
+  //     return true;
+  //   }
 
-    action->last_update = current_time;
-    action->last_position = spider->position;
-  }
+  //   action->last_update = current_time;
+  //   action->last_position = spider->position;
+  // }
 
   vec3 next_pos;
   float t;
   if (dungeon.IsMovementObstructed(spider->position, dest, t)) {
     next_pos = dungeon.GetNextMove(spider->position, dest, 
       min_distance);
-    // next_pos = dungeon.GetPathToTile(spider->position, dest);
+
+    ivec2 dungeon_tile = dungeon.GetDungeonTile(spider->position);
+    ivec2 source_tile = dungeon.GetClosestClearTile(spider->position);
 
     if (length2(next_pos) < 0.0001f) {
       next_pos = spider->position + normalize(dest - spider->position) * 1.0f;
@@ -601,7 +603,7 @@ bool AI::ProcessLongMoveAction(
     }
   }
 
-  return ProcessMoveAction(spider, dest);
+  return ProcessMoveAction(spider, next_pos);
 }
 
 bool AI::ProcessSpiderClimbAction(ObjPtr spider, 
@@ -1131,8 +1133,19 @@ void AI::ProcessPlayerAction(ObjPtr player) {
   float player_speed = resources_->GetConfigs()->player_speed; 
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
+  cout << "ProcessPlayerAction" << endl;
+
   float d = resources_->GetDeltaTime() / 0.016666f;
   switch (action->type) {
+    case ACTION_LONG_MOVE: {
+      cout << "Long move action" << endl;
+      shared_ptr<LongMoveAction> move_action =  
+        static_pointer_cast<LongMoveAction>(action);
+      if (ProcessLongMoveAction(player, move_action)) {
+        player->PopAction();
+      }
+      break;
+    }
     case ACTION_MOVE: {
       shared_ptr<MoveAction> move_action =  
         static_pointer_cast<MoveAction>(action);

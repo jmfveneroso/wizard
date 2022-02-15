@@ -33,6 +33,7 @@ Engine::Engine(
 void Engine::RunCommand(string command) {
   shared_ptr<Player> player = resources_->GetPlayer();
   shared_ptr<Configs> configs = resources_->GetConfigs();
+  Dungeon& dungeon = resources_->GetDungeon();
 
   vector<string> result; 
   boost::split(result, command, boost::is_any_of(" ")); 
@@ -61,6 +62,19 @@ void Engine::RunCommand(string command) {
     configs->time_of_day = boost::lexical_cast<float>(result[1]);
   } else if (result[0] == "levitate") {
     configs->levitate = true;
+  } else if (result[0] == "pathfinding-map") {
+    dungeon.PrintPathfindingMap(player->position);
+  } else if (result[0] == "pathfinding") {
+    int x = boost::lexical_cast<int>(result[1]);
+    int y = boost::lexical_cast<int>(result[2]);
+    player->actions.push(make_shared<LongMoveAction>(
+      dungeon.GetTilePosition(ivec2(x, y))));
+    cout << "Moving to X:" << x << " - Y:" << y << endl;
+  } else if (result[0] == "dungeon-tile") {
+    ivec2 tile = dungeon.GetDungeonTile(player->position);
+    cout << "Tile X: " << tile.x << " - Y:" << tile.y << endl;
+  } else if (result[0] == "clear-actions") {
+    player->ClearActions();
   } else if (result[0] == "self-harm") {
     player->life -= 10.0f;
   } else if (result[0] == "nolevitate") {
@@ -284,23 +298,35 @@ bool Engine::ProcessGameInput() {
   switch (resources_->GetGameState()) {
     case STATE_GAME: { 
       shared_ptr<Player> player = resources_->GetPlayer();
+      Dungeon& dungeon = resources_->GetDungeon();
 
       // TODO: all of this should go into a class player.
       if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           text_editor_->Enable();
     
+          ivec2 tile = dungeon.GetDungeonTile(player->position);
+
           stringstream ss;
           ss << "Player pos: " << player->position << endl;
+          ss << "Player tile: " << tile.x  << ", " << tile.y << endl;
           ss << "Dungeon level: " << configs->dungeon_level << endl;
           ss << "Time of day: " << configs->time_of_day << endl;
-          if (configs->place_object) {
-            ss << "Name: " << configs->new_building->name << endl;
+
+          Camera c = player_input_->GetCamera();
+          ObjPtr obj = resources_->CollideRayAgainstObjects(c.position, c.direction);
+          if (obj) {
+            ss << "Pointing to " << obj->name << "(" << obj->GetDisplayName() << ")" << endl;
           }
+
+          if (configs->place_object) {
+            ss << "Placing : " << configs->new_building->name << endl;
+          }
+           ss << "==================" << endl;
 
           for (ObjPtr obj : resources_->GetMovingObjects()) {
             if (!obj->IsCreature()) continue;
-            ss << "Spider: " << obj->position << " - " << AiStateToStr(obj->ai_state) << endl;
+            ss << "Spider (" << obj->name << "):" << obj->position << " - " << AiStateToStr(obj->ai_state) << endl;
 
             shared_ptr<Action> next_action = nullptr;
             if (!obj->actions.empty()) {
