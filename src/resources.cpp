@@ -2702,6 +2702,7 @@ vector<shared_ptr<Event>>& Resources::GetEvents() {
 void Resources::TurnOnActionable(const string& name) {
   ObjPtr obj = GetObjectByName(name);
   if (!obj) return;
+
   shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
   shared_ptr<Mesh> mesh = GetMesh(actionable);
   int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
@@ -3214,6 +3215,7 @@ void Resources::UpdateAnimationFrames() {
 
   for (auto& [name, obj] : objects_) {
     if (!obj) continue;
+
     if (obj->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(obj);
       switch (door->state) {
@@ -3266,6 +3268,19 @@ void Resources::UpdateAnimationFrames() {
             actionable->state = 2;
             actionable->frame = 0;
             ChangeObjectAnimation(actionable, "Armature|on");
+            if (actionable->GetAsset()->name == "large_chest_wood") {
+              RemoveObject(actionable);
+            }
+          }
+
+          if (actionable->GetAsset()->name == "large_chest_wood" && actionable->frame <= num_frames - 10) {
+            float size = Random(1, 5) * 0.25f;
+
+            string particle_name = "particle-smoke-" +
+              boost::lexical_cast<string>(Random(0, 3));
+            vec3 offset = vec3(Random(-25, 26) / 10.0f, 1 + Random(-15, 16) / 10.0f, Random(-25, 26) / 10.0f);
+            CreateParticleEffect(5, actionable->position + offset, 
+              vec3(0, 0.2f, 0), vec3(1.0, 1.0, 1.0), size, 24.0f, 2.0f, particle_name);          
           }
           break;
         }
@@ -3480,6 +3495,11 @@ void Resources::ProcessTempStatus() {
           if (obj->status == STATUS_NONE) {
             obj->status = STATUS_STUN;
           }
+
+          obj->ai_state = IDLE;
+          obj->ClearActions();
+          obj->levitating = false;
+
           if (!temp_status->associated_particle) {
             shared_ptr<Particle> p = 
               Create3dParticleEffect("particle_stun", obj->position);
@@ -4089,7 +4109,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         case 'c': {
           ObjPtr obj = CreateGameObjFromAsset(this, "chest", pos + vec3(0, 0, 0));
-          obj->rotation_matrix = rotate(mat4(1.0), Random(0, 100) * 0.0314f, 
+          obj->rotation_matrix = rotate(mat4(1.0), Random(0, 4) * 0.785f, 
             vec3(0, 1, 0));
           break;
         }
@@ -5537,7 +5557,7 @@ void Resources::CastSpiderWebShot(ObjPtr spider, vec3 dir) {
   UpdateObjectPosition(obj);
 }
 
-void Resources::CreateDrops(ObjPtr obj) {
+void Resources::CreateDrops(ObjPtr obj, bool static_drops) {
   if (!obj->asset_group) return;
 
   auto asset = obj->GetAsset();
@@ -5545,15 +5565,17 @@ void Resources::CreateDrops(ObjPtr obj) {
     int r = Random(0, 1000);
     if (r > drop.chance) continue;
 
-    vec3 pos = obj->position + vec3(0, 5.0f, 0);
+    vec3 pos = obj->position;
     ObjPtr obj = CreateGameObjFromAsset(this, 
       item_data_[drop.item_id].asset_name, pos);
 
-    float x = Random(0, 11) * .05f;
-    float z = Random(0, 11) * .05f;
-    obj->speed = vec3(-0.25f + x, .5f, -0.25f + z) * (1.0f / obj->GetMass());
-
-    obj->torque = cross(normalize(obj->speed), vec3(1, 1, 0)) * 5.0f;
+    if (!static_drops) {
+      obj->position += vec3(0, 5.0f, 0);
+      float x = Random(0, 11) * .05f;
+      float z = Random(0, 11) * .05f;
+      obj->speed = vec3(-0.25f + x, .5f, -0.25f + z) * (1.0f / obj->GetMass());
+      obj->torque = cross(normalize(obj->speed), vec3(1, 1, 0)) * 5.0f;
+    }
 
     obj->CalculateCollisionData();
 

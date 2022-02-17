@@ -107,7 +107,7 @@ void Renderer::GetVisibleObjects(
   vec3 closest = ClosestPtPointAABB(player_pos_, aabb);
   if (resources_->GetConfigs()->render_scene == "dungeon" && 
       length(closest - player_pos_) > resources_->GetConfigs()->light_radius + 5) {
-    return;
+   return;
   }
 
   // TODO: find better name for this function.
@@ -621,6 +621,13 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
     GLuint program_id = asset->shader;
 
     bool dying = (obj->IsCreature() && obj->life <= 0.0f);
+    if (obj->type == GAME_OBJ_ACTIONABLE) {
+      shared_ptr<Actionable> actionable = static_pointer_cast<Actionable>(obj);
+      if (actionable->state > 0 && actionable->GetAsset()->name == "large_chest_wood") {
+        dying = true;
+      }
+    }
+
     if (dying) {
       program_id = resources_->GetShader("death");
     }

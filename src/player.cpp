@@ -59,14 +59,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
 
          if (actionable->state == 0) {
            resources_->TurnOnActionable(item->name);
-
-           Dungeon& dungeon = resources_->GetDungeon();
-
-           float r = float(Random(-100, 101));
-           vec3 v = vec3(rotate(item->rotation_matrix, 0.01f * r, vec3(0, 1, 0)) * vec4(-5, 0, 0, 1));
-           vec3 drop_pos = item->position + v;
-
-           resources_->CreateDrops(actionable);
+           resources_->CreateDrops(item, /*static_drops=*/true);
          }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();

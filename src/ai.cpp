@@ -543,6 +543,7 @@ bool AI::ProcessMoveToPlayerAction(
   vec3 next_pos;
   float t;
   if (dungeon.IsMovementObstructed(spider->position, player_pos, t)) {
+    cout << "Movement obstructed" << endl;
     next_pos = dungeon.GetNextMove(spider->position, player_pos, 
       min_distance);
 
@@ -550,7 +551,10 @@ bool AI::ProcessMoveToPlayerAction(
     if (length2(next_pos) < 0.0001f) {
       next_pos = spider->position + normalize(player_pos - spider->position) * 1.0f;
     }
+    cout << "next_pos: " << next_pos << endl;
+    cout << "spider->position: " << spider->position << endl;
   } else {
+    cout << "Movement not obstructed" << endl;
     vec3 v = player_pos - spider->position;
     if (length(v) < 3.0f) {
       next_pos = player_pos;

@@ -1133,8 +1133,6 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'K':
         case 'L':
         case 'I':
-        case 'c':
-        case 'C':
         case 'q':
         case 'b':
         case 'J':
@@ -1147,6 +1145,8 @@ void Dungeon::GenerateAsciiDungeon() {
           ascii_dungeon[x][y] = ' ';
           monsters_and_objs[x][y] = ascii_code;
           continue;
+        case 'c':
+        case 'C':
         case 'M':
         case 'X':
           monsters_and_objs[x][y] = ascii_code;
@@ -1167,11 +1167,6 @@ void Dungeon::GenerateAsciiDungeon() {
 bool Dungeon::CreateThemeRoomLibrary(int room_num) {
   shared_ptr<Room> room = CreateEmptyRoom();
   if (!room) return false;
-
-  int min_tiles = 14;
-  int max_tiles = 30;
-  if (room->tiles.size() < min_tiles) return false;
-  if (room->tiles.size() > max_tiles) return false;
 
   // Place pedestals.
   int num_to_place = 1;
@@ -1200,26 +1195,30 @@ bool Dungeon::CreateThemeRoomLibrary(int room_num) {
 }
 
 bool Dungeon::CreateThemeRoomChest(int room_num) {
-  int min_tiles = 8;
-  int max_tiles = 20;
-  if (room_stats[room_num]->tiles.size() < min_tiles) return false;
-  if (room_stats[room_num]->tiles.size() > max_tiles) return false;
+  shared_ptr<Room> room = CreateEmptyRoom();
+  if (!room) return false;
 
-  // Place chest.
+  // Place chests.
+  int num_to_place = 1;
   for (int i = 0; i < 100; i++) {
-    int tile_index = Random(0, room_stats[room_num]->tiles.size());
-    ivec2 tile = room_stats[room_num]->tiles[tile_index];
-    if (IsTileNextToDoor(tile) || !IsValidPlaceLocation(tile.x, tile.y)) continue;
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
+    if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
+    if (dungeon[tile.x][tile.y] == 66) continue;
+    if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+
     dungeon[tile.x][tile.y] = 72;
-    break;
+    if (--num_to_place == 0) break;
   }
+  if (num_to_place > 0) return false;
 
-  // Place monsters.
+  // Place monsters. TODO: should depend on level.
   for (int i = 0; i < 100; i++) {
-    int tile_index = Random(0, room_stats[room_num]->tiles.size());
-    ivec2 tile = room_stats[room_num]->tiles[tile_index];
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
     if (dungeon[tile.x][tile.y] != 13) continue;
-    PlaceMonsterGroup(tile.x, tile.y);
+    int num_monsters = PlaceMonsterGroup(tile.x, tile.y, 2);
+    if (num_monsters != 2) continue;
     break;
   }
   return true;
@@ -1474,8 +1473,7 @@ void Dungeon::FindRooms() {
 void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   current_level_ = dungeon_level;
 
-  // if (dungeon_level == 0) random_num = -557920586;
-  // if (dungeon_level == 1) random_num = -48980802;
+  // random_num = -224500967; // To produce the spider behind gate issue.
 
   initialized_ = true;
   srand(random_num);

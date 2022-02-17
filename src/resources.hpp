@@ -786,7 +786,7 @@ class Resources {
 
   shared_ptr<Missile> GetUnusedMissile();
   void CastSpellShot(const Camera& camera);
-  void CreateDrops(ObjPtr obj);
+  void CreateDrops(ObjPtr obj, bool static_drops = false);
 
   void CastWindslash(const Camera& camera);
   bool IsHoldingScepter();

@@ -1381,6 +1381,14 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
 
   life -= damage;
 
+  if (IsPlayer()) {
+    shared_ptr<Configs> configs = resources_->GetConfigs();
+    configs->taking_hit = 30.0f;
+  }
+
+  ClearTemporaryStatus(STATUS_SPIDER_THREAD);
+  levitating = false;
+
   resources_->CreateParticleEffect(10, position, normal * 1.0f, 
     vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
   if (life <= 0) {

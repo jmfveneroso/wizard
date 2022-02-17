@@ -287,7 +287,9 @@ void Monsters::Spiderling(ObjPtr unit) {
       }
 
       if (next_action && next_action->type == ACTION_SPIDER_JUMP) break;
-      if (!unit->can_jump) break;
+      if (!unit->can_jump) {
+        break;
+      }
 
       bool movement_obstructed = false;
       if (visible) {
@@ -317,7 +319,7 @@ void Monsters::Spiderling(ObjPtr unit) {
           static_pointer_cast<MoveAction>(next_action);
         vec3 next_move = move_action->destination;
         double distance = length(next_move - player->position);
-        if (distance > distance_to_player) {
+        if (distance > distance_to_player && !movement_obstructed) {
           unit->ClearActions();
         }
       }
@@ -571,7 +573,10 @@ void Monsters::Lancet(ObjPtr unit) {
           static_pointer_cast<MoveAction>(next_action);
         vec3 next_move = move_action->destination;
         double distance = length(next_move - player->position);
-        if (distance > distance_to_player) {
+
+        float t;
+        bool movement_obstructed = dungeon.IsMovementObstructed(unit->position, player->position, t);
+        if (distance > distance_to_player && !movement_obstructed) {
           unit->ClearActions();
         }
       }
