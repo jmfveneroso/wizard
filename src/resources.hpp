@@ -813,6 +813,7 @@ class Resources {
   bool CanRest();
   void CastFlashMissile(const Camera& camera);
   void CastShotgun(const Camera& camera);
+  void CreateChestDrops(ObjPtr obj, int item_id);
 };
 
 #endif // __RESOURCES_HPP__

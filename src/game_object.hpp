@@ -137,6 +137,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool was_hit = false;
   bool stunned = false;
 
+  unordered_map<string, string> memory;
+
   unordered_map<string, shared_ptr<CollisionEvent>> on_collision_events;
   set<string> old_collisions;
   set<string> collisions;
@@ -247,6 +249,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool HasEffectOnCollision();
   string GetEffectOnCollision();
   bool CanUseAbility(const string& ability);
+  void SetMemory(const string& key, const string& value);
+  string ReadMemory(const string& key);
 };
 
 using ObjPtr = shared_ptr<GameObject>;

@@ -253,6 +253,7 @@ void Monsters::Spiderling(ObjPtr unit) {
   }
 
   bool visible = dungeon.IsTileVisible(unit->position);
+
   bool player_reachable = IsPlayerReachable(unit);
 
   int unit_relevance = 
@@ -291,15 +292,14 @@ void Monsters::Spiderling(ObjPtr unit) {
         break;
       }
 
-      bool movement_obstructed = false;
-      if (visible) {
-        float t;
-        movement_obstructed = dungeon.IsMovementObstructed(unit->position, player->position, t);
-      }
-
+      float t;
+      bool movement_obstructed = dungeon.IsMovementObstructed(unit->position, player->position, t);
       if (!movement_obstructed && distance_to_player > 30.0f && unit->can_jump) {
-        unit->actions.push(make_shared<SpiderJumpAction>(player->position));
-        break;
+        if (unit->CanUseAbility("spider-jump")) {
+          unit->cooldowns["spider-jump"] = glfwGetTime() + 1;
+          unit->actions.push(make_shared<SpiderJumpAction>(player->position));
+          break;
+        }
       }
 
       int r = Random(0, 100);
@@ -433,7 +433,7 @@ void Monsters::Spiderling(ObjPtr unit) {
         break;
       }
 
-      if (!holdback) {
+      if (!holdback || player_reachable) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
         break;

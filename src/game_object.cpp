@@ -1639,3 +1639,12 @@ bool GameObject::CanUseAbility(const string& ability) {
   }
   return true;
 }
+
+void GameObject::SetMemory(const string& key, const string& value) {
+  memory[key] = value;
+}
+
+string GameObject::ReadMemory(const string& key) {
+  if (memory.find(key) == memory.end()) return "";
+  return memory[key];
+}

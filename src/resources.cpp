@@ -3183,13 +3183,7 @@ void Resources::LearnSpell(int item_id) {
       }
     }
   } else {
-    AddMessage(string("You gained one mana."));
-    player_->max_mana++;
-    player_->mana++;
-
-    // spell->level++;
-    // AddMessage(string("You learned ") + spell->name + 
-    //   string("at level ") + boost::lexical_cast<string>(spell->level));
+    if (++player_->mana > player_->max_mana) player_->mana = player_->max_mana;
   }
 }
 
@@ -3218,35 +3212,44 @@ void Resources::UpdateAnimationFrames() {
 
     if (obj->type == GAME_OBJ_DOOR) {
       shared_ptr<Door> door = static_pointer_cast<Door>(obj);
+      shared_ptr<Mesh> mesh = GetMesh(door);
+
       switch (door->state) {
-        case DOOR_CLOSED: 
+        case DOOR_CLOSED: {
           door->frame = 0;
           ChangeObjectAnimation(door, "Armature|open");
           break;
-        case DOOR_OPENING: 
+        }
+        case DOOR_OPENING: {
           ChangeObjectAnimation(door, "Armature|open");
           door->frame += 1.0f * d;
-          if (door->frame >= 59) {
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|open");
+          if (door->frame >= num_frames - 1) {
             door->state = DOOR_OPEN;
             door->frame = 0;
             ChangeObjectAnimation(door, "Armature|close");
           }
           break;
-        case DOOR_OPEN:
+        }
+        case DOOR_OPEN: {
           door->frame = 0;
           ChangeObjectAnimation(door, "Armature|close");
           break;
-        case DOOR_CLOSING:
+        }
+        case DOOR_CLOSING: {
           ChangeObjectAnimation(door, "Armature|close");
           door->frame += 1.0f * d;
-          if (door->frame >= 59) {
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|close");
+          if (door->frame >= num_frames - 1) {
             door->state = DOOR_CLOSED;
             door->frame = 0;
             ChangeObjectAnimation(door, "Armature|open");
           }
-          break;
-        default:
-          break;
+          break; 
+        }
+        default: {
+          break; 
+        }
       }
       continue; 
     }
@@ -3976,10 +3979,18 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         case 'd': {
           tile = CreateRoom(this, "dungeon_door_frame", pos, 0);
+          if (dungeon_.GetFlag(ivec2(x, z), DLRG_DOOR_CLOSED)) {
+            ObjPtr obj = CreateRoom(this, "dungeon_door", pos, 0);
+            obj->dungeon_tile = ivec2(x, z);
+          }
           break;
         }
         case 'D': {
           tile = CreateRoom(this, "dungeon_door_frame", pos, 1);
+          if (dungeon_.GetFlag(ivec2(x, z), DLRG_DOOR_CLOSED)) {
+            ObjPtr obj = CreateRoom(this, "dungeon_door", pos, 1);
+            obj->dungeon_tile = ivec2(x, z);
+          }
           break;
         }
         case '<': {
@@ -4085,26 +4096,44 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           ObjPtr obj = CreateGameObjFromAsset(this, "barrel", pos + vec3(0, 0, 0));
           break;
         }
+        case 'Q': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "powerup_pedestal_base", pos + vec3(0, 0, 0));
+          if (Random(0, 2) == 0) {
+            CreateGameObjFromAsset(this, "powerup_pedestal_crystal_life", pos + vec3(0, 0, 0));
+          } else {
+            CreateGameObjFromAsset(this, "powerup_pedestal_crystal_mana", pos + vec3(0, 0, 0));
+          }
+          break;
+        }
         case 'X': {
           ObjPtr obj = CreateGameObjFromAsset(this, "pedestal", pos + vec3(0, 0, 0));
 
-          switch (Random(0, 4)) {
-            case 0:
-              obj = CreateGameObjFromAsset(this, "life_mana_crystal", pos + vec3(0, 5.3, 0));
-              break;
-            case 1:
-              obj = CreateGameObjFromAsset(this, "air_mana_crystal", pos + vec3(0, 5.3, 0));
-              break;
-            case 2:
-              obj = CreateGameObjFromAsset(this, "magma_mana_crystal", pos + vec3(0, 5.3, 0));
-              break;
-            case 3:
-              obj = CreateGameObjFromAsset(this, "sun_mana_crystal", pos + vec3(0, 5.3, 0));
-              break;
+          int spell_id = dungeon_.GetRandomLearnableSpell(configs_->dungeon_level);
+          if (spell_id != -1) {
+            shared_ptr<ArcaneSpellData> spell = arcane_spell_data_[spell_id];
+            obj = CreateGameObjFromAsset(this,
+              item_data_[spell->item_id].asset_name, pos + vec3(0, 5.3, 0));
+            obj->CalculateCollisionData();
+            obj->physics_behavior = PHYSICS_FIXED;
           }
 
-          obj->CalculateCollisionData();
-          obj->physics_behavior = PHYSICS_FIXED;
+          // switch (Random(0, 4)) {
+          //   case 0:
+          //     obj = CreateGameObjFromAsset(this, "life_mana_crystal", pos + vec3(0, 5.3, 0));
+          //     break;
+          //   case 1:
+          //     obj = CreateGameObjFromAsset(this, "air_mana_crystal", pos + vec3(0, 5.3, 0));
+          //     break;
+          //   case 2:
+          //     obj = CreateGameObjFromAsset(this, "magma_mana_crystal", pos + vec3(0, 5.3, 0));
+          //     break;
+          //   case 3:
+          //     obj = CreateGameObjFromAsset(this, "sun_mana_crystal", pos + vec3(0, 5.3, 0));
+          //     break;
+          // }
+
+          // obj->CalculateCollisionData();
+          // obj->physics_behavior = PHYSICS_FIXED;
           break;
         }
         case 'c': {
@@ -4129,7 +4158,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case 'L': case 'w': case 's': case 'S': case 'V': case 'Y':
-        case 'J': case 'K': case 'W': case 'r': case 'E': case 'Q': { // Is Monster.
+        case 'J': case 'K': case 'W': case 'r': case 'E': { // Is Monster.
           static unordered_map<char, string> monster_assets { 
             { 'L', "broodmother" },
             { 'w', "blood_worm" },
@@ -4143,7 +4172,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
             { 'W', "wraith" },
             { 'r', "drider" },
             { 'E', "metal-eye" },
-            { 'Q', "spider_queen" },
           };
    
           char code = monsters_and_objs[x][z];
@@ -5555,6 +5583,20 @@ void Resources::CastSpiderWebShot(ObjPtr spider, vec3 dir) {
   obj->speed = normalize(p2 - obj->position) * 2.0f;
 
   UpdateObjectPosition(obj);
+}
+
+void Resources::CreateChestDrops(ObjPtr obj, int item_id) {
+  if (!obj->asset_group) return;
+
+  vec3 pos = obj->position;
+  ObjPtr item = CreateGameObjFromAsset(this, 
+    item_data_[item_id].asset_name, pos);
+  item->CalculateCollisionData();
+
+  // TODO: set scepter charges in xml.
+  if (item->GetItemId() == 25) {
+    item->quantity = 10;
+  }
 }
 
 void Resources::CreateDrops(ObjPtr obj, bool static_drops) {

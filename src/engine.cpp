@@ -340,6 +340,11 @@ bool Engine::ProcessGameInput() {
                   static_pointer_cast<LongMoveAction>(next_action);
                 ss << "long move to: " << move_action->destination << endl;
               }
+              // if (next_action->type == ACTION_MOVE_TO_PLAYER) {
+              //   shared_ptr<MoveToPlayerAction> move_action =  
+              //     static_pointer_cast<MoveToPlayerAction>(next_action);
+              //   ss << "move to player: " << move_action->destination << endl;
+              // }
             }
           }
           

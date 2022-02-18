@@ -13,6 +13,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
   shared_ptr<Configs> configs = resources_->GetConfigs();
   vector<shared_ptr<GameObject>> items = resources_->GetItems();
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+  Dungeon& dungeon = resources_->GetDungeon();
 
   vec3 p = c.position;
   vec3 d = normalize(c.direction);
@@ -39,8 +40,9 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           shared_ptr<Door> door = static_pointer_cast<Door>(item);
           if (door->state == DOOR_CLOSED) {
             door->state = DOOR_OPENING;
-            if (door->dungeon_piece_type == 'd' || door->dungeon_piece_type == 'D') {
+            if (door->dungeon_tile.x != -1) {
               resources_->GetDungeon().SetDoorOpen(door->dungeon_tile);
+              dungeon.CalculateAllPathsAsync(door->dungeon_tile);
             }
             for (shared_ptr<Event> e : door->on_open_events) {
               shared_ptr<DoorEvent> door_event = static_pointer_cast<DoorEvent>(e);
@@ -48,8 +50,9 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             }
           } else if (door->state == DOOR_OPEN) {
             door->state = DOOR_CLOSING;
-            if (door->dungeon_piece_type == 'd' || door->dungeon_piece_type == 'D') {
+            if (door->dungeon_tile.x != -1) {
               resources_->GetDungeon().SetDoorClosed(door->dungeon_tile);
+              dungeon.CalculateAllPathsAsync(door->dungeon_tile);
             }
           }
         }
@@ -57,9 +60,16 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
          shared_ptr<Actionable> actionable = 
            static_pointer_cast<Actionable>(item);
 
-         if (actionable->state == 0) {
-           resources_->TurnOnActionable(item->name);
-           resources_->CreateDrops(item, /*static_drops=*/true);
+         if (actionable->GetAsset()->name == "large_chest_wood") {
+           if (actionable->state == 0) {
+             resources_->TurnOnActionable(item->name);
+
+             Dungeon& dungeon = resources_->GetDungeon();
+             int item_id = dungeon.GetRandomChestLoot(configs->dungeon_level);
+             if (item_id != -1) {
+               resources_->CreateChestDrops(item, item_id);
+             }
+           }
          }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();
@@ -135,7 +145,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->LearnSpell(item_id);
             resources_->RemoveObject(item);
           } else if (item_id == 20) { 
-            resources_->GetPlayer()->mana += 3;
+            resources_->GetPlayer()->mana += 1;
             if (resources_->GetPlayer()->mana > 
               resources_->GetPlayer()->max_mana) {
               resources_->GetPlayer()->mana = resources_->GetPlayer()->max_mana;
@@ -149,10 +159,33 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             }
             resources_->RemoveObject(item);
           } else if (item_id == 27) { // +1 life.
-            resources_->GetPlayer()->max_life++;
-            resources_->GetConfigs()->max_life++;
-            resources_->GetPlayer()->life++;
-            resources_->RemoveObject(item);
+            if (resources_->GetPlayer()->max_life - 5 > configs->dungeon_level) {
+              resources_->GetPlayer()->life += 1;
+              if (resources_->GetPlayer()->life > 
+                resources_->GetPlayer()->max_life ) {
+                resources_->GetPlayer()->life = resources_->GetPlayer()->max_life;
+              }
+              resources_->RemoveObject(item);
+            } else {
+              resources_->GetPlayer()->max_life++;
+              resources_->GetConfigs()->max_life++;
+              resources_->GetPlayer()->life++;
+              resources_->RemoveObject(item);
+            }
+          } else if (item_id == 28) { // +1 mana.
+            if (resources_->GetPlayer()->max_mana - 10 > configs->dungeon_level) {
+              resources_->GetPlayer()->mana += 1;
+              if (resources_->GetPlayer()->mana > 
+                resources_->GetPlayer()->max_mana) {
+                resources_->GetPlayer()->mana = resources_->GetPlayer()->max_mana;
+              }
+              resources_->RemoveObject(item);
+            } else {
+              resources_->GetPlayer()->max_mana++;
+              resources_->GetConfigs()->max_mana++;
+              resources_->GetPlayer()->mana++;
+              resources_->RemoveObject(item);
+            }
           } else {
             int quantity = item->quantity;
             if (resources_->InsertItemInInventory(item_id, quantity)) {

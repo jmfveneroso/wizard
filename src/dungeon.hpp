@@ -45,6 +45,8 @@ struct LevelData {
   vector<int> objects;
   vector<string> minisets;
   vector<int> theme_rooms;
+  vector<int> learnable_spells;
+  vector<int> chest_loots;
 
   LevelData() {}
   LevelData(
@@ -270,6 +272,7 @@ class Dungeon {
 
   bool CreateThemeRoomChest(int room_num);
   bool CreateThemeRoomLibrary(int room_num);
+  bool CreateThemeRoomPedestal(int room_num);
   bool CreateThemeRooms();
   void FindRooms();
   int FillRoom(ivec2 tile, shared_ptr<Room> current_room);
@@ -303,7 +306,7 @@ class Dungeon {
   bool IsChasm(const ivec2& tile);
   bool IsSecretRoom(const ivec2& tile);
   bool IsWebFloor(const ivec2& tile);
-  bool IsTileClear(const ivec2& tile, bool consider_door_state = false);
+  bool IsTileClear(const ivec2& tile, bool consider_door_state = true);
   bool IsTileClear(const ivec2& tile, const ivec2& next_tile);
   bool IsTileTransparent(const ivec2& tile);
   bool IsTileVisible(const ivec2& tile);
@@ -354,6 +357,8 @@ class Dungeon {
   bool IsReachable(const vec3& source, const vec3& dest);
   void PrintPathfindingMap(const vec3& position);
   ivec2 GetClosestClearTile(const vec3& position);
+  int GetRandomChestLoot(int dungeon_level);
+  int GetRandomLearnableSpell(int dungeon_level);
 };
 
 #endif // __DUNGEON_HPP__

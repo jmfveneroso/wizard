@@ -58,10 +58,10 @@ Dungeon::Dungeon() {
   char_map_[91] = 'V'; // Viper.
   char_map_[92] = '&'; // Secret wall.
   char_map_[93] = 'm'; // Miniboss.
-  char_map_[94] = 'W'; // Worm King.
+  char_map_[94] = 'W'; // Queen.
   char_map_[95] = 'r'; // Drider.
   char_map_[97] = 'E'; // Evil Eye.
-  char_map_[98] = 'Q'; // Spider Queen.
+  char_map_[98] = 'Q'; // Pedestal.
   char_map_[99] = 'X'; // Spell pedestal.
 
   monsters_and_objs = new char*[kDungeonSize];
@@ -1125,7 +1125,6 @@ void Dungeon::GenerateAsciiDungeon() {
       switch (ascii_code) {
         case 's':
         case 'S':
-        case 'Q':
         case 'r':
         case 'E':
         case 'V':
@@ -1149,6 +1148,7 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'C':
         case 'M':
         case 'X':
+        case 'Q':
           monsters_and_objs[x][y] = ascii_code;
           break;
         default:
@@ -1158,7 +1158,9 @@ void Dungeon::GenerateAsciiDungeon() {
       ascii_dungeon[x][y] = char_map_[dungeon[x][y]];
 
       if (ascii_dungeon[x][y] == 'd' || ascii_dungeon[x][y] == 'D') {
-        flags[x][y] = DLRG_DOOR_CLOSED;
+        if (Random(0, 4) == 0) {
+          SetFlag(ivec2(x, y), DLRG_DOOR_CLOSED);
+        }
       }
     }
   }
@@ -1204,10 +1206,38 @@ bool Dungeon::CreateThemeRoomChest(int room_num) {
     int tile_index = Random(0, room->tiles.size());
     ivec2 tile = room->tiles[tile_index];
     if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
-    if (dungeon[tile.x][tile.y] == 66) continue;
     if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
 
     dungeon[tile.x][tile.y] = 72;
+    if (--num_to_place == 0) break;
+  }
+  if (num_to_place > 0) return false;
+
+  // Place monsters. TODO: should depend on level.
+  for (int i = 0; i < 100; i++) {
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
+    if (dungeon[tile.x][tile.y] != 13) continue;
+    int num_monsters = PlaceMonsterGroup(tile.x, tile.y, 2);
+    if (num_monsters != 2) continue;
+    break;
+  }
+  return true;
+}
+
+bool Dungeon::CreateThemeRoomPedestal(int room_num) {
+  shared_ptr<Room> room = CreateEmptyRoom();
+  if (!room) return false;
+
+  // Place pedestals.
+  int num_to_place = 1;
+  for (int i = 0; i < 100; i++) {
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
+    if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
+    if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+
+    dungeon[tile.x][tile.y] = 98;
     if (--num_to_place == 0) break;
   }
   if (num_to_place > 0) return false;
@@ -1358,6 +1388,7 @@ shared_ptr<Room> Dungeon::CreateEmptyRoom() {
     } else {
       dungeon[x][y] = 26;
     }
+    SetFlag(ivec2(x, y), DLRG_DOOR_CLOSED);
 
     shared_ptr<Room> room = make_shared<Room>(room_stats.size());
     room_stats.push_back(room);
@@ -1402,6 +1433,10 @@ bool Dungeon::CreateThemeRooms() {
       }
       case 1: {
         if (!CreateThemeRoomChest(room_num)) continue;
+        break;
+      }
+      case 2: {
+        if (!CreateThemeRoomPedestal(room_num)) continue;
         break;
       }
       // case 2: {
@@ -1474,6 +1509,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   current_level_ = dungeon_level;
 
   // random_num = -224500967; // To produce the spider behind gate issue.
+  // random_num = -406152290; // To produce movement issue.
 
   initialized_ = true;
   srand(random_num);
@@ -1669,7 +1705,6 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case 's':
     case 'S':
     case 'L':
-    case 'Q':
     case 'r':
     case 'E':
     case 'Y':
@@ -1678,11 +1713,12 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case 'o':
     case 'O':
     case '<':
+    case 'W':
       return true;
     case 'd':
     case 'D': {
       if (consider_door_state) {
-        return !(flags[tile.x][tile.y] & DLRG_DOOR_CLOSED);
+        return !GetFlag(tile, DLRG_DOOR_CLOSED);
       }
       return true;
     }
@@ -1698,6 +1734,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
 
   if (GetFlag(tile, DLRG_SPELL_WALL)) return false;
   if (GetFlag(next_tile, DLRG_SPELL_WALL)) return false;
+  if (GetFlag(tile, DLRG_DOOR_CLOSED)) return false;
 
   char** dungeon_map = ascii_dungeon;
   const char dungeon_tile = dungeon_map[tile.x][tile.y];
@@ -1716,7 +1753,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
     case 'L':
     case '(':
     case ')':
-    case '<':
+    case '<': {
     // case '<':
     // case '>':
     // case '@':
@@ -1739,17 +1776,24 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         // case '>':
         // case '@':
           return true;
-        case 'o':
-        case 'O':
         case 'd':
-        case 'D': {
+        case 'D':
+          if (GetFlag(tile, DLRG_DOOR_CLOSED)) {
+            return false;
+          }
+        case 'o':
+        case 'O': {
           return (tile.x == next_tile.x || tile.y == next_tile.y);
         }
         default:
           return false;
       }
+    }
     case 'd':
     case 'D': {
+      if (GetFlag(tile, DLRG_DOOR_CLOSED)) {
+        return false;
+      }
       if (tile.x == next_tile.x || tile.y == next_tile.y) {
         switch (dungeon_next_tile) {
           case ' ':
@@ -2090,11 +2134,15 @@ ivec2 Dungeon::GetClosestClearTile(const vec3& position) {
 }
 
 bool Dungeon::IsReachable(const vec3& source, const vec3& dest) {
-  ivec2 source_tile = GetClosestClearTile(source);
-  ivec2 dest_tile = GetClosestClearTile(dest);
+  // ivec2 source_tile = GetClosestClearTile(source);
+  // ivec2 dest_tile = GetClosestClearTile(dest);
 
-  int code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
-  return code != 9;
+  // int code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
+  // return code != 9;
+
+  float min_distance;
+  vec3 next_move = GetNextMove(source, dest, min_distance);
+  return length2(next_move) > 0.01f;
 }
 
 vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest, 
@@ -2106,8 +2154,46 @@ vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest,
   min_distance = min_distance_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
 
   const ivec2 tile_offset = code_to_offset_[code];
-  const ivec2 next_tile = source_tile + tile_offset;
-  if (!IsTileClear(next_tile) || code == 9 || code == 4) {
+  ivec2 next_tile = source_tile + tile_offset;
+
+  if (code == 4 || code == 9) { // No path found from source to dest.
+    // If distance is more than 20 tiles, then it is too distant anyways.
+    if (pow(dest.x - source.x, 2) + pow(dest.y - source.y, 2) > 400.0f) {
+      return vec3(0);
+    }
+
+    int best_code = -1;
+    min_distance = 9999999;
+
+    // Try to find alternative path.
+    for (int i = -5; i <= 5; i++) {
+      for (int j = -5; j <= 5; j++) {
+        int x = ((source_tile.x + dest_tile.x) / 2) + i;
+        int y = ((source_tile.y + dest_tile.y) / 2) + j;
+        if (x < 0 || y < 0 || x >= kDungeonSize || y >= kDungeonSize) continue;
+
+        int code1 = dungeon_path_[x][y][source_tile.x][source_tile.y];
+        if (code1 == 9 || code1 == 4) continue;
+
+        int code2 = dungeon_path_[dest_tile.x][dest_tile.y][x][y];
+        if (code2 == 9 || code2 == 4) continue;
+
+        int dist = min_distance_[dest_tile.x][dest_tile.y][x][y] + 
+          min_distance_[x][y][source_tile.x][source_tile.y];
+     
+        if (dist < min_distance) {
+          best_code = code1;
+          min_distance = dist;
+        } 
+      }
+    }
+
+    if (best_code == -1) return vec3(0);
+    const ivec2 tile_offset = code_to_offset_[best_code];
+    next_tile = source_tile + tile_offset;
+  }
+
+  if (!IsTileClear(next_tile)) {
     return vec3(0);
   }
 
@@ -2153,10 +2239,14 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case '~':
     case '(':
     case ')':
-    case 'd':
-    case 'D':
     case 'X':
+    case 'W':
+    case 'M':
       return true;
+    case 'd':
+    case 'D': {
+      return !GetFlag(tile, DLRG_DOOR_CLOSED);
+    }
     default: 
       break;
   }
@@ -2266,14 +2356,17 @@ bool Dungeon::IsMovementObstructed(vec3 start, vec3 end, float& t) {
       case ' ':
       case 'o':
       case 'O':
-      case 'd':
-      case 'D':
       case '<':
+      case 'd':
+      case 'D': {
         break;
-      default:
+      }
+      default: {
         return true;
+      }
     }
 
+    if (GetFlag(tile, DLRG_DOOR_CLOSED)) return true;
     if (GetFlag(tile, DLRG_SPELL_WALL)) return true;
     t += delta;
   }
@@ -2458,8 +2551,9 @@ void Dungeon::SetDoorClosed(const ivec2& tile) {
     ascii_dungeon[tile.x][tile.y] != 'D')) {
     throw runtime_error("No door at tile.");
   }
-  flags[tile.x][tile.y] |= DLRG_DOOR_CLOSED;
+  SetFlag(tile, DLRG_DOOR_CLOSED);
   last_player_pos = ivec2(-1, -1);
+  cout << "Set door closed" << endl;
 }
 
 void Dungeon::SetDoorOpen(const ivec2& tile) {
@@ -2467,8 +2561,9 @@ void Dungeon::SetDoorOpen(const ivec2& tile) {
     ascii_dungeon[tile.x][tile.y] != 'D')) {
     throw runtime_error("No door at tile.");
   }
-  flags[tile.x][tile.y] &= 0xFB;
+  UnsetFlag(tile, DLRG_DOOR_CLOSED);
   last_player_pos = ivec2(-1, -1);
+  cout << "Set door open" << endl;
 }
 
 bool Dungeon::IsDark(const ivec2& tile) {
@@ -2557,6 +2652,22 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
       int theme_room_id = LoadIntFromXml(theme_room_xml);
       for (int i = 0; i < odds; i++) l.theme_rooms.push_back(theme_room_id);
     }
+
+    const pugi::xml_node& chest_loots_xml = node_xml.child("chest-loots");
+    for (pugi::xml_node chest_loot_xml = chest_loots_xml.child("chest-loot"); chest_loot_xml; 
+      chest_loot_xml = chest_loot_xml.next_sibling("chest-loot")) {
+      int odds = boost::lexical_cast<int>(chest_loot_xml.attribute("odds").value());
+      int item_id = LoadIntFromXml(chest_loot_xml);
+      for (int i = 0; i < odds; i++) l.chest_loots.push_back(item_id);
+    }
+
+    const pugi::xml_node& spells_xml = node_xml.child("learnable-spells");
+    for (pugi::xml_node spell_xml = spells_xml.child("spell"); spell_xml; 
+      spell_xml = spell_xml.next_sibling("spell")) {
+      int odds = boost::lexical_cast<int>(spell_xml.attribute("odds").value());
+      int item_id = LoadIntFromXml(spell_xml);
+      for (int i = 0; i < odds; i++) l.learnable_spells.push_back(item_id);
+    }
   }
 }
 
@@ -2642,4 +2753,20 @@ bool Dungeon::GetFlag(ivec2 tile, int flag) {
 
 void Dungeon::ClearPaths() {
   invert_distance_ = !invert_distance_;
+}
+
+int Dungeon::GetRandomChestLoot(int dungeon_level) {
+  const vector<int>& chest_loots = level_data_[dungeon_level].chest_loots;
+  if (chest_loots.empty()) return -1;
+
+  int index = Random(0, chest_loots.size());
+  return chest_loots[index];
+}
+
+int Dungeon::GetRandomLearnableSpell(int dungeon_level) {
+  const vector<int>& learnable_spells = level_data_[dungeon_level].learnable_spells;
+  if (learnable_spells.empty()) return -1;
+
+  int index = Random(0, learnable_spells.size());
+  return learnable_spells[index];
 }
