@@ -972,7 +972,9 @@ void CollisionResolver::TestCollisionsWithTerrain() {
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->IsCollidable()) continue;
     if (obj1->IsFixed()) continue;
+    if (obj1->asset_group && obj1->GetAsset()->name == "broodmother") continue; // TODO: set configurable option.
     obj1->touching_the_ground = false;
+
 
     switch (obj1->GetCollisionType()) {
       case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1, resources_, in_dungeon_)); break;

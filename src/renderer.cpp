@@ -805,6 +805,44 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
+    } else if (program_id == resources_->GetShader("web")) {
+      glDisable(GL_CULL_FACE);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      vector<mat4> joint_transforms;
+      if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+        const Animation& animation = mesh->animations[obj->active_animation];
+        if (obj->frame > animation.keyframes.size()) {
+          ThrowError("Frame ", obj->frame, " outside the scope of animation ",
+          obj->active_animation, " for object ", obj->name, " which has ",
+          animation.keyframes.size(), " frames");
+        }
+
+        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        }
+      } else {
+        ThrowError("Animation ", obj->active_animation, " for object ",
+          obj->name, " and asset ", asset->name, " does not exist");
+      }
+
+      glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
+        joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
+      GLuint noise_texture_id = resources_->GetTextureByName("noise");
+      glActiveTexture(GL_TEXTURE1);
+      glBindTexture(GL_TEXTURE_2D, noise_texture_id);
+      glUniform1i(GetUniformId(program_id, "noise_sampler"), 1);
+
+      glUniform3fv(GetUniformId(program_id, "center"), 1,
+        (float*) &obj->position);
+
+      glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
+      glDisable(GL_BLEND);
     } else if (program_id == resources_->GetShader("object") ||
                program_id == resources_->GetShader("outdoor_object")) {
       glActiveTexture(GL_TEXTURE0);
@@ -1717,6 +1755,7 @@ void Renderer::CreateDungeonBuffers() {
   double start_time = glfwGetTime();
 
   vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
+
   vector<string> model_names { 
     "resources/models_fbx/dungeon_floor.fbx", 
     "resources/models_fbx/dungeon_corner.fbx", 
@@ -1726,6 +1765,7 @@ void Renderer::CreateDungeonBuffers() {
     "resources/models_fbx/dungeon_arch_gate.fbx",
     "resources/models_fbx/dungeon_pillar.fbx",
     "resources/models_fbx/dungeon_ceiling.fbx",
+    "resources/models_fbx/dungeon_floor.fbx",
     "resources/models_fbx/dungeon_floor.fbx",
   };
 
@@ -1764,6 +1804,8 @@ void Renderer::CreateDungeonBuffers() {
     "granite_wall_roughness", 
     "medieval_floor_roughness",
   };
+
+  Dungeon& dungeon = resources_->GetDungeon();
 
   vector<FbxData> models;
   vector<GLuint> textures;
@@ -1994,6 +2036,7 @@ void Renderer::DrawDungeonTiles() {
         continue;
       }
 
+      // Cull?
       if (!CollideAABBFrustum(aabb, frustum_planes_, player_pos_)) {
         num_culled++;
         continue;
@@ -2034,7 +2077,6 @@ void Renderer::DrawDungeonTiles() {
         } else {
           glUniform1i(GetUniformId(program_id, "draw_shadows"), 0);
         }
-
         
         mat4 VP = projection_matrix_ * view_matrix_;  
         glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
