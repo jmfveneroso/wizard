@@ -774,30 +774,7 @@ void Monsters::Lancet(ObjPtr unit) {
 void Monsters::Broodmother(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
-  double distance_to_player = length(player->position - unit->position);
-
-  bool group_is_attacking = false;
-  vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
-  for (auto& m : monsters) {
-    if (m == unit) continue;
-    if (m->ai_state == AI_ATTACK) {
-      group_is_attacking = true;
-      break;
-    }
-  }
-
   bool visible = dungeon.IsTileVisible(unit->position);
-  bool player_reachable = IsPlayerReachable(unit);
-
-  int unit_relevance = 
-    dungeon.GetRelevance(dungeon.GetTilePosition(unit->position));
-
-  int player_relevance = 
-    dungeon.GetRelevance(dungeon.GetTilePosition(player->position));
-
-  const float kChaseDistance = 50.0f;
-
-  bool holdback = ShouldHoldback(unit);
 
   if (unit->was_hit) {
     unit->levitating = false;
@@ -809,37 +786,14 @@ void Monsters::Broodmother(ObjPtr unit) {
 
   switch (unit->ai_state) {
     case AI_ATTACK: {
-      if (!player_reachable) {
-        unit->ClearActions();
-        unit->actions.push(make_shared<ChangeStateAction>(FLEE));
+      if (!unit->actions.empty()) {
         break;
       }
 
-      shared_ptr<Action> next_action = nullptr;
-      if (!unit->actions.empty()) {
-        next_action = unit->actions.front();
-      }
-
-      int r = Random(0, 100);
-      if (unit->actions.empty()) {
-        if (distance_to_player < 11.0f) {
-          unit->actions.push(make_shared<TakeAimAction>());
-          unit->actions.push(make_shared<MeeleeAttackAction>());
-        } else {
-          unit->actions.push(make_shared<MoveToPlayerAction>());
-        }
-      } else if (distance_to_player < 11.0f && !IsAttackAction(next_action)) {
-        unit->ClearActions();
+      if (unit->CanUseAbility("spider-egg")) {
         unit->actions.push(make_shared<TakeAimAction>());
-        unit->actions.push(make_shared<MeeleeAttackAction>());
-      } else if (next_action->type == ACTION_MOVE) {
-        shared_ptr<MoveAction> move_action =  
-          static_pointer_cast<MoveAction>(next_action);
-        vec3 next_move = move_action->destination;
-        double distance = length(next_move - player->position);
-        if (distance > distance_to_player) {
-          unit->ClearActions();
-        }
+        unit->actions.push(make_shared<SpiderEggAction>());
+        unit->cooldowns["spider-egg"] = glfwGetTime() + 15;
       }
       break;
     } 
@@ -873,6 +827,55 @@ void Monsters::Broodmother(ObjPtr unit) {
   }
 }
 
+void Monsters::ArrowTrap(ObjPtr unit) {
+  if (!unit->CanUseAbility("arrow-trap")) return;
+
+  Dungeon& dungeon = resources_->GetDungeon();
+
+  vec3 direction = round(vec3(unit->rotation_matrix * vec4(vec3(-1, 0, 0), 1.0)));
+  ivec2 dir_2d = ivec2(direction.x, direction.z);
+
+  ivec2 player_pos = dungeon.GetDungeonTile(resources_->GetPlayer()->position);
+  ivec2 unit_pos = dungeon.GetDungeonTile(unit->position);
+
+  bool trigger = false;
+  ivec2 current_tile = unit_pos;
+  for (int i = 0; i < 10; i++) {
+    current_tile += dir_2d;
+    if (!dungeon.IsTileClear(current_tile)) break;
+
+    if (current_tile.x == player_pos.x && current_tile.y == player_pos.y) {
+      trigger = true;
+      break;
+    }
+  }
+
+  if (trigger) {
+    const int num_missiles = boost::lexical_cast<int>(resources_->GetGameFlag("white_spine_num_missiles"));
+    const float missile_speed = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_speed"));
+    const float spread = boost::lexical_cast<float>(resources_->GetGameFlag("white_spine_missile_spread"));
+
+    vec3 pos = unit->position + vec3(0, 5, 0);
+    vec3 dir = vec3(direction.x, 0, direction.z);
+    pos += dir * 10.0f;
+
+    for (int i = 0; i < num_missiles; i++) {
+      vec3 d = dir;
+      if (i > 0) {
+        float x_ang = (float) Random(-5, 6) * spread;
+        float y_ang = (float) Random(-5, 6) * spread;
+        vec3 right = cross(dir, vec3(0, 1, 0));
+        mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+        d += vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+      }
+
+      resources_->CastMissile(unit, pos, MISSILE_HORN, 
+        d, missile_speed);
+      unit->cooldowns["arrow-trap"] = glfwGetTime() + 5;
+    }
+  }
+}
+
 void Monsters::RunMonsterAi(ObjPtr obj) {
   if (obj->GetAsset()->name == "spiderling") {
     Spiderling(obj); 
@@ -880,6 +883,8 @@ void Monsters::RunMonsterAi(ObjPtr obj) {
     Lancet(obj); 
   } else if (obj->GetAsset()->name == "broodmother") {
     Broodmother(obj); 
+  } else if (obj->GetAsset()->name == "arrow_trap") {
+    ArrowTrap(obj); 
   } else if (obj->GetAsset()->name == "mini_spiderling") {
     MiniSpiderling(obj); 
   } else if (obj->GetAsset()->name == "white_spine") {

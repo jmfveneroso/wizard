@@ -591,14 +591,27 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
 }
 
 // TODO: split into functions for each shader.
-void Renderer::DrawObject(shared_ptr<GameObject> obj) {
+void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
   if (obj == nullptr) return;
+
+  if (mode == 1 && obj->IsCreature()) return;
+  if (mode == 2 && !obj->IsCreature()) return;
+  if (mode == 3 && !obj->IsCreature()) return;
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   // if (obj->type == GAME_OBJ_PORTAL) {
   //   // TODO: draw portal.
   //   return;
   // }
+
+  if (mode == 2 && configs->detect_monsters && obj->IsCreature()) {
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+  } else {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS); 
+    glDepthMask(GL_TRUE);
+  }
 
   if (obj->Is3dParticle()) {
     return Draw3dParticle(static_pointer_cast<Particle>(obj));
@@ -630,6 +643,9 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
 
     if (dying) {
       program_id = resources_->GetShader("death");
+    } else if (mode == 2 && configs->detect_monsters && obj->IsCreature()) {
+      // program_id = resources_->GetShader("death");
+      program_id = resources_->GetShader("detect_monster");
     }
 
     glUseProgram(program_id);
@@ -921,7 +937,8 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
       glUniform1f(GetUniformId(program_id, "move_factor"), move_factor);
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND); 
-    } else if (program_id == resources_->GetShader("death")) {
+    } else if (program_id == resources_->GetShader("death") ||
+              program_id == resources_->GetShader("detect_monster")) {
       glUniform1f(GetUniformId(program_id, "enable_animation"), 1);
       vector<mat4> joint_transforms;
       Animation& animation = mesh->animations[obj->active_animation];
@@ -997,7 +1014,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj) {
   glBindVertexArray(0);
 }
 
-void Renderer::DrawObjects(vector<ObjPtr> objs) {
+void Renderer::DrawObjects(vector<ObjPtr> objs, int mode) {
   glDisable(GL_CULL_FACE);
   for (auto& obj : objs) {
     if (!obj) { // Terrain.
@@ -1006,10 +1023,10 @@ void Renderer::DrawObjects(vector<ObjPtr> objs) {
       // TODO: to display particles inside the sector.
       // DrawParticles();
       glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-      DrawObject(obj);
+      DrawObject(obj, mode);
       glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     } else {
-      DrawObject(obj);
+      DrawObject(obj, mode);
     }
   }
 
@@ -1092,8 +1109,13 @@ void Renderer::Draw() {
     shared_ptr<Player> player = resources_->GetPlayer();
     Dungeon& dungeon = resources_->GetDungeon();
     ivec2 player_tile = dungeon.GetDungeonTile(player->position);
-    if (configs->darkvision || !dungeon.IsDark(player_tile)) {
-      DrawObjects(objects);
+
+    if (configs->detect_monsters) {
+      DrawObjects(objects, 1); // Draw non creatures.
+      DrawObjects(objects, 2); // Draw detect shader.
+      DrawObjects(objects, 3); // Draw creatures.
+    } else {
+      DrawObjects(objects, 0);
     }
   } else {
     DrawObjects(objects);
@@ -1909,6 +1931,9 @@ void Renderer::CreateDungeonBuffers() {
             } else if (tile == ' ') {
             } else if (tile == 'c') {
             } else if (tile == 's') {
+            } else if (tile == '+') {
+              if (dungeon_map[x][z] != '+' && dungeon_map[x][z] != '^' && 
+                  dungeon_map[x][z] != '/') continue;
             } else {
               if (dungeon_map[x][z] != tile) continue;
             }

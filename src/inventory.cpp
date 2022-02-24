@@ -109,9 +109,9 @@ void Inventory::DrawSpellbar() {
 
   draw_2d_->DrawImage("spellbar", 0, 0, 1440, 1440, 1.0);
 
-  for (int x = 0; x < 8; x++) {
-    int top = 852;
-    int left = 515 + 52 * x;
+  int top = 852;
+  int left = 463;
+  for (int x = 0; x < 7; x++) {
     int item_id = configs->spellbar[x];
     int item_quantity = configs->spellbar_quantities[x];
     if (item_id != 0) {
@@ -137,24 +137,28 @@ void Inventory::DrawSpellbar() {
     if (dragged_item.origin != ITEM_ORIGIN_NONE && 
         IsMouseInRectangle(left, right, bottom, top) && !lft_click_) {
       auto spell = resources_->WhichArcaneSpell(dragged_item.item_id);
-      bool select = false;
-      if ((spell && dragged_item.origin == ITEM_ORIGIN_SPELL_GRAPH)) {
-        select = true;
-      } else if (!spell) {
-        const ItemData& item_data = resources_->GetItemData()[dragged_item.item_id];
-        select = (item_data.type == ITEM_USABLE || item_data.type == ITEM_SCEPTER);
+      if (!spell) {
+        return;
       }
 
-      if (select) {
-        spellbar[x] = dragged_item.item_id;
-        spellbar_quantities[x] = 1;
-        // dragged_item.origin = ITEM_ORIGIN_NONE;
-        // selected_item_ = 0;
-        // selected_qnty_ = 0;
-        // old_pos_x_ = 0;
-        // old_pos_y_ = 0;
+      if (dragged_item.origin != ITEM_ORIGIN_SPELL_GRAPH) {
+        return;
       }
+
+      spellbar[x] = dragged_item.item_id;
+      spellbar_quantities[x] = 1;
     }
+    left += 52;
+  }
+
+  int (&active_items)[3] = configs->active_items;
+  for (int x = 0; x < 3; x++) {
+    int item_id = active_items[x];
+    if (item_id != 0) {
+      draw_2d_->DrawImageWithMask(item_data[item_id].image, 
+        "spellbar_item_mask", left, top, 44, 44, 1.0); 
+    }
+    left += 52;
   }
 }
 
@@ -178,32 +182,51 @@ void Inventory::MoveItemBack() {
   }
 
   if (IsMouseInRectangle(left, right, bottom, top)) {
-    if (dragged_item.origin == ITEM_ORIGIN_EQUIPMENT) {
-      const ItemData& item_data = resources_->GetItemData()[selected_item_];
-      equipment[old_pos_x_] = selected_item_;
-    } else if (dragged_item.origin == ITEM_ORIGIN_STORE) {
-      store_matrix[old_pos_x_][old_pos_y_] = selected_item_;
-
-      const ivec2& size = item_data[selected_item_].size;
-      for (int step_x = 0; step_x < size.x; step_x++) {
-        for (int step_y = 0; step_y < size.y; step_y++) {
-          if (step_x == 0 && step_y == 0) continue;
-          item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
-        }
+    switch (dragged_item.origin) {
+      case ITEM_ORIGIN_EQUIPMENT: {
+        const ItemData& item_data = resources_->GetItemData()[selected_item_];
+        equipment[old_pos_x_] = selected_item_;
+        break;
       }
-    } else if (old_pos_y_ == -1) {
-      spellbar[old_pos_x_] = selected_item_;
-      spellbar_quantities[old_pos_x_] = selected_qnty_;
-    } else if (old_pos_x_ == -1) {
-    } else {
-      item_matrix[old_pos_x_][old_pos_y_] = selected_item_;
+      case ITEM_ORIGIN_STORE: {
+        store_matrix[old_pos_x_][old_pos_y_] = selected_item_;
 
-      const ivec2& size = item_data[selected_item_].size;
-      for (int step_x = 0; step_x < size.x; step_x++) {
-        for (int step_y = 0; step_y < size.y; step_y++) {
-          if (step_x == 0 && step_y == 0) continue;
-          item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
+        const ivec2& size = item_data[selected_item_].size;
+        for (int step_x = 0; step_x < size.x; step_x++) {
+          for (int step_y = 0; step_y < size.y; step_y++) {
+            if (step_x == 0 && step_y == 0) continue;
+            item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
+          }
         }
+        break;
+      } 
+      case ITEM_ORIGIN_ACTIVE: {
+        configs->active_items[old_pos_x_] = selected_item_;
+        break;
+      }
+      case ITEM_ORIGIN_PASSIVE: {
+        configs->passive_items[old_pos_x_] = selected_item_;
+        break;
+      }
+      default: {
+        if (old_pos_y_ == -1) {
+          spellbar[old_pos_x_] = selected_item_;
+          spellbar_quantities[old_pos_x_] = selected_qnty_;
+          break;
+        } else if (old_pos_x_ == -1) {
+          break;
+        } else {
+          item_matrix[old_pos_x_][old_pos_y_] = selected_item_;
+
+          const ivec2& size = item_data[selected_item_].size;
+          for (int step_x = 0; step_x < size.x; step_x++) {
+            for (int step_y = 0; step_y < size.y; step_y++) {
+              if (step_x == 0 && step_y == 0) continue;
+              item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
+            }
+          }
+        }
+        break;
       }
     }
   } else if (selected_item_ != -1) {
@@ -235,51 +258,51 @@ void Inventory::DrawCogs() {
 }
 
 void Inventory::DrawEquipment(const ivec2& pos) {
-  shared_ptr<Configs> configs = resources_->GetConfigs();
-  int (&passive_items)[3] = configs->passive_items;
-  unordered_map<int, ItemData>& item_data = resources_->GetItemData();
+  // shared_ptr<Configs> configs = resources_->GetConfigs();
+  // int (&passive_items)[3] = configs->passive_items;
+  // unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
-  vector<tuple<ivec2, ivec2, ItemType>> slots { 
-    { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
-    { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
-    { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
-  };
+  // vector<tuple<ivec2, ivec2, ItemType>> slots { 
+  //   { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
+  //   { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
+  //   { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
+  // };
 
-  for (int i = 0; i < 3; i++) {
-    const auto& [slot, dimensions, type] = slots[i];
+  // for (int i = 0; i < 3; i++) {
+  //   const auto& [slot, dimensions, type] = slots[i];
 
-    int left = slot.x;
-    int right = left + dimensions.x;
-    int top = slot.y;
-    int bottom = top + dimensions.y;
-    
-    int equipment_id = passive_items[i];
+  //   int left = slot.x;
+  //   int right = left + dimensions.x;
+  //   int top = slot.y;
+  //   int bottom = top + dimensions.y;
+  //   
+  //   int equipment_id = passive_items[i];
 
-    if (IsMouseInRectangle(left, right, bottom, top)) {
-      if (!lft_click_ && selected_item_ != 0) { // Drop.
-        const ItemData& item_data = resources_->GetItemData()[selected_item_];
-        if (item_data.type != type) continue;
-        passive_items[i] = selected_item_;
-        selected_item_ = 0;
-        selected_qnty_ = 0;
-      } else if (lft_click_ && equipment_id != 0 && selected_item_ == 0) { // Drag.
-        dragged_item.origin = ITEM_ORIGIN_EQUIPMENT;
-        selected_item_ = equipment_id;
-        selected_qnty_ = 1;
-        passive_items[i] = 0;
-        old_pos_x_ = i;
-      }
-    }
+  //   if (IsMouseInRectangle(left, right, bottom, top)) {
+  //     if (!lft_click_ && selected_item_ != 0) { // Drop.
+  //       const ItemData& item_data = resources_->GetItemData()[selected_item_];
+  //       if (item_data.type != type) continue;
+  //       passive_items[i] = selected_item_;
+  //       selected_item_ = 0;
+  //       selected_qnty_ = 0;
+  //     } else if (lft_click_ && equipment_id != 0 && selected_item_ == 0) { // Drag.
+  //       dragged_item.origin = ITEM_ORIGIN_EQUIPMENT;
+  //       selected_item_ = equipment_id;
+  //       selected_qnty_ = 1;
+  //       passive_items[i] = 0;
+  //       old_pos_x_ = i;
+  //     }
+  //   }
 
-    if (equipment_id == 0) {
-      continue;
-    }
+  //   if (equipment_id == 0) {
+  //     continue;
+  //   }
 
-    const ItemData& item = resources_->GetItemData()[equipment_id];
+  //   const ItemData& item = resources_->GetItemData()[equipment_id];
 
-    const string& icon = item.icon;
-    draw_2d_->DrawImage(item.icon, left, top, 112, 112, 1.0);
-  }
+  //   const string& icon = item.icon;
+  //   draw_2d_->DrawImage(item.icon, left, top, 112, 112, 1.0);
+  // }
 }
 
 void Inventory::DrawStats(const ivec2& pos) {
@@ -344,105 +367,173 @@ void Inventory::DrawStats(const ivec2& pos) {
 void Inventory::DrawItems(const ivec2& pos) {
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  int (&item_matrix)[10][5] = configs->item_matrix;
-  int (&item_quantities)[10][5] = configs->item_quantities;
 
-  for (int x = 0; x < 10; x++) {
-    for (int y = 0; y < 5; y++) {
-      int left = pos.x + 34 + kTileSize * x;
-      int right = left + 46;
-      int top = pos.y + 557 + kTileSize * y;
-      int bottom = top + 46;
- 
-      if (IsMouseInRectangle(left, right, bottom, top)) {
-        if (lft_click_ && selected_item_ == 0) {
-          int item_id = item_matrix[x][y];
-          int x_ = x; int y_ = y;
-          if (item_id == -1) {
-            ivec2 pos;
-            item_id = WhichItem(item_matrix, x, y, pos);
-            x_ = pos.x;
-            y_ = pos.y;
-          }
+  int (&active_items)[3] = configs->active_items;
+  for (int x = 0; x < 3; x++) {
+    int item_id = active_items[x];
+    if (item_id == 0) continue;
 
-          if (item_id > 0) {
-            dragged_item.origin = ITEM_ORIGIN_INVENTORY;
-            dragged_item.item_id = item_id;
-            selected_item_ = item_id;
-            selected_qnty_ = item_quantities[x][y];
+    const string& icon = item_data[item_id].icon;
+  
+    int size = 100;
+    int left = pos.x + 80 + x * (size + 60);
+    int right = pos.y + left + size;
+    int top = 460;
+    int bottom = top + size;
 
-            const ivec2& size = item_data[dragged_item.item_id].size;
-            for (int step_x = 0; step_x < size.x; step_x++) {
-              for (int step_y = 0; step_y < size.y; step_y++) {
-                item_matrix[x_ + step_x][y_ + step_y] = 0;
-              }
-            }
+    if (IsMouseInRectangle(left, right, bottom, top)) {
+      // Drag existing item.
+      if (lft_click_ && selected_item_ == 0) {
+        if (item_id > 0) {
+          dragged_item.origin = ITEM_ORIGIN_ACTIVE;
+          dragged_item.item_id = item_id;
+          selected_item_ = item_id;
+          selected_qnty_ = 1;
 
-            old_pos_x_ = x_;
-            old_pos_y_ = y_;
-            hold_offset_x_ = mouse_x_ - left;
-            hold_offset_y_ = mouse_y_ - top;
-          }
+          old_pos_x_ = x;
+          old_pos_y_ = -1;
+          hold_offset_x_ = mouse_x_ - left;
+          hold_offset_y_ = mouse_y_ - top;
+          active_items[x] = 0;
         }
-      }
-
-      if (!lft_click_ && selected_item_ != 0) {
-        if (IsMouseInRectangle(left, right, bottom, top)) {
-          const int price = item_data[selected_item_].price;
-
-          bool complete_drag = true; 
-          bool buying = dragged_item.origin == ITEM_ORIGIN_STORE; 
-          if (buying) {
-            if (configs->gold < price) {
-              complete_drag = false;
-            }
-          }
-
-          if (complete_drag) {
-            if (item_matrix[x][y] == 0) {
-              if (resources_->CanPlaceItem(ivec2(x, y), selected_item_)) {
-                item_matrix[x][y] = selected_item_;
-                item_quantities[x][y] = selected_qnty_;
-
-                const ivec2& size = item_data[selected_item_].size;
-                for (int step_x = 0; step_x < size.x; step_x++) {
-                  for (int step_y = 0; step_y < size.y; step_y++) {
-                    if (step_x == 0 && step_y == 0) continue;
-                    item_matrix[x + step_x][y + step_y] = -1;
-                  }
-                }
-
-                selected_item_ = 0;
-                selected_qnty_ = 0;
-                old_pos_x_ = 0;
-                old_pos_y_ = 0;
-                if (buying) {
-                  configs->gold -= price;
-                }
-              }
-            } else {
-              if (TryToCombineCrystals(x, y)) {
-                if (buying) {
-                  configs->gold -= price;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      const int item_id = item_matrix[x][y];
-      const int item_quantity = item_quantities[x][y];
-      if (item_id != 0 && item_id != -1) {
-        const string& icon = item_data[item_id].icon;
-        const ivec2& size = item_data[item_id].size;
-
-        float max_side = std::max(size.x, size.y);
-        vec2 dimensions = vec2((float) size.x / (float) max_side, (float) size.y / (float) max_side);
-        draw_2d_->DrawImage(icon, left, top, max_side * 51, max_side * 51, 1.0);
       }
     }
+
+    draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
   }
+
+  int (&passive_items)[3] = configs->passive_items;
+  for (int x = 0; x < 3; x++) {
+    int item_id = passive_items[x];
+    if (item_id == 0) continue;
+
+    const string& icon = item_data[item_id].icon;
+  
+    int size = 100;
+    int left = pos.x + 80 + x * (size + 60);
+    int right = pos.y + left + size;
+    int top = 660;
+    int bottom = top + size;
+
+    if (IsMouseInRectangle(left, right, bottom, top)) {
+      // Drag existing item.
+      if (lft_click_ && selected_item_ == 0) {
+        if (item_id > 0) {
+          dragged_item.origin = ITEM_ORIGIN_PASSIVE;
+          dragged_item.item_id = item_id;
+          selected_item_ = item_id;
+          selected_qnty_ = 1;
+
+          old_pos_x_ = x;
+          old_pos_y_ = -1;
+          hold_offset_x_ = mouse_x_ - left;
+          hold_offset_y_ = mouse_y_ - top;
+          passive_items[x] = 0;
+        }
+      }
+    }
+
+    draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
+  }
+
+  // int (&item_matrix)[10][5] = configs->item_matrix;
+  // int (&item_quantities)[10][5] = configs->item_quantities;
+  // for (int x = 0; x < 10; x++) {
+  //   for (int y = 0; y < 5; y++) {
+  //     int left = pos.x + 34 + kTileSize * x;
+  //     int right = left + 46;
+  //     int top = pos.y + 557 + kTileSize * y;
+  //     int bottom = top + 46;
+ 
+  //     if (IsMouseInRectangle(left, right, bottom, top)) {
+  //       if (lft_click_ && selected_item_ == 0) {
+  //         int item_id = item_matrix[x][y];
+  //         int x_ = x; int y_ = y;
+  //         if (item_id == -1) {
+  //           ivec2 pos;
+  //           item_id = WhichItem(item_matrix, x, y, pos);
+  //           x_ = pos.x;
+  //           y_ = pos.y;
+  //         }
+
+  //         if (item_id > 0) {
+  //           dragged_item.origin = ITEM_ORIGIN_INVENTORY;
+  //           dragged_item.item_id = item_id;
+  //           selected_item_ = item_id;
+  //           selected_qnty_ = item_quantities[x][y];
+
+  //           const ivec2& size = item_data[dragged_item.item_id].size;
+  //           for (int step_x = 0; step_x < size.x; step_x++) {
+  //             for (int step_y = 0; step_y < size.y; step_y++) {
+  //               item_matrix[x_ + step_x][y_ + step_y] = 0;
+  //             }
+  //           }
+
+  //           old_pos_x_ = x_;
+  //           old_pos_y_ = y_;
+  //           hold_offset_x_ = mouse_x_ - left;
+  //           hold_offset_y_ = mouse_y_ - top;
+  //         }
+  //       }
+  //     }
+
+  //     if (!lft_click_ && selected_item_ != 0) {
+  //       if (IsMouseInRectangle(left, right, bottom, top)) {
+  //         const int price = item_data[selected_item_].price;
+
+  //         bool complete_drag = true; 
+  //         bool buying = dragged_item.origin == ITEM_ORIGIN_STORE; 
+  //         if (buying) {
+  //           if (configs->gold < price) {
+  //             complete_drag = false;
+  //           }
+  //         }
+
+  //         if (complete_drag) {
+  //           if (item_matrix[x][y] == 0) {
+  //             if (resources_->CanPlaceItem(ivec2(x, y), selected_item_)) {
+  //               item_matrix[x][y] = selected_item_;
+  //               item_quantities[x][y] = selected_qnty_;
+
+  //               const ivec2& size = item_data[selected_item_].size;
+  //               for (int step_x = 0; step_x < size.x; step_x++) {
+  //                 for (int step_y = 0; step_y < size.y; step_y++) {
+  //                   if (step_x == 0 && step_y == 0) continue;
+  //                   item_matrix[x + step_x][y + step_y] = -1;
+  //                 }
+  //               }
+
+  //               selected_item_ = 0;
+  //               selected_qnty_ = 0;
+  //               old_pos_x_ = 0;
+  //               old_pos_y_ = 0;
+  //               if (buying) {
+  //                 configs->gold -= price;
+  //               }
+  //             }
+  //           } else {
+  //             if (TryToCombineCrystals(x, y)) {
+  //               if (buying) {
+  //                 configs->gold -= price;
+  //               }
+  //             }
+  //           }
+  //         }
+  //       }
+  //     }
+
+  //     const int item_id = item_matrix[x][y];
+  //     const int item_quantity = item_quantities[x][y];
+  //     if (item_id != 0 && item_id != -1) {
+  //       const string& icon = item_data[item_id].icon;
+  //       const ivec2& size = item_data[item_id].size;
+
+  //       float max_side = std::max(size.x, size.y);
+  //       vec2 dimensions = vec2((float) size.x / (float) max_side, (float) size.y / (float) max_side);
+  //       draw_2d_->DrawImage(icon, left, top, max_side * 51, max_side * 51, 1.0);
+  //     }
+  //   }
+  // }
 }
 
 void Inventory::DrawStoreItems(const ivec2& pos) {
@@ -1270,6 +1361,8 @@ void Inventory::DrawMap() {
     { '<', "map_interface_upstairs" },
     { '>', "map_interface_downstairs" },
     { '*', "map_interface_uncharted" },
+    { '^', "map_interface_horizontal_wall" },
+    { '/', "map_interface_horizontal_wall" },
   };
 
   vec3 player_off = (player->position - kDungeonOffset - vec3(5, 0, 5)) * 1.5f;

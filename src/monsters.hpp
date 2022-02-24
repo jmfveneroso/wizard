@@ -13,6 +13,7 @@ class Monsters {
   void Spiderling(ObjPtr unit);
   void Lancet(ObjPtr unit);
   void Broodmother(ObjPtr unit);
+  void ArrowTrap(ObjPtr unit);
   void WhiteSpine(ObjPtr unit);
   void Wraith(ObjPtr unit);
   void BloodWorm(ObjPtr unit);

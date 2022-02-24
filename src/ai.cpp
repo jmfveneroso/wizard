@@ -279,17 +279,17 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
 
     for (int i = 0; i < num_missiles; i++) {
       vec3 p2 = creature->position + dir * 200.0f;
-      vec3 dir = normalize(p2 - creature->position);
+      vec3 dir_ = dir;
 
       if (i > 0) {
         float x_ang = (float) Random(-5, 6) * spread;
         float y_ang = (float) Random(-5, 6) * spread;
         vec3 right = cross(dir, vec3(0, 1, 0));
         mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
-        dir = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+        dir_ = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
       }
 
-      resources_->CastMissile(creature, creature->position, MISSILE_HORN, dir, 
+      resources_->CastMissile(creature, creature->position, MISSILE_HORN, dir_, 
         missile_speed);
     }
   }
@@ -679,12 +679,12 @@ bool AI::ProcessSpiderEggAction(ObjPtr spider,
   resources_->ChangeObjectAnimation(spider, "Armature|climbing");
 
   if (!action->created_particle_effect) {
-    // auto bs = spider->bones[23];
-    // shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 300.0f, 
-    //   "particle-sparkle-fire", 2.0f);
-    // p->associated_obj = spider;
-    // p->offset = vec3(0);
-    // p->associated_bone = 23;
+    auto bs = spider->bones[23];
+    shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 300.0f, 
+      "particle-sparkle-fire", 2.0f);
+    p->associated_obj = spider;
+    p->offset = vec3(0);
+    p->associated_bone = 23;
 
     action->channel_end = glfwGetTime() + 5.0f;
     action->created_particle_effect = true;
@@ -1219,7 +1219,7 @@ void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
   }
 
   resources_->Lock();
-  for (auto [id, obj] : node->moving_objs) {
+  for (auto [id, obj] : node->creatures) {
     if (obj->type != GAME_OBJ_DEFAULT) continue;
     if (obj->GetAsset()->type != ASSET_CREATURE && 
       obj->GetAsset()->type != ASSET_PLATFORM) continue;

@@ -33,9 +33,9 @@ Dungeon::Dungeon() {
   char_map_[65] = 'S'; // Scorpion.
   char_map_[66] = 'b'; // Bookcase.
   char_map_[67] = 'q'; // Pedestal.
-  char_map_[68] = 'L'; // Laracna.
+  char_map_[68] = 'L'; // Broodmother.
   char_map_[69] = 'K'; // Lancet spider.
-  char_map_[70] = 'M'; // Mana crystal.
+  char_map_[70] = 'M'; // Barrel.
   char_map_[71] = 'I'; // Mold.
   char_map_[72] = 'c'; // Chest.
   char_map_[73] = 'w'; // Worm.
@@ -45,8 +45,8 @@ Dungeon::Dungeon() {
   char_map_[77] = '('; // Web wall.
   char_map_[78] = '#'; // Web floor.
   char_map_[79] = '_'; // Chasm.
-  char_map_[80] = '^'; // Hanging floor.
-  char_map_[81] = '/'; // Plank.
+  char_map_[80] = '^'; // Arrow trap.
+  char_map_[81] = '/'; // Inverse arrow trap.
   char_map_[82] = '\\'; // Plank vertical.
   char_map_[83] = 'Y'; // Dragonfly.
   char_map_[84] = '1'; // Pre rotating platform.
@@ -760,8 +760,11 @@ int Dungeon::L5VWallOk(int i, int j) {
 
 
 void Dungeon::L5HorizWall(int i, int j, char p, int dx) {
+  int k = 4;
+
   // Add webs.
-  int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
+  // int k = (current_level_ >= 2 && current_level_ <= 3) ? 5 : 4;
+
   int type = Random(0, k);
 
   char dt;
@@ -1008,17 +1011,23 @@ int Dungeon::PlaceMonsterGroup(int x, int y, int size) {
   int cur_x = x, cur_y = y;
 
   bool is_leader = false;
-  for (int tries = 0; tries < 100; tries++) {
-    int off_x = Random(0, 3) - 1;
-    int off_y = Random(0, 3) - 1;
+  for (int tries = 0; tries < 1000; tries++) {
+    int off_x = Random(-3, 4);
+    int off_y = Random(-3, 4);
 
     int cur_x2 = cur_x + off_x;
     int cur_y2 = cur_y + off_y;
-    if (!IsValidPlaceLocation(cur_x2, cur_y2)) continue;
-    if (!IsGoodPlaceLocation(cur_x2, cur_y2, 5.0f, 0.0f)) continue;
 
     int index = Random(0, level_data_[current_level_].monsters.size());
     int monster_type = level_data_[current_level_].monsters[index];
+
+    bool empty_adjacent = false;
+    if (monster_type == 68) { // Laracna.
+      empty_adjacent = true;
+    }
+
+    if (!IsValidPlaceLocation(cur_x2, cur_y2)) continue;
+    if (!IsGoodPlaceLocation(cur_x2, cur_y2, 10.0f, 0.0f, empty_adjacent)) continue;
 
     if (is_leader) {
       dungeon[cur_x2][cur_y2] = monster_type_to_leader_type_.find(monster_type)->second;
@@ -1026,7 +1035,6 @@ int Dungeon::PlaceMonsterGroup(int x, int y, int size) {
       dungeon[cur_x2][cur_y2] = monster_type;
     }
     monster_group[cur_x2][cur_y2] = current_monster_group_;
-    cout << "A: " << cur_x2 << ", " << cur_y2 << endl;
 
     if (++monsters_placed >= group_size) break;
   }
@@ -1035,8 +1043,22 @@ int Dungeon::PlaceMonsterGroup(int x, int y, int size) {
   return monsters_placed;
 }
 
+bool Dungeon::EmptyAdjacent(const ivec2& tile) {
+  for (int x = -1; x < 2; x++) {
+    for (int y = -1; y < 2; y++) {
+      ivec2 cur_tile = tile + ivec2(x, y); 
+      if (!IsValidTile(cur_tile)) return false;
+
+      if (dungeon[cur_tile.x][cur_tile.y] != 13) return false;
+    }
+  }
+  return true;
+}
+
 bool Dungeon::IsGoodPlaceLocation(int x, int y, float min_dist_to_staircase,
-  float min_dist_to_monster) {
+  float min_dist_to_monster, bool empty_adjacent) {
+  if (empty_adjacent && !EmptyAdjacent(ivec2(x, y))) return false;
+
   int downstairs_room = -1;
   if (downstairs.x != -1) {
     downstairs_room = room[downstairs.x][downstairs.y];
@@ -1070,6 +1092,7 @@ bool Dungeon::IsGoodPlaceLocation(int x, int y, float min_dist_to_staircase,
       }
     }
   }
+
   return true;
 }
 
@@ -1113,6 +1136,44 @@ void Dungeon::PlaceObjects() {
   }
 }
 
+void Dungeon::PlaceTraps() {
+  const int num_traps = level_data_[current_level_].num_traps;
+  if (num_traps == 0) return;
+
+  if (level_data_[current_level_].traps.size() == 0) return;
+  
+  int traps_placed = 0;
+  for (int tries = 0; tries < 1000; tries++) {
+    int x = Random(0, kDungeonSize);
+    int y = Random(0, kDungeonSize);
+
+    int index = Random(0, level_data_[current_level_].traps.size());
+    int trap = level_data_[current_level_].traps[index];
+
+    switch (trap) {
+      case 0: {
+        int tile = dungeon[x][y];
+        // if (tile != '-' && tile != '|') continue;
+        if (tile != 2) continue;
+
+        if (IsValidTile(ivec2(x, y + 1)) &&
+          dungeon[x][y + 1] == 13) {
+          dungeon[x][y] = 80;
+        } else if (IsValidTile(ivec2(x, y - 1)) && 
+          dungeon[x][y - 1] == 13) {
+          dungeon[x][y] = 81;
+        } else {
+          continue;
+        }
+        break;
+      }
+    }
+  
+    traps_placed++;
+    if (traps_placed >= num_traps) break;
+  }
+}
+
 void Dungeon::GenerateAsciiDungeon() {
   for (int y = 0; y < kDungeonSize; y++) {
     for (int x = 0; x < kDungeonSize; x++) {
@@ -1149,6 +1210,8 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'M':
         case 'X':
         case 'Q':
+        case '^':
+        case '/':
           monsters_and_objs[x][y] = ascii_code;
           break;
         default:
@@ -1185,13 +1248,15 @@ bool Dungeon::CreateThemeRoomLibrary(int room_num) {
   if (num_to_place > 0) return false;
 
   // Place monsters. TODO: should depend on level.
+  int num_monsters = 2;
+  int monsters_placed = 0;
   for (int i = 0; i < 100; i++) {
     int tile_index = Random(0, room->tiles.size());
     ivec2 tile = room->tiles[tile_index];
     if (dungeon[tile.x][tile.y] != 13) continue;
-    int num_monsters = PlaceMonsterGroup(tile.x, tile.y, 2);
-    if (num_monsters != 2) continue;
-    break;
+
+    monsters_placed += PlaceMonsterGroup(tile.x, tile.y, 2);
+    if (monsters_placed >= num_monsters) break;
   }
   return true;
 }
@@ -1221,6 +1286,50 @@ bool Dungeon::CreateThemeRoomChest(int room_num) {
     int num_monsters = PlaceMonsterGroup(tile.x, tile.y, 2);
     if (num_monsters != 2) continue;
     break;
+  }
+  return true;
+}
+
+bool Dungeon::CreateThemeRoomMob(int room_num) {
+  shared_ptr<Room> room = CreateEmptyRoom(ivec2(10, 10));
+  if (!room) return false;
+
+  // Place chests.
+  int num_to_place = 2;
+  for (int i = 0; i < 100; i++) {
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
+    if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
+    if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+
+    dungeon[tile.x][tile.y] = 72;
+    if (--num_to_place == 0) break;
+  }
+  if (num_to_place > 0) return false;
+
+  num_to_place = 1;
+  for (int i = 0; i < 100; i++) {
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
+    if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
+    if (dungeon[tile.x][tile.y] == 66) continue;
+    if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+
+    dungeon[tile.x][tile.y] = 99;
+    if (--num_to_place == 0) break;
+  }
+  if (num_to_place > 0) return false;
+
+  // Place monsters. TODO: should depend on level.
+  int num_monsters = 8;
+  int monsters_placed = 0;
+  for (int i = 0; i < 100; i++) {
+    int tile_index = Random(0, room->tiles.size());
+    ivec2 tile = room->tiles[tile_index];
+    if (dungeon[tile.x][tile.y] != 13) continue;
+
+    monsters_placed += PlaceMonsterGroup(tile.x, tile.y, 2);
+    if (monsters_placed >= num_monsters) break;
   }
   return true;
 }
@@ -1289,7 +1398,7 @@ void Dungeon::DrawChasm(int x, int y, int w, int h, bool horizontal) {
   }
 }
 
-shared_ptr<Room> Dungeon::CreateEmptyRoom() {
+shared_ptr<Room> Dungeon::CreateEmptyRoom(const ivec2& dimensions) {
   const int dungeon_size = level_data_[current_level_].dungeon_size;
   for (int tries = 0; tries < 1000; tries++) {
     int x = Random(1, kDungeonSize-1);
@@ -1326,8 +1435,13 @@ shared_ptr<Room> Dungeon::CreateEmptyRoom() {
     int height;
     bool found = false;
     for (int tries = 0; tries < 10; tries++) {
-      width = RandomEven(4, 8) + 2;
-      height = RandomEven(4, 8) + 2;
+      if (dimensions.x == -1) {
+        width = RandomEven(4, 8) + 2;
+        height = RandomEven(4, 8) + 2;
+      } else {
+        width = dimensions.x;
+        height = dimensions.y;
+      }
 
       if      (mode == 0) top_left = ivec2(x-width, y-1);
       else if (mode == 1) top_left = ivec2(x+1, y-1);
@@ -1439,6 +1553,10 @@ bool Dungeon::CreateThemeRooms() {
         if (!CreateThemeRoomPedestal(room_num)) continue;
         break;
       }
+      case 3: {
+        if (!CreateThemeRoomMob(room_num)) continue;
+        break;
+      }
       // case 2: {
       //   if (!CreateThemeRoomMob(room_num)) continue;
       //   break;
@@ -1510,6 +1628,9 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
 
   // random_num = -224500967; // To produce the spider behind gate issue.
   // random_num = -406152290; // To produce movement issue.
+  // random_num = -851805335; // Arrow trap.
+  // random_num = -721664489; // Broodmother.
+  random_num = -1403164; // Error.
 
   initialized_ = true;
   srand(random_num);
@@ -1572,6 +1693,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
 
   PlaceMonsters();
   PlaceObjects();
+  PlaceTraps();
 
   GenerateAsciiDungeon();
   PrintMap();
@@ -2336,6 +2458,52 @@ ivec2 Dungeon::GetPortalTouchedByRay(vec3 start, vec3 end) {
   return portal;
 }
 
+ivec2 Dungeon::GetTileTouchedByRay(vec3 start, vec3 end) {
+  const float delta = 0.1f;
+
+  start.y = 0;
+  end.y = 0;
+  vec3 d = end - start;
+
+  vec3 step = normalize(d);
+
+  ivec2 portal = ivec2(-1, -1);
+
+  float t = 0;
+  vec3 current = start;
+  int num_steps = length(d) / delta;
+  for (int i = 0; i < num_steps; i++) {
+    current = start + t * step;
+
+    ivec2 tile = GetDungeonTile(current);
+    for (int x = 0; x < 1; x++) {
+      for (int y = 0; y < 1; y++) {
+        ivec2 tile2 = tile + ivec2(x, y);
+        if (!IsValidTile(tile2)) continue;
+         
+        switch (ascii_dungeon[tile2.x][tile2.y]) {
+          case ' ': {
+            portal = tile2;
+            break;
+          }
+          case 'd':
+          case 'D': {
+          }
+          case '|':
+          case '-':
+          case '+':
+            return portal;
+          default:
+            break;
+        }
+      }
+    }
+   
+    t += delta;
+  }
+  return portal;
+}
+
 bool Dungeon::IsMovementObstructed(vec3 start, vec3 end, float& t) {
   const float delta = 0.1f;
 
@@ -2614,6 +2782,7 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
     l.min_monsters = LoadIntFromXmlOr(node_xml, "min-monsters", 0);
     l.max_monsters = LoadIntFromXmlOr(node_xml, "max-monsters", 0);
     l.num_objects = LoadIntFromXmlOr(node_xml, "num-objects", 0);
+    l.num_traps = LoadIntFromXmlOr(node_xml, "num-traps", 0);
     l.num_theme_rooms = LoadIntFromXmlOr(node_xml, "num-theme-rooms", 0);
     l.min_group_size = LoadIntFromXmlOr(node_xml, "min-group-size", 0);
     l.max_group_size = LoadIntFromXmlOr(node_xml, "max-group-size", 0);
@@ -2667,6 +2836,14 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
       int odds = boost::lexical_cast<int>(spell_xml.attribute("odds").value());
       int item_id = LoadIntFromXml(spell_xml);
       for (int i = 0; i < odds; i++) l.learnable_spells.push_back(item_id);
+    }
+
+    const pugi::xml_node& traps_xml = node_xml.child("traps");
+    for (pugi::xml_node trap_xml = traps_xml.child("trap"); trap_xml; 
+      trap_xml = trap_xml.next_sibling("trap")) {
+      int odds = boost::lexical_cast<int>(trap_xml.attribute("odds").value());
+      int item_id = LoadIntFromXml(trap_xml);
+      for (int i = 0; i < odds; i++) l.traps.push_back(item_id);
     }
   }
 }

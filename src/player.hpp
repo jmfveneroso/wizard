@@ -27,6 +27,8 @@ class PlayerInput {
   GLFWwindow* window_ = nullptr;
   bool lft_click_;
   vec3 spell_wall_pos_;
+  vec3 trap_pos_;
+  int active_scepter_ = -1;
 
   void Extract(const Camera& c);
   bool InteractWithItem(GLFWwindow* window, const Camera& c, 
@@ -36,6 +38,7 @@ class PlayerInput {
   void PlaceObject(GLFWwindow* window, const Camera& c);
   void EditObject(GLFWwindow* window, const Camera& c);
   bool CastSpellOrUseItem();
+  bool UseItem(int position);
   void ProcessPlayerCasting();
   void ProcessPlayerChanneling();
   void ProcessPlayerDrawing();

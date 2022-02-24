@@ -861,6 +861,8 @@ void CollisionResolver::FindCollisionsWithDungeon(
         tile_pos.y >= 80) continue;
 
       char tile = dungeon_map[tile_pos.x][tile_pos.y];
+      if (tile == '^' || tile == '/') tile = '+';
+
       if (tile != '+' && tile != '-' && tile != '|') continue;
 
       AABB aabb;
@@ -974,7 +976,6 @@ void CollisionResolver::TestCollisionsWithTerrain() {
     if (obj1->IsFixed()) continue;
     if (obj1->asset_group && obj1->GetAsset()->name == "broodmother") continue; // TODO: set configurable option.
     obj1->touching_the_ground = false;
-
 
     switch (obj1->GetCollisionType()) {
       case COL_SPHERE:       Merge(collisions, GetCollisionsST(obj1, resources_, in_dungeon_)); break;
@@ -1921,6 +1922,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
         destructible->Destroy();
         resources_->CreateParticleEffect(10, obj2->position + vec3(0, 3, 0), 
           vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
+        resources_->ExplodeBarrel(obj2);
         resources_->CreateDrops(obj2);
       } 
 
@@ -2133,6 +2135,23 @@ void CollisionResolver::ApplySlowEffectOnCollision(ColPtr c) {
   if (displaced_obj->IsPlayer()) {
     displaced_obj->AddTemporaryStatus(make_shared<SlowStatus>(0.5, 2.0f, 1));
   }
+}
+
+void CollisionResolver::CreatePillarOnCollision(ColPtr c) {
+  ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
+  if (c->obj1->IsFixed()) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
+  }
+
+  if (!displacing_obj->CanUseAbility("pillar")) return;
+  if (!displaced_obj->IsCreature()) return;
+
+  displacing_obj->cooldowns["pillar"] = glfwGetTime() + 5;
+
+  resources_->CastMagicPillar(displacing_obj);
 }
 
 void CollisionResolver::ResolveCollisions() {

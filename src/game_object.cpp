@@ -1053,7 +1053,12 @@ void GameObject::CalculateCollisionData() {
   shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
 
   // Bounding sphere and AABB are necessary to cull objects properly.
+  if (!game_asset) {
+    throw runtime_error("No asset found.");
+  }
+
   collision_hull = game_asset->collision_hull;
+
   if (!collision_hull.empty()) {
     bounding_sphere = GetAssetBoundingSphere(collision_hull);
     aabb = GetAABBFromPolygons(collision_hull); 
@@ -1073,7 +1078,6 @@ void GameObject::CalculateCollisionData() {
       break;
     }
     case COL_OBB: {
-      collision_hull = game_asset->collision_hull;
       obb = GetOBBFromPolygons(collision_hull, position);
 
       float largest = GetTransformedBoundingSphere().radius * 3.0f;
@@ -1087,6 +1091,7 @@ void GameObject::CalculateCollisionData() {
       }
 
       cout << "Calculating AABB tree for " << name << endl;
+      collision_hull.clear();
 
       for (shared_ptr<GameAsset> game_asset : asset_group->assets) {
         if (game_asset->GetCollisionType() != COL_PERFECT) continue;
@@ -1364,6 +1369,10 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
 
   was_hit = true;
   shared_ptr<Configs> configs = resources_->GetConfigs();
+
+  if (IsPlayer() && configs->invincible) {
+    return;
+  }
 
   // Reduce damage using armor class.
   damage = int(damage);
@@ -1647,4 +1656,18 @@ void GameObject::SetMemory(const string& key, const string& value) {
 string GameObject::ReadMemory(const string& key) {
   if (memory.find(key) == memory.end()) return "";
   return memory[key];
+}
+
+void GameObject::RestoreMana(float value) {
+  mana += value;
+  if (mana >= max_mana) {
+    mana = max_mana;
+  }
+}
+
+void GameObject::RestoreHealth(float value) {
+  life += value;
+  if (life >= max_life) {
+    life = max_life;
+  }
 }

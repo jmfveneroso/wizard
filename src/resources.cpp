@@ -2400,13 +2400,14 @@ void GetKClosestLightPointsAux(shared_ptr<OctreeNode> node,
     }
     case 0:
     default: {
-      objs = &node->lights;
       objs = &node->creatures;
     }
   }
 
   for (auto& [id, light] : *objs) {
     float distance2 = length(position - light->position);
+    if (distance2 > max_distance) continue;
+
     if (debug) {
       cout << "light: " << light->name << endl;
       cout << "distance2: " << distance2 << endl;
@@ -2767,6 +2768,24 @@ bool Resources::InsertItemInInventory(int item_id, int quantity) {
   }
 
   const ItemData& item = item_data_[item_id];
+
+  if (item.type == ITEM_ACTIVE) {
+    for (int x = 0; x < 3; x++) {
+      if (configs_->active_items[x] != 0) continue;
+      configs_->active_items[x] = item_id;
+      return true;
+    }
+    return false;
+  }
+
+  if (item.type == ITEM_PASSIVE) {
+    for (int x = 0; x < 3; x++) {
+      if (configs_->passive_items[x] != 0) continue;
+      configs_->passive_items[x] = item_id;
+      return true;
+    }
+    return false;
+  }
 
   for (int i = 0; i < 10; i++) {
     for (int j = 0; j < 5; j++) {
@@ -3168,6 +3187,8 @@ void Resources::StartQuest(const string& quest_name) {
 }
 
 void Resources::LearnSpell(int item_id) {
+  if (item_id == 9) return;
+
   auto spell = WhichArcaneSpell(item_id);
   if (!spell) return;
 
@@ -3556,6 +3577,7 @@ void Resources::ProcessTempStatus() {
   configs_->reach = 20.0f;
   configs_->darkvision = false;
   configs_->see_invisible = false;
+  configs_->detect_monsters = false;
 
   const float stamina_regen = boost::lexical_cast<float>(GetGameFlag("stamina_recovery_rate"));
   if (player->stamina <= 0.0f) {
@@ -3608,7 +3630,7 @@ void Resources::ProcessTempStatus() {
       case STATUS_TRUE_SEEING: {
         shared_ptr<TrueSeeingStatus> true_seeing_status = 
           static_pointer_cast<TrueSeeingStatus>(temp_status);
-        configs_->see_invisible = true;
+        configs_->detect_monsters = true;
         break;
       }
       case STATUS_TELEKINESIS: {
@@ -3649,14 +3671,27 @@ void Resources::ProcessTempStatus() {
   // }
 
   player_->max_life = configs_->max_life;
+  configs_->can_run = false;
   for (int i = 0; i < 3; i++) {
-    if (configs_->passive_items[i] == 28) {
-      player_->max_life += 1;
+    switch (configs_->passive_items[i]) {
+      case 28: {
+        player_->max_life += 1;
+        break;
+      }
+      case 26: { 
+        configs_->can_run = true;
+        break;
+      }
     }
   }
 
   if (player->stamina <= 0.01f) {
     configs_->player_speed *= 0.5f;
+  }
+
+  if (cur_time > player->scepter_timeout) {
+    player->scepter = -1;
+    player->charges = 0;
   }
 }
 
@@ -4019,7 +4054,11 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case '^': {
-          tile = CreateRoom(this, "dungeon_hanging_floor", pos, 0);
+          tile = CreateRoom(this, "arrow_trap", pos, 1);
+          break;
+        }
+        case '/': {
+          tile = CreateRoom(this, "arrow_trap", pos, 3);
           break;
         }
         case '&': {
@@ -4035,13 +4074,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case '3': 
         case '4': {
           tile = CreateRoom(this, "dungeon_pre_platform", pos, 0);
-          break;
-        }
-        case '/': {
-          tile = CreateRoom(this, "dungeon_plank", pos, 0);
-          tile->torque = vec3(0, 0, 1) * float(Random(3, 6)) * 0.002f;
-          tile->dungeon_piece_type = '/';
-          rotating_planks_.push_back(tile);
           break;
         }
         case '\\': {
@@ -4184,8 +4216,15 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           // int level = (Random(0, 50) == 0) ? 1 : 0;
           int level = 0;
 
-          ObjPtr monster = CreateMonster(this, monster_assets[code], 
-            pos + vec3(0, 3, 0), level);  
+          ObjPtr monster;
+          if (monsters_and_objs[x][z] == 'L') {
+            monster = CreateMonster(this, monster_assets[code], 
+              pos - vec3(0, 1.5, 0), level);  
+            CreateGameObjFromAsset(this, "big_web", pos + vec3(0, 0.2, 0));
+          } else {
+            monster = CreateMonster(this, monster_assets[code], 
+              pos + vec3(0, 3, 0), level);  
+          }
 
           if (code == 't') {
             monster->leader = true;
@@ -4819,10 +4858,24 @@ void Resources::CastWindslash(const Camera& camera) {
   obj->associated_particles.clear();
   obj->frame = 0;
 
+  // obj->position = camera.position; 
+  // ObjPtr hand = GetObjectByName("hand-001");
+  // for (const auto& [bone_id, bs] : hand->bones) {
+  //   BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+  //   obj->position = s.center;
+  // }
+
   obj->position = camera.position; 
-  ObjPtr hand = GetObjectByName("hand-001");
-  for (const auto& [bone_id, bs] : hand->bones) {
-    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+
+  ObjPtr focus;
+  if (IsHoldingScepter()) {
+    focus = GetObjectByName("scepter-001");
+  } else {
+    focus = GetObjectByName("hand-001");
+  }
+
+  for (const auto& [bone_id, bs] : focus->bones) {
+    BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
     obj->position = s.center;
   }
 
@@ -4974,6 +5027,40 @@ vec3 Resources::GetSpellWallRayCollision(ObjPtr owner, const vec3& position,
   }
 
   ivec2 tile = dungeon_.GetPortalTouchedByRay(pos, pos + end);
+  if (tile.x == -1) {
+    return vec3(0);
+  }
+
+  return dungeon_.GetTilePosition(tile);
+}
+
+vec3 Resources::GetTrapRayCollision(ObjPtr owner, const vec3& position, 
+  const vec3& direction) {
+  vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
+  vec3 up = cross(right, direction);
+
+  vec3 pos = position; 
+  ObjPtr hand = GetObjectByName("hand-001");
+  for (const auto& [bone_id, bs] : hand->bones) {
+    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+    pos = s.center;
+  }
+
+  vec3 p2 = position + direction * 3000.0f;
+  vec3 normal = normalize(p2 - pos);
+
+  float t = 99999999999.9f;
+  vec3 q;
+  ObjPtr obj;
+  vec3 end = normal * 100.0f;
+
+  float plane_t = 0.0f;
+  if (IntersectSegmentPlane(pos, pos + normal * 100.0f, 
+    Plane(vec3(0, 1, 0), kDungeonOffset.y), plane_t, q)) {
+    end = plane_t * 100.0f * normal;
+  }
+
+  ivec2 tile = dungeon_.GetTileTouchedByRay(pos, pos + end);
   if (tile.x == -1) {
     return vec3(0);
   }
@@ -5303,6 +5390,26 @@ shared_ptr<ArcaneSpellData> Resources::WhichArcaneSpell(int item_id) {
   return item_id_to_spell_data_[item_id];
 }
 
+int Resources::GetSpellItemId(int spell_id) {
+  if (arcane_spell_data_.find(spell_id) == arcane_spell_data_.end()) {
+    return -1;
+  }
+
+  arcane_spell_data_[spell_id] = make_shared<ArcaneSpellData>();
+  return arcane_spell_data_[spell_id]->item_id;
+}
+
+int Resources::GetSpellItemIdFromName(const string& name) {
+  for (auto [id, spell] : arcane_spell_data_) {
+    cout << "---> #" << spell->name << "#" << endl;
+    if (spell->name == name) {
+      cout << "Returning " << spell->name << endl;
+      return spell->item_id;
+    }
+  }
+  return -1;
+}
+
 int Resources::CrystalCombination(int item_id1, int item_id2) {
   if (item_id1 == item_id2) return -1;
   if (item_id2 < item_id1) {
@@ -5421,6 +5528,7 @@ void Resources::Rest() {
 // Spells.
 
 shared_ptr<Missile> Resources::GetUnusedMissile() {
+  Lock();
   shared_ptr<Missile> obj = nullptr;
   for (const auto& missile : missiles_) {
     if (missile->life <= 0) {
@@ -5432,6 +5540,7 @@ shared_ptr<Missile> Resources::GetUnusedMissile() {
 
   obj->life = 10000;
   obj->hit_list.clear();
+  Unlock();
   return obj;
 }
 
@@ -5500,10 +5609,25 @@ void Resources::CastSpellShot(const Camera& camera) {
   obj->scale_out = 0.0f;
   obj->associated_particles.clear();
 
+  // obj->position = camera.position; 
+  // ObjPtr hand = GetObjectByName("hand-001");
+  // for (const auto& [bone_id, bs] : hand->bones) {
+  //   BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+  //   obj->position = s.center;
+  // }
+
+
   obj->position = camera.position; 
-  ObjPtr hand = GetObjectByName("hand-001");
-  for (const auto& [bone_id, bs] : hand->bones) {
-    BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
+
+  ObjPtr focus;
+  if (IsHoldingScepter()) {
+    focus = GetObjectByName("scepter-001");
+  } else {
+    focus = GetObjectByName("hand-001");
+  }
+
+  for (const auto& [bone_id, bs] : focus->bones) {
+    BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
     obj->position = s.center;
   }
 
@@ -5532,36 +5656,52 @@ void Resources::CastShotgun(const Camera& camera) {
   vec3 p2 = camera.position + camera.direction * 200.0f;
   vec3 dir = normalize(p2 - camera.position);
   for (int i = 0; i < num_missiles; i++) {
+    vec3 dir_ = dir;
     if (i > 0) {
       float x_ang = (float) Random(-5, 6) * spread;
       float y_ang = (float) Random(-3, 4) * spread;
       vec3 right = cross(dir, vec3(0, 1, 0));
       mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
-      dir = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+      dir_ = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
     }
 
-    CastSpellShot(Camera(camera.position, dir, vec3(0, 1, 0)));
+    CastSpellShot(Camera(camera.position, dir_, vec3(0, 1, 0)));
   }
 }
 
 void Resources::CastSpiderEgg(ObjPtr spider) {
-  shared_ptr<Missile> obj = GetUnusedMissile();
-
-  obj->UpdateAsset("spider_egg");
-  obj->CalculateCollisionData();
-
-  obj->owner = spider;
-  obj->type = MISSILE_SPIDER_EGG;
-  obj->physics_behavior = PHYSICS_NORMAL;
-  obj->speed = vec3(0);
-  obj->scale_in = 1.0f;
-  obj->scale_out = 0.0f;
-  obj->associated_particles.clear();
-
   BoundingSphere s = spider->GetBoneBoundingSphere(23);
-  obj->position = s.center;
+  vec3 pos = s.center;
 
-  UpdateObjectPosition(obj);
+  ObjPtr obj = CreateGameObjFromAsset(this, "mini_spiderling", pos);
+
+  float x = Random(0, 11) * .05f;
+  float z = Random(0, 11) * .05f;
+  obj->speed = vec3(-0.25f + x, .5f, -0.25f + z) * (1.0f / obj->GetMass());
+
+  // shared_ptr<Missile> obj = GetUnusedMissile();
+
+  // obj->UpdateAsset("spider_egg");
+  // obj->CalculateCollisionData();
+
+
+  // obj->owner = spider;
+  // obj->type = MISSILE_SPIDER_EGG;
+  // obj->physics_behavior = PHYSICS_NORMAL;
+
+  // float x = Random(0, 11) * .05f;
+  // float z = Random(0, 11) * .05f;
+  // obj->speed = vec3(-0.25f + x, .5f, -0.25f + z) * (1.0f / obj->GetMass());
+  // obj->torque = cross(normalize(obj->speed), vec3(1, 1, 0)) * 5.0f;
+
+  // obj->scale_in = 1.0f;
+  // obj->scale_out = 0.0f;
+  // obj->associated_particles.clear();
+
+  // BoundingSphere s = spider->GetBoneBoundingSphere(23);
+  // obj->position = s.center;
+
+  // UpdateObjectPosition(obj);
 }
 
 void Resources::CastSpiderWebShot(ObjPtr spider, vec3 dir) {
@@ -5629,9 +5769,7 @@ void Resources::CreateDrops(ObjPtr obj, bool static_drops) {
 }
 
 bool Resources::IsHoldingScepter() {
-  int item_id = configs_->spellbar[configs_->selected_spell];
-  if (item_id != 25) return false;
-  return InventoryHasItem(item_id);
+  return (player_->scepter != -1);
 }
 
 ivec2 Resources::GetInventoryItemPosition(const int item_id) {
@@ -5854,6 +5992,15 @@ bool Resources::CastSpellWall(ObjPtr owner, const vec3& position) {
   return true;
 }
 
+bool Resources::CastSpellTrap(ObjPtr owner, const vec3& position) {
+  ivec2 tile = dungeon_.GetDungeonTile(position);
+  if (!dungeon_.IsValidTile(tile)) return false;
+
+  vec3 pos = dungeon_.GetTilePosition(tile);
+  ObjPtr obj = CreateGameObjFromAsset(this, "trap_spell", pos);
+  return true;
+}
+
 bool Resources::CanRest() {
   return true;
   if (configs_->render_scene == "town") return true;
@@ -5863,4 +6010,44 @@ bool Resources::CanRest() {
 
   if (length(objs[0]->position - player_->position) > min_distance) return true;
   return false;
+}
+
+void Resources::ExplodeBarrel(ObjPtr obj) {
+  float distance = 20.0f;
+  vector<ObjPtr> objs = GetKClosestLightPoints(obj->position, 5, 0, distance);
+  for (ObjPtr creature : objs) {
+    creature->DealDamage(player_, 2);
+    creature->speed += normalize(creature->position - obj->position) * 0.5f;
+  }
+
+  if (length(player_->position - obj->position) < distance) {
+    player_->DealDamage(nullptr, 2);
+    player_->speed += normalize(player_->position - obj->position) * 0.5f;
+  }
+}
+
+void Resources::CastDetectMonsters() {
+  player_->AddTemporaryStatus(make_shared<TrueSeeingStatus>(10.0f, 1));
+}
+
+void Resources::CastMagicPillar(ObjPtr obj) {
+  for (int i = 0; i < 6; i++) {
+    for (int j = 0; j < 10; j++) {
+      int x = Random(-20, 21) * 0.1f;
+      int y = Random(-20, 21) * 0.1f;
+      int z = Random(-20, 21) * 0.1f;
+      CreateParticleEffect(5, obj->position + vec3(x, 0.1 + y + 3 * j, z), 
+        vec3(0, 5, 0), vec3(1.0, 1.0, 1.0), Random(0, 10) * 0.3f, 40.0f, 8.0f, 
+        "magical-explosion");          
+    }
+  }
+
+  vector<ObjPtr> objs = GetKClosestLightPoints(obj->position, 6, 0, 10.0f);
+  for (ObjPtr creature : objs) {
+    creature->DealDamage(player_, 5);
+  }
+
+  shared_ptr<Destructible> destructible = 
+    static_pointer_cast<Destructible>(obj);
+  destructible->Destroy();
 }

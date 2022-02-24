@@ -34,6 +34,7 @@ struct LevelData {
   int min_monsters;
   int max_monsters;
   int num_objects;
+  int num_traps;
   int num_theme_rooms;
   int min_group_size = 2;
   int max_group_size = 6;
@@ -47,6 +48,7 @@ struct LevelData {
   vector<int> theme_rooms;
   vector<int> learnable_spells;
   vector<int> chest_loots;
+  vector<int> traps;
 
   LevelData() {}
   LevelData(
@@ -261,25 +263,28 @@ class Dungeon {
   bool IsValidPlaceLocation(int x, int y);
   void PlaceMonsters();
   void PlaceObjects();
+  void PlaceTraps();
   void GenerateAsciiDungeon();
 
   void CalculatePathsToTile(const ivec2& tile, const ivec2& last);
 
   void CastRay(const vec2& player_pos, const vec2& ray);
+  bool EmptyAdjacent(const ivec2& tile);
   bool IsGoodPlaceLocation(int x, int y,
     float min_dist_to_staircase,
-    float min_dist_to_monster);
+    float min_dist_to_monster, bool empty_adjacent=false);
 
   bool CreateThemeRoomChest(int room_num);
   bool CreateThemeRoomLibrary(int room_num);
   bool CreateThemeRoomPedestal(int room_num);
+  bool CreateThemeRoomMob(int room_num);
   bool CreateThemeRooms();
   void FindRooms();
   int FillRoom(ivec2 tile, shared_ptr<Room> current_room);
   void PrintChambers();
   void PrintPreMap();
   float GetDistanceToStairs(const ivec2& tile);
-  shared_ptr<Room> CreateEmptyRoom();
+  shared_ptr<Room> CreateEmptyRoom(const ivec2& dimensions = ivec2(-1, -1));
 
   bool invert_distance_ = false;
 
@@ -348,6 +353,7 @@ class Dungeon {
   int GetRelevance(const ivec2& tile);
   vector<ivec2> GetPath(const vec3& start, const vec3& end);
   ivec2 GetPortalTouchedByRay(vec3 start, vec3 end);
+  ivec2 GetTileTouchedByRay(vec3 start, vec3 end);
   void SetFlag(ivec2 tile, int flag);
   void UnsetFlag(ivec2 tile, int flag);
   bool GetFlag(ivec2 tile, int flag);

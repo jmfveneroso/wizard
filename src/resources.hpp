@@ -125,6 +125,10 @@ struct Configs {
     { 0, 0, 0, 0, 0 },
   };
 
+  int active_items[3] = {
+    0, 0, 0 
+  };
+
   int passive_items[3] = {
     0, 0, 0 
   };
@@ -226,6 +230,7 @@ struct Configs {
  
   int gold = 0;
   float rest_bar = 0.0f;
+  bool detect_monsters = false;
 };
 
 struct ItemBonus {
@@ -808,12 +813,20 @@ class Resources {
   void CastSpiderWebShot(ObjPtr spider, vec3 dir);
   vec3 GetSpellWallRayCollision(ObjPtr owner, const vec3& position, 
     const vec3& direction);
+  vec3 GetTrapRayCollision(ObjPtr owner, const vec3& position, 
+    const vec3& direction);
 
   bool CastSpellWall(ObjPtr owner, const vec3& position);
+  bool CastSpellTrap(ObjPtr owner, const vec3& position);
   bool CanRest();
   void CastFlashMissile(const Camera& camera);
   void CastShotgun(const Camera& camera);
   void CreateChestDrops(ObjPtr obj, int item_id);
+  void ExplodeBarrel(ObjPtr obj);
+  void CastDetectMonsters();
+  void CastMagicPillar(ObjPtr obj);
+  int GetSpellItemId(int spell_id);
+  int GetSpellItemIdFromName(const string& name);
 };
 
 #endif // __RESOURCES_HPP__

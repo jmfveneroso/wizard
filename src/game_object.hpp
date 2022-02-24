@@ -251,6 +251,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool CanUseAbility(const string& ability);
   void SetMemory(const string& key, const string& value);
   string ReadMemory(const string& key);
+  void RestoreMana(float value);
+  void RestoreHealth(float value);
 };
 
 using ObjPtr = shared_ptr<GameObject>;
@@ -259,6 +261,9 @@ struct Player : public GameObject {
   PlayerAction player_action = PLAYER_IDLE;
   int selected_spell = 0;
   bool running = false;
+  int scepter = -1;
+  int charges = 0;
+  float scepter_timeout = 0;
 
   vec3 rotation = vec3(-0.6139, -0.0424196, -0.78824);
   string talking_to;

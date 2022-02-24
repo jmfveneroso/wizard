@@ -340,10 +340,13 @@ class CollisionResolver {
   void TestCollisionRT(shared_ptr<CollisionRT> c);
   void TestCollision(ColPtr c);
 
+  void CreatePillarOnCollision(ColPtr col);
   void ApplySlowEffectOnCollision(ColPtr col);
+
   unordered_map<string, void (CollisionResolver::*)(ColPtr)> 
     collision_effect_callbacks_ {
-    { "slow", &CollisionResolver::ApplySlowEffectOnCollision }
+    { "slow", &CollisionResolver::ApplySlowEffectOnCollision },
+    { "pillar", &CollisionResolver::CreatePillarOnCollision }
   };
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

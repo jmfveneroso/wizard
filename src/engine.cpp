@@ -153,6 +153,29 @@ void Engine::RunCommand(string command) {
       configs->place_object = true;
       resources_->AddNewObject(configs->new_building);
     }
+  } else if (result[0] == "learn") {
+    stringstream ss;
+    for (int i = 1; i < result.size(); i++) {
+      ss << result[i];
+      if (i == result.size() - 1) break;
+      ss << " ";
+    }
+
+    string spell_name = ss.str();
+    boost::algorithm::trim(spell_name);
+    cout << "#" << spell_name << "#" <<endl;
+    
+    int item_id = resources_->GetSpellItemIdFromName(spell_name);
+    if (item_id != -1) {
+      resources_->LearnSpell(item_id);
+    }
+  } else if (result[0] == "learn-id") {
+    int item_id = boost::lexical_cast<int>(result[1]);
+    resources_->LearnSpell(item_id);
+  } else if (result[0] == "learn-all") {
+    for (int i = 0; i < 100; i++) {
+      resources_->LearnSpell(i);
+    }
   } else if (result[0] == "create-particle") {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
@@ -253,6 +276,10 @@ void Engine::RunCommand(string command) {
       resources_->InsertItemInInventory(item_id, item_data.max_stash);
     } catch(boost::bad_lexical_cast const& e) {
     }
+  } else if (result[0] == "detect-monsters") {
+    configs->detect_monsters = true;
+  } else if (result[0] == "no-detect-monsters") {
+    configs->detect_monsters = false;
   }
 }
 

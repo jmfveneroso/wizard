@@ -116,7 +116,7 @@ class Renderer {
     const vector<vector<Polygon>>& occluder_convex_hulls);
   void DrawObjectShadow(ObjPtr obj, int level);
   void Draw3dParticle(shared_ptr<Particle> obj);
-  void DrawObject(ObjPtr obj);
+  void DrawObject(ObjPtr obj, int mode = 0);
 
   void GetVisibleObjects(shared_ptr<OctreeNode> octree_node);
   vector<shared_ptr<GameObject>> 
@@ -150,7 +150,7 @@ class Renderer {
 
   // DrawObjects.
   void DrawOutside();
-  void DrawObjects(vector<ObjPtr> objs);
+  void DrawObjects(vector<ObjPtr> objs, int mode = 0);
   void DrawHand();
   void FindVisibleObjectsAsync();
   void CreateThreads();

@@ -47,6 +47,7 @@ const int DLRG_CHASM = 1024;
 const int DLRG_SECRET = 2048;
 const int DLRG_NO_CEILING = 4096;
 const int DLRG_SPELL_WALL = 8192;
+const int DLRG_ARROW = 16384;
 
 enum AssetType {
   ASSET_DEFAULT = 0,
@@ -227,7 +228,9 @@ enum ItemType {
   ITEM_RING,
   ITEM_ORB,
   ITEM_USABLE,
-  ITEM_SCEPTER
+  ITEM_SCEPTER,
+  ITEM_ACTIVE,
+  ITEM_PASSIVE
 };
 
 struct Camera {

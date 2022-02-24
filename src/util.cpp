@@ -1396,6 +1396,8 @@ ItemType StrToItemType(const string& s) {
     { "orb", ITEM_ORB },
     { "usable", ITEM_USABLE },
     { "scepter", ITEM_SCEPTER },
+    { "active", ITEM_ACTIVE },
+    { "passive", ITEM_PASSIVE },
   });
   return str_to_item_type[s];
 }
