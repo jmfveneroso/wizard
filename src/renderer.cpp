@@ -2088,6 +2088,12 @@ void Renderer::DrawDungeonTiles() {
         glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].specular_textures[tile]);
         glUniform1i(GetUniformId(program_id, "specular_sampler"), 2);
 
+        int draw_diffuse = boost::lexical_cast<int>(resources_->GetGameFlag("dungeon_draw_diffuse"));
+        int specular_component = boost::lexical_cast<float>(resources_->GetGameFlag("dungeon_specular_component"));
+        int normal_strength = boost::lexical_cast<float>(resources_->GetGameFlag("dungeon_normal_strength"));
+        glUniform1i(GetUniformId(program_id, "draw_diffuse"), draw_diffuse);
+        glUniform1f(GetUniformId(program_id, "specular_component"), specular_component);
+        glUniform1f(GetUniformId(program_id, "normal_strength"), normal_strength);
 
         // Shadow.
         mat4 shadow_matrix0 = GetShadowMatrix(true, 0);

@@ -1383,9 +1383,9 @@ void Inventory::DrawMap() {
       char code = dungeon_map[x][y];
       if (code != '.') {
         int relevance = dungeon.GetRelevance(ivec2(x, y));
-        draw_2d_->DrawText(boost::lexical_cast<string>(relevance),
-          pos.x, kWindowHeight - pos.y, vec4(1), 0.5, false, 
-          "avenir_light_oblique");
+        // draw_2d_->DrawText(boost::lexical_cast<string>(relevance),
+        //   pos.x, kWindowHeight - pos.y, vec4(1), 0.5, false, 
+        //   "avenir_light_oblique");
       }
 
       if (!dungeon.IsTileDiscovered(ivec2(x, y))) {

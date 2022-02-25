@@ -4544,6 +4544,12 @@ void Resources::LoadConfig(const std::string& xml_filename) {
     configs_->equipment[i] = 0;
   }
 
+  // Clear items.
+  for (int i = 0; i < 3; i++) {
+    configs_->active_items[i] = 0;
+    configs_->passive_items[i] = 0;
+  }
+
   // player_->armor = 1;
 
   const pugi::xml_node& item_matrix_xml = xml.child("item-matrix");

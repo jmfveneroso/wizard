@@ -43,8 +43,13 @@ uniform sampler2D specular_sampler;
 uniform sampler2DShadow shadow_sampler;
 uniform int draw_shadows;
 
+uniform int draw_diffuse;
+uniform float specular_component;
+uniform float normal_strength;
+
 void main() {
   vec3 diffuse_color = texture(texture_sampler, in_data.UV).rgb;
+  diffuse_color = draw_diffuse * diffuse_color + (1 - draw_diffuse) * vec3(0.5);
 
   float light_power = 0.6;
   vec3 ambient_color = lighting_color * diffuse_color;
@@ -75,8 +80,8 @@ void main() {
   }
 
   // Sun light.
-  float normal_strength = 1.5;
-  float specular_component = 0.3;     
+  // float normal_strength = 1.5;
+  // float specular_component = 0.3;     
 
   vec3 tex_normal_tangentspace = normalize(texture(normal_sampler, 
     vec2(in_data.UV.x, in_data.UV.y)).rgb * 2.0 - 1.0);

@@ -280,6 +280,10 @@ void Engine::RunCommand(string command) {
     configs->detect_monsters = true;
   } else if (result[0] == "no-detect-monsters") {
     configs->detect_monsters = false;
+  } else if (result[0] == "set-flag") {
+    if (result.size() == 3) {
+      resources_->SetGameFlag(result[1], result[2]);
+    }
   }
 }
 

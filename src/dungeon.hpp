@@ -293,6 +293,7 @@ class Dungeon {
   ~Dungeon();
 
   void PrintMap();
+  void PrintRooms();
 
   char** GetDungeon();
   int**** GetDungeonPath() { return dungeon_path_; }
