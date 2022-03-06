@@ -30,7 +30,7 @@ Dungeon::Dungeon() {
   char_map_[105] = 't'; // Spiderling leader.
   char_map_[63] = '\'';
   char_map_[64] = '~';
-  char_map_[65] = 'S'; // Scorpion.
+  char_map_[65] = 'S'; // White spine.
   char_map_[66] = 'b'; // Bookcase.
   char_map_[67] = 'q'; // Pedestal.
   char_map_[68] = 'L'; // Broodmother.
@@ -1554,6 +1554,8 @@ bool Dungeon::CreateThemeRooms() {
     valid_room_indices.push_back(i);
     cout << "valid room: " << i << endl;
   }
+
+  if (valid_room_indices.empty()) return false;
 
   int rooms_placed = 0;
   unordered_set<int> selected_rooms;

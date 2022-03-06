@@ -978,6 +978,28 @@ string AiStateToStr(const AiState& ai_state) {
   return ai_state_to_str[ai_state];
 }
 
+string StatusToStr(const Status& status) {
+  static unordered_map<Status, string> status_to_str ({
+   { STATUS_TAKING_HIT, "taking-hit" },
+   { STATUS_DYING, "dying" },
+   { STATUS_DEAD, "dead" },
+   { STATUS_BEING_EXTRACTED, "being-extracted" },
+   { STATUS_PARALYZED, "paralyzed" },
+   { STATUS_BURROWED, "burrowed" },
+   { STATUS_SLOW, "slow" },
+   { STATUS_HASTE, "haste" },
+   { STATUS_DARKVISION, "darkvision" },
+   { STATUS_TRUE_SEEING, "true-seeing" },
+   { STATUS_TELEKINESIS, "telekinesis" },
+   { STATUS_POISON, "poison" },
+   { STATUS_INVISIBILITY, "invisibility" },
+   { STATUS_BLINDNESS, "blindness" },
+   { STATUS_STUN, "stun" },
+   { STATUS_SPIDER_THREAD, "spider-thread" },
+  });
+  return status_to_str[status];
+}
+
 DoorState StrToDoorState(const std::string& s) {
   static unordered_map<string, DoorState> str_to_door_state ({
     { "closed", DOOR_CLOSED },
@@ -1372,6 +1394,7 @@ string ActionTypeToStr(const ActionType& type) {
     { ACTION_SPIDER_EGG, "action-spider-egg" },           
     { ACTION_SPIDER_JUMP, "action-spider-jump" },           
     { ACTION_SPIDER_WEB, "action-spider-web" },           
+    { ACTION_DEFEND, "action-defend" },           
   });
   return action_type_to_str[type];
 }

@@ -827,6 +827,8 @@ vector<shared_ptr<CollisionOO>> GetCollisionsOO(ObjPtr obj1, ObjPtr obj2) {
 void CollisionResolver::FindCollisionsWithTerrain(
   vector<ColPtr>& collisions, ObjPtr obj) {
   if (!obj) return;
+
+  if (obj->asset_group && obj->GetAsset()->name == "broodmother") return; // TODO: set configurable option.
  
   obj->touching_the_ground = false;
   switch (obj->GetCollisionType()) {
@@ -1010,6 +1012,7 @@ void CollisionResolver::TestCollisionsWithDungeon() {
   resources_->Lock();
   for (ObjPtr obj1 : resources_->GetMovingObjects()) {
     if (!obj1->IsCollidable()) continue;
+    if (obj1->asset_group && obj1->GetAsset()->name == "broodmother") continue; // TODO: set configurable option.
 
     ivec2 obj_tile = dungeon.GetDungeonTile(obj1->position);
     if (abs(player_tile.x - obj_tile.x) > 10 || 
@@ -1425,7 +1428,12 @@ void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
   c->collided = TestMovingSphereSphere(s1, s2, v, vec3(0, 0, 0), t, 
     c->point_of_contact);
   if (c->collided) {
-    c->displacement_vector = c->point_of_contact - c->obj1->position;
+    shared_ptr<Missile> missile = static_pointer_cast<Missile>(c->obj1);
+    if (missile->type == MISSILE_WIND_SLASH) {
+      c->displacement_vector = vec3(0);
+    } else {
+      c->displacement_vector = c->point_of_contact - c->obj1->position;
+    }
     c->normal = normalize(s1.center - s2.center);
     FillCollisionBlankFields(c);
   }
@@ -1889,7 +1897,8 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 
             bool take_hit = false;
             take_hit = missile->type != MISSILE_SPELL_SHOT;
-            obj2->DealDamage(missile->owner, damage, normal, take_hit);
+            obj2->DealDamage(missile->owner, damage, normal, take_hit, 
+              c->point_of_contact);
           }
 
           // resources_->CreateParticleEffect(10, position, normal * 1.0f, 

@@ -766,8 +766,14 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
 
+      // TODO: do this programatically.
+      GLuint diffuse_texture_id = texture_id;
+      if (obj->IsCreature() && obj->IsInvulnerable()) {
+        diffuse_texture_id = resources_->GetTextureByName("granite_wall_diffuse");
+      }
+
       glActiveTexture(GL_TEXTURE0);
-      glBindTexture(GL_TEXTURE_2D, texture_id);
+      glBindTexture(GL_TEXTURE_2D, diffuse_texture_id);
       glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
 
       if (asset->bump_map_id == 0) {

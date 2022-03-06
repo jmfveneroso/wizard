@@ -245,6 +245,8 @@ bool GameObject::IsMovingObject() {
     return false;
   }
 
+  if (IsCreature()) return true;
+
   if (!asset_group) return false;
   return GetAsset()->physics_behavior != PHYSICS_FIXED;
 }
@@ -1363,9 +1365,15 @@ bool GameObject::IsDestructible(){
   return asset_group->IsDestructible();
 }
 
+bool GameObject::IsInvulnerable() {
+  return invulnerable;
+}
+
 void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal, 
-  bool take_hit_animation) {
+  bool take_hit_animation, vec3 point_of_contact) {
   if (life < 0.0f) return;
+
+  if (IsInvulnerable()) return;
 
   was_hit = true;
   shared_ptr<Configs> configs = resources_->GetConfigs();
@@ -1398,8 +1406,13 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
   ClearTemporaryStatus(STATUS_SPIDER_THREAD);
   levitating = false;
 
-  resources_->CreateParticleEffect(10, position, normal * 1.0f, 
+  if (length2(point_of_contact) < 0.1f) {
+    point_of_contact = position;
+  }
+
+  resources_->CreateParticleEffect(10, point_of_contact, normal * 1.0f, 
     vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
+
   if (life <= 0) {
     status = STATUS_DYING; // This status is irreversible.
     frame = 0;

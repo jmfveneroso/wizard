@@ -167,7 +167,6 @@ bool AI::ProcessStatus(ObjPtr spider) {
       // resources_->ChangeObjectAnimation(spider, "Armature|idle");
       resources_->ChangeObjectAnimation(spider, "Armature|taking_hit");
 
-      cout << "frame: " << spider->frame << endl;
       if (spider->frame >= 39) {
         // spider->actions = {};
         // spider->actions.push(make_shared<ChangeStateAction>(CHASE));
@@ -259,6 +258,23 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
   }
 
   return true;
+}
+
+bool AI::ProcessDefendAction(ObjPtr creature, shared_ptr<DefendAction> action) {
+  if (!action->started) {
+    creature->repeat_animation = false;
+    action->started = true;
+    action->until = glfwGetTime() + 3.0f;
+  }
+
+  resources_->ChangeObjectAnimation(creature, "Armature|defend");
+  creature->invulnerable = true;
+
+  if (glfwGetTime() > action->until) {
+    creature->invulnerable = false;
+    return true;
+  }
+  return false;
 }
 
 bool AI::WhiteSpineAttack(ObjPtr creature, 
@@ -426,6 +442,7 @@ bool AI::ProcessChangeStateAction(ObjPtr spider,
 
 bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
   ObjPtr player = resources_->GetObjectByName("player");
+  resources_->ChangeObjectAnimation(spider, "Armature|walking");
   bool is_rotating = RotateSpider(spider, player->position, 0.9f);
   if (!is_rotating) {
     return true;
@@ -676,7 +693,7 @@ bool AI::ProcessSpiderJumpAction(ObjPtr spider,
 
 bool AI::ProcessSpiderEggAction(ObjPtr spider, 
   shared_ptr<SpiderEggAction> action) {
-  resources_->ChangeObjectAnimation(spider, "Armature|climbing");
+  resources_->ChangeObjectAnimation(spider, "Armature|walking");
 
   if (!action->created_particle_effect) {
     auto bs = spider->bones[23];
@@ -1124,6 +1141,15 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_DEFEND: {
+      shared_ptr<DefendAction> defend_action =  
+        static_pointer_cast<DefendAction>(action);
+      if (ProcessDefendAction(spider, defend_action)) {
+        spider->PopAction();
+        spider->frame = 0;
+      }
+      break;
+    }
     default: {
       break;
     }
@@ -1221,8 +1247,7 @@ void AI::RunAiInOctreeNode(shared_ptr<OctreeNode> node) {
   resources_->Lock();
   for (auto [id, obj] : node->creatures) {
     if (obj->type != GAME_OBJ_DEFAULT) continue;
-    if (obj->GetAsset()->type != ASSET_CREATURE && 
-      obj->GetAsset()->type != ASSET_PLATFORM) continue;
+    if (obj->GetAsset()->type != ASSET_CREATURE) continue;
     if (obj->being_placed) continue;
     if (obj->distance > kMinDistance) continue;
     ai_mutex_.lock();

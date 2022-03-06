@@ -50,6 +50,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   float created_at = 0;
 
   // TODO: remove.
+  bool invulnerable = false;
   bool draw = true;
   bool freeze = false;
   bool never_cull = false;
@@ -184,6 +185,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsFixed();
   bool IsClimbable();
   bool CanCollideWithPlayer();
+  bool IsInvulnerable();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -234,7 +236,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void ClearActions();
   void AddTemporaryStatus(shared_ptr<TemporaryStatus> temp_status);
   void ClearTemporaryStatus(Status status);
-  void DealDamage(shared_ptr<GameObject> attacker, float damage, vec3 normal = vec3(0, 1, 0), bool take_hit_animation = true);
+  void DealDamage(shared_ptr<GameObject> attacker, float damage, vec3 normal = vec3(0, 1, 0), bool take_hit_animation = true, vec3 point_of_contact = vec3(0, 0, 0));
   void MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   void RangedAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
   bool IsPartiallyTransparent();
@@ -613,6 +615,13 @@ struct UseAbilityAction : Action {
   string ability;
   UseAbilityAction(const string& ability) 
     : Action(ACTION_USE_ABILITY), ability(ability) {}
+};
+
+struct DefendAction : Action {
+  bool started = false;
+  float until = 0;
+  DefendAction() 
+    : Action(ACTION_DEFEND) {}
 };
 
 shared_ptr<Player> CreatePlayer(Resources* resources);

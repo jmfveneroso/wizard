@@ -184,6 +184,7 @@ enum ActionType {
   ACTION_SPIDER_EGG,
   ACTION_SPIDER_JUMP,
   ACTION_SPIDER_WEB,
+  ACTION_DEFEND,
 };
 
 enum ParticleBehavior {
@@ -545,6 +546,8 @@ DoorState StrToDoorState(const std::string& s);
 string DoorStateToStr(const DoorState& state);
 
 AiState StrToAiState(const std::string& s);
+
+string StatusToStr(const Status& status);
 
 string AiStateToStr(const AiState& ai_state);
 

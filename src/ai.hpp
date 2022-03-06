@@ -70,6 +70,8 @@ class AI {
     shared_ptr<SpiderEggAction> action);
   bool ProcessSpiderWebAction(ObjPtr spider, 
     shared_ptr<SpiderWebAction> action);
+  bool ProcessDefendAction(ObjPtr spider, 
+    shared_ptr<DefendAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);
