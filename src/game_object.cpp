@@ -1365,6 +1365,11 @@ bool GameObject::IsDestructible(){
   return asset_group->IsDestructible();
 }
 
+bool GameObject::IsDoor(){
+  if (!asset_group) return false;
+  return asset_group->IsDoor();
+}
+
 bool GameObject::IsInvulnerable() {
   return invulnerable;
 }
@@ -1587,6 +1592,12 @@ void Destructible::Destroy() {
       break;
     }
   }
+}
+
+void Door::Destroy() {
+  state = DOOR_DESTROYING;
+  frame = 0;
+  collidable = false;
 }
 
 bool GameObject::GetRepeatAnimation() {

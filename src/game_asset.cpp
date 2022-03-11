@@ -141,6 +141,12 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     specular_component = LoadFloatFromXml(specular_component_xml);
   }
 
+  const pugi::xml_node& metallic_component_xml = 
+    asset_xml.child("metallic-component");
+  if (metallic_component_xml) {
+    metallic_component = LoadFloatFromXml(metallic_component_xml);
+  }
+
   const pugi::xml_node& normal_strength_xml = 
     asset_xml.child("normal-strength");
   if (normal_strength_xml) {
@@ -166,6 +172,20 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
       throw runtime_error(string("Parent asset with name ") + parent_name + 
         " does no exist.");
     }
+  }
+
+  const pugi::xml_node& base_color_xml = asset_xml.child("base-color");
+  if (base_color_xml) {
+    float r = boost::lexical_cast<float>(base_color_xml.attribute("r").value()) / 255.0f;
+    float g = boost::lexical_cast<float>(base_color_xml.attribute("g").value()) / 255.0f;
+    float b = boost::lexical_cast<float>(base_color_xml.attribute("b").value()) / 255.0f;
+    float a = 1.0f;
+    try {
+      a = boost::lexical_cast<float>(light_xml.attribute("a").value()) / 255.0f;
+    } catch(boost::bad_lexical_cast const& e) {
+      a = 1.0f;
+    }
+    base_color = vec4(r, g, b, a);
   }
 
   // Attributes.
@@ -577,7 +597,16 @@ bool GameAsset::IsDestructible() {
   return type == ASSET_DESTRUCTIBLE;
 }
 
+bool GameAsset::IsDoor() {
+  return type == ASSET_DOOR;
+}
+
 bool GameAssetGroup::IsDestructible() {
   if (assets.empty()) return false;
   return assets[0]->IsDestructible();
+}
+
+bool GameAssetGroup::IsDoor() {
+  if (assets.empty()) return false;
+  return assets[0]->IsDoor();
 }

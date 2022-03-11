@@ -23,6 +23,9 @@ class Monsters {
   ivec2 FindFleeTile(ObjPtr unit);
   ivec2 FindClosestPassage(ObjPtr unit);
   bool IsPlayerReachable(ObjPtr unit);
+  ivec2 IsPlayerReachableThroughDoor(ObjPtr unit);
+  bool CanDetectPlayer(ObjPtr unit);
+  ivec2 FindChokepoint(ObjPtr unit);
 
  public:
   Monsters(shared_ptr<Resources> resources);

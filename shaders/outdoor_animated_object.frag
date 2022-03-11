@@ -82,7 +82,7 @@ void main(){
     vec3 tex_normal_tangentspace = normalize(texture(bump_map_sampler, 
       vec2(in_data.UV.x, in_data.UV.y)).rgb * 2.0 - 1.0);
     vec3 n = tex_normal_tangentspace;
-    vec3 l = in_data.light_dir_tangentspace;
+    vec3 l = normalize(in_data.light_dir_tangentspace);
 
     // How to set normal strength: https://computergraphics.stackexchange.com/questions/5411/correct-way-to-set-normal-strength/5412
     n.xy *= normal_strength;
@@ -90,7 +90,6 @@ void main(){
     float cos_theta = max(dot(n, l), 0.0);
 
     vec3 E = normalize(in_data.eye_dir_tangentspace);
-    cos_theta = 0.5 * clamp(dot(n, E), 0.0, 1) + 0.5 * cos_theta;
 
     vec3 R = reflect(-l, n);
     float cos_alpha = max(dot(E, R), 0.0);

@@ -82,7 +82,6 @@ void main(){
   float cos_theta = max(dot(n, l), 0.0);
 
   vec3 E = normalize(in_data.eye_dir_tangentspace);
-  cos_theta = 0.5 * clamp(dot(n, E), 0.0, 1) + 0.5 * cos_theta;
 
   vec3 R = reflect(-l, n);
   float cos_alpha = max(dot(E, R), 0.0);

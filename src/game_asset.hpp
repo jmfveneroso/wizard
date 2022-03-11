@@ -50,6 +50,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   bool invisibility = false;
   float scale = 1.0f;
   float animation_speed = 1.0f;
+  vec4 base_color = vec4(0.0f, 0.0f, 0.0f, 0.0f);
 
   // Mesh.
   // unordered_map<int, Mesh> lod_meshes;
@@ -63,6 +64,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   GLuint specular_id = 0;
 
   float specular_component = 0.0f;
+  float metallic_component = 0.0f;
   float normal_strength = 1.0f;
   string effect_on_collision;
   bool missile_collision = true;
@@ -144,6 +146,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   void LoadCollisionData(pugi::xml_node& xml);
 
   bool IsDestructible();
+  bool IsDoor();
 };
 
 class CreatureAsset : public GameAsset {
@@ -231,6 +234,7 @@ class GameAssetGroup {
   AABB aabb = AABB(vec3(0.0), vec3(0.0));
 
   bool IsDestructible();
+  bool IsDoor();
 };
 
 shared_ptr<GameAsset> CreateAsset(Resources* resources, 

@@ -1933,6 +1933,13 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
           vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
         resources_->ExplodeBarrel(obj2);
         resources_->CreateDrops(obj2);
+      } else if (obj2->IsDoor()) {
+        shared_ptr<Door> door = 
+          static_pointer_cast<Door>(obj2);
+        door->Destroy();
+        resources_->CreateParticleEffect(10, obj2->position + vec3(0, 10, 0), 
+          vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
+        resources_->DestroyDoor(obj2);
       } 
 
       if (missile->type == MISSILE_WIND_SLASH) {

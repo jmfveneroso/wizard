@@ -434,6 +434,7 @@ class Resources {
   vector<shared_ptr<GameObject>> moving_objects_;
   vector<shared_ptr<GameObject>> creatures_;
   vector<shared_ptr<GameObject>> destructibles_;
+  vector<shared_ptr<GameObject>> doors_;
   vector<shared_ptr<GameObject>> lights_;
   vector<shared_ptr<GameObject>> items_;
   vector<shared_ptr<GameObject>> extractables_;
@@ -827,6 +828,7 @@ class Resources {
   void CastMagicPillar(ObjPtr obj);
   int GetSpellItemId(int spell_id);
   int GetSpellItemIdFromName(const string& name);
+  void DestroyDoor(ObjPtr obj);
 };
 
 #endif // __RESOURCES_HPP__

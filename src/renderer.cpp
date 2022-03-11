@@ -654,11 +654,11 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
     mat4 ModelMatrix = translate(mat4(1.0), obj->position);
     ModelMatrix = ModelMatrix * obj->rotation_matrix;
 
-    float scale = asset->scale;
+    float scale = obj->scale * asset->scale;
     if (obj->scale_in < 1.0f) {
-      scale = asset->scale * obj->scale_in;
+      scale = obj->scale * asset->scale * obj->scale_in;
     } else if (obj->life <= 0.0f && obj->scale_out > 0.0f) {
-      scale = asset->scale * obj->scale_out;
+      scale = obj->scale * asset->scale * obj->scale_out;
     }
 
     ModelMatrix = glm::scale(ModelMatrix, vec3(scale));
@@ -711,6 +711,9 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
 
     glUniform1f(GetUniformId(program_id, "specular_component"), 
       asset->specular_component);
+
+    glUniform1f(GetUniformId(program_id, "metallic_component"), 
+      asset->metallic_component);
 
     // vector<ObjPtr> light_points = resources_->GetKClosestLightPoints( 
     //   obj->position, 3);
@@ -765,6 +768,9 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
 
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
         joint_transforms.size(), GL_FALSE, &joint_transforms[0][0][0]);
+
+      glUniform4fv(GetUniformId(program_id, "base_color"), 1,
+        (float*) &asset->base_color);
 
       // TODO: do this programatically.
       GLuint diffuse_texture_id = texture_id;
@@ -870,6 +876,9 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, texture_id);
       glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+
+      glUniform4fv(GetUniformId(program_id, "base_color"), 1,
+        (float*) &asset->base_color);
 
       if (asset->bump_map_id == 0) {
         glActiveTexture(GL_TEXTURE1);

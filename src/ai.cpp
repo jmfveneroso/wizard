@@ -245,6 +245,8 @@ void AI::ProcessNPC(ObjPtr unit) {
 
 bool AI::ProcessRangedAttackAction(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
+  if (!creature->CanUseAbility("ranged-attack")) return true;
+
   if (resources_->GetConfigs()->disable_attacks) {
     return true;
   }
@@ -261,18 +263,15 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
 }
 
 bool AI::ProcessDefendAction(ObjPtr creature, shared_ptr<DefendAction> action) {
-  if (!action->started) {
+  resources_->ChangeObjectAnimation(creature, "Armature|defend");
+
+  if (!action->started && int(creature->frame) >= 40) {
+    if (!creature->CanUseAbility("defend")) return true;
     creature->repeat_animation = false;
     action->started = true;
     action->until = glfwGetTime() + 3.0f;
-  }
-
-  resources_->ChangeObjectAnimation(creature, "Armature|defend");
-  creature->invulnerable = true;
-
-  if (glfwGetTime() > action->until) {
-    creature->invulnerable = false;
-    return true;
+    creature->cooldowns["defend"] = glfwGetTime() + 10;
+    creature->AddTemporaryStatus(make_shared<InvulnerableStatus>(3.0f, 20.0f));
   }
   return false;
 }
@@ -287,11 +286,16 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
 
   if (int(creature->frame) >= 58) return true;
 
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
   if (creature->frame >= 42 && !action->damage_dealt) {
     action->damage_dealt = true;
-    ObjPtr player = resources_->GetObjectByName("player");
-    vec3 dir = CalculateMissileDirectionToHitTarget(creature->position,
-      player->position + vec3(0, -3.0f, 0), missile_speed);
+    vec3 dir = CalculateMissileDirectionToHitTarget(creature->position, target,
+      missile_speed);
 
     for (int i = 0; i < num_missiles; i++) {
       vec3 p2 = creature->position + dir * 200.0f;
@@ -308,6 +312,7 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
       resources_->CastMissile(creature, creature->position, MISSILE_HORN, dir_, 
         missile_speed);
     }
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
   }
   return false;
 }
@@ -617,7 +622,7 @@ bool AI::ProcessLongMoveAction(
     }
   } else {
     vec3 v = dest - spider->position;
-    if (length(v) < 3.0f) {
+    if (length(v) < action->min_distance) {
       next_pos = dest;
     } else {
       next_pos = spider->position + normalize(v) * 3.0f;
@@ -992,7 +997,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<TakeAimAction>(action);
       if (ProcessTakeAimAction(spider, take_aim_action)) {
         spider->PopAction();
-        // spider->frame = 0;
+        spider->frame = 0;
 
         shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
           int num_frames = GetNumFramesInAnimation(*mesh, 

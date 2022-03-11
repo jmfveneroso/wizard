@@ -177,6 +177,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool Is3dParticle();
   bool IsPlayer() { return type == GAME_OBJ_PLAYER; }
   bool IsDestructible();
+  bool IsDoor();
   bool IsInvisible();
   bool IsSecret();
   bool IsCreatureCollider();
@@ -345,6 +346,8 @@ struct Door : public GameObject {
 
   Door(Resources* resources) 
     : GameObject(resources, GAME_OBJ_DOOR) {}
+
+  void Destroy();
 };
 
 struct Actionable : public GameObject {
@@ -462,6 +465,12 @@ struct StunStatus : TemporaryStatus {
   }
 };
 
+struct InvulnerableStatus : TemporaryStatus {
+  InvulnerableStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_INVULNERABLE, duration, strength) {
+  }
+};
+
 struct SpiderThreadStatus : TemporaryStatus {
   SpiderThreadStatus(float duration, int strength) 
     : TemporaryStatus(STATUS_SPIDER_THREAD, duration, strength) {
@@ -492,10 +501,11 @@ struct LongMoveAction : Action {
   vec3 destination;
   float last_update;
   vec3 last_position;
+  float min_distance = 3.0f;
 
-  LongMoveAction(vec3 destination) 
+  LongMoveAction(vec3 destination, float min_distance=3.0f) 
     : Action(ACTION_LONG_MOVE), destination(destination), last_update(0), 
-      last_position(vec3(0)) {}
+      last_position(vec3(0)), min_distance(min_distance) {}
 };
 
 struct RandomMoveAction : Action {
@@ -541,9 +551,13 @@ struct SpiderJumpAction : Action {
   SpiderJumpAction(vec3 destination) 
     : Action(ACTION_SPIDER_JUMP), destination(destination) {}
 };
+
 struct RangedAttackAction : Action {
+  bool initiated = false;
   bool damage_dealt = false;
-  RangedAttackAction() : Action(ACTION_RANGED_ATTACK) {}
+  vec3 target = vec3(0);
+  RangedAttackAction(vec3 target=vec3(0)) : Action(ACTION_RANGED_ATTACK),  
+    target(target) {}
 };
 
 struct MeeleeAttackAction : Action {

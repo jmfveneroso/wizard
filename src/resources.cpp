@@ -445,7 +445,7 @@ void Resources::LoadNpcs(const string& xml_filename) {
 
     ObjPtr new_game_obj = CreateGameObj(this, asset_name);
  
-    vec3 pos = vec3(11615, 142, 7250);
+    vec3 pos = vec3(11615, 136, 7250);
     // vec3 pos = vec3(0);
     new_game_obj->Load(name, asset_name, pos);
 
@@ -907,6 +907,10 @@ void Resources::AddGameObject(ObjPtr game_obj) {
 
   if (game_obj->IsDestructible()) {
     destructibles_.push_back(game_obj);
+  }
+
+  if (game_obj->IsDoor()) {
+    doors_.push_back(game_obj);
   }
 
   if (game_obj->IsItem()) {
@@ -1731,6 +1735,13 @@ void Resources::RemoveObject(ObjPtr obj) {
     }
   }
 
+  for (int i = 0; i < doors_.size(); i++) {
+    if (doors_[i]->id == obj->id) {
+      doors_.erase(doors_.begin() + i);
+      break;
+    }
+  }
+
   for (int i = 0; i < items_.size(); i++) {
     if (items_[i]->id == obj->id) {
       items_.erase(items_.begin() + i);
@@ -1808,6 +1819,16 @@ void Resources::RemoveDead() {
     shared_ptr<Destructible> destructible = 
       static_pointer_cast<Destructible>(obj);
     if (destructible->state != DESTRUCTIBLE_DESTROYED) continue;
+    RemoveObject(obj);
+  }
+
+  for (auto it = doors_.begin(); it < doors_.end(); it++) {
+    ObjPtr obj = *it;
+    if (!obj->IsDoor()) continue;
+    
+    shared_ptr<Door> door = 
+      static_pointer_cast<Door>(obj);
+    if (door->state != DOOR_DESTROYED) continue;
     RemoveObject(obj);
   }
 
@@ -3268,6 +3289,22 @@ void Resources::UpdateAnimationFrames() {
           }
           break; 
         }
+        case DOOR_DESTROYING: {
+          ChangeObjectAnimation(door, "Armature|destroying");
+          door->frame += 1.0f * d;
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
+          if (door->frame >= num_frames - 1) {
+            door->state = DOOR_DESTROYED;
+            door->frame = num_frames - 1;
+          }
+          break;
+        }
+        case DOOR_DESTROYED: {
+          ChangeObjectAnimation(door, "Armature|destroying");
+          int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
+          door->frame = num_frames - 1;
+          break;
+        }
         default: {
           break; 
         }
@@ -3471,10 +3508,12 @@ void Resources::ProcessTempStatus() {
       obj->current_speed += obj->GetAsset()->base_speed_upgrade;
     }
 
-    if (obj->status == STATUS_STUN || obj->status == STATUS_SPIDER_THREAD) {
+    if (obj->status == STATUS_INVULNERABLE 
+      || obj->status == STATUS_STUN || obj->status == STATUS_SPIDER_THREAD) {
       obj->status = STATUS_NONE;
     }
 
+    obj->invulnerable = false;
     obj->invisibility = false;
     for (auto& [status_type, temp_status] : obj->temp_status) {
       if (temp_status->duration == 0) {
@@ -3531,6 +3570,18 @@ void Resources::ProcessTempStatus() {
             p->offset = vec3(0, 3, 0);
             temp_status->associated_particle = p;
           }
+          break;
+        }
+        case STATUS_INVULNERABLE: {
+          shared_ptr<InvulnerableStatus> invulnerable_status = 
+            static_pointer_cast<InvulnerableStatus>(temp_status);
+          if (obj->status == STATUS_NONE) {
+            obj->status = STATUS_INVULNERABLE;
+          }
+
+          obj->ai_state = IDLE;
+          obj->ClearActions();
+          obj->invulnerable = true;
           break;
         }
         case STATUS_SPIDER_THREAD: {
@@ -6029,6 +6080,15 @@ void Resources::ExplodeBarrel(ObjPtr obj) {
   if (length(player_->position - obj->position) < distance) {
     player_->DealDamage(nullptr, 2);
     player_->speed += normalize(player_->position - obj->position) * 0.5f;
+  }
+}
+
+void Resources::DestroyDoor(ObjPtr obj) {
+  shared_ptr<Door> door = static_pointer_cast<Door>(obj);
+  door->state = DOOR_DESTROYING;
+  if (door->dungeon_tile.x != -1) {
+    dungeon_.SetDoorOpen(door->dungeon_tile);
+    dungeon_.CalculateAllPathsAsync(door->dungeon_tile);
   }
 }
 

@@ -150,6 +150,7 @@ void Dungeon::Clear() {
   downstairs = ivec2(-1, -1);
   current_monster_group_ = 0;
   room_stats.clear();
+  doors_.clear();
 }
 
 void Dungeon::DrawRoom(int x, int y, int w, int h, int add_flags, int code) {
@@ -1237,6 +1238,10 @@ void Dungeon::GenerateAsciiDungeon() {
         case '/':
           monsters_and_objs[x][y] = ascii_code;
           break;
+        case 'd':
+        case 'D':
+          doors_.push_back(ivec2(x, y));
+          break;
         default:
           break;
       }
@@ -1244,9 +1249,10 @@ void Dungeon::GenerateAsciiDungeon() {
       ascii_dungeon[x][y] = char_map_[dungeon[x][y]];
 
       if (ascii_dungeon[x][y] == 'd' || ascii_dungeon[x][y] == 'D') {
-        if (Random(0, 4) == 0) {
-          SetFlag(ivec2(x, y), DLRG_DOOR_CLOSED);
-        }
+        // if (Random(0, 4) == 0) {
+        //   SetFlag(ivec2(x, y), DLRG_DOOR_CLOSED);
+        // }
+        SetFlag(ivec2(x, y), DLRG_DOOR_CLOSED);
       }
     }
   }
@@ -1663,6 +1669,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   // random_num = -851805335; // Arrow trap.
   // random_num = -721664489; // Broodmother.
   // random_num = -1403164; // Error.
+  random_num = -780185899; // White spine door find.
 
   initialized_ = true;
   srand(random_num);
@@ -2291,6 +2298,51 @@ bool Dungeon::IsReachable(const vec3& source, const vec3& dest) {
   float min_distance;
   vec3 next_move = GetNextMove(source, dest, min_distance);
   return length2(next_move) > 0.01f;
+}
+
+ivec2 Dungeon::IsReachableThroughDoor(const vec3& source, const vec3& dest) {
+  ivec2 source_tile = GetClosestClearTile(source);
+  ivec2 dest_tile = GetClosestClearTile(dest);
+
+  ivec2 best_door = ivec2(-1, -1);
+  float min_distance = 9999999;
+  for (auto& d : doors_) {
+    int x = d.x;
+    int y = d.y;
+
+    bool horizontal = ascii_dungeon[x][y] == 'd';
+
+    int x1 = x, y1 = y, x2 = x, y2 = y;
+    if (horizontal) {
+      if (source_tile.x > x) { 
+        x1 = x+1; x2 = x-1;
+      } else {
+        x1 = x-1; x2 = x+1;
+      }
+    } else {
+      if (source_tile.y > y) { 
+        y1 = y+1; y2 = y-1;
+      } else {
+        y1 = y-1; y2 = y+1; 
+      }
+    }
+
+    int code1 = dungeon_path_[x1][y1][source_tile.x][source_tile.y];
+    if (code1 == 9 || code1 == 4) continue;
+
+    int code2 = dungeon_path_[dest_tile.x][dest_tile.y][x2][y2];
+    if (code2 == 9 || code2 == 4) continue;
+
+    int dist = min_distance_[dest_tile.x][dest_tile.y][x2][y2] + 
+      min_distance_[x1][y1][source_tile.x][source_tile.y];
+    
+    if (dist < min_distance) {
+      best_door = d;
+      min_distance = dist;
+    } 
+  }
+ 
+  return best_door;
 }
 
 vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest, 

@@ -62,6 +62,18 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
     (unit_relevance - player_relevance) > relevance_diff;
 }
 
+bool Monsters::CanDetectPlayer(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ObjPtr player = resources_->GetPlayer();
+  bool visible = dungeon.IsTileVisible(unit->position);
+
+  if (unit->GetAsset()->name == "white_spine") {
+    double distance_to_player = length(player->position - unit->position);
+    return (visible || distance_to_player < 100);
+  }
+  return false;
+}
+
 void Monsters::MiniSpiderling(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   ObjPtr player = resources_->GetPlayer();
@@ -124,6 +136,12 @@ bool Monsters::IsPlayerReachable(ObjPtr unit) {
   return reachable;
 }
 
+ivec2 Monsters::IsPlayerReachableThroughDoor(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  return dungeon.IsReachableThroughDoor(unit->position, player->position);
+}
+
 ivec2 Monsters::FindSafeTile(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
@@ -137,6 +155,40 @@ ivec2 Monsters::FindSafeTile(ObjPtr unit) {
        
         if (!dungeon.IsTileClear(new_tile)) continue;
         if (dungeon.IsTileVisible(new_tile)) continue;
+        possible_tiles.push_back(new_tile);
+      }
+    }
+
+    if (possible_tiles.empty()) continue;
+
+    int index = Random(0, possible_tiles.size());
+    return possible_tiles[index];
+  }
+  return ivec2(-1);
+}
+
+ivec2 Monsters::FindChokepoint(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+  char** dungeon_map = dungeon.GetDungeon();
+
+  for (int k = 0; k < 10; k++) {
+    vector<ivec2> possible_tiles;
+    for (int i = -1; i < 1; i++) {
+      for (int j = -1; j < 1; j++) {
+        if (i == 0 && j == 0) continue;
+        ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
+       
+        if (!dungeon.IsTileClear(new_tile)) continue;
+        switch (dungeon_map [new_tile.x][new_tile.y]) {
+          case 'd':
+          case 'D': {
+            break;
+          }
+          default: {
+            continue;
+          }
+        }
         possible_tiles.push_back(new_tile);
       }
     }
@@ -881,41 +933,41 @@ void Monsters::WhiteSpine(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
   double distance_to_player = length(player->position - unit->position);
-  bool visible = dungeon.IsTileVisible(unit->position);
-
-  bool holdback = ShouldHoldback(unit);
 
   float t;
   bool can_hit_player = !dungeon.IsRayObstructed(unit->position, 
     player->position, t);
 
+  if (unit->was_hit) {
+    if (unit->CanUseAbility("defend")) {
+      unit->ClearActions();
+      unit->actions.push(make_shared<DefendAction>());
+    }
+    unit->was_hit = false;
+  }
 
   switch (unit->ai_state) {
     case AI_ATTACK: {
-      shared_ptr<Action> next_action = nullptr;
       if (!unit->actions.empty()) {
-        next_action = unit->actions.front();
-      }
-
-      if (!unit->CanUseAbility("ranged-attack")) {
-        unit->actions.push(make_shared<MoveToPlayerAction>());
-        unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
         break;
       }
 
-      if (!next_action) {
-        if (can_hit_player && distance_to_player < 121.0) {
-          unit->actions.push(make_shared<TakeAimAction>());
-          unit->actions.push(make_shared<RangedAttackAction>());
-          unit->cooldowns["ranged-attack"] = glfwGetTime() + 2;
+      if (!unit->CanUseAbility("ranged-attack") || !can_hit_player) {
+        if (!IsPlayerReachable(unit)) { 
+          ivec2 door = IsPlayerReachableThroughDoor(unit);
+          if (door.x != -1) {
+            vec3 target = dungeon.GetTilePosition(door);
+            unit->actions.push(make_shared<LongMoveAction>(target, 10.0f));
+            unit->actions.push(make_shared<RangedAttackAction>(target + vec3(0, 10, 0)));
+          } else {
+            unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+          }
+        } else {
+          unit->actions.push(make_shared<MoveToPlayerAction>());
         }
-        unit->actions.push(make_shared<MoveToPlayerAction>());
-      } else if (distance_to_player < 91.0 && can_hit_player && 
-        !IsAttackAction(next_action) && next_action->type != ACTION_IDLE) {
-        unit->ClearActions();
+      } else {
         unit->actions.push(make_shared<TakeAimAction>());
         unit->actions.push(make_shared<RangedAttackAction>());
-        unit->cooldowns["ranged-attack"] = glfwGetTime() + 2;
       }
       break;
     }
@@ -924,19 +976,29 @@ void Monsters::WhiteSpine(ObjPtr unit) {
         break;
       }
 
-      if (!unit->CanUseAbility("defend")) {
-        break;
-      }
-
-      unit->actions.push(make_shared<DefendAction>());
-      unit->cooldowns["defend"] = glfwGetTime() + 10;
-      unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      unit->actions.push(make_shared<TakeAimAction>());
+      unit->actions.push(make_shared<RangedAttackAction>());
       break;
     }
     case IDLE: {
-      if (visible) {
-        unit->ClearActions();
-        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      if (!unit->actions.empty()) {
+        break;
+      } else if (CanDetectPlayer(unit)) {
+        if (Random(0, 10) < 5) {
+          ivec2 chokepoint = FindChokepoint(unit);
+          if (chokepoint.x != -1) {
+            unit->ClearActions();
+            vec3 target = dungeon.GetTilePosition(chokepoint);
+            unit->actions.push(make_shared<LongMoveAction>(target, 3.0f));
+            unit->actions.push(make_shared<ChangeStateAction>(DEFEND));
+            break;
+          }
+          unit->ClearActions();
+          unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        } else {
+          unit->ClearActions();
+          unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        }
       } else if (unit->actions.empty()) {
         unit->actions.push(make_shared<IdleAction>(1));
       }

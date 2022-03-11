@@ -1353,11 +1353,17 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
     if (configs->place_object) {
-      configs->new_building->rotation_matrix *= rotate(mat4(1.0), -0.005f, vec3(0, 1, 0));
+      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        configs->new_building->scale += 0.01f;
+      else
+        configs->new_building->rotation_matrix *= rotate(mat4(1.0), -0.005f, vec3(0, 1, 0));
     }
   } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
     if (configs->place_object) {
-      configs->new_building->rotation_matrix *= rotate(mat4(1.0), 0.005f, vec3(0, 1, 0));
+      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+        configs->new_building->scale -= 0.01f;
+      else
+        configs->new_building->rotation_matrix *= rotate(mat4(1.0), 0.005f, vec3(0, 1, 0));
     }
   } else if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
     if (configs->place_object) {

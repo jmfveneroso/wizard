@@ -96,6 +96,8 @@ class Dungeon {
 
   unordered_map<int, char> char_map_;
 
+  vector<ivec2> doors_;
+
   int vr1_, vr2_, vr3_;
   int hr1_, hr2_, hr3_;
 
@@ -362,6 +364,7 @@ class Dungeon {
   void ClearPaths();
   void CalculateAllPathsAsync(const ivec2& tile);
   bool IsReachable(const vec3& source, const vec3& dest);
+  ivec2 IsReachableThroughDoor(const vec3& source, const vec3& dest);
   void PrintPathfindingMap(const vec3& position);
   ivec2 GetClosestClearTile(const vec3& position);
   int GetRandomChestLoot(int dungeon_level);
