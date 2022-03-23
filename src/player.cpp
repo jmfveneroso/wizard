@@ -28,7 +28,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
     if (interact) {
       if (item->type == GAME_OBJ_DOOR) {
         if (item->name == "dungeon-entrance") {
-          configs->dungeon_level = 0;
+          resources_->ChangeDungeonLevel(0);
           resources_->DeleteAllObjects();
           resources_->CreateDungeon();
           Dungeon& dungeon = resources_->GetDungeon();
@@ -73,17 +73,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
          }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();
-        if (item->name == "book1-001") {
-          configs->learned_spells[1] = 1;
-          inventory_->Enable(window, INVENTORY_SPELLBOOK);
-          resources_->SetGameState(STATE_INVENTORY);
-          resources_->AddMessage("You learned to cast magic missile.");
-        } else if (item->name == "book2-001") {
-          configs->learned_spells[2] = 1;
-          inventory_->Enable(window, INVENTORY_SPELLBOOK);
-          resources_->SetGameState(STATE_INVENTORY);
-          resources_->AddMessage("You learned to cast minor open lock.");
-        } else if (item->name == "mammon") {
+        if (item->GetAsset()->name == "merchant") {
           resources_->TalkTo(item->name);
         } else if (item->GetAsset()->name == "spell_door_block") {
           Dungeon& dungeon = resources_->GetDungeon();
@@ -93,8 +83,11 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           resources_->RemoveObject(item);
           resources_->CalculateCollisionData();
           resources_->GenerateOptimizedOctree();
+        } else if (item->name == "town-portal") {
+          resources_->EnterTownPortal();
         } else if (item->GetAsset()->name == "stairs_down_hull") {
-          if (++configs->dungeon_level == 7) {
+          resources_->ChangeDungeonLevel(configs->dungeon_level+1);
+          if (configs->dungeon_level == 7) {
             resources_->GetConfigs()->render_scene = "safe-zone";
             resources_->DeleteAllObjects();
             resources_->CreateSafeZone();
@@ -114,7 +107,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
           }
         } else if (item->GetAsset()->name == "stairs_up_hull") {
           if (configs->render_scene == "safe-zone") {
-            configs->dungeon_level = 7;
+            resources_->ChangeDungeonLevel(7);
           }
 
           if (configs->dungeon_level == 0) {
@@ -127,7 +120,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->GetPlayer()->ChangePosition(vec3(11628, 141, 7246));
             resources_->SaveGame();
           } else {
-            configs->dungeon_level--;
+            resources_->ChangeDungeonLevel(configs->dungeon_level-1);
             resources_->DeleteAllObjects();
             resources_->CreateDungeon();
             Dungeon& dungeon = resources_->GetDungeon();
@@ -424,8 +417,10 @@ void PlayerInput::PlaceObject(GLFWwindow* window, const Camera& c) {
   state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
   if (state == GLFW_PRESS) {
     resources_->SetGameState(STATE_GAME);
-    configs->new_building->CalculateCollisionData();
-    resources_->GenerateOptimizedOctree();
+    if (configs->new_building->type == GAME_OBJ_DEFAULT) {
+      configs->new_building->CalculateCollisionData();
+      resources_->GenerateOptimizedOctree();
+    }
 
     configs->place_object = false;
     configs->scale_object = false;
@@ -502,6 +497,98 @@ bool PlayerInput::UseItem(int position) {
       configs->active_items[position] = 0;
       obj->frame = 0;
       scepter->frame = 0;
+      return true;
+    }
+    case 41: {
+      configs->town_portal_active = true;
+      configs->town_portal_dungeon_level = configs->dungeon_level;
+      resources_->DeleteAllObjects();
+      resources_->CreateTown();
+      resources_->LoadCollisionData("resources/objects/collision_data.xml");
+      resources_->CalculateCollisionData();
+      resources_->GenerateOptimizedOctree();
+      resources_->GetConfigs()->render_scene = "town";
+      resources_->GetPlayer()->ChangePosition(vec3(11628, 141, 7246));
+      resources_->SaveGame();
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 44: {
+      Dungeon& dungeon = resources_->GetDungeon();
+      dungeon.Reveal();
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 45: {
+      player->armor = 3;
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 46: { // Scroll of Door.
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect("particle-sparkle-green");
+      player->selected_spell = 3;
+      current_spell_ = resources_->GetArcaneSpellData()[3];
+      debounce_ = 0;
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 47: { // Scroll of Trap.
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect("particle-sparkle-green");
+      player->selected_spell = 5;
+      current_spell_ = resources_->GetArcaneSpellData()[5];
+      debounce_ = 0;
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 48: { // Scroll of Decoy.
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect("particle-sparkle-green");
+      player->selected_spell = 7;
+      current_spell_ = resources_->GetArcaneSpellData()[7];
+      debounce_ = 0;
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 49: { // Scroll of Detect.
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect("particle-sparkle-green");
+      player->selected_spell = 4;
+      current_spell_ = resources_->GetArcaneSpellData()[4];
+      debounce_ = 0;
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 57: { // Teleport Rod.
+      resources_->UseTeleportRod();
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 58: { // Concoction of Quick Casting.
+      player->AddTemporaryStatus(make_shared<QuickCastingStatus>(30.0f, 1));
+      configs->active_items[position] = 0;
+      return true;
+    }
+    case 59: { // Concoction of Mana Regen.
+      player->AddTemporaryStatus(make_shared<ManaRegenStatus>(30.0f, 1));
+      configs->active_items[position] = 0;
       return true;
     }
     // case 24: {
@@ -733,6 +820,52 @@ bool PlayerInput::CastSpellOrUseItem() {
         }
         return false;
       }
+      case 6: { // Fireball.
+        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 6;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 0;
+          return true;
+        }
+        return false;
+      }
+      case 7: { // Decoy.
+        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 7;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 0;
+          return true;
+        }
+        return false;
+      }
+      case 8: { // Magma Ray.
+        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CHANNELING;
+          channel_until_ = glfwGetTime() + 3.0f;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 8;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 0;
+          return true;
+        }
+        return false;
+      }
       // case 2: {
       //   resources_->CastLightningRay(player, camera_.position, camera_.direction);
       //   if (Random(0, 5) == 0) {
@@ -783,33 +916,24 @@ bool PlayerInput::CastSpellOrUseItem() {
       //   debounce_ = 20;
       //   return true;
       // }
-      case 6: { // Darkvision.
-        resources_->CastDarkvision();
-        configs->spellbar_quantities[configs->selected_spell]--;
-        if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-          configs->spellbar[configs->selected_spell] = 0;
-        }
-        debounce_ = 20;
-        return true;
-      }
-      case 7: { // String Attack.
-        resources_->CastStringAttack(player, c.position, c.direction);
-        configs->spellbar_quantities[configs->selected_spell]--;
-        if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-          configs->spellbar[configs->selected_spell] = 0;
-        }
-        debounce_ = 0;
-        return true;
-      }
-      case 8: { // Telekinesis.
-        resources_->CastTelekinesis();
-        configs->spellbar_quantities[configs->selected_spell]--;
-        if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-          configs->spellbar[configs->selected_spell] = 0;
-        }
-        debounce_ = 20;
-        return true;
-      }
+      // case 7: { // String Attack.
+      //   resources_->CastStringAttack(player, c.position, c.direction);
+      //   configs->spellbar_quantities[configs->selected_spell]--;
+      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
+      //     configs->spellbar[configs->selected_spell] = 0;
+      //   }
+      //   debounce_ = 0;
+      //   return true;
+      // }
+      // case 8: { // Telekinesis.
+      //   resources_->CastTelekinesis();
+      //   configs->spellbar_quantities[configs->selected_spell]--;
+      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
+      //     configs->spellbar[configs->selected_spell] = 0;
+      //   }
+      //   debounce_ = 20;
+      //   return true;
+      // }
     }
     return false;
   }
@@ -883,29 +1007,61 @@ void PlayerInput::ProcessPlayerCasting() {
 
     player->player_action = PLAYER_IDLE;
   } else if (animation_frame_ == 20) {
+    ObjPtr waypoint_obj = resources_->GetObjectByName("waypoint-001");
     if (current_spell_) {
       switch (current_spell_->spell_id) {
         case 0:
-          // resources_->CastMagicMissile(camera_);
           resources_->CastShotgun(camera_);
           break;
         case 1:
           resources_->CastWindslash(camera_);
           break;
         case 2:
-          // resources_->CastFlash(player);
           resources_->CastFlashMissile(camera_);
           break;
-        case 3:
+        case 3: {
+          spell_wall_pos_ = resources_->GetSpellWallRayCollision(player, c.position, 
+            c.direction);
+          waypoint_obj->draw = true;
+
+          waypoint_obj->position = spell_wall_pos_;
+          if (obj->position.y < 0) obj->position.y = 0;
+          resources_->UpdateObjectPosition(obj);
           resources_->CastSpellWall(player, spell_wall_pos_);
-          // player->player_action = PLAYER_CHANNELING;
-          break;
+          break; 
+        }
         case 4:
           resources_->CastDetectMonsters();
           break;
-        case 5:
+        case 5: {
+          trap_pos_ = resources_->GetTrapRayCollision(player, c.position, 
+            c.direction);
+
+          waypoint_obj->draw = true;
+
+          waypoint_obj->position = trap_pos_;
+          if (obj->position.y < 0) obj->position.y = 0;
+          resources_->UpdateObjectPosition(obj);
+
           resources_->CastSpellTrap(player, trap_pos_);
           break;
+        }
+        case 6:
+          resources_->CastFireball(player, c.direction);
+          break;
+        case 7: {
+          trap_pos_ = resources_->GetTrapRayCollision(player, c.position, 
+            c.direction);
+
+          waypoint_obj->draw = true;
+
+          waypoint_obj->position = trap_pos_;
+          if (obj->position.y < 0) obj->position.y = 0;
+          resources_->UpdateObjectPosition(obj);
+
+          resources_->CastDecoy(player, trap_pos_);
+          break;
+        }
         case 9:
           resources_->CastSpellShot(camera_);
           break;
@@ -923,11 +1079,10 @@ void PlayerInput::ProcessPlayerChanneling() {
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
   Camera c = GetCamera();
 
-  if (lft_click_) {
+  if (lft_click_ && glfwGetTime() < channel_until_) {
     obj->frame = 20;
     scepter->frame = 20;
     animation_frame_ = 0;
-    player->mana -= current_spell_->mana_cost;
 
     if (!channeling_particle || channeling_particle->life < 0.0f) {
       channeling_particle = 
@@ -961,12 +1116,17 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   static double last_time = glfwGetTime();
   double current_time = glfwGetTime();
 
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
   window_ = window;
   --debounce_;
   --animation_frame_;
 
-  shared_ptr<Player> player = resources_->GetPlayer();
-  shared_ptr<Configs> configs = resources_->GetConfigs();
+  if (configs->quick_casting) {
+    cout << "Quick casting" << endl;
+    --animation_frame_;
+  }
 
   vec3 right = glm::vec3(
     sin(player->rotation.y - 3.14f/2.0f), 
@@ -1133,7 +1293,8 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
           waypoint_obj->position = spell_wall_pos_;
           if (obj->position.y < 0) obj->position.y = 0;
           resources_->UpdateObjectPosition(obj);
-        } else if (arcane_spell->spell_id == 5) { // Trap.
+        } else if (arcane_spell->spell_id == 5 ||
+                   arcane_spell->spell_id == 7) { // Trap or decoy.
           trap_pos_ = resources_->GetTrapRayCollision(player, c.position, 
             c.direction);
 
@@ -1153,7 +1314,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         }
       } else if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
         if (debounce_ < 0) {
-          resources_->CastFireball(c);
+          resources_->CastParalysis(player, player->position + c.direction * 100.0f);
           debounce_ = 20;
         }
       } else if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS) {
@@ -1353,17 +1514,27 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {
     if (configs->place_object) {
-      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
         configs->new_building->scale += 0.01f;
-      else
+        if (configs->new_building->type == GAME_OBJ_PARTICLE) {
+          shared_ptr<Particle> p = static_pointer_cast<Particle>(configs->new_building);
+          p->size += 0.01f;
+        }
+      } else {
         configs->new_building->rotation_matrix *= rotate(mat4(1.0), -0.005f, vec3(0, 1, 0));
+      }
     }
   } else if (glfwGetKey(window, GLFW_KEY_LEFT_BRACKET) == GLFW_PRESS) {
     if (configs->place_object) {
-      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
+      if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
         configs->new_building->scale -= 0.01f;
-      else
+        if (configs->new_building->type == GAME_OBJ_PARTICLE) {
+          shared_ptr<Particle> p = static_pointer_cast<Particle>(configs->new_building);
+          p->size -= 0.01f;
+        }
+      } else {
         configs->new_building->rotation_matrix *= rotate(mat4(1.0), 0.005f, vec3(0, 1, 0));
+      }
     }
   } else if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
     if (configs->place_object) {

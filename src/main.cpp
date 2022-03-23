@@ -5,6 +5,7 @@
 #include "physics.hpp"
 #include "player.hpp"
 #include "inventory.hpp"
+#include "game_screen.hpp"
 #include "engine.hpp"
 #include "monsters.hpp"
 
@@ -17,6 +18,7 @@ shared_ptr<Physics> physics = nullptr;
 shared_ptr<CollisionResolver> collision_resolver = nullptr;
 shared_ptr<AI> ai = nullptr;
 shared_ptr<Inventory> inventory = nullptr;
+shared_ptr<GameScreen> game_screen = nullptr;
 shared_ptr<PlayerInput> player_input = nullptr;
 shared_ptr<Engine> engine = nullptr;
 shared_ptr<Monsters> monsters = nullptr;
@@ -89,6 +91,7 @@ int main() {
   draw_2d = make_shared<Draw2D>(resources, resources_dir, 1440, 900);
   project_4d = make_shared<Project4D>(resources);
   inventory = make_shared<Inventory>(resources, draw_2d);
+  game_screen = make_shared<GameScreen>(resources, draw_2d);
   renderer = make_shared<Renderer>(resources, draw_2d, project_4d,
     inventory, window_, window_width_, window_height_);
   physics = make_shared<Physics>(resources);
@@ -99,7 +102,7 @@ int main() {
   player_input = make_shared<PlayerInput>(resources, project_4d, 
     inventory, renderer->terrain());
   engine = make_shared<Engine>(project_4d, renderer, text_editor, inventory, 
-    resources, collision_resolver, ai, physics, player_input,
+    game_screen, resources, collision_resolver, ai, physics, player_input,
     window_, window_width_, window_height_);
 
   glfwSetCharCallback(renderer->window(), PressCharCallback);

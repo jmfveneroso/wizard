@@ -235,9 +235,9 @@ void CollisionResolver::UpdateObjectPositions() {
     obj->in_contact_with = nullptr;
     obj->can_jump = false;
 
-    if (obj->life < 0.0f) {
-      continue;
-    }
+    // if (obj->life < 0.0f) {
+    //   continue;
+    // }
 
     // vec3 movement_vector = obj->target_position - obj->position;
     // if (length2(movement_vector) < 0.0001f) {
@@ -1787,9 +1787,16 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 
   switch (missile->type) {
     case MISSILE_FIREBALL: {
-      resources_->CreateParticleEffect(16, missile->position, normal * 1.0f, 
+      resources_->CreateParticleEffect(16, c->point_of_contact, normal * 1.0f, 
         vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
       resources_->CastFireExplosion(missile->owner, missile->position, vec3(0));
+      obj1->life = -1;
+      return;
+    }
+    case MISSILE_PARALYSIS: {
+      resources_->CreateParticleEffect(16, c->point_of_contact, normal * 1.0f, 
+        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 3.0f);
+      resources_->CastLightningExplosion(missile->owner, missile->position);
       obj1->life = -1;
       return;
     }
@@ -2010,15 +2017,14 @@ void CollisionResolver::ResolveParticleCollision(ColPtr c) {
     obj1->life = -1.0f;
     if (!obj2) return;
 
-    // TODO: consider particles from other owners, like missiles.
-    if (obj2->IsCreature()) obj2->DealDamage(resources_->GetPlayer(), 0.2f,
-      vec3(0, 1, 0), /*take_hit_animation=*/false);
+    if (particle->owner && particle->owner->id == obj2->id) return;
 
-    if (obj2->asset_group && obj2->GetAsset()->name == "dungeon_web_wall") {
-      obj2->life = -1.0f;
+    // TODO: consider particles from other owners, like missiles.
+    if (obj2->IsCreature()) {
+      obj2->DealDamage(particle->owner, 0.2f,
+        vec3(0, 1, 0), /*take_hit_animation=*/false);
     }
   } else if (particle->particle_type->name == "fire-explosion") {
-    cout << "Trying: " << obj2->GetName() << endl;
     if (!obj2) return;
 
     if (particle->owner && particle->owner->id == obj2->id) return;
@@ -2027,9 +2033,22 @@ void CollisionResolver::ResolveParticleCollision(ColPtr c) {
     if (particle->hit_list.find(obj2->id) != particle->hit_list.end()) return;
 
     obj2->DealDamage(particle->owner, particle->damage, vec3(0, 1, 0));
+    obj2->speed += normalize(obj2->position - particle->position) * 0.7f;
 
     particle->hit_list.insert(obj2->id);
-    cout << "Collision with lightning explosion" << endl;
+  } else if (particle->particle_type->name == "string-attack") {
+    if (!obj2) return;
+
+    if (particle->owner && particle->owner->id == obj2->id) return;
+
+    // if (!obj2->IsCreature()) return;
+    if (particle->hit_list.find(obj2->id) != particle->hit_list.end()) return;
+
+    cout << "Hit my baby a: " << obj2->id << endl;
+    cout << "Hit my baby b: " << particle->owner->id << endl;
+    obj2->DealDamage(particle->owner, particle->damage, vec3(0, 1, 0));
+
+    particle->hit_list.insert(obj2->id);
   }
 }
 

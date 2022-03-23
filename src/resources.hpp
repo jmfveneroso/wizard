@@ -54,17 +54,6 @@ const int kRandomItemOffset = 100000;
 
 class GameObject;
 
-enum GameState {
-  STATE_GAME = 0,
-  STATE_EDITOR,
-  STATE_INVENTORY,
-  STATE_CRAFT,
-  STATE_TERRAIN_EDITOR,
-  STATE_DIALOG,
-  STATE_BUILD,
-  STATE_MAP
-};
-
 struct Quest {
   bool active = false;
   string name;
@@ -100,6 +89,7 @@ struct Configs {
   bool scale_object = false;
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
+  bool draw_dungeon = true;
   int item_matrix[10][5] = {
     { 18, 19, 20, 21, 0 },
     {   0, 0,  0,  0, 0 },
@@ -133,30 +123,9 @@ struct Configs {
     0, 0, 0 
   };
 
-  int store_matrix[10][5] = {
-    { 18, 19, 20, 21, 0 },
-    {   3, 0,  0,  0, 0 },
-    {   -1, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-    {   0, 0,  0,  0, 0 },
-  };
-  int store_quantities[10][5] = {
-    { 1, 1, 1, 1, 1 },
-    { 1, 1, 1, 1, 1 },
-    { 1, 1, 1, 1, 1 },
-    { 1, 1, 1, 1, 1 },
-    { 1, 1, 1, 0, 0 },
-    { 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0 },
-    { 0, 0, 0, 0, 0 },
-  };
+  bool update_store = true;
+  int store[6] = { 0, 0, 0, 0, 0, 0 };
+  vector<vector<int>> store_items_at_level;
 
   int selected_spell = 0;
   int spellbar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -177,6 +146,8 @@ struct Configs {
   bool darkvision = false;
   bool see_invisible = false;
   int summoned_creatures = 0;
+  bool shield_of_protection = false;
+  float shield_of_protection_cooldown = 0;
 
   int store_items[4][7] = { 
     { 13, 5001, 0, 0, 0, 0, 0 },
@@ -191,6 +162,7 @@ struct Configs {
   int max_mana = 10;
   float mana_regen = 0.003f;
   bool can_run = false;
+  bool luck_charm = false;
   int max_stamina = 100;
   int experience = 0;
   int level = 0;
@@ -213,6 +185,7 @@ struct Configs {
   // int spiritual_resistance = 0;
 
   int dungeon_level = 0;
+  int max_dungeon_level = 0;
 
   bool disable_collision = false;
   bool disable_ai = false;
@@ -231,6 +204,11 @@ struct Configs {
   int gold = 0;
   float rest_bar = 0.0f;
   bool detect_monsters = false;
+
+  bool town_portal_active = false;
+  int town_portal_dungeon_level;
+
+  bool quick_casting = false;
 };
 
 struct ItemBonus {
@@ -395,7 +373,8 @@ class Resources {
   int random_item_id = kRandomItemOffset;
 
   shared_ptr<Configs> configs_;
-  GameState game_state_ = STATE_EDITOR;
+  // GameState game_state_ = STATE_EDITOR;
+  GameState game_state_ = STATE_START_SCREEN;
 
   shared_ptr<CurrentDialog> current_dialog_ = make_shared<CurrentDialog>();
 
@@ -441,7 +420,8 @@ class Resources {
   vector<shared_ptr<GameObject>> rotating_planks_;
   vector<shared_ptr<Particle>> particles_3d_;
 
-  shared_ptr<Player> player_;
+  shared_ptr<Player> player_ = nullptr;
+  ObjPtr decoy_ = nullptr;
   shared_ptr<OctreeNode> outside_octree_;
 
   // Events.
@@ -572,11 +552,14 @@ class Resources {
   void LoadMeshesFromAssetFile(pugi::xml_node xml);
   void CreateOctree(shared_ptr<OctreeNode> octree_node, int depth = 0);
   OctreeCount CountOctreeNodesAux(shared_ptr<OctreeNode> octree_node, int depth);
+  void GenerateStoreItems();
 
  public:
   Resources(const string& resources_dir, const string& shaders_dir, 
     GLFWwindow* window_);
   ~Resources();
+
+  GLFWwindow* GetWindow() { return window_; }
 
   float camera_jiggle = 0.0f;
 
@@ -604,6 +587,7 @@ class Resources {
   double GetFrameStart();
   vector<shared_ptr<Particle>>& GetParticleContainer();
   shared_ptr<Player> GetPlayer();
+  ObjPtr GetDecoy();
   shared_ptr<Mesh> GetMesh(ObjPtr obj);
   vector<shared_ptr<GameObject>>& GetMovingObjects();
   vector<ObjPtr>& GetCreatures() ;
@@ -649,22 +633,25 @@ class Resources {
 
   // TODO: move to particle / missiles.
   void CastMagicMissile(const Camera& camera);
+  void CastImpFire(ObjPtr owner, const vec3& pos, const vec3& direction);
   void CastBurningHands(const Camera& camera);
   void CastStringAttack(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastBlindingRay(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastLightningRay(ObjPtr owner, const vec3& position, 
-    const vec3& direction);
+    const vec3& direction, int bone = -1);
   void CastHeal(ObjPtr owner);
   void CastFlash(const vec3& position);
   void CastDarkvision();
   void CastTrueSeeing();
   void CastFireExplosion(ObjPtr owner, const vec3& position, 
     const vec3& direction);
+  void CastLightningExplosion(ObjPtr owner, const vec3& position);
   ObjPtr CreateSpeedLines(ObjPtr obj);
   void CreateSparks(const vec3& position, const vec3& direction);
-  void CastFireball(const Camera& camera);
+  void CastFireball(ObjPtr owner, const vec3& direction);
+  void CastParalysis(ObjPtr owner, const vec3& target);
   void CastAcidArrow(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastHook(ObjPtr owner, const vec3& position, const vec3& direction);
@@ -691,6 +678,9 @@ class Resources {
   //   shared_ptr<GameAssetGroup> asset_group);
 
   // TODO: move to space partition.
+  ObjPtr IntersectRayObjectsAux(shared_ptr<OctreeNode> node,
+    const vec3& position, const vec3& direction, float max_distance, 
+    IntersectMode mode, float& t, vec3& q);
   ObjPtr IntersectRayObjects(const vec3& position, 
     const vec3& direction, float max_distance, 
     IntersectMode mode, float& t, vec3& q);
@@ -811,6 +801,7 @@ class Resources {
 
   vector<ObjPtr> GetMonstersInGroup(int monster_group);
   void CastSpiderEgg(ObjPtr spider);
+  void CastWormBreed(ObjPtr worm);
   void CastSpiderWebShot(ObjPtr spider, vec3 dir);
   vec3 GetSpellWallRayCollision(ObjPtr owner, const vec3& position, 
     const vec3& direction);
@@ -819,6 +810,7 @@ class Resources {
 
   bool CastSpellWall(ObjPtr owner, const vec3& position);
   bool CastSpellTrap(ObjPtr owner, const vec3& position);
+  bool CastDecoy(ObjPtr owner, const vec3& position);
   bool CanRest();
   void CastFlashMissile(const Camera& camera);
   void CastShotgun(const Camera& camera);
@@ -829,6 +821,10 @@ class Resources {
   int GetSpellItemId(int spell_id);
   int GetSpellItemIdFromName(const string& name);
   void DestroyDoor(ObjPtr obj);
+  void ChangeDungeonLevel(int new_level);
+  void EnterTownPortal();
+  bool UseTeleportRod();
+  bool CreateBonfire();
 };
 
 #endif // __RESOURCES_HPP__

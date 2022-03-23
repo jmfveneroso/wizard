@@ -1387,6 +1387,11 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
     return;
   }
 
+  if (IsPlayer() && configs->shield_of_protection && glfwGetTime() > configs->shield_of_protection_cooldown) {
+    configs->shield_of_protection_cooldown = glfwGetTime() + 60.0f;
+    return;
+  }
+
   // Reduce damage using armor class.
   damage = int(damage);
   if (damage == 0) damage = 1;
@@ -1693,5 +1698,13 @@ void GameObject::RestoreHealth(float value) {
   life += value;
   if (life >= max_life) {
     life = max_life;
+  }
+}
+
+ObjPtr GameObject::GetCurrentTarget() {
+  if (current_target && current_target->life > 0) {
+    return current_target;
+  } else {
+    return resources_->GetPlayer();
   }
 }

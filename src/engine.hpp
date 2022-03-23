@@ -8,6 +8,7 @@
 #include "physics.hpp"
 #include "player.hpp"
 #include "inventory.hpp"
+#include "game_screen.hpp"
 
 #include <thread>
 #include <mutex>
@@ -21,6 +22,7 @@ class Engine {
   shared_ptr<Renderer> renderer_ = nullptr;
   shared_ptr<TextEditor> text_editor_ = nullptr;
   shared_ptr<Inventory> inventory_ = nullptr;
+  shared_ptr<GameScreen> game_screen_ = nullptr;
   shared_ptr<Resources> resources_ = nullptr;
   shared_ptr<CollisionResolver> collision_resolver_ = nullptr;
   shared_ptr<AI> ai_ = nullptr;
@@ -59,6 +61,7 @@ class Engine {
     shared_ptr<Renderer> renderer,
     shared_ptr<TextEditor> text_editor,
     shared_ptr<Inventory> inventory,
+    shared_ptr<GameScreen> game_screen,
     shared_ptr<Resources> asset_catalog,
     shared_ptr<CollisionResolver> collision_resolver,
     shared_ptr<AI> ai,

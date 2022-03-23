@@ -4,6 +4,15 @@
 
 Monsters::Monsters(shared_ptr<Resources> resources) : resources_(resources) {}
 
+ObjPtr Monsters::GetTarget(ObjPtr unit) {
+  ObjPtr decoy = resources_->GetDecoy();
+  if (decoy) {
+    float decoy_distance = length2(unit->position - decoy->position);
+    if (decoy_distance < 10000) return decoy;
+  }
+  return resources_->GetPlayer();
+}
+
 bool Monsters::IsAttackAction(shared_ptr<Action> action) {
   if (!action) return false;
   switch (action->type) {
@@ -71,7 +80,8 @@ bool Monsters::CanDetectPlayer(ObjPtr unit) {
     double distance_to_player = length(player->position - unit->position);
     return (visible || distance_to_player < 100);
   }
-  return false;
+
+  return visible;
 }
 
 void Monsters::MiniSpiderling(ObjPtr unit) {
@@ -130,8 +140,15 @@ void Monsters::MiniSpiderling(ObjPtr unit) {
 
 bool Monsters::IsPlayerReachable(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
-  shared_ptr<Player> player = resources_->GetPlayer();
-  bool reachable = dungeon.IsReachable(unit->position, player->position);
+
+  ObjPtr target;
+  if (unit->current_target) {
+    target = unit->current_target;
+  } else {
+    target = resources_->GetPlayer();
+  }
+
+  bool reachable = dungeon.IsReachable(unit->position, target->position);
   // cout << "reachable: " << reachable << endl;
   return reachable;
 }
@@ -140,6 +157,52 @@ ivec2 Monsters::IsPlayerReachableThroughDoor(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
   return dungeon.IsReachableThroughDoor(unit->position, player->position);
+}
+
+ivec2 Monsters::FindAmbushTile(ObjPtr unit) {
+  shared_ptr<Player> player = resources_->GetPlayer();
+
+  Dungeon& dungeon = resources_->GetDungeon();
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+  ivec2 player_tile_pos = dungeon.GetDungeonTile(player->position);
+
+  vec3 dir3d = vec3(rotate(
+    mat4(1.0),
+    player->rotation.y,
+    vec3(0.0f, 1.0f, 0.0f)
+  ) * vec4(0, 0, 1, 1));
+  vec2 dir = vec2(dir3d.x, dir3d.z);
+
+  int room1 = dungeon.GetRoom(dungeon.GetDungeonTile(player->position));
+
+  for (int k = 6; k < 15; k++) {
+    vector<ivec2> possible_tiles;
+    for (int i = -1; i < 1; i++) {
+      for (int j = -1; j < 1; j++) {
+        if (i == 0 && j == 0) continue;
+        ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
+       
+        if (!dungeon.IsTileClear(new_tile)) continue;
+
+        vec2 tile_dir = normalize(vec2(new_tile) - vec2(player_tile_pos));
+        if (dot(dir, tile_dir) > 0.0) continue;
+ 
+        double distance_to_player = length(player->position - dungeon.GetTilePosition(new_tile));
+        if (distance_to_player < 40.0f) continue;
+
+        int room2 = dungeon.GetRoom(new_tile);
+        if (room2 != room1) continue;
+
+        possible_tiles.push_back(new_tile);
+      }
+    }
+
+    if (possible_tiles.empty()) continue;
+
+    int index = Random(0, possible_tiles.size());
+    return possible_tiles[index];
+  }
+  return ivec2(-1);
 }
 
 ivec2 Monsters::FindSafeTile(ObjPtr unit) {
@@ -230,8 +293,75 @@ ivec2 Monsters::FindFleeTile(ObjPtr unit) {
     max_dist_from_player = dist;
     tile = new_tile;
   }
-
   return tile;
+}
+
+vec3 Monsters::FindCloseFlee(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  vec3 center = player->position;
+
+  ivec2 player_tile_pos = dungeon.GetDungeonTile(player->position);
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+
+  ivec2 step;
+  step.x = sign(player_tile_pos.x - unit_tile_pos.x);
+  step.y = sign(player_tile_pos.y - unit_tile_pos.y);
+
+  ivec2 next_tile = unit_tile_pos - step;
+  if (!dungeon.IsValidTile(next_tile) ||
+      !dungeon.IsTileClear(next_tile)) {
+    return vec3(0);
+  }
+
+  return dungeon.GetTilePosition(next_tile);
+}
+
+vec3 Monsters::FindSideMove(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  vec3 center = player->position;
+
+  ivec2 player_tile_pos = dungeon.GetDungeonTile(player->position);
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+
+  ivec2 step;
+  step.x = sign(player_tile_pos.x - unit_tile_pos.x);
+  step.y = sign(player_tile_pos.y - unit_tile_pos.y);
+
+  ivec2 next_tile;
+  if (Random(0, 5) == 0) {
+    next_tile = ivec2(step.y, -step.x);
+  } else {
+    next_tile = ivec2(-step.y, step.x);
+  }
+
+  if (!dungeon.IsValidTile(unit_tile_pos + next_tile) ||
+      !dungeon.IsTileClear(unit_tile_pos + next_tile)) {
+    next_tile = -next_tile;
+  }
+
+  if (!dungeon.IsValidTile(unit_tile_pos + next_tile) ||
+      !dungeon.IsTileClear(unit_tile_pos + next_tile)) {
+    return vec3(0);
+  }
+
+  return dungeon.GetTilePosition(unit_tile_pos + next_tile);
+
+  // bool clockwise = (unit->id % 2 == 0);
+  // float angle = 0.2f * ((clockwise) ? 1 : -1);
+  // float c = cos(angle);
+  // float s = sin(angle);
+  // mat2 m = mat2(c, -s, s, c);
+
+  // const vec3 u_pos = unit->position;
+  // const vec3 p_pos = center;
+  // vec2 v = vec2(u_pos.x, u_pos.z) - vec2(p_pos.x, p_pos.z);
+  // v = m * v;
+  // vec3 pos = player->position + vec3(v.x, 0, v.y);
+
+  // if (dungeon.IsReachable(unit->position, pos)) return pos;
+  // return vec3(0);
 }
 
 ivec2 Monsters::FindClosestPassage(ObjPtr unit) {
@@ -292,7 +422,9 @@ ivec2 Monsters::FindClosestPassage(ObjPtr unit) {
 void Monsters::Spiderling(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
-  double distance_to_player = length(player->position - unit->position);
+
+  ObjPtr target = unit->GetCurrentTarget();
+  double distance_to_player = length(target->position - unit->position);
 
   bool group_is_attacking = false;
   vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
@@ -306,11 +438,13 @@ void Monsters::Spiderling(ObjPtr unit) {
 
   bool visible = dungeon.IsTileVisible(unit->position);
 
+  // TODO: change to function.
   bool player_reachable = IsPlayerReachable(unit);
 
   int unit_relevance = 
     dungeon.GetRelevance(dungeon.GetTilePosition(unit->position));
 
+  // TODO: change to function.
   int player_relevance = 
     dungeon.GetRelevance(dungeon.GetTilePosition(player->position));
 
@@ -345,11 +479,11 @@ void Monsters::Spiderling(ObjPtr unit) {
       }
 
       float t;
-      bool movement_obstructed = dungeon.IsMovementObstructed(unit->position, player->position, t);
+      bool movement_obstructed = dungeon.IsMovementObstructed(unit->position, target->position, t);
       if (!movement_obstructed && distance_to_player > 30.0f && unit->can_jump) {
         if (unit->CanUseAbility("spider-jump")) {
           unit->cooldowns["spider-jump"] = glfwGetTime() + 1;
-          unit->actions.push(make_shared<SpiderJumpAction>(player->position));
+          unit->actions.push(make_shared<SpiderJumpAction>(target->position));
           break;
         }
       }
@@ -370,7 +504,7 @@ void Monsters::Spiderling(ObjPtr unit) {
         shared_ptr<MoveAction> move_action =  
           static_pointer_cast<MoveAction>(next_action);
         vec3 next_move = move_action->destination;
-        double distance = length(next_move - player->position);
+        double distance = length(next_move - target->position);
         if (distance > distance_to_player && !movement_obstructed) {
           unit->ClearActions();
         }
@@ -392,6 +526,7 @@ void Monsters::Spiderling(ObjPtr unit) {
       }
 
       if (next_action && next_action->type == ACTION_SPIDER_CLIMB) break;
+
       unit->AddTemporaryStatus(make_shared<SpiderThreadStatus>(0.1f, 20.0f));
 
       if (!unit->actions.empty()) {
@@ -399,20 +534,8 @@ void Monsters::Spiderling(ObjPtr unit) {
       }
 
       unit->levitating = true;
-
-      if (distance_to_player < 80.0f) {
-        unit->actions.push(make_shared<TakeAimAction>());
-
-        // Create spiderlings.
-        // unit->actions.push(make_shared<SpiderEggAction>());
-        // for (int i = 0; i < 10; i++) {
-        //   unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
-        //   unit->actions.push(make_shared<TakeAimAction>());
-        // }
-      } else {
-        unit->actions.push(make_shared<IdleAction>(1, "Armature|climbing"));
-        unit->actions.push(make_shared<TakeAimAction>());
-      }
+      resources_->ChangeObjectAnimation(unit, "Armature|climbing");
+      unit->actions.push(make_shared<TakeAimAction>());
       break;
     }
     case DEFEND: {
@@ -1018,8 +1141,288 @@ void Monsters::WhiteSpine(ObjPtr unit) {
   }
 }
 
+void Monsters::Imp(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  double distance_to_player = length(player->position - unit->position);
+
+  float t;
+  bool can_hit_player = !dungeon.IsRayObstructed(unit->position, 
+    player->position, t);
+
+  if (unit->was_hit) {
+    unit->was_hit = false;
+  }
+
+  switch (unit->ai_state) {
+    case AI_ATTACK: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->actions.push(make_shared<MoveToPlayerAction>());
+      if (!unit->CanUseAbility("ranged-attack") || !can_hit_player 
+        || distance_to_player < 30.0f) {
+        if (!IsPlayerReachable(unit)) { 
+          unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+        } else {
+          if (Random(0, 10) < 2) {
+            unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+          } else {
+            unit->actions.push(make_shared<MoveToPlayerAction>());
+          }
+        }
+      } else {
+        unit->actions.push(make_shared<TakeAimAction>());
+        unit->actions.push(make_shared<RangedAttackAction>());
+      }
+      break;
+    }
+    case AMBUSH: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      ivec2 ambush_tile = FindAmbushTile(unit);
+      if (ambush_tile.x == -1) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      if (unit->CanUseAbility("teleport")) {
+        unit->actions.push(make_shared<TeleportAction>(
+          dungeon.GetTilePosition(ambush_tile)));
+      }
+      unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      break;
+    }
+    case IDLE: {
+      if (!unit->actions.empty()) {
+        break;
+      } else if (CanDetectPlayer(unit)) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      } else if (unit->actions.empty()) {
+        unit->actions.push(make_shared<IdleAction>(1));
+      }
+      break;
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+void Monsters::BloodWorm(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ObjPtr player = resources_->GetPlayer();
+  double distance_to_player = length(player->position - unit->position);
+
+  switch (unit->ai_state) {
+    case AI_ATTACK: {
+      shared_ptr<Action> next_action = nullptr;
+      if (!unit->actions.empty()) {
+        next_action = unit->actions.front();
+      }
+
+      if (unit->actions.empty()) {
+        if (distance_to_player < 11.0f) {
+          unit->actions.push(make_shared<TakeAimAction>());
+          unit->actions.push(make_shared<MeeleeAttackAction>());
+          unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+        } else {
+          unit->actions.push(make_shared<MoveToPlayerAction>());
+        }
+      }
+      break;
+    } 
+    case AMBUSH: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (Random(0, 10) == 0) {
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      if (unit->CanUseAbility("breed") && Random(0, 10) == 0) {
+        unit->actions.push(make_shared<WormBreedAction>());
+        unit->cooldowns["breed"] = glfwGetTime() + 99999999;
+        break;
+      }
+
+      if (distance_to_player > 50.0f) {
+        unit->actions.push(make_shared<MoveToPlayerAction>());
+        break;
+      } 
+
+      if (distance_to_player < 20.0f) {
+        vec3 flee_pos = FindCloseFlee(unit);
+        if (length2(flee_pos) > 0.1f) {
+          unit->actions.push(make_shared<MoveAction>(flee_pos));
+          break;
+        } else {
+          ivec2 next_tile = FindFleeTile(unit);
+          if (next_tile.x != -1) {
+            unit->actions.push(make_shared<LongMoveAction>(
+              dungeon.GetTilePosition(next_tile)));
+            break;
+          }
+        }
+      }
+
+      vec3 pos = FindSideMove(unit);
+      if (length2(pos) > 0.1f) {
+        unit->actions.push(make_shared<MoveAction>(pos));
+      } else {
+        unit->actions.push(make_shared<MoveToPlayerAction>());
+      }
+ 
+      break;
+    } 
+    case IDLE: {
+      if (!unit->actions.empty()) {
+        break;
+      } else if (CanDetectPlayer(unit)) {
+        unit->ClearActions();
+        // unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+      } else if (unit->actions.empty()) {
+        unit->actions.push(make_shared<IdleAction>(1));
+      }
+      break;
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+void Monsters::Beholder(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ObjPtr player = resources_->GetPlayer();
+  double distance_to_player = length(player->position - unit->position);
+
+  switch (unit->ai_state) {
+    case AI_ATTACK: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      switch (Random(2, 3)) {
+        case 0: { // Normal attack.
+          unit->actions.push(make_shared<TakeAimAction>());
+          unit->actions.push(make_shared<RangedAttackAction>());
+          unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+          break;
+        }
+        case 1: { // Fireball.
+          if (unit->CanUseAbility("fireball")) {
+            ObjPtr target = unit->GetCurrentTarget();
+            unit->actions.push(make_shared<TakeAimAction>());
+            unit->actions.push(make_shared<FireballAction>());
+            unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+          }
+          break;
+        }
+        case 2: { // Paralysis.
+          if (unit->CanUseAbility("paralysis")) {
+            ObjPtr target = unit->GetCurrentTarget();
+            unit->actions.push(make_shared<TakeAimAction>());
+            unit->actions.push(make_shared<ParalysisAction>());
+            unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+          }
+          break;
+        }
+        case 3: { // CLose door.
+          break;
+        }
+      }
+      break;
+    } 
+    case AMBUSH: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (Random(0, 5) == 0) {
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+        break;
+      }
+
+      if (distance_to_player > 50.0f) {
+        unit->actions.push(make_shared<MoveToPlayerAction>());
+        break;
+      } 
+
+      if (distance_to_player < 20.0f) {
+        vec3 flee_pos = FindCloseFlee(unit);
+        if (length2(flee_pos) > 0.1f) {
+          unit->actions.push(make_shared<MoveAction>(flee_pos));
+          break;
+        } else {
+          ivec2 next_tile = FindFleeTile(unit);
+          if (next_tile.x != -1) {
+            unit->actions.push(make_shared<LongMoveAction>(
+              dungeon.GetTilePosition(next_tile)));
+            break;
+          }
+        }
+      }
+
+      vec3 pos = FindSideMove(unit);
+      if (length2(pos) > 0.1f) {
+        unit->actions.push(make_shared<MoveAction>(pos));
+      } else {
+        unit->actions.push(make_shared<MoveToPlayerAction>());
+      }
+ 
+      break;
+    } 
+    case IDLE: {
+      if (!unit->actions.empty()) {
+        break;
+      } else if (CanDetectPlayer(unit)) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
+      } else if (unit->actions.empty()) {
+        unit->actions.push(make_shared<IdleAction>(1));
+      }
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
 
 void Monsters::RunMonsterAi(ObjPtr obj) {
+  obj->current_target = GetTarget(obj);
   if (obj->GetAsset()->name == "spiderling") {
     Spiderling(obj); 
   } else if (obj->GetAsset()->name == "lancet") {
@@ -1032,10 +1435,14 @@ void Monsters::RunMonsterAi(ObjPtr obj) {
     MiniSpiderling(obj); 
   } else if (obj->GetAsset()->name == "white_spine") {
     WhiteSpine(obj); 
+  } else if (obj->GetAsset()->name == "imp") {
+    Imp(obj); 
   } else if (obj->GetAsset()->name == "wraith") {
     Wraith(obj); 
   } else if (obj->GetAsset()->name == "blood_worm") {
     BloodWorm(obj); 
+  } else if (obj->GetAsset()->name == "beholder") {
+    Beholder(obj); 
   }
 }
 
@@ -1078,56 +1485,6 @@ void Monsters::Wraith(ObjPtr unit) {
       break;
     }
     case IDLE: {
-      if (visible) {
-        unit->ClearActions();
-        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
-      } else if (unit->actions.empty()) {
-        unit->actions.push(make_shared<IdleAction>(1));
-      }
-      break;
-    }
-    default: {
-      break;
-    }
-  }
-}
-
-void Monsters::BloodWorm(ObjPtr unit) {
-  Dungeon& dungeon = resources_->GetDungeon();
-  ObjPtr player = resources_->GetPlayer();
-  double distance_to_player = length(player->position - unit->position);
-
-  switch (unit->ai_state) {
-    case AI_ATTACK: {
-      shared_ptr<Action> next_action = nullptr;
-      if (!unit->actions.empty()) {
-        next_action = unit->actions.front();
-      }
-
-      if (unit->actions.empty()) {
-        if (distance_to_player < 11.0f) {
-          unit->actions.push(make_shared<TakeAimAction>());
-          unit->actions.push(make_shared<MeeleeAttackAction>());
-        } else {
-          unit->actions.push(make_shared<MoveToPlayerAction>());
-        }
-      } else if (distance_to_player < 11.0f && !IsAttackAction(next_action)) {
-        unit->ClearActions();
-        unit->actions.push(make_shared<TakeAimAction>());
-        unit->actions.push(make_shared<MeeleeAttackAction>());
-      } else if (next_action->type == ACTION_MOVE) {
-        shared_ptr<MoveAction> move_action =  
-          static_pointer_cast<MoveAction>(next_action);
-        vec3 next_move = move_action->destination;
-        double distance = length(next_move - player->position);
-        if (distance > distance_to_player) {
-          unit->ClearActions();
-        }
-      }
-      break;
-    } 
-    case IDLE: {
-      bool visible = dungeon.IsTileVisible(unit->position);
       if (visible) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));

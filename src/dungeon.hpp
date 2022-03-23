@@ -42,6 +42,8 @@ struct LevelData {
   int dungeon_cells;
   int num_secret_rooms = 0;
   int max_room_gen = 10;
+  int min_room_gen_size = 2;
+  int max_room_gen_size = 8;
   vector<int> monsters;
   vector<int> objects;
   vector<string> minisets;
@@ -49,6 +51,7 @@ struct LevelData {
   vector<int> learnable_spells;
   vector<int> chest_loots;
   vector<int> traps;
+  vec3 dungeon_color = vec3(0, 0, 0);
 
   LevelData() {}
   LevelData(
@@ -205,16 +208,6 @@ class Dungeon {
 
   unordered_map<int, LevelData> level_data_;
 
-  // const LevelData kLevelData[7] {
-  //   { 760,  30, 5, 2, { 62, 62, 62 , 65                        }, { 70, 70, 70, 72, 72     }, {                 }, { 1, 1 }, 42, 3 },            // Level 0.
-  //   { 760,  40, 8, 2, { 62, 75, 75, 65, 65, 73, 73             }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 0, 1, 1, 2, 3, 3 }, 56, 4 },   // Level 1.
-  //   { 840,  40, 8, 2, { 62, 75, 65, 73, 69                     }, { 70, 72, 74, 74, 78, 78 }, { "LARACNA"       }, { 0, 1, 1, 3, 3 }, 56, 4 },      // Level 2.
-  //   { 840,  40, 8, 2, { 62, 75, 65, 73, 69, 83, 83, 71, 89, 89 }, { 70, 72, 74, 74, 78, 78 }, {                 }, { 5 }, 56, 4 },                  // Level 3.
-  //   { 840,  20, 0, 0, { 62, 62, 62, 65, 73, 73, 73, 91         }, { 88                     }, { "MINIBOSS_ROOM", "WORM_KING" }, { }, 56, 4 },       // Level 4.
-  //   { 840,  20, 1, 1,                                     { 95, 97 }, { 88 },                     { "MINIBOSS_ROOM" },              { 6 }, 56, 4 }, // Level 5.
-  //   { 1200, 5, 0, 0,                                     { 62 }, { },                     { },              { 6 }, 56, 4 }, // Level 6.
-  // };
-
   vector<ivec2> code_to_offset_ {
     ivec2(+1, +1), ivec2(+0, +1), ivec2(-1, +1), 
     ivec2(+1, +0), ivec2(+0, +0), ivec2(-1, +0),
@@ -230,10 +223,11 @@ class Dungeon {
 
   mutex calculate_path_mutex_;
   bool terminate_ = false;
-  const int kMaxThreads = 4;
+  const int kMaxThreads = 16;
   queue<ivec2> calculate_path_tasks_;
   int running_calculate_path_tasks_ = 0;
   vector<thread> calculate_path_threads_;
+  int task_counter_ = 0;
 
   void DrawRoom(int x, int y, int w, int h, int add_flags, int code = 1);
   bool IsChasm(int x, int y, int w, int h);
@@ -369,6 +363,7 @@ class Dungeon {
   ivec2 GetClosestClearTile(const vec3& position);
   int GetRandomChestLoot(int dungeon_level);
   int GetRandomLearnableSpell(int dungeon_level);
+  vec3 GetDungeonColor();
 };
 
 #endif // __DUNGEON_HPP__

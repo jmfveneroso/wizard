@@ -14,7 +14,7 @@ class AI {
  
   // Parallelism. 
   bool terminate_ = false;
-  const int kMaxThreads = 16;
+  const int kMaxThreads = 1; // 16.
   vector<thread> ai_threads_;
   mutex ai_mutex_;
   queue<ObjPtr> ai_tasks_;
@@ -35,6 +35,11 @@ class AI {
   void ProcessNPC(ObjPtr unit);
 
   bool WhiteSpineAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+
+  bool ImpAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+  bool BeholderAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
 
   bool WraithAttack(ObjPtr creature, shared_ptr<RangedAttackAction> action);
@@ -68,10 +73,18 @@ class AI {
     shared_ptr<SpiderJumpAction> action);
   bool ProcessSpiderEggAction(ObjPtr spider, 
     shared_ptr<SpiderEggAction> action);
+  bool ProcessWormBreedAction(ObjPtr spider, 
+    shared_ptr<WormBreedAction> action);
   bool ProcessSpiderWebAction(ObjPtr spider, 
     shared_ptr<SpiderWebAction> action);
   bool ProcessDefendAction(ObjPtr spider, 
     shared_ptr<DefendAction> action);
+  bool ProcessTeleportAction(ObjPtr creature, 
+    shared_ptr<TeleportAction> action);
+  bool ProcessFireballAction(ObjPtr creature, 
+    shared_ptr<FireballAction> action);
+  bool ProcessParalysisAction(ObjPtr creature, 
+    shared_ptr<ParalysisAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);

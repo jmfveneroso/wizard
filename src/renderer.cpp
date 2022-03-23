@@ -459,7 +459,7 @@ vector<ObjPtr> Renderer::GetVisibleObjects(vec4 frustum_planes[6]) {
 
 void Renderer::DrawOutside() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  if (configs->render_scene == "dungeon") {
+  if (configs->render_scene == "dungeon" && configs->draw_dungeon) {
     DrawDungeonTiles();
     return;
   }
@@ -646,6 +646,16 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
     } else if (mode == 2 && configs->detect_monsters && obj->IsCreature()) {
       // program_id = resources_->GetShader("death");
       program_id = resources_->GetShader("detect_monster");
+    } else if (obj->IsCreature() && obj->GetAsset()->name == "imp") {
+
+      shared_ptr<Action> next_action = nullptr;
+      if (!obj->actions.empty()) {
+        next_action = obj->actions.front();
+      }
+ 
+      if (next_action->type == ACTION_TELEPORT) {
+        program_id = resources_->GetShader("detect_monster");
+      }
     }
 
     glUseProgram(program_id);
@@ -2056,6 +2066,7 @@ void Renderer::CreateDungeonBuffers() {
 
 void Renderer::DrawDungeonTiles() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
+  Dungeon& dungeon = resources_->GetDungeon();
 
   int num_culled = 0;
   vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
@@ -2109,6 +2120,10 @@ void Renderer::DrawDungeonTiles() {
         glUniform1i(GetUniformId(program_id, "draw_diffuse"), draw_diffuse);
         glUniform1f(GetUniformId(program_id, "specular_component"), specular_component);
         glUniform1f(GetUniformId(program_id, "normal_strength"), normal_strength);
+
+        vec3 dungeon_color = dungeon.GetDungeonColor();
+        glUniform3fv(GetUniformId(program_id, "dungeon_color"), 1,
+          (float*) &dungeon_color);
 
         // Shadow.
         mat4 shadow_matrix0 = GetShadowMatrix(true, 0);

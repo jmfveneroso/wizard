@@ -44,6 +44,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   quat cur_rotation = quat(0.1, 0.1, 0.1, 0.1);
   quat dest_rotation = quat(0.1, 0.1, 0.1, 0.1);
 
+  shared_ptr<GameObject> current_target = nullptr;
+
   float distance;
   float scale = 1.0f;
   float animation_speed = 1.0f;
@@ -187,6 +189,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsClimbable();
   bool CanCollideWithPlayer();
   bool IsInvulnerable();
+  shared_ptr<GameObject> GetCurrentTarget();
 
   // mat4 GetBoneTransform();
   shared_ptr<GameObject> GetParent();
@@ -477,6 +480,18 @@ struct SpiderThreadStatus : TemporaryStatus {
   }
 };
 
+struct QuickCastingStatus : TemporaryStatus {
+  QuickCastingStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_QUICK_CASTING, duration, strength) {
+  }
+};
+
+struct ManaRegenStatus : TemporaryStatus {
+  ManaRegenStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_MANA_REGEN, duration, strength) {
+  }
+};
+
 // ============================================================================
 // AI,
 // ============================================================================
@@ -537,6 +552,13 @@ struct SpiderEggAction : Action {
     : Action(ACTION_SPIDER_EGG) {}
 };
 
+struct WormBreedAction : Action {
+  bool created_particle_effect = false;
+  float channel_end = 0.0f;
+  WormBreedAction() 
+    : Action(ACTION_WORM_BREED) {}
+};
+
 struct SpiderWebAction : Action {
   bool cast_complete = false;
   vec3 target;
@@ -555,6 +577,7 @@ struct SpiderJumpAction : Action {
 struct RangedAttackAction : Action {
   bool initiated = false;
   bool damage_dealt = false;
+  float until = 0.0f;
   vec3 target = vec3(0);
   RangedAttackAction(vec3 target=vec3(0)) : Action(ACTION_RANGED_ATTACK),  
     target(target) {}
@@ -636,6 +659,31 @@ struct DefendAction : Action {
   float until = 0;
   DefendAction() 
     : Action(ACTION_DEFEND) {}
+};
+
+struct TeleportAction : Action {
+  bool channeling = true;
+  vec3 position;
+  TeleportAction(vec3 position) 
+    : Action(ACTION_TELEPORT), position(position) {}
+};
+
+struct FireballAction : Action {
+  bool initiated = false;
+  bool damage_dealt = false;
+  float until = 0.0f;
+  vec3 target = vec3(0);
+  FireballAction(vec3 target=vec3(0)) : Action(ACTION_FIREBALL),  
+    target(target) {}
+};
+
+struct ParalysisAction : Action {
+  bool initiated = false;
+  bool damage_dealt = false;
+  float until = 0.0f;
+  vec3 target = vec3(0);
+  ParalysisAction(vec3 target=vec3(0)) : Action(ACTION_PARALYSIS),  
+    target(target) {}
 };
 
 shared_ptr<Player> CreatePlayer(Resources* resources);

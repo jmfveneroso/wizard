@@ -49,6 +49,18 @@ const int DLRG_NO_CEILING = 4096;
 const int DLRG_SPELL_WALL = 8192;
 const int DLRG_ARROW = 16384;
 
+enum GameState {
+  STATE_GAME = 0,
+  STATE_EDITOR,
+  STATE_INVENTORY,
+  STATE_CRAFT,
+  STATE_TERRAIN_EDITOR,
+  STATE_DIALOG,
+  STATE_BUILD,
+  STATE_MAP,
+  STATE_START_SCREEN,
+};
+
 enum AssetType {
   ASSET_DEFAULT = 0,
   ASSET_CREATURE,
@@ -84,6 +96,8 @@ enum MissileType {
   MISSILE_SPIDER_EGG,
   MISSILE_SPIDER_WEB_SHOT,
   MISSILE_FLASH,
+  MISSILE_IMP_FIRE,
+  MISSILE_PARALYSIS,
 };
 
 enum PhysicsBehavior {
@@ -137,6 +151,8 @@ enum Status {
   STATUS_STUN,
   STATUS_SPIDER_THREAD,
   STATUS_INVULNERABLE,
+  STATUS_QUICK_CASTING,
+  STATUS_MANA_REGEN,
 };
 
 enum AiState {
@@ -153,7 +169,8 @@ enum AiState {
   ACTIVE = 10,
   DEFEND = 11,
   START = 12,
-  FLEE = 13
+  FLEE = 13,
+  BERSERK = 14
 };
 
 enum PlayerAction {
@@ -183,9 +200,13 @@ enum ActionType {
   ACTION_USE_ABILITY,
   ACTION_SPIDER_CLIMB,
   ACTION_SPIDER_EGG,
+  ACTION_WORM_BREED,
   ACTION_SPIDER_JUMP,
   ACTION_SPIDER_WEB,
   ACTION_DEFEND,
+  ACTION_TELEPORT,
+  ACTION_FIREBALL,
+  ACTION_PARALYSIS,
 };
 
 enum ParticleBehavior {
@@ -360,6 +381,8 @@ struct RawMesh {
   vector<vec3> vertices;
   vector<vec2> uvs;
   vector<vec3> normals;
+  vector<vec3> tangents;
+  vector<vec3> binormals;
   vector<unsigned int> indices;
   vector<Polygon> polygons;
 
@@ -473,7 +496,7 @@ vector<Edge> GetPolygonEdges(const Polygon& polygon);
 Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs, 
   vector<unsigned int>& indices);
 void UpdateMesh(Mesh& m, vector<vec3>& vertices, 
-  vector<vec2>& uvs, vector<unsigned int>& indices);
+  vector<vec2>& uvs, vector<unsigned int>& indices, GLFWwindow* window = nullptr);
 Mesh CreateMeshFromConvexHull(const ConvexHull& ch);
 Mesh CreateCube(const vector<vec3>& v);
 Mesh CreateCube(const vec3& dimensions);

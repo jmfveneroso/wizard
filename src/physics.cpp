@@ -89,6 +89,15 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   //   obj->speed.y *= 0.99;
   //   obj->speed.z *= 0.95;
   } else {
+    // if (physics_behavior == PHYSICS_FLY) {
+    //   obj->speed.x *= 0.9;
+    //   obj->speed.y *= 0.99;
+    //   obj->speed.z *= 0.9;
+    // } else {
+    //   obj->speed.x *= 0.99;
+    //   obj->speed.y *= 0.99;
+    //   obj->speed.z *= 0.99;
+    // }
     obj->speed.x *= 0.99;
     obj->speed.y *= 0.99;
     obj->speed.z *= 0.99;

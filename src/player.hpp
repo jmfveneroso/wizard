@@ -29,6 +29,7 @@ class PlayerInput {
   vec3 spell_wall_pos_;
   vec3 trap_pos_;
   int active_scepter_ = -1;
+  float channel_until_ = 0;
 
   void Extract(const Camera& c);
   bool InteractWithItem(GLFWwindow* window, const Camera& c, 

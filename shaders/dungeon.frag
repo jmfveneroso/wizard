@@ -46,6 +46,7 @@ uniform int draw_shadows;
 uniform int draw_diffuse;
 uniform float specular_component;
 uniform float normal_strength;
+uniform vec3 dungeon_color;
 
 void main() {
   vec3 diffuse_color = texture(texture_sampler, in_data.UV).rgb;
@@ -110,6 +111,9 @@ void main() {
   float d = distance(player_pos, in_data.position);
   float depth = clamp(d / light_radius, 0, 1);
   vec3 fog_color = vec3(0, 0, 0);
+
+  out_color = dungeon_color * cos_theta;
+
   out_color = mix(out_color, fog_color, depth);
 
 

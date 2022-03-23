@@ -86,6 +86,7 @@ set(
   src/4d.cpp 
   src/player.cpp 
   src/inventory.cpp 
+  src/game_screen.cpp 
   src/engine.cpp 
   src/game_asset.cpp 
   src/game_object.cpp 

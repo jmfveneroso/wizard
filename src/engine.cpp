@@ -8,6 +8,7 @@ Engine::Engine(
   shared_ptr<Renderer> renderer,
   shared_ptr<TextEditor> text_editor,
   shared_ptr<Inventory> inventory,
+  shared_ptr<GameScreen> game_screen,
   shared_ptr<Resources> asset_catalog,
   shared_ptr<CollisionResolver> collision_resolver,
   shared_ptr<AI> ai,
@@ -20,6 +21,7 @@ Engine::Engine(
     renderer_(renderer), 
     text_editor_(text_editor),
     inventory_(inventory), 
+    game_screen_(game_screen), 
     resources_(asset_catalog),
     collision_resolver_(collision_resolver), 
     ai_(ai), 
@@ -64,6 +66,10 @@ void Engine::RunCommand(string command) {
     configs->levitate = true;
   } else if (result[0] == "pathfinding-map") {
     dungeon.PrintPathfindingMap(player->position);
+  } else if (result[0] == "drawdungeon") {
+    configs->draw_dungeon = true;
+  } else if (result[0] == "nodrawdungeon") {
+    configs->draw_dungeon = false;
   } else if (result[0] == "pathfinding") {
     int x = boost::lexical_cast<int>(result[1]);
     int y = boost::lexical_cast<int>(result[2]);
@@ -176,6 +182,20 @@ void Engine::RunCommand(string command) {
     for (int i = 0; i < 100; i++) {
       resources_->LearnSpell(i);
     }
+  } else if (result[0] == "create-2d-particle") {
+    string particle_name = result[1];
+    configs->place_axis = 1;
+
+    Camera c = player_input_->GetCamera();
+    vec3 position = c.position + c.direction * 10.0f;
+
+    configs->new_building = resources_->CreateOneParticle(position, 1000000.0f, 
+      particle_name, 5);
+    configs->new_building->speed = vec3(0);
+
+    cout << "Particle: " << position << endl;
+    configs->new_building->being_placed = true;
+    configs->place_object = true;
   } else if (result[0] == "create-particle") {
     string asset_name = result[1];
     if (resources_->GetAssetGroupByName(asset_name)) {
@@ -217,7 +237,7 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "dungeon") {
     try {
       int dungeon_level = boost::lexical_cast<int>(result[1]);
-      configs->dungeon_level = dungeon_level;
+      resources_->ChangeDungeonLevel(dungeon_level);
       resources_->DeleteAllObjects();
       resources_->CreateDungeon();
       Dungeon& dungeon = resources_->GetDungeon();
@@ -456,6 +476,9 @@ bool Engine::ProcessGameInput() {
       }
       return true;
     }
+    case STATE_START_SCREEN: {
+      return true;
+    }
     default:
       return true;
   }
@@ -465,6 +488,11 @@ void Engine::AfterFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   ProcessGameInput();
   switch (resources_->GetGameState()) {
+    case STATE_START_SCREEN: {
+      Camera c = player_input_->GetCamera();
+      game_screen_->Draw(c, 0, 0, window_);
+      break; 
+    }
     case STATE_GAME: {
       renderer_->DrawScreenEffects();
       break;

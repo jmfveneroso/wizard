@@ -166,8 +166,7 @@ void Inventory::MoveItemBack() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   int (&item_matrix)[10][5] = configs->item_matrix;
   int (&item_quantities)[10][5] = configs->item_quantities;
-  int (&store_matrix)[10][5] = configs->store_matrix;
-  int (&store_quantities)[10][5] = configs->store_quantities;
+  int (&store)[6] = configs->store;
   int (&spellbar)[8] = configs->spellbar;
   int (&spellbar_quantities)[8] = configs->spellbar_quantities;
   int (&equipment)[4] = configs->equipment;
@@ -189,15 +188,7 @@ void Inventory::MoveItemBack() {
         break;
       }
       case ITEM_ORIGIN_STORE: {
-        store_matrix[old_pos_x_][old_pos_y_] = selected_item_;
-
-        const ivec2& size = item_data[selected_item_].size;
-        for (int step_x = 0; step_x < size.x; step_x++) {
-          for (int step_y = 0; step_y < size.y; step_y++) {
-            if (step_x == 0 && step_y == 0) continue;
-            item_matrix[old_pos_x_ + step_x][old_pos_y_ + step_y] = -1;
-          }
-        }
+        store[old_pos_x_] = selected_item_;
         break;
       } 
       case ITEM_ORIGIN_ACTIVE: {
@@ -310,22 +301,15 @@ void Inventory::DrawStats(const ivec2& pos) {
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
-  int next_level = kLevelUps[configs->level];
-  draw_2d_->DrawText(boost::lexical_cast<string>(configs->level),
-    pos.x + 206, 
+  draw_2d_->DrawText(
+    boost::lexical_cast<string>(configs->dungeon_level),
+    pos.x + 262, 
+    kWindowHeight - (pos.y + 90), vec4(1), 
+    1.0, false,  "avenir_light_oblique");
+
+  draw_2d_->DrawText(boost::lexical_cast<string>(configs->max_dungeon_level),
+    pos.x + 316, 
     kWindowHeight - (pos.y + 56), vec4(1), 
-    1.0, false,  "avenir_light_oblique");
-
-  draw_2d_->DrawText(
-    boost::lexical_cast<string>(configs->experience),
-    pos.x + 162, 
-    kWindowHeight - (pos.y + 90), vec4(1), 
-    1.0, false,  "avenir_light_oblique");
-
-  draw_2d_->DrawText(
-    boost::lexical_cast<string>(next_level),
-    pos.x + 358, 
-    kWindowHeight - (pos.y + 90), vec4(1), 
     1.0, false,  "avenir_light_oblique");
 
   draw_2d_->DrawText(
@@ -343,23 +327,16 @@ void Inventory::DrawStats(const ivec2& pos) {
     1.0, false,  "avenir_light_oblique");
 
   draw_2d_->DrawText(
-    boost::lexical_cast<string>(player->max_stamina),
-    pos.x + 200, 
+    boost::lexical_cast<string>(configs->armor_class),
+    pos.x + 180, 
     kWindowHeight - (pos.y + 262), 
     vec4(1), 
     1.0, false,  "avenir_light_oblique");
 
   draw_2d_->DrawText(
-    boost::lexical_cast<string>(configs->armor_class),
-    pos.x + 255, 
-    kWindowHeight - (pos.y + 308), 
-    vec4(1), 
-    1.0, false,  "avenir_light_oblique");
-
-  draw_2d_->DrawText(
     boost::lexical_cast<string>(configs->gold),
-    pos.x + 110, 
-    kWindowHeight - (pos.y + 864), 
+    pos.x + 164, 
+    kWindowHeight - (pos.y + 308), 
     vec4(1), 
     1.0, false,  "avenir_light_oblique");
 }
@@ -435,170 +412,43 @@ void Inventory::DrawItems(const ivec2& pos) {
 
     draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
   }
-
-  // int (&item_matrix)[10][5] = configs->item_matrix;
-  // int (&item_quantities)[10][5] = configs->item_quantities;
-  // for (int x = 0; x < 10; x++) {
-  //   for (int y = 0; y < 5; y++) {
-  //     int left = pos.x + 34 + kTileSize * x;
-  //     int right = left + 46;
-  //     int top = pos.y + 557 + kTileSize * y;
-  //     int bottom = top + 46;
- 
-  //     if (IsMouseInRectangle(left, right, bottom, top)) {
-  //       if (lft_click_ && selected_item_ == 0) {
-  //         int item_id = item_matrix[x][y];
-  //         int x_ = x; int y_ = y;
-  //         if (item_id == -1) {
-  //           ivec2 pos;
-  //           item_id = WhichItem(item_matrix, x, y, pos);
-  //           x_ = pos.x;
-  //           y_ = pos.y;
-  //         }
-
-  //         if (item_id > 0) {
-  //           dragged_item.origin = ITEM_ORIGIN_INVENTORY;
-  //           dragged_item.item_id = item_id;
-  //           selected_item_ = item_id;
-  //           selected_qnty_ = item_quantities[x][y];
-
-  //           const ivec2& size = item_data[dragged_item.item_id].size;
-  //           for (int step_x = 0; step_x < size.x; step_x++) {
-  //             for (int step_y = 0; step_y < size.y; step_y++) {
-  //               item_matrix[x_ + step_x][y_ + step_y] = 0;
-  //             }
-  //           }
-
-  //           old_pos_x_ = x_;
-  //           old_pos_y_ = y_;
-  //           hold_offset_x_ = mouse_x_ - left;
-  //           hold_offset_y_ = mouse_y_ - top;
-  //         }
-  //       }
-  //     }
-
-  //     if (!lft_click_ && selected_item_ != 0) {
-  //       if (IsMouseInRectangle(left, right, bottom, top)) {
-  //         const int price = item_data[selected_item_].price;
-
-  //         bool complete_drag = true; 
-  //         bool buying = dragged_item.origin == ITEM_ORIGIN_STORE; 
-  //         if (buying) {
-  //           if (configs->gold < price) {
-  //             complete_drag = false;
-  //           }
-  //         }
-
-  //         if (complete_drag) {
-  //           if (item_matrix[x][y] == 0) {
-  //             if (resources_->CanPlaceItem(ivec2(x, y), selected_item_)) {
-  //               item_matrix[x][y] = selected_item_;
-  //               item_quantities[x][y] = selected_qnty_;
-
-  //               const ivec2& size = item_data[selected_item_].size;
-  //               for (int step_x = 0; step_x < size.x; step_x++) {
-  //                 for (int step_y = 0; step_y < size.y; step_y++) {
-  //                   if (step_x == 0 && step_y == 0) continue;
-  //                   item_matrix[x + step_x][y + step_y] = -1;
-  //                 }
-  //               }
-
-  //               selected_item_ = 0;
-  //               selected_qnty_ = 0;
-  //               old_pos_x_ = 0;
-  //               old_pos_y_ = 0;
-  //               if (buying) {
-  //                 configs->gold -= price;
-  //               }
-  //             }
-  //           } else {
-  //             if (TryToCombineCrystals(x, y)) {
-  //               if (buying) {
-  //                 configs->gold -= price;
-  //               }
-  //             }
-  //           }
-  //         }
-  //       }
-  //     }
-
-  //     const int item_id = item_matrix[x][y];
-  //     const int item_quantity = item_quantities[x][y];
-  //     if (item_id != 0 && item_id != -1) {
-  //       const string& icon = item_data[item_id].icon;
-  //       const ivec2& size = item_data[item_id].size;
-
-  //       float max_side = std::max(size.x, size.y);
-  //       vec2 dimensions = vec2((float) size.x / (float) max_side, (float) size.y / (float) max_side);
-  //       draw_2d_->DrawImage(icon, left, top, max_side * 51, max_side * 51, 1.0);
-  //     }
-  //   }
-  // }
 }
 
 void Inventory::DrawStoreItems(const ivec2& pos) {
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  int (&store_matrix)[10][5] = configs->store_matrix;
-  int (&store_quantities)[10][5] = configs->store_quantities;
+  int (&active_items)[3] = configs->active_items;
+  int (&passive_items)[3] = configs->passive_items;
+  int (&store)[6] = configs->store;
 
-  for (int x = 0; x < 10; x++) {
-    for (int y = 0; y < 5; y++) {
-      int left = pos.x + 603 + kTileSize * x;
-      int right = left + 46;
-      int top = pos.y + 557 + kTileSize * y;
-      int bottom = top + 46;
+  for (int x = 0; x < 6; x++) {
+    int item_id = store[x];
+    if (item_id == 0) continue;
+
+    const string& icon = item_data[item_id].icon;
  
-      if (IsMouseInRectangle(left, right, bottom, top)) {
-        if (lft_click_ && selected_item_ == 0) {
-          dragged_item.origin = ITEM_ORIGIN_STORE;
-          dragged_item.item_id = store_matrix[x][y];
-          selected_item_ = store_matrix[x][y];
-          selected_qnty_ = store_quantities[x][y];
+    int x_ = x % 3; 
+    int y_ = x / 3; 
 
-          const ivec2& size = item_data[dragged_item.item_id].size;
-          for (int step_x = 0; step_x < size.x; step_x++) {
-            for (int step_y = 0; step_y < size.y; step_y++) {
-              store_matrix[x + step_x][y + step_y] = 0;
-            }
-          }
+    int size = 100;
+    int left = pos.x + 660 + x_ * (size + 60);
+    int right = pos.y + left + size;
+    int top = 155 + y_ * (size + 60);
+    int bottom = top + size;
 
-          old_pos_x_ = x;
-          old_pos_y_ = y;
-          hold_offset_x_ = mouse_x_ - left;
-          hold_offset_y_ = mouse_y_ - top;
-        }
-      }
+    if (IsMouseInRectangle(left, right, bottom, top) && lft_click_) {
+      const int price = item_data[item_id].price;
+      if (configs->gold < price) continue;
 
-      if (!lft_click_ && selected_item_ != 0) {
-        if (IsMouseInRectangle(left, right, bottom, top)) {
-          const int price = item_data[selected_item_].price;
-
-          if (dragged_item.origin != ITEM_ORIGIN_STORE && 
-              dragged_item.origin != ITEM_ORIGIN_SPELLBAR) { 
-            selected_item_ = 0;
-            selected_qnty_ = 0;
-            old_pos_x_ = 0;
-            old_pos_y_ = 0;
-            configs->gold += price / 2;
-          }
-        }
-      }
-
-      const int item_id = store_matrix[x][y];
-      const int item_quantity = store_quantities[x][y];
-      if (item_id != 0 && item_id != -1) {
-        const string& icon = item_data[item_id].icon;
-        const ivec2& size = item_data[item_id].size;
-
-        float max_side = std::max(size.x, size.y);
-        vec2 dimensions = vec2((float) size.x / (float) max_side, (float) size.y / (float) max_side);
-        draw_2d_->DrawImage(icon, left, top, max_side * 51, max_side * 51, 1.0);
+      if (resources_->InsertItemInInventory(item_id, 1)) {
+        configs->gold -= price;
+        store[x] = 0;
       }
     }
+
+    draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
   }
 }
-
 
 void Inventory::DrawOverlay(const ivec2& pos) {
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
@@ -751,7 +601,6 @@ void Inventory::DrawItemDescriptionScreen() {
     return;
   }
 
-
   for (int x = 0; x < 10; x++) {
     for (int y = 0; y < 5; y++) {
       int item_id = item_matrix[x][y];
@@ -819,28 +668,23 @@ void Inventory::DrawItemDescriptionScreen() {
   }
 
   if (state_ == INVENTORY_STORE) {
-    int (&store_matrix)[10][5] = configs->store_matrix;
-    for (int x = 0; x < 10; x++) {
-      for (int y = 0; y < 5; y++) {
-        int item_id = store_matrix[x][y];
-        if (item_id == -1) {
-          ivec2 pos;
-          item_id = WhichItem(store_matrix, x, y, pos);
-        }
+    int (&store)[6] = configs->store;
+    for (int x = 0; x < 6; x++) {
+      int item_id = store[x];
 
-        int left = pos.x + 604 + kTileSize * x;
-        int right = left + 46;
-        int top = pos.y + 557 + kTileSize * y;
-        int bottom = top + 46;
-        if (IsMouseInRectangle(left, right, bottom, top) && item_id != 0) {
-          const ItemData& item_data = resources_->GetItemData()[item_id];
-          const string& description = resources_->GetString(item_data.description);
+      int x_ = x % 3; 
+      int y_ = x / 3; 
 
-          draw_2d_->DrawImage("black", pos.x + 789, pos.y + 105, 128, 128, 1.0); 
-          draw_2d_->DrawImage(item_data.image, pos.x + 789, pos.y + 105, 128, 128, 1.0); 
+      int size = 100;
+      int left = pos.x + 660 + x_ * (size + 60);
+      int right = pos.y + left + size;
+      int top = 155 + y_ * (size + 60);
+      int bottom = top + size;
+      if (IsMouseInRectangle(left, right, bottom, top) && item_id != 0) {
+        const ItemData& item_data = resources_->GetItemData()[item_id];
+        const string& description = resources_->GetString(item_data.description);
 
-          DrawContextPanel(pos.x + 725, pos.y + 263, item_data.name, description);
-        }
+        DrawContextPanel(pos.x + 660, pos.y + 463, item_data.name, description);
       }
     }
   }
@@ -1568,39 +1412,4 @@ void Inventory::Disable() {
   store_pos_target_ = vec2(-1160, 0);
   store_animation_start_ = glfwGetTime();
 }
-
-// void Inventory::DrawQuestLog(GLFWwindow* window) {
-//   draw_2d_->DrawImage("quest_log", win_x_, win_y_, 800, 800, 1.0);
-//   if (--throttle_ < 0 && selected_item_ == 0) {
-//     if (IsMouseInRectangle(win_x_ + 65, win_x_ + 105, win_y_ + 62, win_y_ + 46) && 
-//       lft_click_) {
-//       state_ = INVENTORY_STATS;
-//       throttle_ = 20;
-//     } else if (
-//       IsMouseInRectangle(win_x_ + 132, win_x_ + 216, win_y_ + 62, win_y_ +  
-//         46) && lft_click_) {
-//       state_ = INVENTORY_ITEMS;
-//       throttle_ = 20;
-//     } else if (IsMouseInRectangle(win_x_ + 244, win_x_ + 287, win_y_ + 62, 
-//       win_y_ + 46) && lft_click_) {
-//       state_ = INVENTORY_SPELLBOOK;
-//       throttle_ = 20;
-//     }
-//   }
-// 
-//   unordered_map<string, shared_ptr<Quest>> quests = resources_->GetQuests();
-//   vector<shared_ptr<Quest>> active_quests;
-//   for (const auto& [quest_name, quest] : quests) {
-//     if (!quest->active) continue;
-//     active_quests.push_back(quest);
-//   }
-// 
-//   int x = win_x_;
-//   int y = win_y_;
-//   for (const auto& quest : active_quests) {
-//     draw_2d_->DrawText(quest->title, x + 80, kWindowHeight - (y + 130), 
-//       vec4(1), 1.0, false, "avenir_light_oblique");
-//     y += 20;
-//   }
-// }
 

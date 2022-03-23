@@ -31,14 +31,14 @@ Dungeon::Dungeon() {
   char_map_[63] = '\'';
   char_map_[64] = '~';
   char_map_[65] = 'S'; // White spine.
-  char_map_[66] = 'b'; // Bookcase.
+  char_map_[66] = 'b'; // Beholder.
   char_map_[67] = 'q'; // Pedestal.
   char_map_[68] = 'L'; // Broodmother.
   char_map_[69] = 'K'; // Lancet spider.
   char_map_[70] = 'M'; // Barrel.
-  char_map_[71] = 'I'; // Mold.
+  char_map_[71] = 'I'; // Imp.
   char_map_[72] = 'c'; // Chest.
-  char_map_[73] = 'w'; // Worm.
+  char_map_[73] = 'w'; // Blood Worm.
   char_map_[74] = 'C'; // Trapped chest.
   char_map_[75] = 'J'; // Speedling.
   char_map_[76] = ')'; // Web wall.
@@ -59,10 +59,11 @@ Dungeon::Dungeon() {
   char_map_[92] = '&'; // Secret wall.
   char_map_[93] = 'm'; // Miniboss.
   char_map_[94] = 'W'; // Queen.
-  char_map_[95] = 'r'; // Drider.
+  char_map_[95] = 'r'; // Rock.
   char_map_[97] = 'E'; // Evil Eye.
   char_map_[98] = 'Q'; // Pedestal.
   char_map_[99] = 'X'; // Spell pedestal.
+  char_map_[106] = 'a'; // Bookcase.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -169,6 +170,9 @@ void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height,
   int horizontal, int counter) {
   if (counter >= level_data_[current_level_].max_room_gen) return;
 
+  int min_size = level_data_[current_level_].min_room_gen_size;
+  int max_size = level_data_[current_level_].max_room_gen_size;
+
   // Changes direction 50% of the time.
   int r = Random(0, 2);
   horizontal = (horizontal) ? r != 0 : r == 0;
@@ -176,8 +180,8 @@ void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height,
     int x, y, width, height;
     bool success = false;
     for (int tries = 0; tries < 40 && !success; tries++) {
-      width = RandomEven(2, 8);
-      height = RandomEven(2, 8);
+      width = RandomEven(min_size, max_size);
+      height = RandomEven(min_size, max_size);
       x = prev_x - width;
       y = prev_y + prev_height / 2 - height / 2;
       success = CheckRoom(x, y, width, height);
@@ -195,8 +199,8 @@ void Dungeon::RoomGen(int prev_x, int prev_y, int prev_width, int prev_height,
     int x, y, width, height;
     bool success = false;
     for (int tries = 0; tries < 20 && !success; tries++) {
-      width = RandomEven(2, 8);
-      height = RandomEven(2, 8);
+      width = RandomEven(min_size, max_size);
+      height = RandomEven(min_size, max_size);
       x = prev_x + prev_width / 2 - width / 2;
       y = prev_y - height;
       success = CheckRoom(x, y, width, height);
@@ -246,14 +250,20 @@ bool Dungeon::IsCorridorV(int x, int y) {
 }
 
 bool Dungeon::GenerateChambers() {
+  const int kMaxAdjacentTiles = (kDungeonCells <= 3) ? 5 : 3;
+  const int dungeon_cells = level_data_[current_level_].dungeon_cells;
+  const int kMinNumSteps = clamp((float) (dungeon_cells * dungeon_cells) / 6, (float) dungeon_cells, (float) kDungeonCells * kDungeonCells);
+  const int kMaxNumSteps = clamp((float) (dungeon_cells * dungeon_cells) / 3, (float) dungeon_cells, (float) kDungeonCells * kDungeonCells);
+  int num_steps = Random(kMinNumSteps, kMaxNumSteps + 1);
+
+  // Clear chambers.
   for (int x = 0; x < kDungeonCells; x++) {
     for (int y = 0; y < kDungeonCells; y++) {
       chambers_[x][y] = 0;
     }
   }
 
-  vector<ivec2> added_tiles;
-
+  // Initialize x, y.
   int x, y; 
   for (int tries = 0; tries < 20; tries++) {
     x = Random(0, kDungeonCells);
@@ -264,20 +274,21 @@ bool Dungeon::GenerateChambers() {
   }
   ivec2 next_tile = ivec2(x, y);
 
-  const int kMaxAdjacentTiles = (kDungeonCells <= 3) ? 5 : 3;
+  // int special_chamber = Random(0, 1);
+  // if (current_level_ >= 6) {
+  //   switch (special_chamber) {
+  //     case 0: { // Big chamber.
+  //       chambers_[2][1] = 1;
+  //       chambers_[2][2] = 1;
+  //       chambers_[3][1] = 1;
+  //       chambers_[3][2] = 1;
+  //       next_tile = ivec2(2, 1);
+  //       break;
+  //     }
+  //   }
+  // }
 
-  const int dungeon_cells = level_data_[current_level_].dungeon_cells;
-  const int kMinNumSteps = clamp((float) (dungeon_cells * dungeon_cells) / 6, (float) dungeon_cells, (float) kDungeonCells * kDungeonCells);
-  const int kMaxNumSteps = clamp((float) (dungeon_cells * dungeon_cells) / 3, (float) dungeon_cells, (float) kDungeonCells * kDungeonCells);
-
-  int num_steps = Random(kMinNumSteps, kMaxNumSteps + 1);
-
-  if (current_level_ == 6) {
-    chambers_[2][1] = 1;
-    chambers_[2][2] = 1;
-    chambers_[2][3] = 1;
-  }
-
+  vector<ivec2> added_tiles;
   for (int steps = 0; steps < num_steps; steps++) {
     chambers_[next_tile.x][next_tile.y] = 1;
     added_tiles.push_back(next_tile);
@@ -325,11 +336,29 @@ bool Dungeon::GenerateChambers() {
     }
   }
 
-  if (current_level_ == 6) {
-    chambers_[2][1] = 4;
-    chambers_[2][2] = 4;
-    chambers_[2][3] = 4;
-  }
+  // if (current_level_ >= 6) {
+  //   switch (special_chamber) {
+  //     case 0: { // Big chamber.
+  //       chambers_[2][1] = 4;
+  //       chambers_[2][2] = 4;
+  //       chambers_[3][1] = 4;
+  //       chambers_[3][2] = 4;
+  //       break;
+  //     }
+  //     case 1: { // Long vertical chamber.
+  //       chambers_[2][1] = 5;
+  //       chambers_[2][2] = 5;
+  //       chambers_[2][3] = 5;
+  //       break;
+  //     }
+  //     case 2: { // Long horizontal chamber.
+  //       chambers_[2][1] = 6;
+  //       chambers_[2][2] = 6;
+  //       chambers_[2][3] = 6;
+  //       break;
+  //     }
+  //   }
+  // }
 
   for (int y = 0; y < kDungeonCells; y++) {
     for (int x = 0; x < kDungeonCells; x++) {
@@ -365,7 +394,13 @@ bool Dungeon::GenerateChambers() {
         case 3: // Long vertical corridor.
           DrawRoom(room_x + 2, room_y, 6, 10, DLRG_CHAMBER);
           break;
-        case 4: // Spider queen room.
+        case 4: // Big chamber.
+          DrawRoom(room_x, room_y, 14, 14, DLRG_CHAMBER);
+          break;
+        case 5: // Vertical chamber.
+          DrawRoom(room_x, room_y, 10, 14, DLRG_CHAMBER);
+          break;
+        case 6: // Horizontal chamber.
           DrawRoom(room_x, room_y, 10, 14, DLRG_CHAMBER);
           break;
       }
@@ -1210,7 +1245,6 @@ void Dungeon::GenerateAsciiDungeon() {
       switch (ascii_code) {
         case 's':
         case 'S':
-        case 'r':
         case 'E':
         case 'V':
         case 'w':
@@ -1232,6 +1266,7 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'c':
         case 'C':
         case 'M':
+        case 'r':
         case 'X':
         case 'Q':
         case '^':
@@ -1669,7 +1704,8 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   // random_num = -851805335; // Arrow trap.
   // random_num = -721664489; // Broodmother.
   // random_num = -1403164; // Error.
-  random_num = -780185899; // White spine door find.
+  // random_num = -780185899; // White spine door find.
+  random_num = -464376179; // Beholder.
 
   initialized_ = true;
   srand(random_num);
@@ -1860,6 +1896,8 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case 's':
     case 'S':
     case 'L':
+    case 'b':
+    case 'I':
     case 'r':
     case 'E':
     case 'Y':
@@ -1906,6 +1944,8 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
     case 'w':
     case 'K':
     case 'L':
+    case 'b':
+    case 'I':
     case '(':
     case ')':
     case '<': {
@@ -1924,6 +1964,8 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case 'w':
         case 'K':
         case 'L':
+        case 'b':
+        case 'I':
         case '(':
         case ')':
         case '<':
@@ -1962,6 +2004,8 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
           case 'w':
           case 'K':
           case 'L':
+          case 'b':
+          case 'I':
           case '(':
           case ')':
           case '<':
@@ -1986,6 +2030,8 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case 'w':
         case 'K':
         case 'L':
+        case 'b':
+        case 'I':
         case '(':
         case ')':
         case '<':
@@ -2086,7 +2132,8 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
         const float new_distance  = distance + cost;
 
         const float min_distance = min_distance_[dest.x][dest.y][next_tile.x][next_tile.y];
-        if (new_distance >= min_distance) continue;
+        if (min_distance != 9999999) continue;
+        // if (new_distance >= min_distance) continue;
 
         tile_heap.push({ next_tile, new_distance, 0.0f, ivec2(off_x, off_y) });
       }
@@ -2210,10 +2257,16 @@ void Dungeon::CalculateAllPaths() {
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
       calculate_path_mutex_.lock();
-      calculate_path_tasks_.push(ivec2(i, j));
+      ivec2 tile = ivec2(i, j);
+      if (IsTileClear(tile)) {
+        calculate_path_tasks_.push(tile);
+      }
       calculate_path_mutex_.unlock();
     }
   }
+
+  int num_tasks = calculate_path_tasks_.size();
+  cout << ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> num_tasks: " << num_tasks << endl;
 
   while (!calculate_path_tasks_.empty() || running_calculate_path_tasks_ > 0) {
     this_thread::sleep_for(chrono::microseconds(200));
@@ -2285,6 +2338,9 @@ ivec2 Dungeon::GetClosestClearTile(const vec3& position) {
       return best_tile;
     }
   }
+
+  cout << ">>>>>>> Bicho position = " << position << endl;
+  cout << ">>>>>>> The tile = " << tile << endl;
   throw runtime_error("Could not find closest valid tile.");
 }
 
@@ -2421,7 +2477,6 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case 's':
     case 'S':
     case 'Q':
-    case 'r':
     case 'E':
     case 'Y':
     case 'K':
@@ -2429,6 +2484,7 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case 'w':
     case 'b':
     case 'L':
+    case 'I':
     case 'o':
     case 'O':
     case 'g':
@@ -2442,6 +2498,7 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case 'X':
     case 'W':
     case 'M':
+    case 'r':
       return true;
     case 'd':
     case 'D': {
@@ -2598,6 +2655,8 @@ bool Dungeon::IsMovementObstructed(vec3 start, vec3 end, float& t) {
     current = start + t * step;
 
     ivec2 tile = GetDungeonTile(current);
+    if (!IsValidTile(tile)) return true;
+
     switch (ascii_dungeon[tile.x][tile.y]) {
       case ' ':
       case 'o':
@@ -2867,6 +2926,8 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
     l.dungeon_size = LoadIntFromXmlOr(node_xml, "dungeon-size", 0);
     l.dungeon_cells = LoadIntFromXmlOr(node_xml, "dungeon-cells", 0);
     l.max_room_gen = LoadIntFromXmlOr(node_xml, "max-room-gen", 10);
+    l.min_room_gen_size = LoadIntFromXmlOr(node_xml, "min-room-gen-size", 2);
+    l.max_room_gen_size = LoadIntFromXmlOr(node_xml, "max-room-gen-size", 8);
 
     const pugi::xml_node& xml_monsters = node_xml.child("monsters");
     for (pugi::xml_node xml_monster = xml_monsters.child("monster"); xml_monster; 
@@ -2922,6 +2983,14 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
       int odds = boost::lexical_cast<int>(trap_xml.attribute("odds").value());
       int item_id = LoadIntFromXml(trap_xml);
       for (int i = 0; i < odds; i++) l.traps.push_back(item_id);
+    }
+
+    const pugi::xml_node& color_xml = node_xml.child("dungeon-color");
+    if (color_xml) {
+      float r = boost::lexical_cast<float>(color_xml.attribute("r").value());
+      float g = boost::lexical_cast<float>(color_xml.attribute("g").value());
+      float b = boost::lexical_cast<float>(color_xml.attribute("b").value());
+      l.dungeon_color = vec3(r, g, b);
     }
   }
 }
@@ -3024,4 +3093,8 @@ int Dungeon::GetRandomLearnableSpell(int dungeon_level) {
 
   int index = Random(0, learnable_spells.size());
   return learnable_spells[index];
+}
+
+vec3 Dungeon::GetDungeonColor() {
+  return level_data_[current_level_].dungeon_color;
 }

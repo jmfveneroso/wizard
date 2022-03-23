@@ -47,6 +47,7 @@ struct SkeletonJoint {
 };
 
 struct FbxData {
+  string name;
   RawMesh raw_mesh;
 
   shared_ptr<SkeletonJoint> skeleton;

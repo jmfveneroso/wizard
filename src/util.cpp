@@ -454,6 +454,10 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
   glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], 
     GL_STATIC_DRAW);
 
+  // cout << "++---++ Raw Normals size: " << m.normals.size()  << endl;
+  cout << "++---++ Vertices size: " << vertices.size()  << endl;
+  cout << "++---++ UCs size: " << uvs.size()  << endl;
+
   // Compute tangents and bitangents.
   vector<vec3> tangents(vertices.size());
   vector<vec3> bitangents(vertices.size());
@@ -504,7 +508,10 @@ Mesh CreateMesh(GLuint shader_id, vector<vec3>& vertices, vector<vec2>& uvs,
 }
 
 void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs, 
-  vector<unsigned int>& indices) {
+  vector<unsigned int>& indices, GLFWwindow* window) {
+  gTextureMutex.lock();
+  if (window) glfwMakeContextCurrent(window);
+
   glBindVertexArray(m.vao_);
 
   glBindBuffer(GL_ARRAY_BUFFER, m.vertex_buffer);
@@ -564,6 +571,7 @@ void UpdateMesh(Mesh& m, vector<vec3>& vertices, vector<vec2>& uvs,
   for (int slot = 0; slot < 5; slot++) {
     glDisableVertexAttribArray(slot);
   }
+  gTextureMutex.unlock();
 }
 
 Mesh CreateMeshFromConvexHull(const ConvexHull& ch) {

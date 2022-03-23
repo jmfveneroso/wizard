@@ -253,6 +253,10 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
 
   if (creature->GetAsset()->name == "white_spine") {
     return WhiteSpineAttack(creature, action);
+  } else if (creature->GetAsset()->name == "imp") {
+    return ImpAttack(creature, action);
+  } else if (creature->GetAsset()->name == "beholder") {
+    return BeholderAttack(creature, action);
   }
 
   if (creature->GetAsset()->name == "wraith") {
@@ -272,6 +276,160 @@ bool AI::ProcessDefendAction(ObjPtr creature, shared_ptr<DefendAction> action) {
     action->until = glfwGetTime() + 3.0f;
     creature->cooldowns["defend"] = glfwGetTime() + 10;
     creature->AddTemporaryStatus(make_shared<InvulnerableStatus>(3.0f, 20.0f));
+  }
+  return false;
+}
+
+bool AI::ProcessTeleportAction(ObjPtr creature, 
+  shared_ptr<TeleportAction> action) {
+  resources_->ChangeObjectAnimation(creature, "Armature|walking");
+
+  if (action->channeling) {
+    int num_frames = creature->GetNumFramesInCurrentAnimation();
+    if (creature->frame >= num_frames - 5) {
+      action->channeling = false;
+    }
+    return false;
+  } else {
+    creature->position = action->position;
+    resources_->CreateParticleEffect(10, creature->position + vec3(0, 3, 0), 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
+    creature->cooldowns["teleport"] = glfwGetTime() + 10;
+    cout << "Teleport done" << endl;
+    return true;
+  }
+  return false;
+}
+
+bool AI::ProcessFireballAction(ObjPtr creature, 
+  shared_ptr<FireballAction> action) {
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 40) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -6.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  if (creature->frame >= 26 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 dir = CalculateMissileDirectionToHitTarget(creature->position, target,
+      4.0f);
+
+    cout << "dir: " << dir << endl;
+
+    resources_->CastFireball(creature, dir);
+    creature->cooldowns["fireball"] = glfwGetTime() + 10;
+  }
+  return false;
+}
+
+bool AI::ImpAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 59) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  BoundingSphere s = creature->GetBoneBoundingSphere(48);
+  vec3 pos = s.center;
+
+  if (creature->frame >= 26 && !action->damage_dealt) {
+    action->damage_dealt = true;
+   
+    vec3 dir = normalize(target - pos);
+    resources_->CastImpFire(creature, pos, dir);
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+  }
+  return false;
+}
+
+bool AI::BeholderAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  // if (int(creature->frame) >= 110) return true;
+  if (action->initiated) {
+    action->until -= 1.0f;
+    if (action->until <= 0.0f) return true;
+  }
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  bool is_rotating = RotateSpider(creature, target, 0.01f);
+  if (is_rotating) return false;
+
+  BoundingSphere s = creature->GetBoneBoundingSphere(0);
+  vec3 pos = s.center;
+
+  if (creature->frame >= 26 || action->initiated) {
+    vector<int> bones { 10, 18, 6, 14, };
+
+    if (!action->initiated) {
+      action->until = 60.0f;
+      action->initiated = true;
+
+      for (int i = 0; i < 4; i++) {
+        BoundingSphere bs = creature->GetBoneBoundingSphere(bones[i]);
+       
+        shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 60.0f, 
+          "particle-sparkle-fire", 5.0f);
+        p->associated_obj = creature;
+        p->offset = vec3(0);
+        p->associated_bone = bones[i];
+      }
+    }
+
+    vec3 v = creature->forward * float(60 - action->until) / 2.0f - vec3(0, 3, 0);
+    for (int i = 0; i < 4; i++) {
+      float random_noise = Random(-5, 6) * 0.003f;
+      vec3 v2 = rotate(v, random_noise, vec3(0, 1, 0));
+      if (i < 2) v2.y += 0.2f;
+
+      resources_->CastLightningRay(creature, creature->position, normalize(v2), bones[i]);
+    }
+   
+    // vec3 dir = normalize(target - pos);
+    // resources_->CastImpFire(creature, pos, dir);
+    // creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+  }
+  return false;
+}
+
+bool AI::ProcessParalysisAction(ObjPtr creature, 
+  shared_ptr<ParalysisAction> action) {
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 40) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -6.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  BoundingSphere s = creature->GetBoneBoundingSphere(1);
+  vec3 pos = s.center;
+
+  if (creature->frame >= 26 && !action->damage_dealt) {
+    action->damage_dealt = true;
+   
+    vec3 dir = normalize(target - pos);
+    resources_->CastParalysis(creature, target);
+    creature->cooldowns["paralysis"] = glfwGetTime() + 1.5;
   }
   return false;
 }
@@ -368,12 +526,13 @@ bool AI::ProcessMeeleeAttackAction(ObjPtr spider,
 
   // if (int(spider->frame) == 44) {
   if (!action->damage_dealt) {
+    ObjPtr target = spider->GetCurrentTarget();
+
     cout << "Attacking player" << endl;
-    ObjPtr player = resources_->GetObjectByName("player");
-    vec3 dir = player->position - spider->position;
+    vec3 dir = target->position - spider->position;
     if (length(dir) < 20.0f) {
       cout << "Meelee attack hit: " << length(dir) << endl;
-      spider->MeeleeAttack(player, normalize(dir));
+      spider->MeeleeAttack(target, normalize(dir));
       action->damage_dealt = true;
     }
   }
@@ -446,9 +605,15 @@ bool AI::ProcessChangeStateAction(ObjPtr spider,
 }
 
 bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
-  ObjPtr player = resources_->GetObjectByName("player");
-  resources_->ChangeObjectAnimation(spider, "Armature|walking");
-  bool is_rotating = RotateSpider(spider, player->position, 0.9f);
+  ObjPtr target = spider->GetCurrentTarget();
+
+  if (spider->levitating) {
+    resources_->ChangeObjectAnimation(spider, "Armature|climbing");
+  } else {
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+  }
+
+  bool is_rotating = RotateSpider(spider, target->position, 0.9f);
   if (!is_rotating) {
     return true;
   }
@@ -512,32 +677,49 @@ bool AI::ProcessMoveAction(ObjPtr spider, vec3 destination) {
 
   if (spider->GetType() == ASSET_CREATURE) {
     bool is_rotating = RotateSpider(spider, destination);
-    if (is_rotating) {
+    if (is_rotating && physics_behavior == PHYSICS_FLY) {
       return false;
     } 
   }
 
-  if (!spider->touching_the_ground) {
-    return true;
-  }
-
   float speed = spider->current_speed;
   if (physics_behavior == PHYSICS_FLY) {
-    spider->speed += normalize(to_next_location) * speed;
+    vec3 v = normalize(to_next_location);
+    spider->speed += v * speed;
 
-    if (spider->position.y > kDungeonOffset.y + 20.0f) {
-      spider->speed.y += -1.0f * speed;
-    } else {
-      spider->speed.y += (-1.0f + (float(Random(0, 7)) / 3.0f)) * speed;
+    // if (spider->position.y > kDungeonOffset.y + 20.0f) {
+    //   spider->speed.y += -1.0f * speed * 0.25f;
+    // } else if (spider->position.y < kDungeonOffset.y + 5.0f) {
+    //   spider->speed.y += 1.0f * speed * 0.25f;
+    // } else {
+    //   if (Random(0, 2) == 0) {
+    //     spider->speed.y += -speed * 0.1f;
+    //   } else {
+    //     spider->speed.y += speed * 0.25f;
+    //   }
+    // }
+
+    // if (dist_next_location < 10.0f && spider->GetAsset()->name == "blood_worm") {
+    if (dist_next_location < 10.0f) {
+      spider->speed.x *= 0.9;
+      spider->speed.z *= 0.9;
     }
   } else {
+    if (!spider->touching_the_ground) {
+      return true;
+    }
+
     spider->speed += spider->forward * speed;
   }
   return false;
 }
 
 bool AI::ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action) {
-  if (glfwGetTime() > action->issued_at + 1.0f) {
+  if (spider->GetPhysicsBehavior() == PHYSICS_FLY) {
+    if (glfwGetTime() > action->issued_at + 0.5f) {
+      return true;
+    }
+  } else if (glfwGetTime() > action->issued_at + 2.0f) {
     spider->actions.push(make_shared<RandomMoveAction>());
     return true;
   }
@@ -558,14 +740,15 @@ bool AI::ProcessIdleAction(ObjPtr spider, shared_ptr<IdleAction> action) {
 bool AI::ProcessMoveToPlayerAction(
   ObjPtr spider, shared_ptr<MoveToPlayerAction> action) {
   Dungeon& dungeon = resources_->GetDungeon();
-  const vec3& player_pos = resources_->GetPlayer()->position;
+
+  ObjPtr target = spider->GetCurrentTarget();
+  const vec3& player_pos = target->position;
 
   float min_distance = 0.0f;
 
   vec3 next_pos;
   float t;
   if (dungeon.IsMovementObstructed(spider->position, player_pos, t)) {
-    cout << "Movement obstructed" << endl;
     next_pos = dungeon.GetNextMove(spider->position, player_pos, 
       min_distance);
 
@@ -573,10 +756,7 @@ bool AI::ProcessMoveToPlayerAction(
     if (length2(next_pos) < 0.0001f) {
       next_pos = spider->position + normalize(player_pos - spider->position) * 1.0f;
     }
-    cout << "next_pos: " << next_pos << endl;
-    cout << "spider->position: " << spider->position << endl;
   } else {
-    cout << "Movement not obstructed" << endl;
     vec3 v = player_pos - spider->position;
     if (length(v) < 3.0f) {
       next_pos = player_pos;
@@ -714,6 +894,30 @@ bool AI::ProcessSpiderEggAction(ObjPtr spider,
 
   if (glfwGetTime() > action->channel_end) {
     resources_->CastSpiderEgg(spider);
+    return true;
+  }
+
+  return false;
+}
+
+bool AI::ProcessWormBreedAction(ObjPtr spider, 
+  shared_ptr<WormBreedAction> action) {
+  resources_->ChangeObjectAnimation(spider, "Armature|walking");
+
+  if (!action->created_particle_effect) {
+    auto bs = spider->bones[0];
+    shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 300.0f, 
+      "particle-sparkle-fire", 2.0f);
+    p->associated_obj = spider;
+    p->offset = vec3(0);
+    p->associated_bone = 23;
+
+    action->channel_end = glfwGetTime() + 5.0f;
+    action->created_particle_effect = true;
+  }
+
+  if (glfwGetTime() > action->channel_end) {
+    resources_->CastWormBreed(spider);
     return true;
   }
 
@@ -1050,6 +1254,21 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_WORM_BREED: {
+      shared_ptr<WormBreedAction> worm_breed_action =  
+        static_pointer_cast<WormBreedAction>(action);
+      if (ProcessWormBreedAction(spider, worm_breed_action)) {
+        spider->PopAction();
+
+        shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+          int num_frames = GetNumFramesInAnimation(*mesh, 
+            spider->active_animation);
+        if (spider->frame >= num_frames) {
+          spider->frame = 0;
+        }
+      }
+      break;
+    }
     case ACTION_SPIDER_WEB: {
       shared_ptr<SpiderWebAction> spider_web_action =  
         static_pointer_cast<SpiderWebAction>(action);
@@ -1150,6 +1369,33 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<DefendAction> defend_action =  
         static_pointer_cast<DefendAction>(action);
       if (ProcessDefendAction(spider, defend_action)) {
+        spider->PopAction();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_TELEPORT: {
+      shared_ptr<TeleportAction> teleport_action =  
+        static_pointer_cast<TeleportAction>(action);
+      if (ProcessTeleportAction(spider, teleport_action)) {
+        spider->PopAction();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_FIREBALL: {
+      shared_ptr<FireballAction> fireball_action =  
+        static_pointer_cast<FireballAction>(action);
+      if (ProcessFireballAction(spider, fireball_action)) {
+        spider->PopAction();
+        spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_PARALYSIS: {
+      shared_ptr<ParalysisAction> paralysis_action =  
+        static_pointer_cast<ParalysisAction>(action);
+      if (ProcessParalysisAction(spider, paralysis_action)) {
         spider->PopAction();
         spider->frame = 0;
       }
@@ -1280,6 +1526,8 @@ void AI::Run() {
   while (!ai_tasks_.empty() || running_tasks_ > 0) {
     this_thread::sleep_for(chrono::microseconds(200));
   }
+
+  glfwMakeContextCurrent(resources_->GetWindow());
   return;
 
   // Sync.

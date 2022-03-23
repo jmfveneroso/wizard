@@ -111,7 +111,7 @@ void ExtractSkeleton(FbxScene* scene, FbxData* data) {
       data->joint_map[joint->name] = joint;
 
       FbxTime time; 
-      time.SetFrame(0, FbxTime::eFrames24); 
+      time.SetFrame(0, FbxTime::eFrames24); // TODO: 60 frames.
       FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
         GetGeometryTransformation(scene->GetRootNode());
       FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
@@ -129,6 +129,8 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
   vector<unsigned int> vertices;
   vector<vec2> uvs;
   vector<vec3> normals;
+  vector<vec3> tangents;
+  vector<vec3> binormals;
 
   int polygon_size = mesh->GetPolygonSize(i);
   for (int j = 0; j < polygon_size; j++, vertex_id++) {
@@ -181,6 +183,10 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
       }
     }
 
+    if (data->name == "resources/models_fbx/mausoleum_stone.fbx") {
+      // cout << "NC: " << mesh->GetElementNormalCount() << endl;
+    }
+
     for (int k = 0; k < mesh->GetElementNormalCount(); ++k) {
       FbxGeometryElementNormal* normal = mesh->GetElementNormal(k);
       if (normal->GetMappingMode() == 
@@ -193,6 +199,56 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
           case FbxGeometryElement::eIndexToDirect: {
             int id = normal->GetIndexArray().GetAt(vertex_id);
             normals.push_back(Get3DVector(normal->GetDirectArray()
+              .GetAt(id)));
+          }
+          break;
+          default:
+            break;
+        }
+      }
+    }
+
+    if (data->name == "resources/models_fbx/mausoleum_stone.fbx") {
+      // cout << "TC: " << mesh->GetElementTangentCount() << endl;
+    }
+
+    for (int k = 0; k < mesh->GetElementTangentCount(); ++k) {
+      FbxGeometryElementTangent* tangent = mesh->GetElementTangent(k);
+      if (tangent->GetMappingMode() == 
+        FbxGeometryElement::eByPolygonVertex) {
+        switch (tangent->GetReferenceMode()) {
+          case FbxGeometryElement::eDirect:
+            tangents.push_back(Get3DVector(tangent->GetDirectArray()
+              .GetAt(vertex_id)));
+            break;
+          case FbxGeometryElement::eIndexToDirect: {
+            int id = tangent->GetIndexArray().GetAt(vertex_id);
+            tangents.push_back(Get3DVector(tangent->GetDirectArray()
+              .GetAt(id)));
+          }
+          break;
+          default:
+            break;
+        }
+      }
+    }
+
+    if (data->name == "resources/models_fbx/mausoleum_stone.fbx") {
+      // cout << "BC: " << mesh->GetElementBinormalCount() << endl;
+    }
+
+    for (int k = 0; k < mesh->GetElementBinormalCount(); ++k) {
+      FbxGeometryElementBinormal* binormal = mesh->GetElementBinormal(k);
+      if (binormal->GetMappingMode() == 
+        FbxGeometryElement::eByPolygonVertex) {
+        switch (binormal->GetReferenceMode()) {
+          case FbxGeometryElement::eDirect:
+            binormals.push_back(Get3DVector(binormal->GetDirectArray()
+              .GetAt(vertex_id)));
+            break;
+          case FbxGeometryElement::eIndexToDirect: {
+            int id = binormal->GetIndexArray().GetAt(vertex_id);
+            binormals.push_back(Get3DVector(binormal->GetDirectArray()
               .GetAt(id)));
           }
           break;
@@ -214,6 +270,15 @@ void ExtractPolygon(FbxMesh* mesh, int i, FbxData* data, int& vertex_id) {
     data->raw_mesh.indices.push_back(vertices[j+1]);
     data->raw_mesh.uvs.push_back(uvs[j+1]);
     data->raw_mesh.normals.push_back(normals[j+1]);
+
+    if (!tangents.empty()) {
+      data->raw_mesh.tangents.push_back(tangents[0]);
+      data->raw_mesh.tangents.push_back(tangents[j]);
+      data->raw_mesh.tangents.push_back(tangents[j+1]);
+      data->raw_mesh.binormals.push_back(binormals[0]);
+      data->raw_mesh.binormals.push_back(binormals[j]);
+      data->raw_mesh.binormals.push_back(binormals[j+1]);
+    }
 
     Polygon polygon;
     polygon.vertices.push_back(data->raw_mesh.vertices[vertices[0]]);
@@ -411,6 +476,22 @@ void FbxLoad(const std::string& filename, FbxData& data) {
 }
 
 void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calculate_bs) {
+  data.name = filename;
+  if (filename == "resources/models_fbx/mausoleum_stone.fbx") {
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+    cout << "-------->>>>>>>>>-------- " << filename << endl;
+  } else {
+    cout << "------------------ " << filename << endl;
+  }
   FbxLoad(filename, data);
 
   m.polygons = data.raw_mesh.polygons;
@@ -452,6 +533,13 @@ void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calcu
   BindBuffer(buffers[2], 2, 3);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]);
 
+  cout << "Raw Vertices: " << data.raw_mesh.vertices.size() << endl;
+  cout << "Vertices: " << vertices.size() << endl;
+  cout << "UVs: " << data.raw_mesh.uvs.size() << endl;
+  cout << "Normals: " << data.raw_mesh.normals.size() << endl;
+  cout << "Tangents: " << data.raw_mesh.tangents.size() << endl;
+  cout << "Binormals: " << data.raw_mesh.binormals.size() << endl;
+
   // Compute tangents and bitangents.
   vector<vec3> tangents(vertices.size());
   vector<vec3> bitangents(vertices.size());
@@ -462,8 +550,30 @@ void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calcu
     vec2 delta_uv2 = data.raw_mesh.uvs[i+2] - data.raw_mesh.uvs[i+0];
 
     float r = 1.0f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-    vec3 tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-    vec3 bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+    vec3 tangent = normalize((delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r);
+    vec3 bitangent = normalize((delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r);
+
+    vec3 normal = (data.raw_mesh.normals[i] + data.raw_mesh.normals[i+1] + data.raw_mesh.normals[i+2]) / 3.0f;
+    // vec3 normal = data.raw_mesh.normals[i];
+    vec3 face_normal = normalize(cross(tangent, bitangent));
+    if (dot(normal, face_normal) < 0) face_normal = -face_normal;
+
+    // bitangent = cross(normal, tangent);
+    // cout << "Actual face normal: " << face_normal << endl;
+    // cout << "Normal: " << data.raw_mesh.normals[i] << endl;
+    // cout << "Normal 1: " << data.raw_mesh.normals[i+1] << endl;
+    // cout << "Normal 2: " << data.raw_mesh.normals[i+2] << endl;
+    // cout << "Normalized n: " << normal << endl;
+
+    quat target_rotation = RotationBetweenVectors(face_normal, normal);
+    mat4 rotation_matrix = mat4_cast(target_rotation);
+    // cout << "tangent: " << tangent << endl;
+    // cout << "bitangent: " << bitangent << endl;
+    tangent = vec3(rotation_matrix * vec4(tangent, 1.0));
+    bitangent = vec3(rotation_matrix * vec4(bitangent, 1.0));
+    // cout << "tangent A: " << tangent << endl;
+    // cout << "bitangent A: " << bitangent << endl;
+
     tangents[i+0] = tangent;
     tangents[i+1] = tangent;
     tangents[i+2] = tangent;
@@ -472,12 +582,24 @@ void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calcu
     bitangents[i+2] = bitangent;
   }
 
-  glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
-  glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
-    &tangents[0], GL_STATIC_DRAW);
-  glBindBuffer(GL_ARRAY_BUFFER, buffers[5]);
-  glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
-    &bitangents[0], GL_STATIC_DRAW);
+  if (!data.raw_mesh.tangents.empty()) {
+    cout << "ADDING>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> " << filename << endl;
+    cout << "ADDING>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> " << filename << endl;
+    cout << "ADDING>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> " << filename << endl;
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
+    glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.tangents.size() * sizeof(vec3), 
+      &data.raw_mesh.tangents[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[5]);
+    glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.binormals.size() * sizeof(vec3), 
+      &data.raw_mesh.binormals[0], GL_STATIC_DRAW);
+  } else {
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
+    glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(vec3), 
+      &tangents[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, buffers[5]);
+    glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(vec3), 
+      &bitangents[0], GL_STATIC_DRAW);
+  }
 
   BindBuffer(buffers[4], 3, 3);
   BindBuffer(buffers[5], 4, 3);
