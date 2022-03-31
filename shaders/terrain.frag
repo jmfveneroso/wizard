@@ -7,14 +7,12 @@ in FragData {
   vec3 coarser_normal_cameraspace;
   float visibility;
   vec3 position_cameraspace;
-  vec3 barycentric;
   vec3 blending;
   vec3 coarser_blending;
   vec3 light_dir_tangentspace;
+  vec3 eye_dir_tangentspace;
   float alpha;
   vec4 shadow_coord; 
-  vec4 shadow_coord1; 
-  vec4 shadow_coord2; 
 } in_data;
 
 // Output data
@@ -39,25 +37,17 @@ uniform mat3 MV3x3;
 uniform int PURE_TILE_SIZE;
 vec2 tile_offsets[4] = vec2[](vec2(0, 0), vec2(0.5, 0), vec2(0, 0.5), vec2(0.5, 0.5));
 
-uniform int clip_against_plane;
 uniform int show_grid;
 uniform int draw_shadows;
-uniform vec3 clipping_point;
-uniform vec3 clipping_normal;
 uniform vec3 camera_position;
 
 uniform vec3 light_direction;
+uniform int level;
 
 struct PointLight {    
   vec3 position;
-    
-  // float constant;
-  // float linear;
   float quadratic;  
-
-  // vec3 ambient;
   vec3 diffuse;
-  // vec3 specular;
 };  
 
 vec2 poisson_disk[16] = vec2[]( 
@@ -80,21 +70,20 @@ vec2 poisson_disk[16] = vec2[](
 );
 
 vec3 GetSky(vec3 position) {
-  vec3 night_sky = vec3(0.07, 0.07, 0.25);
-  vec3 sky_color = vec3(0.4, 0.7, 0.8);
-  vec3 sunset_color = vec3(0.99, 0.54, 0.0);
+  vec3 sky_color = vec3(0.2, 0.35, 0.4);
+  vec3 sunset_color = vec3(0.49, 0.27, 0.0);
 
   float sun_pos = 1.5 * (1 - dot(vec3(0, 1, 0), light_direction));
   sun_pos = clamp(sun_pos, 0.0, 1.0);
 
   float sky_pos = dot(vec3(0, 1, 0), position);
-
   vec3 color = mix(sky_color, sunset_color, sun_pos);
   color = mix(color, sky_color, sky_pos);
 
-  float how_night = dot(vec3(0, -1, 0), light_direction);
-  how_night = clamp(how_night, 0.0, 1.0);
-  color = mix(color, night_sky, how_night);
+  // vec3 night_sky = vec3(0.07, 0.07, 0.25);
+  // float how_night = dot(vec3(0, -1, 0), light_direction);
+  // how_night = clamp(how_night, 0.0, 1.0);
+  // color = mix(color, night_sky, how_night);
 
   return color;
 }
@@ -124,53 +113,30 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 frag_pos,
   diffuse *= attenuation;
 
   return diffuse;
-
-  // // Specular shading.
-  // // const float shininess = 0.5;
-  // // vec3 reflect_dir = reflect(-light_dir, normal);
-  // // float spec = pow(max(dot(view_dir, reflect_dir), 0.0), shininess);
-
-  // // Combine results.
-  // // vec3 ambient  = light.ambient * material_diffuse;
-  // // vec3 specular = light.specular * spec * material_specular;
-
-  // // ambient  *= attenuation;
-  // // specular *= attenuation;
-
-  // // return (ambient + diffuse + specular);
 }
 
-void main() {
-  // Discard fragment if it is in front of the clipping plane.
-  if (clip_against_plane > 0) {
-    if (dot(in_data.position - clipping_point, clipping_normal) > 0.0) {
-      discard;
-    }
-  }
+vec3 GetBlendedDiffuseColor(vec2 uv, vec3 blending) {
+  vec3 diffuse_color = vec3(0.8, 0.8, 0.8);
 
-  // vec2 uv = fract(in_data.UV);
-  vec2 uv = in_data.UV;
-
-  // Texture.
-  vec3 diffuse_color;
-  diffuse_color = vec3(0.8, 0.8, 0.8);
-
-  // vec3 t1 = texture(texture_sampler, vec2(0.0, 0.0) + uv / 2.1).rgb;
-  // vec3 t2 = texture(texture_sampler, vec2(0.5, 0.0) + uv / 2.1).rgb;
-  // vec3 t3 = texture(texture_sampler, vec2(0.0, 0.5) + uv / 2.1).rgb;
-  // vec3 t4 = texture(texture_sampler, vec2(0.5, 0.5) + uv / 2.1).rgb;
-  vec3 t1 = texture(texture_sampler,  uv).rgb;
+  float factor = 1.0;
+  vec3 t1 = texture(texture_sampler,  uv * factor).rgb;
   t1 = mix(texture(texture_sampler,  uv * 0.25).rgb, t1, 0.5);
 
-  vec3 t2 = texture(texture1_sampler, uv).rgb;
+  vec3 t2 = texture(texture1_sampler, uv * factor).rgb;
   t2 = mix(texture(texture1_sampler,  uv * 0.25).rgb, t2, 0.5);
 
-  vec3 t3 = texture(texture2_sampler, uv).rgb;
+  vec3 t3 = texture(texture2_sampler, uv * factor).rgb;
   t3 = mix(texture(texture2_sampler,  uv * 0.25).rgb, t3, 0.5);
 
-  vec3 t4 = texture(texture3_sampler, uv).rgb;
+  vec3 t4 = texture(texture3_sampler, uv * factor).rgb;
   t4 = mix(texture(texture3_sampler,  uv * 0.25).rgb, t4, 0.5);
 
+  float base_texture_weight = 1 - (blending.r + blending.g + blending.b);
+  diffuse_color = blending.r * t2 + blending.g * t3 + blending.b * t4;
+  return diffuse_color + base_texture_weight * t1;
+}
+
+vec3 GetBlendedNormalColor(vec2 uv, vec3 blending) {
   vec3 t5 = texture(texture4_sampler,  uv).rgb;
   t5 = mix(texture(texture4_sampler,  uv * 0.25).rgb, t5, 0.5);
 
@@ -183,124 +149,117 @@ void main() {
   vec3 t8 = texture(texture7_sampler, uv).rgb;
   t8 = mix(texture(texture7_sampler,  uv * 0.25).rgb, t8, 0.5);
 
-
-  vec3 blending = mix(in_data.blending, in_data.coarser_blending, in_data.alpha);
-
   float base_texture_weight = 1 - (blending.r + blending.g + blending.b);
-  diffuse_color = blending.r * t2 + blending.g * t3 + blending.b * t4;
-  diffuse_color = diffuse_color + base_texture_weight * t1;
-
   vec3 normal_color = blending.r * t6 + blending.g * t7 + blending.b * t8;
-  normal_color = normal_color + base_texture_weight * t5;
+  return normal_color + base_texture_weight * t5;
+}
 
-  // Shadow.
-  // float bias = 0.005;
-  float bias = 0;
-  // float bias = 0.005 * tan(acos(cos_theta));
-  // bias = clamp(bias, 0, 0.01);
-
+float CalculateShadowVisibility() {
   float visibility = 1.0f;
-  if (draw_shadows > 0) {
-    if (in_data.shadow_coord.x > 0 && in_data.shadow_coord.x < 1 &&
-        in_data.shadow_coord.y > 0 && in_data.shadow_coord.y < 1) {
-      for (int i = 0; i < 4; i++) {
-        int index = i;
-        vec2 shadow_map_uv = in_data.shadow_coord.xy + poisson_disk[index] / 700.0;
-        float depth = (in_data.shadow_coord.z - bias) / in_data.shadow_coord.w;
+  if (draw_shadows <= 0) {
+    return visibility;
+  }
 
-        float shadow = texture(shadow_sampler, vec3(shadow_map_uv, depth));
-        if (shadow < 0.99) {
-          visibility -= 0.2;
-        }
-      }
-    } else if (in_data.shadow_coord1.x > 0 && in_data.shadow_coord1.x < 1 &&
-        in_data.shadow_coord1.y > 0 && in_data.shadow_coord1.y < 1) {
-      for (int i = 0; i < 4; i++) {
-        int index = i;
-        vec2 shadow_map_uv = in_data.shadow_coord1.xy + poisson_disk[index] / 700.0;
-        float depth = (in_data.shadow_coord1.z - bias) / in_data.shadow_coord1.w;
+  // float bias = 0.005 * tan(acos(cos_theta));
+  float bias = 0.0;
+  if (in_data.shadow_coord.x > 0 && in_data.shadow_coord.x < 1 &&
+      in_data.shadow_coord.y > 0 && in_data.shadow_coord.y < 1) {
+    for (int i = 0; i < 4; i++) {
+      int index = i;
+      vec2 shadow_map_uv = in_data.shadow_coord.xy + poisson_disk[index] / 700.0;
+      float depth = (in_data.shadow_coord.z - bias) / in_data.shadow_coord.w;
 
-        float shadow = texture(shadow_sampler1, vec3(shadow_map_uv, depth));
-        if (shadow < 0.99) {
-          visibility -= 0.2;
-        }
-      }
-    } else if (in_data.shadow_coord2.x > 0 && in_data.shadow_coord2.x < 1 &&
-        in_data.shadow_coord2.y > 0 && in_data.shadow_coord2.y < 1) {
-      for (int i = 0; i < 4; i++) {
-        int index = i;
-        vec2 shadow_map_uv = in_data.shadow_coord2.xy + poisson_disk[index] / 700.0;
-        float depth = (in_data.shadow_coord2.z - bias) / in_data.shadow_coord2.w;
-
-        float shadow = texture(shadow_sampler2, vec3(shadow_map_uv, depth));
-        if (shadow < 0.99) {
-          visibility -= 0.2;
-        }
+      float shadow = texture(shadow_sampler, vec3(shadow_map_uv, depth));
+      if (shadow < 0.99) {
+        visibility -= 0.2;
       }
     }
   }
+  return visibility;
+}
 
-  float weight = 0.01f;
-  if (show_grid > 0) {
-    if (uv.x < 0.01 || uv.y < 0.01) {
-      diffuse_color = vec3(0.0, 0.0, 0.0);
-    }
+vec3 fresnel_factor(vec3 f0, float product) {
+  return mix(f0, vec3(1.0), pow(1.01 - product, 5.0));
+}
+
+float phong_specular(vec3 E, vec3 L, vec3 N, float roughness) {
+  vec3 R = reflect(-L, N);
+  float spec = max(0.0, dot(E, R));
+
+  float k = 1.999 / (roughness * roughness);
+  return min(1.0, 3.0 * 0.0398 * k) * pow(spec, min(10000.0, k));
+}
+
+float cel_shading(float value) {
+  const float levels = 3.0f;
+  return float(floor(value * levels)) / levels;
+}
+
+void main() {
+  vec3 out_color = vec3(0, 0, 0);
+  if (level < 5) {
+    vec3 blending = mix(in_data.blending, in_data.coarser_blending, in_data.alpha);
+    vec3 base = GetBlendedDiffuseColor(in_data.UV, blending);
+    // vec3 base = vec3(0.4);
+
+    vec3 n = GetBlendedNormalColor(in_data.UV, blending);
+    vec3 tex_normal_tangentspace = normalize(n * 2.0 - 1.0);
+    n = tex_normal_tangentspace;
+    vec3 l = in_data.light_dir_tangentspace;
+    vec3 e = normalize(in_data.eye_dir_tangentspace);
+
+    // Normal.
+    n.xy *= 5.0;
+    n = normalize(n);
+    float cos_theta = max(dot(n, l), 0.0);
+    cos_theta = cel_shading(cos_theta);
+
+    // Specular.
+    float roughness = 1.0;
+    float cos_alpha = phong_specular(e, l, n, roughness) * cos_theta * 3.0f;
+    cos_alpha = cel_shading(cos_alpha);
+
+    float metallic_component = 0.0;
+    vec3 specular_color = mix(vec3(0.04), base, metallic_component);
+    vec3 specfresnel = fresnel_factor(specular_color, max(0.001, dot(n, e)));
+    vec3 reflected = cos_alpha * specfresnel;
+
+    float sun_intensity = 1.0 * (1.0 + clamp(dot(light_direction, vec3(0, 1, 0)), 0, 1)) / 2.0;
+    // vec3 ambient_color = 0.1 * base;
+    // vec3 diffuse = sun_intensity * base; // Ambient.
+    // vec3 diffuse = 0.2 * base + cos_theta * base; // Ambient.
+    vec3 diffuse = 0.4 * base;
+    diffuse += cos_theta * mix(base, vec3(0.0), metallic_component);
+
+    // out_color = diffuse + reflected;
+    // out_color = vec3(cos_theta);
+    out_color = diffuse;
   }
 
-  // vec3 light_cameraspace = (V * vec4(light_direction, 0)).xyz;
-  // vec3 normal_cameraspace = mix(in_data.normal_cameraspace, in_data.coarser_normal_cameraspace, in_data.alpha);
-  // vec3 n = normalize(normal_cameraspace);
-  // vec3 l = normalize(light_cameraspace);
-  // float cos_theta = clamp(dot(n, l), 0, 1);
 
+  // // Ambient.
+  // vec3 ambient_color = vec3(0.5, 0.5, 0.5) * diffuse_color;
+  // vec3 out_color = ambient_color;
 
-  vec3 tex_normal_tangentspace = normalize(normal_color* 2.0 - 1.0);
-  vec3 n = tex_normal_tangentspace;
-  vec3 l = in_data.light_dir_tangentspace;
+  // // Light.
+  // vec3 light_color = vec3(1, 1, 1);
+  // float light_power = 0.85;
 
-  // How to set normal strength: https://computergraphics.stackexchange.com/questions/5411/correct-way-to-set-normal-strength/5412
-  n.xy *= 3.0;
-  n = normalize(n);
-  float cos_theta = max(dot(n, l), 0.0);
+  // // Sun light.
+  // float sun_intensity = (1.0 + dot(light_direction, vec3(0, 1, 0))) * 0.25;
 
+  // float visibility = CalculateShadowVisibility();
+  // out_color += visibility * sun_intensity * (diffuse_color * light_color * light_power * cos_theta);
 
-  // vec3 E = normalize(in_data.eye_dir_tangentspace);
-  // cos_theta = 0.5 * clamp(dot(n, E), 0.0, 1) + 0.5 * cos_theta;
-
-  // vec3 R = reflect(-l, n);
-  // float cos_alpha = max(dot(E, R), 0.0);
-  //      
-  // vec3 specular_color = texture(specular_sampler, in_data.UV).rgb * 
-  //   specular_component;
-
-  // out_color += sun_intensity * ((diffuse_color * light_color * light_power * cos_theta)
-  //    + (specular_color * light_color * light_power * pow(cos_alpha, 5)));
-
-
-
-
-  // Ambient.
-  vec3 ambient_color = vec3(0.5, 0.5, 0.5) * diffuse_color;
-  vec3 out_color = ambient_color;
-
-  // Light.
-  vec3 light_color = vec3(1, 1, 0.75);
-  float light_power = 0.85;
-
-  // Sun light.
-  float sun_intensity = (1.0 + dot(light_direction, vec3(0, 1, 0))) * 0.25;
-  out_color += visibility * sun_intensity * (diffuse_color * light_color * light_power * cos_theta);
-
-  // Point lights.
-  for (int i = 0; i < NUM_POINT_LIGHTS; i++) {
-    out_color += CalcPointLight(point_lights[i], n, in_data.position, 
-      diffuse_color);    
-  }
+  // // Point lights.
+  // for (int i = 0; i < NUM_POINT_LIGHTS; i++) {
+  //   out_color += CalcPointLight(point_lights[i], n, in_data.position, 
+  //     diffuse_color);    
+  // }
 
   float d = length(in_data.position - camera_position);
-  float depth = clamp(d / 5000.0f, 0, 0.9);
+  float depth = clamp(d / 1000.0f, 0, 0.9);
   vec3 pos = normalize(in_data.position - (camera_position - vec3(0, 1000, 0)));
-  // vec3 fog_color = mix(GetSky(pos), vec3(0.5, 0.5, 0.5), 0.5);
   vec3 fog_color = GetSky(pos);
 
   float h = clamp((40.0f + in_data.position.y) / 90.0f, 0.1, 1.0);
@@ -308,6 +267,5 @@ void main() {
   out_color = mix(out_color, depth_color, 1 - h);
 
   out_color = mix(out_color, fog_color, depth);
-
   color = out_color;
 }

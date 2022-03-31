@@ -8,5 +8,6 @@ if make; then
   done 
 
   cd ../..
-  ./build/test/dungeon_main
+  # ./build/test/dungeon_main
+  ./build/test/fbx_test
 fi

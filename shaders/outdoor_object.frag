@@ -79,7 +79,7 @@ void main(){
 
   float sun_intensity = 1.0 * (1.0 + clamp(dot(light_direction, vec3(0, 1, 0)), 0, 1)) / 2.0;
   vec3 ambient_color = sun_intensity * base;
-  vec3 diffuse = sun_intensity * base; // Ambient.
+  vec3 diffuse = 0.5 * sun_intensity * base; // Ambient.
   diffuse += cos_theta * mix(base, vec3(0.0), metallic_component);
 
   vec3 out_color = diffuse + reflected;

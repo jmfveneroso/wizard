@@ -77,11 +77,11 @@ class Renderer {
   unordered_map<string, FBO> fbos_;
   shared_ptr<Terrain> terrain_;
   mat4 depth_mvp_;
-  bool clip_terrain_ = false;
   vec3 terrain_clipping_point_;
   vec3 terrain_clipping_normal_;
   vec3 player_pos_;
   bool created_dungeon_buffers = false;
+  quat current_head_rotation_ = quat(0, 0, 0, 0);
 
   vector<GLuint> shadow_framebuffers_ { 0, 0, 0 };
   vector<GLuint> shadow_textures_ { 0, 0, 0 };
@@ -154,6 +154,7 @@ class Renderer {
   void DrawHand();
   void FindVisibleObjectsAsync();
   void CreateThreads();
+  vector<mat4> GetJointTransformsForMerchant();
 
  public:
   Renderer(shared_ptr<Resources> asset_catalog, shared_ptr<Draw2D> draw_2d,

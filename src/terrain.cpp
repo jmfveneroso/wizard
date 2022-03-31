@@ -594,7 +594,7 @@ mat4 Terrain::GetShadowMatrix(bool bias) {
 
 void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
   mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, 
-  bool drawing_shadow, bool clip_against_plane) {
+  bool drawing_shadow) {
   glBindVertexArray(vao_);
 
   // player_pos = kWorldCenter;
@@ -625,9 +625,9 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     if (i < last_visible_index) break;
 
     GLuint program_id = program_id_;
-    if (i > 4) {
-      program_id = far_program_id_;
-    }
+    // if (i > 4) {
+    //   program_id = far_program_id_;
+    // }
 
     {
       glUseProgram(program_id);
@@ -638,27 +638,13 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
       glUniform1i(GetUniformId(program_id, "TILES_PER_TEXTURE"), TILES_PER_TEXTURE);
       glUniform1i(GetUniformId(program_id, "CLIPMAP_SIZE"), CLIPMAP_SIZE);
       glUniform1f(GetUniformId(program_id, "MAX_HEIGHT"), MAX_HEIGHT);
+      glUniform1i(GetUniformId(program_id, "level"), i);
+
       glUniform3fv(GetUniformId(program_id, "player_pos"), 1, (float*) &player_pos);
       glUniformMatrix4fv(GetUniformId(program_id, "V"), 1, GL_FALSE, &ViewMatrix[0][0]);
       BindBuffer(vertex_buffer_, 0, 3);
 
       shared_ptr<Configs> configs = resources_->GetConfigs();
-      int show_grid = -1;
-      if (configs->edit_terrain != "none" || 
-        resources_->GetGameState() == STATE_BUILD) {
-        show_grid = 1;
-      }
-
-      // Set clipping plane.
-      glUniform1i(GetUniformId(program_id, "clip_against_plane"), 
-        (int) clip_against_plane);
-      glUniform1i(GetUniformId(program_id, "show_grid"), 
-        (int) show_grid);
-      glUniform3fv(GetUniformId(program_id, "clipping_point"), 1, 
-        (float*) &clipping_point_);
-      glUniform3fv(GetUniformId(program_id, "clipping_normal"), 1, 
-        (float*) &clipping_normal_);
-
       glUniform3fv(GetUniformId(program_id, "light_direction"), 1,
         (float*) &configs->sun_position);
 

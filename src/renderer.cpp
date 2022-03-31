@@ -366,8 +366,6 @@ vector<ObjPtr> Renderer::GetVisibleObjectsInPortal(shared_ptr<Portal> p,
   }
 
   if (node->sector->name == "outside") {
-    clip_terrain_ = true;
-
     const string mesh_name = p->mesh_name;
     shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
     if (!mesh) {
@@ -479,18 +477,13 @@ void Renderer::DrawOutside() {
   // }
   terrain_->UpdateClipmaps(camera_.position);
 
-  // if (clip_terrain_) {
-  //   terrain_->SetClippingPlane(terrain_clipping_point_, 
-  //     terrain_clipping_normal_);
-  // }
-
   mat4 shadow_matrix0 = GetShadowMatrix(true, 0);
   mat4 shadow_matrix1 = GetShadowMatrix(true, 1);
   mat4 shadow_matrix2 = GetShadowMatrix(true, 2);
 
   // TODO: pass frustum planes.
   terrain_->Draw(camera_, view_matrix_, camera_.position, shadow_matrix0, 
-    shadow_matrix1, shadow_matrix2, false, clip_terrain_);
+    shadow_matrix1, shadow_matrix2, false);
 }
 
 void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
@@ -588,6 +581,50 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
   glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
   glDisable(GL_BLEND);
   glBindVertexArray(0);
+}
+
+vector<mat4> Renderer::GetJointTransformsForMerchant() {
+  ObjPtr obj = resources_->GetObjectByName("mammon");
+
+  const string mesh_name = obj->GetAsset()->lod_meshes[0];
+  shared_ptr<Mesh> mesh = resources_->GetMeshByName(mesh_name);
+  if (!mesh) {
+    throw runtime_error(string("Mesh ") + mesh_name + " does not exist.");
+  }
+
+  vector<mat4> joint_transforms;
+  if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+    const Animation& animation = mesh->animations[obj->active_animation];
+    for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+      joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+    }
+  } else {
+    ThrowError("Animation ", obj->active_animation, " for object ",
+      obj->name, " and asset ", obj->GetAsset()->name, " does not exist");
+  }
+
+  int head_bone_id = mesh->bones_to_ids["head"];
+
+  vec3 player_head = camera_.position;
+  vec3 merchant_head = obj->position + vec3(0, 3, 0);
+
+  vec3 look_vector = player_head - merchant_head;
+  look_vector.y = 0;
+  look_vector = normalize(look_vector);
+
+  vec3 current_look_vector = vec3(joint_transforms[head_bone_id] * vec4(0, 0, 1, 1.0f));
+  current_look_vector.y = 0;
+
+  quat target_rotation = RotationBetweenVectors(current_look_vector, look_vector);
+  if (dot(look_vector, current_look_vector) < 0) {
+    target_rotation = RotationBetweenVectors(current_look_vector, vec3(0, 0, 1));
+  }
+
+  current_head_rotation_ = RotateTowards(current_head_rotation_, target_rotation, 0.02);
+  mat4 rotation_matrix = mat4_cast(current_head_rotation_);
+
+  joint_transforms[head_bone_id] *= rotation_matrix;
+  return joint_transforms;
 }
 
 // TODO: split into functions for each shader.
@@ -774,6 +811,11 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       } else {
         ThrowError("Animation ", obj->active_animation, " for object ",
           obj->name, " and asset ", asset->name, " does not exist");
+      }
+
+      if (asset->name == "merchant_body") {
+        // GetJointTransformsForMerchant();
+        joint_transforms = GetJointTransformsForMerchant();
       }
 
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
@@ -1126,7 +1168,6 @@ void Renderer::Draw() {
   glClearColor(clear_color.x, clear_color.y, clear_color.z, 1.0);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  clip_terrain_ = false;
   GetFrustumPlanes(frustum_planes_);
   vector<ObjPtr> objects = GetVisibleObjects(frustum_planes_);
 
@@ -1333,8 +1374,6 @@ void Renderer::DrawShadows() {
     // glEnable(GL_CULL_FACE);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    clip_terrain_ = false;
 
     mat4 shadow_matrix = GetShadowMatrix(true, i);
 

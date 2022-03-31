@@ -3953,11 +3953,12 @@ void Resources::RunPeriodicEvents() {
   }
 
   if (!configs_->stop_time) {
-    // 1 minute per second.
-    configs_->time_of_day += (1.0f / (60.0f * 60.0f));
-    if (configs_->time_of_day > 24.0f) {
-      configs_->time_of_day -= 24.0f;
-    }
+    configs_->time_of_day = 9.0f;
+    // // 1 minute per second.
+    // configs_->time_of_day += (1.0f / (60.0f * 60.0f));
+    // if (configs_->time_of_day > 24.0f) {
+    //   configs_->time_of_day -= 24.0f;
+    // }
 
     float radians = configs_->time_of_day * ((2.0f * 3.141592f) / 24.0f);
     configs_->sun_position = 

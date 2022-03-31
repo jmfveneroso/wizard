@@ -111,7 +111,16 @@ void ExtractSkeleton(FbxScene* scene, FbxData* data) {
       data->joint_map[joint->name] = joint;
 
       FbxTime time; 
-      time.SetFrame(0, FbxTime::eFrames24); // TODO: 60 frames.
+      if (data->name == "resources/models_fbx/merchant.fbx" ||
+         data->name == "resources/models_fbx/merchant_belt.fbx" ||
+         data->name == "resources/models_fbx/merchant_staff.fbx" ||
+         data->name == "resources/models_fbx/merchant_cloak.fbx" ||
+         data->name == "resources/models_fbx/merchant_pants.fbx") {
+        time.SetFrame(0, FbxTime::eFrames60); // TODO: 60 frames.
+      } else { 
+        time.SetFrame(0, FbxTime::eFrames60);
+      }
+
       FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
         GetGeometryTransformation(scene->GetRootNode());
       FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
@@ -344,7 +353,7 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
   //   //   geometry_transform;
 
   //   FbxTime time; 
-  //   time.SetFrame(0, FbxTime::eFrames24); 
+  //   time.SetFrame(0, FbxTime::eFrames60); 
   //   FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
   //     GetGeometryTransformation(scene->GetRootNode());
   //   FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
@@ -436,11 +445,11 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
     FbxTakeInfo* take_info = scene->GetTakeInfo(anim_stack_name); 
     FbxTime start = take_info->mLocalTimeSpan.GetStart(); 
     FbxTime end = take_info->mLocalTimeSpan.GetStop(); 
-    FbxLongLong frame_count = end.GetFrameCount(FbxTime::eFrames24);
-    for (FbxLongLong i = start.GetFrameCount(FbxTime::eFrames24); 
+    FbxLongLong frame_count = end.GetFrameCount(FbxTime::eFrames60);
+    for (FbxLongLong i = start.GetFrameCount(FbxTime::eFrames60); 
       i <= frame_count; ++i) { 
       FbxTime time; 
-      time.SetFrame(i, FbxTime::eFrames24); 
+      time.SetFrame(i, FbxTime::eFrames60); 
 
       Keyframe keyframe;
       keyframe.time = i;
@@ -454,7 +463,34 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
         FbxAMatrix mGlobalTransform = transform_offset.Inverse() * 
           joint->cluster->GetLink()->EvaluateGlobalTransform(time); 
         mat4 m = GetMatrix(mGlobalTransform);
+
+
         keyframe.transforms[j] = m * joint->global_bindpose_inverse;
+
+        // if (j == 1 && (i == 0 || i == 59)) {
+        //   vec3 v = vec3(0.5, 2.5, 0.5);
+
+        //   cout << "v: " << v << endl;
+        //   vec3 after_v = vec3(keyframe.transforms[j] * vec4(v, 1.0f));
+        //   cout << "after_v: " << after_v << endl;
+
+        //   vec3 player_head = vec3(2, 2.5, 0);
+        //   vec3 merchant_head = vec3(0, 2.5, 0);
+        //   vec3 look_vector = player_head - merchant_head;
+        //   look_vector.y = 0;
+        //   look_vector = normalize(look_vector);
+        //   cout << "look vector: " << look_vector << endl;
+
+        //   vec3 current_look_vector = vec3(keyframe.transforms[j] * vec4(0, 0, 1, 1.0f));
+        //   current_look_vector.y = 0;
+        //   cout << "current look vector: " << current_look_vector << endl;
+
+        //   quat target_rotation = RotationBetweenVectors(current_look_vector, look_vector);
+        //   mat4 rotation_matrix = mat4_cast(target_rotation);
+        //   vec3 after_rotation = vec3(keyframe.transforms[j] * rotation_matrix * vec4(v, 1.0f));
+        //   cout << "after rotation: " << after_rotation << endl;
+        //   cout << "=============================" << endl;
+        // }
       }
       animation.keyframes.push_back(keyframe);
     }
@@ -477,21 +513,6 @@ void FbxLoad(const std::string& filename, FbxData& data) {
 
 void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calculate_bs) {
   data.name = filename;
-  if (filename == "resources/models_fbx/mausoleum_stone.fbx") {
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-    cout << "-------->>>>>>>>>-------- " << filename << endl;
-  } else {
-    cout << "------------------ " << filename << endl;
-  }
   FbxLoad(filename, data);
 
   m.polygons = data.raw_mesh.polygons;
@@ -532,13 +553,6 @@ void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calcu
   BindBuffer(buffers[1], 1, 2);
   BindBuffer(buffers[2], 2, 3);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, buffers[3]);
-
-  cout << "Raw Vertices: " << data.raw_mesh.vertices.size() << endl;
-  cout << "Vertices: " << vertices.size() << endl;
-  cout << "UVs: " << data.raw_mesh.uvs.size() << endl;
-  cout << "Normals: " << data.raw_mesh.normals.size() << endl;
-  cout << "Tangents: " << data.raw_mesh.tangents.size() << endl;
-  cout << "Binormals: " << data.raw_mesh.binormals.size() << endl;
 
   // Compute tangents and bitangents.
   vector<vec3> tangents(vertices.size());
@@ -583,9 +597,6 @@ void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calcu
   }
 
   if (!data.raw_mesh.tangents.empty()) {
-    cout << "ADDING>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> " << filename << endl;
-    cout << "ADDING>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> " << filename << endl;
-    cout << "ADDING>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> " << filename << endl;
     glBindBuffer(GL_ARRAY_BUFFER, buffers[4]);
     glBufferData(GL_ARRAY_BUFFER, data.raw_mesh.tangents.size() * sizeof(vec3), 
       &data.raw_mesh.tangents[0], GL_STATIC_DRAW);
@@ -671,5 +682,6 @@ void LoadFbxData(const std::string& filename, Mesh& m, FbxData& data, bool calcu
     auto& joint = data.joints[i];
     if (!joint) continue;
     m.bones_to_ids[data.joints[i]->name] = i;
+    m.global_bindpose_inverse[i] = data.joints[i]->global_bindpose_inverse;
   }
 }

@@ -148,7 +148,9 @@ void CollisionResolver::Collide() {
 
   in_dungeon_ = resources_->GetConfigs()->render_scene == "dungeon";
 
-  resources_->GetPlayer()->can_jump = false;
+  if (!in_dungeon_) {
+    resources_->GetPlayer()->can_jump = false;
+  }
 
   find_mutex_.lock();
   ClearMetrics();
@@ -193,17 +195,40 @@ void CollisionResolver::Collide() {
   ProcessInContactWith();
 
   if (resources_->GetConfigs()->render_scene == "town") {
-    shared_ptr<Player> player = resources_->GetPlayer();
-    vec3 player_pos = player->position;
-
+    shared_ptr<Player> obj= resources_->GetPlayer();
     vec3 normal;
+
+    vec2 obj1_pos = vec2(obj->position.x, obj->position.z);
     float h = resources_->GetHeightMap().GetTerrainHeight(
-      vec2(player_pos.x, player_pos.z), &normal);
-    if (player_pos.y < h + 6.0f) {
-      player->position.y = h + 6.0f;
-      player->target_position = player->position;
-      resources_->UpdateObjectPosition(player);
+      obj1_pos, &normal);
+    bool falling = dot(normal, vec3(0, 1, 0)) < 0.9f;
+    if (falling) {
+      vec3 displace = normal;
+      displace.y = 0;
+
+      float k = dot(obj->speed, displace);
+      if (k > 0) {
+        if (isnan(k)) return;
+
+        vec3 cancel_v = -k * displace;
+        if (IsNaN(cancel_v)) return;
+        if (length(cancel_v) > 1.0f) return;
+
+        obj->speed += cancel_v * 1.1f;
+        obj->position += cancel_v;
+      }
     }
+
+    float foot_h = obj->position.y - 6.0f;
+    if (obj->can_jump || foot_h < h) {
+      obj->position.y = h + 6.0f;
+      obj->can_jump = true;
+      obj->touching_the_ground = true;
+      obj->speed.y = 0;
+    }
+
+    obj->target_position = obj->position;
+    resources_->UpdateObjectPosition(obj);
   }
   find_mutex_.unlock();
 
@@ -1319,6 +1344,10 @@ void CollisionResolver::TestCollisionBA(shared_ptr<CollisionBA> c) {
 
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
+  if (c->obj1->IsPlayer()) {
+    return;
+  }
+
   BoundingSphere s1 = c->obj1->GetBoneBoundingSphere(c->bone);
   vec3 normal;
 

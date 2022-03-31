@@ -1327,7 +1327,7 @@ void Monsters::Beholder(ObjPtr unit) {
         break;
       }
 
-      switch (Random(2, 3)) {
+      switch (Random(0, 3)) {
         case 0: { // Normal attack.
           unit->actions.push(make_shared<TakeAimAction>());
           unit->actions.push(make_shared<RangedAttackAction>());

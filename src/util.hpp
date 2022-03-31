@@ -405,6 +405,7 @@ struct Mesh {
   vector<Polygon> polygons;
   unordered_map<string, Animation> animations;
   unordered_map<string, int> bones_to_ids;
+  unordered_map<int, mat4> global_bindpose_inverse;
   BoundingSphere bounding_sphere;
 
   Mesh() {}

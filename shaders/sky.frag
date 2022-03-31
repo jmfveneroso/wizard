@@ -9,27 +9,27 @@ in VertexData {
 uniform vec3 sun_position;
 uniform vec3 player_position;
 
-vec3 GetSky(vec3 position, vec2 uv) {
-  vec3 night_sky = vec3(0.07, 0.07, 0.25);
-  vec3 sky_color = vec3(0.4, 0.7, 0.8);
-  vec3 sunset_color = vec3(0.99, 0.54, 0.0);
+vec3 GetSky(vec3 position) {
+  // vec3 sky_color = vec3(0.2, 0.35, 0.4);
+  vec3 sky_color = vec3(0.07, 0.07, 0.25);
+  vec3 sunset_color = vec3(0.49, 0.27, 0.0);
 
   float sun_pos = 1.5 * (1 - dot(vec3(0, 1, 0), sun_position));
   sun_pos = clamp(sun_pos, 0.0, 1.0);
 
   float sky_pos = dot(vec3(0, 1, 0), position);
-
   vec3 color = mix(sky_color, sunset_color, sun_pos);
   color = mix(color, sky_color, sky_pos);
 
-  float how_night = dot(vec3(0, -1, 0), sun_position);
-  how_night = clamp(how_night, 0.0, 1.0);
-  color = mix(color, night_sky, how_night);
+  // vec3 night_sky = vec3(0.07, 0.07, 0.25);
+  // float how_night = dot(vec3(0, -1, 0), sun_position);
+  // how_night = clamp(how_night, 0.0, 1.0);
+  // color = mix(color, night_sky, how_night);
 
   return color;
 }
 
-vec3 GetSun(vec3 position, vec2 uv) {
+vec3 GetSun(vec3 position) {
   float sun = dot(position, sun_position);
   sun = clamp(sun, 0.0, 1.0);
 
@@ -60,8 +60,8 @@ uniform sampler2D SkyTextureSampler;
 void main(){
   vec3 pos = normalize(in_data.position - (player_position - vec3(0, 1000, 0)));
 
-  vec3 sky = GetSky(pos, in_data.UV);
-  vec3 sun = GetSun(pos, in_data.UV);
+  vec3 sky = GetSky(pos);
+  vec3 sun = GetSun(pos);
 
   color = sky + sun;  
 }

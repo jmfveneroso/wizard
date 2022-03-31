@@ -122,7 +122,7 @@ class Terrain {
 
   void UpdateClipmaps(vec3 player_pos);
   void Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos, 
-    mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, bool drawing_shadow, bool clip_against_plane = false);
+    mat4 shadow_matrix0, mat4 shadow_matrix1, mat4 shadow_matrix2, bool drawing_shadow);
   void Invalidate();
   void SetClippingPlane(const vec3& point, const vec3& normal) {
     clipping_point_ = point;

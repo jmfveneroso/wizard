@@ -4,7 +4,7 @@
 layout(location = 0) in vec3 position_modelspace;
 layout(location = 1) in vec2 vertex_uv;
 
-out VertexData {
+out FragData {
   vec3 position;
   vec2 UV;
   vec3 normal_cameraspace;
@@ -14,10 +14,9 @@ out VertexData {
   vec3 blending;
   vec3 coarser_blending;
   vec3 light_dir_tangentspace;
+  vec3 eye_dir_tangentspace;
   float alpha;
   vec4 shadow_coord; 
-  vec4 shadow_coord1; 
-  vec4 shadow_coord2; 
 } out_data;
 
 // Values that stay constant for the whole mesh.
@@ -28,11 +27,13 @@ uniform mat4 DepthMVP2;
 uniform mat4 V;
 uniform mat4 M;
 uniform mat3 MV3x3;
+
 uniform sampler2DRect height_sampler;
 uniform sampler2DRect normal_sampler;
 uniform sampler2DRect blending_sampler;
 uniform sampler2DRect coarser_blending_sampler;
 uniform sampler2DRect tile_type_sampler;
+
 uniform int TILE_SIZE;
 uniform int PURE_TILE_SIZE;
 uniform int CLIPMAP_SIZE;
@@ -50,19 +51,18 @@ void main(){
   ivec2 buffer_coords = (toroidal_coords + buffer_top_left + CLIPMAP_SIZE + 1) % (CLIPMAP_SIZE + 1);
 
   float height = MAX_HEIGHT * texelFetch(height_sampler, buffer_coords).r;
-  // vec4 normal = texelFetch(normal_sampler, buffer_coords).rgba * 2 - 1;
-  vec4 normal = texelFetch(normal_sampler, buffer_coords).rgba;
-  vec3 blending = texelFetch(blending_sampler, buffer_coords).rgb;
-  vec3 coarser_blending = texelFetch(coarser_blending_sampler, buffer_coords).rgb;
-
   out_data.position.x *= TILE_SIZE;
   out_data.position.z *= TILE_SIZE;
   out_data.position.y = height;
   gl_Position = MVP * vec4(out_data.position, 1);
 
+
+
+  vec4 normal = texelFetch(normal_sampler, buffer_coords).rgba * 2 - 1;
+  vec3 blending = texelFetch(blending_sampler, buffer_coords).rgb;
+  vec3 coarser_blending = texelFetch(coarser_blending_sampler, buffer_coords).rgb;
+
   out_data.shadow_coord = DepthMVP * vec4(out_data.position, 1);
-  out_data.shadow_coord1 = DepthMVP1 * vec4(out_data.position, 1);
-  out_data.shadow_coord2 = DepthMVP2 * vec4(out_data.position, 1);
 
   out_data.position = (M * vec4(out_data.position, 1)).xyz;
 
@@ -76,7 +76,6 @@ void main(){
   out_data.coarser_blending = coarser_blending;
   
   out_data.UV = out_data.position.xz / TILES_PER_TEXTURE;
-  // out_data.UV = out_data.position.xz;
 
   float distance = length(out_data.position_cameraspace.xyz);
   out_data.visibility = clamp(distance / 4000, 0.0, 1.0);
@@ -103,6 +102,9 @@ void main(){
   vec3 eye_dir_cameraspace = vec3(0, 0, 0) - vertex_pos_cameraspace;
 
   vec3 light_pos_cameraspace = (V * vec4(light_pos_worldspace, 1)).xyz;
-  vec3 light_dir_cameraspace = light_pos_cameraspace + eye_dir_cameraspace;
+  vec3 light_dir_cameraspace = normalize(light_pos_cameraspace + eye_dir_cameraspace);
+  eye_dir_cameraspace = normalize(eye_dir_cameraspace);
+  
   out_data.light_dir_tangentspace = normalize(TBN * light_dir_cameraspace);
+  out_data.eye_dir_tangentspace = normalize(TBN * eye_dir_cameraspace);
 }
