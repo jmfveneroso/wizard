@@ -661,7 +661,7 @@ class Resources {
   void CastBouncyBall(ObjPtr owner, const vec3& position, 
     const vec3& direction);
 
-  void CastMissile(ObjPtr owner, const vec3& pos, 
+  ObjPtr CastMissile(ObjPtr owner, const vec3& pos, 
     const MissileType& missile_type, const vec3& direction,
     const float& velocity);
   void UpdateMissiles();

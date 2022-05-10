@@ -13,6 +13,12 @@ ObjPtr Monsters::GetTarget(ObjPtr unit) {
   return resources_->GetPlayer();
 }
 
+float GetDistance(vec3 pos1, vec3 pos2) {
+  pos1.y = 0;
+  pos2.y = 0;
+  return length(pos1 - pos2);
+}
+
 bool Monsters::IsAttackAction(shared_ptr<Action> action) {
   if (!action) return false;
   switch (action->type) {
@@ -33,7 +39,7 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
 
   Dungeon& dungeon = resources_->GetDungeon();
   ObjPtr player = resources_->GetPlayer();
-  double distance_to_player = length(player->position - unit->position);
+  double distance_to_player = GetDistance(player->position, unit->position);
 
   bool group_is_attacking = false;
   vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
@@ -51,24 +57,21 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
   int player_relevance = 
     dungeon.GetRelevance(dungeon.GetDungeonTile(player->position));
 
-  float kChaseDistance = 50.0f;
+  float chase_distance = 50.0f;
   int relevance_diff = 3;
 
   if (unit->ai_state == AMBUSH) {
-    kChaseDistance = 10.0f;
-    relevance_diff = 0;
+    chase_distance = 20.0f;
+    relevance_diff = 1;
   } 
-
-  if (unit_relevance == 99 && player_relevance == 99) {
-    relevance_diff = 0;
-  }
 
   if (unit->leader) {
     group_is_attacking = false;
   }
 
-  return !group_is_attacking && distance_to_player > kChaseDistance &&
-    (unit_relevance - player_relevance) > relevance_diff;
+  int actual_relevance_diff = (player_relevance - unit_relevance);
+  return !group_is_attacking && (distance_to_player > chase_distance) &&
+    (actual_relevance_diff < relevance_diff);
 }
 
 bool Monsters::CanDetectPlayer(ObjPtr unit) {
@@ -426,16 +429,6 @@ void Monsters::Spiderling(ObjPtr unit) {
   ObjPtr target = unit->GetCurrentTarget();
   double distance_to_player = length(target->position - unit->position);
 
-  bool group_is_attacking = false;
-  vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
-  for (auto& m : monsters) {
-    if (m == unit) continue;
-    if (m->ai_state == AI_ATTACK) {
-      group_is_attacking = true;
-      break;
-    }
-  }
-
   bool visible = dungeon.IsTileVisible(unit->position);
 
   // TODO: change to function.
@@ -664,7 +657,6 @@ void Monsters::Spiderling(ObjPtr unit) {
       }
 
       if (Random(0, 10) < 5) {
-        cout << "Ambush" << endl;
         unit->actions.push(make_shared<SpiderClimbAction>(Random(25, 41)));
         unit->actions.push(make_shared<ChangeStateAction>(AMBUSH));
       } else {
@@ -984,6 +976,58 @@ void Monsters::Broodmother(ObjPtr unit) {
       if (visible || room1 == room2) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(ACTIVE));
+      } else if (unit->actions.empty()) {
+        unit->actions.push(make_shared<IdleAction>(1));
+      }
+      break;
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
+void Monsters::Scorpion(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  double distance_to_player = length(player->position - unit->position);
+
+  float t;
+  bool can_hit_player = !dungeon.IsRayObstructed(unit->position, 
+    player->position, t);
+
+  switch (unit->ai_state) {
+    case AI_ATTACK: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (!unit->CanUseAbility("ranged-attack") || !can_hit_player) {
+        if (!IsPlayerReachable(unit)) { 
+          unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+        } else {
+          unit->actions.push(make_shared<MoveToPlayerAction>());
+        }
+      } else {
+        unit->actions.push(make_shared<TakeAimAction>());
+        unit->actions.push(make_shared<RangedAttackAction>());
+      }
+      break;
+    }
+    case IDLE: {
+      if (!unit->actions.empty()) {
+        break;
+      } else if (CanDetectPlayer(unit)) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
       } else if (unit->actions.empty()) {
         unit->actions.push(make_shared<IdleAction>(1));
       }
@@ -1425,6 +1469,8 @@ void Monsters::RunMonsterAi(ObjPtr obj) {
   obj->current_target = GetTarget(obj);
   if (obj->GetAsset()->name == "spiderling") {
     Spiderling(obj); 
+  } else if (obj->GetAsset()->name == "scorpion") {
+    Scorpion(obj); 
   } else if (obj->GetAsset()->name == "lancet") {
     Lancet(obj); 
   } else if (obj->GetAsset()->name == "broodmother") {

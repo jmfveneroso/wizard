@@ -281,6 +281,7 @@ class Dungeon {
   void PrintPreMap();
   float GetDistanceToStairs(const ivec2& tile);
   shared_ptr<Room> CreateEmptyRoom(const ivec2& dimensions = ivec2(-1, -1));
+  int GetIntCode(const char c);
 
   bool invert_distance_ = false;
 
@@ -364,6 +365,7 @@ class Dungeon {
   int GetRandomChestLoot(int dungeon_level);
   int GetRandomLearnableSpell(int dungeon_level);
   vec3 GetDungeonColor();
+  bool LoadDungeonFromFile(const string& filename);
 };
 
 #endif // __DUNGEON_HPP__

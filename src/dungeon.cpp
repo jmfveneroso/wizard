@@ -9,25 +9,19 @@ Dungeon::Dungeon() {
   char_map_[1] = '|';
   char_map_[2] = '-';
   char_map_[3] = '+';
-  char_map_[13] = ' ';
   char_map_[11] = 'o';
   char_map_[12] = 'O';
+  char_map_[13] = ' ';
+  char_map_[15] = 'P';
+  char_map_[22] = '.';
   char_map_[25] = 'd';
   char_map_[26] = 'D';
-  char_map_[15] = 'P';
   char_map_[35] = 'g';
   char_map_[36] = 'G';
-  char_map_[22] = '.';
-  char_map_[100] = 'p'; // Top-Left pillar.
-  char_map_[101] = 'A'; // Top-left arch.
-  char_map_[102] = 'B'; // Bottom-left arch.
-  char_map_[103] = 'F'; // Bottom-right arch.
-  char_map_[104] = 'N'; // Top-right arch.
 
   char_map_[60] = '<'; // Up.
   char_map_[61] = '>'; // Down.
   char_map_[62] = 's'; // Spiderling.
-  char_map_[105] = 't'; // Spiderling leader.
   char_map_[63] = '\'';
   char_map_[64] = '~';
   char_map_[65] = 'S'; // White spine.
@@ -53,7 +47,7 @@ Dungeon::Dungeon() {
   char_map_[85] = '2'; // Pre rotating platform.
   char_map_[86] = '3'; // Pre rotating platform.
   char_map_[87] = '4'; // Pre rotating platform.
-  char_map_[88] = 'e'; // Exploding pod.
+  char_map_[88] = 'e'; // Scorpion.
   char_map_[89] = ','; // Mushroom.
   char_map_[91] = 'V'; // Viper.
   char_map_[92] = '&'; // Secret wall.
@@ -63,6 +57,12 @@ Dungeon::Dungeon() {
   char_map_[97] = 'E'; // Evil Eye.
   char_map_[98] = 'Q'; // Pedestal.
   char_map_[99] = 'X'; // Spell pedestal.
+  char_map_[100] = 'p'; // Top-Left pillar.
+  char_map_[101] = 'A'; // Top-left arch.
+  char_map_[102] = 'B'; // Bottom-left arch.
+  char_map_[103] = 'F'; // Bottom-right arch.
+  char_map_[104] = 'N'; // Top-right arch.
+  char_map_[105] = 't'; // Spiderling leader.
   char_map_[106] = 'a'; // Bookcase.
 
   monsters_and_objs = new char*[kDungeonSize];
@@ -141,7 +141,7 @@ void Dungeon::Clear() {
       dungeon[i][j] = 0;
       monsters_and_objs[i][j] = ' ';
       flags[i][j] = 0;
-      relevance[i][j] = 99;
+      relevance[i][j] = -9999999;
       room[i][j] = -1;
       monster_group[i][j] = -1;
       darkness[i][j] = ' ';
@@ -1244,6 +1244,7 @@ void Dungeon::GenerateAsciiDungeon() {
       char ascii_code = char_map_[dungeon[x][y]];
       switch (ascii_code) {
         case 's':
+        case 'e':
         case 'S':
         case 'E':
         case 'V':
@@ -1255,7 +1256,6 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'b':
         case 'J':
         case 'Y':
-        case 'e':
         case ',':
         case 't':
         case 'm':
@@ -1705,7 +1705,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   // random_num = -721664489; // Broodmother.
   // random_num = -1403164; // Error.
   // random_num = -780185899; // White spine door find.
-  random_num = -464376179; // Beholder.
+  // random_num = -464376179; // Beholder.
 
   initialized_ = true;
   srand(random_num);
@@ -1894,6 +1894,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case ' ':
     case '^':
     case 's':
+    case 'e':
     case 'S':
     case 'L':
     case 'b':
@@ -1936,6 +1937,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
     case ' ':
     case '^':
     case 's':
+    case 'e':
     case 'S':
     case 'Q':
     case 'r':
@@ -1956,6 +1958,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case ' ':
         case '^':
         case 's':
+        case 'e':
         case 'S':
         case 'Q':
         case 'r':
@@ -1996,6 +1999,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
           case ' ':
           case '^':
           case 's':
+          case 'e':
           case 'S':
           case 'Q':
           case 'r':
@@ -2022,6 +2026,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case ' ':
         case '^':
         case 's':
+        case 'e':
         case 'S':
         case 'Q':
         case 'r':
@@ -2213,25 +2218,19 @@ vec3 Dungeon::GetPathToTile(const vec3& start, const vec3& end) {
         ivec2 next_tile = tile + ivec2(off_x, off_y);
         if (!IsTileClear(tile, next_tile)) continue;
     
-        cout << "testing next_tile: " << next_tile << endl;
-
         const float cost = move_to_cost_[move_type];
         const float new_distance  = distance + cost;
 
         float min_distance = min_distance_[dest_tile.x][dest_tile.y][next_tile.x][next_tile.y];
         if (min_distance > 0 && invert_distance_) {
-          min_distance = -99999999.0f;
+          min_distance = -9999999.0f;
         } else if (min_distance < 0 && !invert_distance_) {
-          min_distance = 99999999.0f;
+          min_distance = 9999999.0f;
         }
 
-        cout << "new distance: " << new_distance << endl;
-        cout << "min distance: " << min_distance << endl;
         if (!invert_distance_ && new_distance >= min_distance) {
-          cout << "drop 1" << endl;
           continue;
         } else if (invert_distance_ && new_distance <= min_distance) {
-          cout << "drop 2" << endl;
           continue;
         }
 
@@ -2316,7 +2315,7 @@ ivec2 Dungeon::GetClosestClearTile(const vec3& position) {
   if (IsTileClear(tile)) return tile;
 
   for (int k = 1; k < 5; k++) {
-    float min_dist = 9999;
+    float min_dist = 9999999;
     ivec2 best_tile = ivec2(0, 0);
     for (int off_y = -1; off_y < 2; off_y++) {
       for (int off_x = -1; off_x < 2; off_x++) {
@@ -2475,6 +2474,7 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case '/':
     case '\\':
     case 's':
+    case 'e':
     case 'S':
     case 'Q':
     case 'E':
@@ -2804,7 +2804,6 @@ vec3 Dungeon::GetUpstairs() {
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
       if (ascii_dungeon[i][j] == '<') {
-        // return GetTilePosition(ivec2(i, j)) + vec3(-10, 0, 0);
         return GetTilePosition(ivec2(i, j));
       }
     }
@@ -3037,8 +3036,10 @@ int Dungeon::GetMonsterGroup(const ivec2& tile) {
 }
 
 int Dungeon::GetRelevance(const ivec2& tile) {
-  if (!IsValidTile(tile)) return -99;
-  return -relevance[tile.x][tile.y]; 
+  if (!IsValidTile(tile)) return -9999999;
+
+  if (relevance[tile.x][tile.y] > 0) return -relevance[tile.x][tile.y];
+  return relevance[tile.x][tile.y]; 
 }
 
 vector<ivec2> Dungeon::GetPath(const vec3& start, const vec3& end) {
@@ -3097,4 +3098,36 @@ int Dungeon::GetRandomLearnableSpell(int dungeon_level) {
 
 vec3 Dungeon::GetDungeonColor() {
   return level_data_[current_level_].dungeon_color;
+}
+
+int Dungeon::GetIntCode(const char c) {
+  for (const auto& [code, ascii] : char_map_) {
+    if (ascii == c) return code;
+  }
+  return -1;
+}
+
+bool Dungeon::LoadDungeonFromFile(const string& filename) {
+  ifstream f(filename);
+  if (!f.is_open()) return false;
+
+  Clear();
+
+  int y = 0;
+  string line;
+  while (getline(f, line)) {
+    for (int x = 0; x < 80 && x < line.size(); x++) {
+      char c = line[x];
+      dungeon[x][y] = GetIntCode(c);
+    }
+    y++; 
+    cout << line << '\n';
+  }
+  f.close();
+
+  GenerateAsciiDungeon();
+  CalculateAllPaths();
+  PrintMap();
+  // CalculateRelevance();
+  return true;
 }

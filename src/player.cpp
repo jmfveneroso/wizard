@@ -1298,15 +1298,15 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         }
       } else if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
         if (debounce_ < 0) {
-          resources_->CastParalysis(player, player->position + c.direction * 100.0f);
+          // resources_->CastParalysis(player, player->position + c.direction * 100.0f);
+          resources_->CastBurningHands(c);
           debounce_ = 20;
         }
       } else if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS) {
         if (debounce_ < 0) {
-          // resources_->CastBouncyBall(player, c.position, c.direction);
-          // resources_->CastBurningHands(c);
+          resources_->CastBouncyBall(player, c.position, c.direction);
           // resources_->CastWindslash(c);
-          resources_->CastShotgun(c);
+          // resources_->CastShotgun(c);
           debounce_ = 20;
         }
       }

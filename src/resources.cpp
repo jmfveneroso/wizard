@@ -1533,10 +1533,10 @@ void Resources::UpdateMissiles() {
       missile->scale_in = 1.0f;
       missile->scale_out = 0.0f;
       // Dieded.
-      if (missile->type == MISSILE_BOUNCYBALL) {
-        CreateParticleEffect(15, missile->position, vec3(0, 3, 0), 
-          vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.5f);
-      }
+      // if (missile->type == MISSILE_BOUNCYBALL) {
+      //   CreateParticleEffect(15, missile->position, vec3(0, 3, 0), 
+      //     vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.5f);
+      // }
       for (auto p : missile->associated_particles) {
         p->associated_obj = nullptr; 
         p->life = -1; 
@@ -4288,10 +4288,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           }
           break;
         }
-        case 'e': {
-          ObjPtr obj = CreateGameObjFromAsset(this, "exploding_pod", pos);
-          break;
-        }
         case ',': {
           ObjPtr obj = CreateGameObjFromAsset(this, "mushroom", pos);
           break;
@@ -4367,11 +4363,12 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           obj->ai_state = AMBUSH;
           break;
         }
-        case 'L': case 'w': case 's': case 'S': case 'V': case 'Y':
+        case 'L': case 'w': case 's': case 'S': case 'V': case 'Y': case 'e':
         case 'J': case 'K': case 'W': case 'E': case 'I': case 'b': { // Is Monster.
           static unordered_map<char, string> monster_assets { 
             { 'L', "broodmother" },
             { 's', "spiderling" },
+            { 'e', "scorpion" },
             { 't', "spiderling" },
             { 'I', "imp" },
             { 'K', "lancet" },
@@ -4921,25 +4918,34 @@ void Resources::CastBouncyBall(ObjPtr owner, const vec3& position,
   }
 
   for (const auto& dir : directions) {
-    shared_ptr<Missile> obj = nullptr;
-    for (const auto& missile : missiles_) {
-      if (missile->life <= 0 && missile->GetAsset()->name == "magic-missile-000") {
-        obj = missile;
-        break;
-      }
-    }
-    if (obj == nullptr) obj = missiles_[0];
+    shared_ptr<Missile> obj = GetUnusedMissile();
 
-    obj->life = 300;
-    obj->owner = owner;
+    obj->UpdateAsset("spell_shot");
+    obj->CalculateCollisionData();
     obj->type = MISSILE_BOUNCYBALL;
+    obj->life = 300;
     obj->physics_behavior = PHYSICS_UNDEFINED;
+    obj->owner = owner;
 
-    vec3 left = normalize(cross(vec3(0, 1, 0), dir));
-    obj->position = position + dir * 0.5f + left * -0.81f +  
-      vec3(0, 1, 0) * -0.556f;
+    obj->position = owner->position; 
+    if (owner->IsPlayer()) {
+      ObjPtr focus;
+      if (IsHoldingScepter()) {
+        focus = GetObjectByName("scepter-001");
+      } else {
+        focus = GetObjectByName("hand-001");
+      }
 
-    vec3 p2 = obj->position + dir * 3000.0f;
+      for (const auto& [bone_id, bs] : focus->bones) {
+        BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
+        obj->position = s.center;
+      }
+    } else {
+      BoundingSphere s = owner->GetBoneBoundingSphere(1); 
+      obj->position = s.center;
+    }
+
+    vec3 p2 = owner->position + direction * 200.0f;
     obj->speed = normalize(p2 - obj->position) * 0.5f;
     UpdateObjectPosition(obj);
   }
@@ -4964,7 +4970,7 @@ void Resources::CastBurningHands(const Camera& camera) {
   float size = Random(1, 51) / 20.0f;
 
   CreateParticleEffect(2, pos, normal,
-    vec3(1.0, 1.0, 1.0), 5 * size, 48.0f, 15.0f, "windslash");
+    vec3(1.0, 1.0, 1.0), 5 * size, 48.0f, 15.0f, "fireball");
 }
 
 void Resources::CastStringAttack(ObjPtr owner, const vec3& position, 
@@ -5577,26 +5583,36 @@ void Resources::CastFlash(const vec3& position) {
   }
 }
 
-void Resources::CastMissile(
+ObjPtr Resources::CastMissile(
   ObjPtr owner, const vec3& position, const MissileType& missile_type, 
   const vec3& direction, const float& velocity) {
   shared_ptr<Missile> obj = GetUnusedMissile();
-  obj->UpdateAsset("horn");
+
+  if (missile_type == MISSILE_BOUNCYBALL) {
+    // obj->UpdateAsset("spell_shot");
+    obj->UpdateAsset("flash_shot");
+    obj->life = 300;
+    obj->physics_behavior = PHYSICS_UNDEFINED;
+    obj->owner = owner;
+  } else {
+    obj->UpdateAsset("horn");
+    obj->life = 200.0f;
+    obj->physics_behavior = obj->GetAsset()->physics_behavior;
+  }
   obj->CalculateCollisionData();
 
   obj->owner = owner;
   obj->type = missile_type;
-  obj->physics_behavior = obj->GetAsset()->physics_behavior;
   obj->scale_in = 1.0f;
   obj->scale_out = 0.0f;
   obj->associated_particles.clear();
 
   obj->position = position; 
   obj->speed = direction * velocity;
-  obj->life = 200.0f;
 
   obj->rotation_matrix = owner->rotation_matrix;
   UpdateObjectPosition(obj);
+  return obj;
 }
 
 int Resources::CountGold() {

@@ -253,6 +253,8 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
 
   if (creature->GetAsset()->name == "white_spine") {
     return WhiteSpineAttack(creature, action);
+  } else if (creature->GetAsset()->name == "scorpion") {
+    return ScorpionAttack(creature, action);
   } else if (creature->GetAsset()->name == "imp") {
     return ImpAttack(creature, action);
   } else if (creature->GetAsset()->name == "beholder") {
@@ -470,6 +472,34 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
       resources_->CastMissile(creature, creature->position, MISSILE_HORN, dir_, 
         missile_speed);
     }
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+  }
+  return false;
+}
+
+bool AI::ScorpionAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const int num_missiles = 1;
+  const float missile_speed = 0.5f + Random(0, 5) * 0.2f;
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  int num_frames = creature->GetNumFramesInCurrentAnimation();
+  if (int(creature->frame) >= num_frames - 5) {
+    return true;
+  }
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = creature->position + normalize(player->position - creature->position) * 10.0f;
+
+  vec3 dir = normalize(player->position - creature->position);
+  dir.y = 0.3f;
+
+  if (int(creature->frame) >= num_frames - 15 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 p2 = creature->position + dir * 200.0f;
+    resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), MISSILE_BOUNCYBALL, 
+      dir, missile_speed);
     creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
   }
   return false;

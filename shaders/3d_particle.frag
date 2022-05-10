@@ -33,10 +33,10 @@ void main(){
     discard;
   }
 
-  // float d = distance(player_pos, in_data.position);
-  // float depth = clamp(d / light_radius, 0, 1);
-  // vec4 fog_color = vec4(0, 0, 0, 1);
-  // out_color = mix(out_color, fog_color, depth);
+  float d = distance(player_pos, in_data.position);
+  float depth = clamp(d / light_radius, 0, 1);
+  vec4 fog_color = vec4(0, 0, 0, 1);
+  out_color = mix(out_color, fog_color, depth);
 
   color = out_color;
 }

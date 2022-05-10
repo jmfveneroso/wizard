@@ -249,6 +249,26 @@ void Engine::RunCommand(string command) {
       resources_->GenerateOptimizedOctree();
     } catch(boost::bad_lexical_cast const& e) {
     }
+  } else if (result[0] == "load-dungeon") {
+    try {
+      const string& filename = result[1];
+
+      resources_->ChangeDungeonLevel(0);
+      resources_->DeleteAllObjects();
+
+      Dungeon& dungeon = resources_->GetDungeon();
+      if (dungeon.LoadDungeonFromFile(filename)) {
+        resources_->CreateDungeon(false);
+        vec3 pos = dungeon.GetUpstairs();
+        resources_->GetPlayer()->ChangePosition(pos);
+        resources_->GetConfigs()->render_scene = "dungeon";
+        resources_->SaveGame();
+        resources_->CalculateCollisionData();
+        resources_->GenerateOptimizedOctree();
+        configs->update_renderer = true;
+      }
+    } catch(boost::bad_lexical_cast const& e) {
+    }
   } else if (result[0] == "town") {
     resources_->DeleteAllObjects();
     resources_->CreateTown();

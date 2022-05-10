@@ -36,6 +36,8 @@ class AI {
 
   bool WhiteSpineAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
+  bool ScorpionAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
 
   bool ImpAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);

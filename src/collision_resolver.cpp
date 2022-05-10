@@ -1841,13 +1841,13 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
     case MISSILE_BOUNCYBALL: {
       if (obj2 && (obj2->IsPlayer() || obj2->IsCreature())) {
         obj1->life = 0.0f;
-        obj2->DealDamage(missile->owner, 10.0f, normal, 
+        obj2->DealDamage(missile->owner, 1.0f, normal, 
           /*take_hit_animation=*/false);
         return;
       }
 
-      resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
-        vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
+      // resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
+      //   vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
 
       obj1->position = obj1->prev_position;
       obj1->speed += dot(obj1->speed, c->normal) * c->normal * -1.9f;
