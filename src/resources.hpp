@@ -77,6 +77,7 @@ struct Configs {
   string edit_terrain = "none";
   bool levitate = false;
   float jump_force = 0.3f;
+  bool jumped = false;
   int brush_size = 10;
   int selected_tile = 0;
   float raise_factor = 1;
@@ -127,7 +128,7 @@ struct Configs {
   int store[6] = { 0, 0, 0, 0, 0, 0 };
   vector<vector<int>> store_items_at_level;
 
-  int selected_spell = 0;
+  int selected_spell = 9;
   int spellbar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   int spellbar_quantities[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   int craft_table[5] = { 0, 0, 0, 0, 0 };
@@ -769,6 +770,7 @@ class Resources {
   bool TakeGold(int quantity);
   void CountOctreeNodes();
   shared_ptr<ArcaneSpellData> WhichArcaneSpell(int item_id);
+  shared_ptr<ArcaneSpellData> GetArcaneSpell(int spell_id);
   int CrystalCombination(int item_id1, int item_id2);
 
   void GiveExperience(int exp_points);

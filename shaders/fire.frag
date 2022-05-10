@@ -1,11 +1,5 @@
 #version 330 core
 
-in VertexData {
-  vec3 position;
-  vec2 UV;
-  vec3 color;
-} in_data;
-
 // -----------------------------------------------
 // BEGIN 
 // -----------------------------------------------
@@ -104,6 +98,36 @@ float tileableValueNoise(vec2 st, vec2 period) {
   return v;
 }
 
+vec4 voronoi(vec2 uv, float u_time) {
+  float num_cells = 10.0;
+  vec2 st = num_cells * uv;
+  vec2 cell_number = floor(st);
+  vec2 cell_position = fract(st);
+
+  vec3 color = vec3(0.0);
+  float min_dist = 1.0;
+  vec2 closest_point = vec2(0.0);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 neighbor = vec2(float(x), float(y));
+      vec2 point = map(hash(cell_number + neighbor), -1.0, 1.0, 0.0, 1.0);
+      point = 0.5 + 0.5 * sin(u_time + 6.2831 * point);
+      vec2 diff = neighbor + point - cell_position;
+      float dist = length(diff);
+      if (dist < min_dist) {
+        min_dist = min(min_dist, dist);
+        closest_point = point;
+      }
+    }
+  }
+
+  color += min_dist;
+  color += 1.0 - step(0.02, min_dist);
+  color.rg = closest_point;
+  color.r += step(0.98, cell_position.x) + step(0.98, cell_position.y);
+  return vec4(color, 1.0);
+}
+
 vec3 mod289(vec3 x) {
   return x - floor(x * (1.0 / 289.0)) * 289.0;
 }
@@ -158,102 +182,90 @@ float simplex_noise(vec2 v) {
   return 130.0 * dot(m, g);
 }
 
+float voronoi_noise(vec2 uv) {
+  float num_cells = 10.0;
+  vec2 st = num_cells * uv;
+  vec2 cell_number = floor(st);
+  vec2 cell_position = fract(st);
+
+  vec3 color = vec3(0.0);
+  float min_dist = 1.0;
+  vec2 closest_point = vec2(0.0);
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      vec2 neighbor = vec2(float(x), float(y));
+      vec2 point = map(hash(cell_number + neighbor), -1.0, 1.0, 0.0, 1.0);
+      point = 0.5 + 0.5 * sin(6.2831 * point);
+      vec2 diff = neighbor + point - cell_position;
+      float dist = length(diff);
+      if (dist < min_dist) {
+        min_dist = min(min_dist, dist);
+        closest_point = point;
+      }
+    }
+  }
+
+  color += min_dist * 0.5;
+  // color += 1.0 - step(0.02, min_dist);
+  // color.rg = closest_point;
+  // color.r += step(0.98, cell_position.x) + step(0.98, cell_position.y);
+  return color.r;
+}
+
 // -----------------------------------------------
 // END
 // -----------------------------------------------
 
-uniform vec3 sun_position;
-uniform vec3 player_position;
+vec3 get_color(float x) {
+  vec3 black = vec3(0, 0, 0);
+  vec3 orange = vec3(1, 0.155, 0.038);
+  vec3 yellow = vec3(1, 0.804, 0.061);
+  vec3 white = vec3(1, 1, 1);
 
-vec3 GetSky(vec3 position) {
-  // vec3 sky_color = vec3(0.2, 0.35, 0.4);
-  vec3 sky_color = vec3(0.03, 0.03, 0.125);
-  vec3 sunset_color = vec3(0.25, 0.13, 0.0);
-
-  float sun_pos = 1.5 * (1 - dot(vec3(0, 1, 0), sun_position));
-  sun_pos = clamp(sun_pos, 0.0, 1.0);
-
-  float sky_pos = dot(vec3(0, 1, 0), position);
-  vec3 color = mix(sky_color, sunset_color, sun_pos);
-  color = mix(color, sky_color, sky_pos);
-
-  // vec3 night_sky = vec3(0.07, 0.07, 0.25);
-  // float how_night = dot(vec3(0, -1, 0), sun_position);
-  // how_night = clamp(how_night, 0.0, 1.0);
-  // color = mix(color, night_sky, how_night);
-
-  return color;
-}
-
-vec3 GetSun(vec3 position) {
-  float sun = dot(position, sun_position);
-  sun = clamp(sun, 0.0, 1.0);
-
-  float glow = clamp(sun, 0.0, 1.0);
-
-  const float sun_radius = 2.0f;
-  sun = pow(sun, 1000.0f);
-  sun *= sun_radius;
-  sun = clamp(sun, 0.0, 1.0);
-
-  glow = pow(glow, 6.0) * 1.0;
-  glow = pow(glow, position.y / 7000000);
-  glow = clamp(glow, 0.0, 1.0);
-
-  glow *= pow(dot(position.y / 7000000, position.y / 7000000), 1.0 / 2.0);
-  sun += glow;
-
-  vec3 sun_color = vec3(1.0) * sun;
-  return sun_color;
-}
-
-uniform float u_time;
-
-const int GRID_SIZE = 1;
-const float STAR_BRIGHTNESS = 0.01;
-const float MAX_NEIGHBOR_DISTANCE = 1.5;
-vec3 GetStars(vec2 uv, float u_time) {
-  // Scale
-  float numCells = 7.0;
-  vec2 st = numCells * uv;
-
-  vec2 cellNumber = floor(st);
-  vec2 cellPosition = fract(st);
-
-  float brightness = 0.0;
-  for (int y = -GRID_SIZE; y <= GRID_SIZE; y++) {
-    for (int x = -GRID_SIZE; x <= GRID_SIZE; x++) {
-      vec2 neighbor = vec2(float(x), float(y));
-      vec2 point = map(hash(cellNumber + neighbor), -1.0, 1.0, 0.0, 1.0); // Position of neighbor star in its cell
-
-      vec2 neighborSeed = hash(point);
-      float starStrength = map(neighborSeed.x, -1.0, 1.0, 0.5, 1.0);
-      float twinkle = map(sin(neighborSeed.y * 2.0 * u_time), -1.0, 1.0, 0.1, 1.0);
-      starStrength *= twinkle;
-
-      float dist = length(neighbor + point - cellPosition);
-      float neighborBrightness = STAR_BRIGHTNESS * starStrength/dist;
-      neighborBrightness *= 1.0 - smoothstep(MAX_NEIGHBOR_DISTANCE * 0.5, MAX_NEIGHBOR_DISTANCE, dist);
-      brightness += neighborBrightness;
-    }
+  if (x < 0.242) {
+    return black;
+  } else if (x < 0.526) {
+    return orange;
+  } else if (x < 0.861) {
+    return yellow;
+  } else {
+    return white;
   }
-
-  return vec3(0.5 * brightness);
 }
 
-// Output data
-layout(location = 0) out vec3 color;
+// Interpolated values from the vertex shaders.
+in VertexData {
+  vec2 UV;
+} in_data;
 
-// Values that stay constant for the whole mesh.
-uniform sampler2D SkyTextureSampler;
+uniform sampler2D texture_sampler;
+uniform float u_time;
+uniform float noise_factor;
+uniform float voronoi_factor;
+uniform float alpha_factor;
+uniform float noise_speed;
+uniform float voronoi_speed;
+uniform float fire_alpha;
 
-void main(){
-  vec3 pos = normalize(in_data.position - (player_position - vec3(0, 1000, 0)));
+// Output data.
+layout(location = 0) out vec4 color;
 
-  vec3 sky = GetSky(pos);
-  vec3 sun = GetSun(pos);
-  vec3 stars = GetStars(5.0 * in_data.UV, u_time * 0.1);
-  // float noise = 0.1 * valueNoise(2.0 * in_data.UV);
+void main() {
+  vec2 noise_uv = noise_factor * (in_data.UV + vec2(0, -u_time * noise_speed));
+  vec2 voronoi_uv = voronoi_factor * (in_data.UV + vec2(0, -u_time * voronoi_speed));
 
-  color = sky + sun + stars;
+  float noise_output = valueNoise(noise_uv);
+  float voronoi_output = voronoi_noise(voronoi_uv);
+
+  float noise = noise_output * voronoi_output;
+
+  vec2 uv = in_data.UV + vec2(noise, 0);
+
+  float alpha = texture(texture_sampler, uv).a;
+  alpha = clamp(alpha_factor * alpha, 0.0, 1.0);
+
+  float transparency = clamp(fire_alpha * alpha * (uv.y * 2), 0, 1);
+  vec4 tex_color = vec4(get_color(alpha), transparency);
+
+  color = tex_color;
 }

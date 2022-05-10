@@ -107,10 +107,33 @@ void Inventory::DrawSpellbar() {
   int (&spellbar)[8] = configs->spellbar;
   int (&spellbar_quantities)[8] = configs->spellbar_quantities;
 
+
+  // draw_2d_->DrawImage("spellbar_new", 464, 742, 512, 512, 1.0);
+
+  int top = 800;
+  int left = kWindowWidth / 2 - 135;
+
+  int (&active_items)[3] = configs->active_items;
+  for (int x = 0; x < 3; x++) {
+    draw_2d_->DrawImage("item_base", left, top, 90, 90, 1.0);
+
+    int item_id = active_items[x];
+    if (item_id != 0) {
+      draw_2d_->DrawImageWithMask(item_data[item_id].image, 
+        "spellbar_item_mask", left + 22, top + 22, 44, 44, 1.0); 
+    }
+    left += 90;
+  }
+
+  // auto spell = resources_->GetArcaneSpell(configs->selected_spell);
+  // if (spell) {
+  //   draw_2d_->DrawImageWithMask(spell->image_name,
+  //     "spellbar_item_mask", left, top, 96, 96, 1.0); 
+  // }
+  return;
+
   draw_2d_->DrawImage("spellbar", 0, 0, 1440, 1440, 1.0);
 
-  int top = 852;
-  int left = 463;
   for (int x = 0; x < 7; x++) {
     int item_id = configs->spellbar[x];
     int item_quantity = configs->spellbar_quantities[x];
@@ -147,16 +170,6 @@ void Inventory::DrawSpellbar() {
 
       spellbar[x] = dragged_item.item_id;
       spellbar_quantities[x] = 1;
-    }
-    left += 52;
-  }
-
-  int (&active_items)[3] = configs->active_items;
-  for (int x = 0; x < 3; x++) {
-    int item_id = active_items[x];
-    if (item_id != 0) {
-      draw_2d_->DrawImageWithMask(item_data[item_id].image, 
-        "spellbar_item_mask", left, top, 44, 44, 1.0); 
     }
     left += 52;
   }
@@ -242,60 +255,6 @@ void Inventory::MoveItemBack() {
   old_pos_y_ = 0;
 }
 
-void Inventory::DrawCogs() {
-  ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;
-  draw_2d_->DrawImage("cog", pos.x - 60, pos.y - 60, 150, 150, 1.0);
-  draw_2d_->DrawImage("cog", pos.x - 40, pos.y - 40, 110, 110, 1.0);
-}
-
-void Inventory::DrawEquipment(const ivec2& pos) {
-  // shared_ptr<Configs> configs = resources_->GetConfigs();
-  // int (&passive_items)[3] = configs->passive_items;
-  // unordered_map<int, ItemData>& item_data = resources_->GetItemData();
-
-  // vector<tuple<ivec2, ivec2, ItemType>> slots { 
-  //   { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
-  //   { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
-  //   { pos + ivec2(80, 716), ivec2(112, 112), ITEM_ARMOR}, 
-  // };
-
-  // for (int i = 0; i < 3; i++) {
-  //   const auto& [slot, dimensions, type] = slots[i];
-
-  //   int left = slot.x;
-  //   int right = left + dimensions.x;
-  //   int top = slot.y;
-  //   int bottom = top + dimensions.y;
-  //   
-  //   int equipment_id = passive_items[i];
-
-  //   if (IsMouseInRectangle(left, right, bottom, top)) {
-  //     if (!lft_click_ && selected_item_ != 0) { // Drop.
-  //       const ItemData& item_data = resources_->GetItemData()[selected_item_];
-  //       if (item_data.type != type) continue;
-  //       passive_items[i] = selected_item_;
-  //       selected_item_ = 0;
-  //       selected_qnty_ = 0;
-  //     } else if (lft_click_ && equipment_id != 0 && selected_item_ == 0) { // Drag.
-  //       dragged_item.origin = ITEM_ORIGIN_EQUIPMENT;
-  //       selected_item_ = equipment_id;
-  //       selected_qnty_ = 1;
-  //       passive_items[i] = 0;
-  //       old_pos_x_ = i;
-  //     }
-  //   }
-
-  //   if (equipment_id == 0) {
-  //     continue;
-  //   }
-
-  //   const ItemData& item = resources_->GetItemData()[equipment_id];
-
-  //   const string& icon = item.icon;
-  //   draw_2d_->DrawImage(item.icon, left, top, 112, 112, 1.0);
-  // }
-}
-
 void Inventory::DrawStats(const ivec2& pos) {
   auto player = resources_->GetPlayer();
 
@@ -303,81 +262,28 @@ void Inventory::DrawStats(const ivec2& pos) {
 
   draw_2d_->DrawText(
     boost::lexical_cast<string>(configs->dungeon_level),
-    pos.x + 262, 
-    kWindowHeight - (pos.y + 90), vec4(1), 
-    1.0, false,  "avenir_light_oblique");
+    pos.x + 156, 
+    kWindowHeight - (pos.y + 55), 
+    vec4(1), 
+    0.6, false,  "avenir_light_oblique");
 
   draw_2d_->DrawText(boost::lexical_cast<string>(configs->max_dungeon_level),
-    pos.x + 316, 
-    kWindowHeight - (pos.y + 56), vec4(1), 
-    1.0, false,  "avenir_light_oblique");
-
-  draw_2d_->DrawText(
-    boost::lexical_cast<string>(player->max_life), 
-    pos.x + 140, 
-    kWindowHeight - (pos.y + 174), 
+    pos.x + 132, 
+    kWindowHeight - (pos.y + 83), 
     vec4(1), 
-    1.0, false,  "avenir_light_oblique");
-
-  draw_2d_->DrawText(
-    boost::lexical_cast<string>(player->max_mana), 
-    pos.x + 164, 
-    kWindowHeight - (pos.y + 215), 
-    vec4(1), 
-    1.0, false,  "avenir_light_oblique");
-
-  draw_2d_->DrawText(
-    boost::lexical_cast<string>(configs->armor_class),
-    pos.x + 180, 
-    kWindowHeight - (pos.y + 262), 
-    vec4(1), 
-    1.0, false,  "avenir_light_oblique");
+    0.6, false,  "avenir_light_oblique");
 
   draw_2d_->DrawText(
     boost::lexical_cast<string>(configs->gold),
-    pos.x + 164, 
-    kWindowHeight - (pos.y + 308), 
+    pos.x + 104, 
+    kWindowHeight - (pos.y + 107), 
     vec4(1), 
-    1.0, false,  "avenir_light_oblique");
+    0.6, false,  "avenir_light_oblique");
 }
 
 void Inventory::DrawItems(const ivec2& pos) {
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
   shared_ptr<Configs> configs = resources_->GetConfigs();
-
-  int (&active_items)[3] = configs->active_items;
-  for (int x = 0; x < 3; x++) {
-    int item_id = active_items[x];
-    if (item_id == 0) continue;
-
-    const string& icon = item_data[item_id].icon;
-  
-    int size = 100;
-    int left = pos.x + 80 + x * (size + 60);
-    int right = pos.y + left + size;
-    int top = 460;
-    int bottom = top + size;
-
-    if (IsMouseInRectangle(left, right, bottom, top)) {
-      // Drag existing item.
-      if (lft_click_ && selected_item_ == 0) {
-        if (item_id > 0) {
-          dragged_item.origin = ITEM_ORIGIN_ACTIVE;
-          dragged_item.item_id = item_id;
-          selected_item_ = item_id;
-          selected_qnty_ = 1;
-
-          old_pos_x_ = x;
-          old_pos_y_ = -1;
-          hold_offset_x_ = mouse_x_ - left;
-          hold_offset_y_ = mouse_y_ - top;
-          active_items[x] = 0;
-        }
-      }
-    }
-
-    draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
-  }
 
   int (&passive_items)[3] = configs->passive_items;
   for (int x = 0; x < 3; x++) {
@@ -386,13 +292,9 @@ void Inventory::DrawItems(const ivec2& pos) {
 
     const string& icon = item_data[item_id].icon;
   
-    int size = 100;
-    int left = pos.x + 80 + x * (size + 60);
-    int right = pos.y + left + size;
-    int top = 660;
-    int bottom = top + size;
-
-    if (IsMouseInRectangle(left, right, bottom, top)) {
+    int left = pos.x + 60 + x * 87;
+    int top = pos.y + 179;
+    if (IsMouseInCircle(ivec2(left + 22, top + 22), 22)) {
       // Drag existing item.
       if (lft_click_ && selected_item_ == 0) {
         if (item_id > 0) {
@@ -407,10 +309,52 @@ void Inventory::DrawItems(const ivec2& pos) {
           hold_offset_y_ = mouse_y_ - top;
           passive_items[x] = 0;
         }
+      } else if (!lft_click_) {
+        const string& description = resources_->GetString(
+          item_data[item_id].description);
+        DrawContextPanel(pos.x + 68, pos.y + 344, item_data[item_id].name, 
+          description);
       }
     }
 
-    draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
+    draw_2d_->DrawImageWithMask(item_data[item_id].image, 
+      "spellbar_item_mask", left, top, 44, 44, 1.0); 
+  }
+
+  int (&active_items)[3] = configs->active_items;
+  for (int x = 0; x < 3; x++) {
+    int item_id = active_items[x];
+    if (item_id == 0) continue;
+
+    const string& icon = item_data[item_id].icon;
+  
+    int left = pos.x + 60 + x * 87;
+    int top = pos.y + 269;
+    if (IsMouseInCircle(ivec2(left + 22, top + 22), 22)) {
+      // Drag existing item.
+      if (lft_click_ && selected_item_ == 0) {
+        if (item_id > 0) {
+          dragged_item.origin = ITEM_ORIGIN_ACTIVE;
+          dragged_item.item_id = item_id;
+          selected_item_ = item_id;
+          selected_qnty_ = 1;
+
+          old_pos_x_ = x;
+          old_pos_y_ = -1;
+          hold_offset_x_ = mouse_x_ - left;
+          hold_offset_y_ = mouse_y_ - top;
+          active_items[x] = 0;
+        }
+      } else if (!lft_click_) {
+        const string& description = resources_->GetString(
+          item_data[item_id].description);
+        DrawContextPanel(pos.x + 68, pos.y + 344, item_data[item_id].name, 
+          description);
+      }
+    }
+
+    draw_2d_->DrawImageWithMask(item_data[item_id].image, 
+      "spellbar_item_mask", left, top, 44, 44, 1.0); 
   }
 }
 
@@ -430,23 +374,25 @@ void Inventory::DrawStoreItems(const ivec2& pos) {
     int x_ = x % 3; 
     int y_ = x / 3; 
 
-    int size = 100;
-    int left = pos.x + 660 + x_ * (size + 60);
-    int right = pos.y + left + size;
-    int top = 155 + y_ * (size + 60);
-    int bottom = top + size;
+    int left = pos.x + 60 + x_ * 87;
+    int top = pos.y + 79 + y_ * 100;
+    if (IsMouseInCircle(ivec2(left + 22, top + 22), 22)) { 
+      if (lft_click_) {
+        const int price = item_data[item_id].price;
+        if (configs->gold < price) continue;
 
-    if (IsMouseInRectangle(left, right, bottom, top) && lft_click_) {
-      const int price = item_data[item_id].price;
-      if (configs->gold < price) continue;
-
-      if (resources_->InsertItemInInventory(item_id, 1)) {
-        configs->gold -= price;
-        store[x] = 0;
+        if (resources_->InsertItemInInventory(item_id, 1)) {
+          configs->gold -= price;
+          store[x] = 0;
+        }
+      } else {
+        const string& description = resources_->GetString(
+          item_data[item_id].description);
+        DrawContextPanel(pos.x + 68, pos.y + 344, item_data[item_id].name, 
+          description);
       }
     }
-
-    draw_2d_->DrawImage(icon, left, top, size, size, 1.0);
+    draw_2d_->DrawImage(icon, left, top, 44, 44, 1.0);
   }
 }
 
@@ -479,49 +425,26 @@ void Inventory::DrawOverlay(const ivec2& pos) {
 
 void Inventory::DrawInventory() {
   ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;
-  draw_2d_->DrawImage("inventory_stats_screen", pos.x, pos.y, 900, 
-    900, 1.0);
 
-  DrawStats(pos);
-  DrawEquipment(pos);
-  DrawItems(pos);
-  DrawOverlay(pos);
+  int x = 1440 / 2 - 395;
+  int y = 900 / 2 - 458 / 2;
+  draw_2d_->DrawLoadingImage("inventory_background", x, y, 500, 500, u_time_);
 
-  if (state_ != INVENTORY_ITEMS) return;
-  
-  if (IsMouseInRectangle(win_x_ + 572, win_x_ + 900, win_y_ + 291, win_y_ + 0) && 
-    lft_click_) {
-    state_ = INVENTORY_SPELLBOOK;
-
-    inventory_pos_ = vec2(0, 0);
-    inventory_pos_start_ = vec2(0, 0);
-    inventory_pos_target_ = vec2(-562, 0);
-    inventory_animation_start_ = glfwGetTime();
-
-    item_description_screen_pos_ = vec2(0, 0);
-    item_description_screen_pos_start_ = vec2(0, 0);
-    item_description_screen_pos_target_ = vec2(0, 589);
-    item_description_screen_animation_start_ = glfwGetTime();
-
-    spell_description_pos_ = vec2(0, 0);
-    spell_description_pos_start_ = vec2(0, 0);
-    spell_description_pos_target_ = vec2(358, 0);
-    spell_description_animation_start_ = glfwGetTime();
-
-    throttle_ = 20;
-  }
+  DrawStats(ivec2(x, y));
+  DrawItems(ivec2(x, y));
+  // DrawOverlay(pos);
 }
 
 void Inventory::DrawContextPanel(int x, int y, const string& name, 
   const string& description) {
-  draw_2d_->DrawText(name, x + 131, kWindowHeight - (y + 40), 
-    vec4(1, 0.69, 0.23, 1), 1.0, true, "avenir_light_oblique");
+  draw_2d_->DrawText(name, x + 5, kWindowHeight - (y + 10), 
+    vec4(1, 0.69, 0.23, 1), 0.6, false, "avenir_light_oblique");
 
   vector<string> words;
   boost::split(words, description, boost::is_any_of(" "));
 
   string line = "";
-  const int kMaxLineSize = 25;
+  const int kMaxLineSize = 40;
   for (const auto& w : words) {
     if (line.empty()) {
       line = w;
@@ -533,30 +456,18 @@ void Inventory::DrawContextPanel(int x, int y, const string& name,
       continue;
     }
 
-    draw_2d_->DrawText(line, x + 20, kWindowHeight - (y + 70), 
-      vec4(1), 1.0, false, "avenir_light_oblique");
-    y += 20;
+    draw_2d_->DrawText(line, x + 10, kWindowHeight - (y + 25), 
+      vec4(1), 0.6, false, "avenir_light_oblique");
+    y += 15;
 
     line = w;
   }
 
   if (line.size() > 0) {
-    draw_2d_->DrawText(line, x + 20, kWindowHeight - (y + 70), 
-      vec4(1), 1.0, false, "avenir_light_oblique");
+    draw_2d_->DrawText(line, x + 10, kWindowHeight - (y + 25), 
+      vec4(1), 0.6, false, "avenir_light_oblique");
   }
 }
-
-// struct ParticleType {
-//   int id;
-//   string name;
-//   ParticleBehavior behavior = PARTICLE_FALL;
-//   int grid_size;
-//   int first_frame;
-//   int num_frames;
-//   int keep_frame = 1;
-//   string mesh = "";
-//   GLuint texture_id = 0;
-// };
 
 void Inventory::DrawAnimation(const string& animation_name, const ivec2& pos, 
   int frame) {
@@ -565,11 +476,6 @@ void Inventory::DrawAnimation(const string& animation_name, const ivec2& pos,
   float w = 1.0 / float(particle_type->grid_size);
   float x = (frame % particle_type->grid_size) * w;
   float y = (frame / particle_type->grid_size) * w;
-
-  // draw_2d_->DrawImage("item_combination", pos.x, pos.y, 64, 64, 1.0, vec2(x, y), vec2(w, w));
-
-  // draw_2d_->DrawImage("inventory_item_description_screen", pos.x, pos.y, 64, 64, 1.0, vec2(0, 0), vec2(1, 1));
-
   draw_2d_->DrawImage("black", pos.x, pos.y, 200, 200, 1.0);
 }
 
@@ -787,44 +693,29 @@ void Inventory::UseItem(int x, int y) {
 
 void Inventory::DrawSpellbook() {
   ivec2 pos = vec2(win_x_, win_y_) + spellbook_pos_;
-  draw_2d_->DrawImage("inventory_spell_graph", pos.x, pos.y, 900, 900, 1.0);
 
-  if (state_ != INVENTORY_SPELLBOOK) return;
+  int x = 1440 / 2 - 395 + 400;
+  int y = 900 / 2 - 458 / 2;
 
-  // Go back to inventory.
-  if ((IsMouseInRectangle(win_x_, win_x_ + 10, win_y_ + 900, win_y_ + 0) ||
-    IsMouseInRectangle(win_x_, win_x_ + 900, win_y_ + 900, win_y_ + 890)) &&
-    lft_click_) {
-    state_ = INVENTORY_ITEMS;
+  draw_2d_->DrawLoadingImage("spells", x, y, 500, 500, u_time_);
 
-    inventory_pos_start_ = inventory_pos_;
-    inventory_pos_target_ = vec2(0, 0);
-    inventory_animation_start_ = glfwGetTime();
+  for (int i = 0; i < 10; i++) {
+    shared_ptr<ArcaneSpellData> spell = resources_->GetArcaneSpell(i);
+    if (!spell) return;
+    if (!spell->learned) return;
 
-    item_description_screen_pos_start_ = item_description_screen_pos_;
-    item_description_screen_pos_target_ = vec2(0, 0);
-    item_description_screen_animation_start_ = glfwGetTime();
+    int off_x = i % 3;
+    int off_y = i / 3;
+    int left = x + 60 + off_x * 79;
+    int top = y + 45 + off_x * 10 + off_y * 76;
 
-    spell_description_pos_start_ = spell_description_pos_;
-    spell_description_pos_target_ = vec2(0, 0);
-    spell_description_animation_start_ = glfwGetTime();
-
-    throttle_ = 20;
-  }
-
-  unordered_map<int, shared_ptr<ArcaneSpellData>>& arcane_spell_data = 
-    resources_->GetArcaneSpellData();
-
-  shared_ptr<ArcaneSpellData> selected_spell = nullptr;
-  for (auto [id, spell] : arcane_spell_data) {
-    if (!spell->learned) continue;
-    if (spell->spell_id == 9) continue;
-
-    // TODO: draw with mask.
-    ivec2 image_pos = pos + spell->spell_graph_pos;
     const ItemData& item_data = resources_->GetItemData()[spell->item_id];
-    draw_2d_->DrawImage(item_data.image, image_pos.x - 19, image_pos.y - 20, 49, 49, 1.0); 
-  }
+    draw_2d_->DrawImage(item_data.image, left, top, 44, 44, 1.0); 
+    if (IsMouseInCircle(ivec2(left + 22, top + 22), 22)) {
+      const string& description = resources_->GetString(spell->description);
+      DrawContextPanel(x + 68, y + 344, spell->name, description);
+    }
+  } 
 }
 
 void Inventory::DrawSpellDescription() {
@@ -900,11 +791,14 @@ void Inventory::DrawStore(const Camera& camera, int win_x, int win_y,
   unordered_map<int, ItemData>& item_data = resources_->GetItemData();
 
   ivec2 pos = vec2(win_x_, win_y_) + store_pos_;
-  draw_2d_->DrawImage("store", pos.x, pos.y, 1226, 1226, 1.0);
 
-  DrawStoreItems(pos);
+  int x = 1440 / 2 - 395 + 400;
+  int y = 900 / 2 - 458 / 2;
+  draw_2d_->DrawLoadingImage("store", x, y, 500, 500, u_time_);
+
+  DrawStoreItems(ivec2(x, y));
   // DrawStoreItemDescription(pos);
-  DrawItemDescriptionScreen();
+  // DrawItemDescriptionScreen();
 }
 
 void Inventory::NextPhrase(GLFWwindow* window, const string& next_phrase_name) {
@@ -993,7 +887,7 @@ void Inventory::DrawDialog(GLFWwindow* window) {
 
   if (npc && !current_dialog->processed_animation) {
     npc->ClearActions();
-    npc->LookAt(resources_->GetPlayer()->position);
+    // npc->LookAt(resources_->GetPlayer()->position);
     string animation_name = current_dialog->dialog->phrases[current_dialog->current_phrase].animation;
     npc->actions.push(make_shared<AnimationAction>(animation_name));
     current_dialog->processed_animation = true;
@@ -1162,11 +1056,23 @@ void Inventory::UpdateAnimations() {
     store_pos_ += (store_pos_target_ - store_pos_) * y;
   }
 
+  if (closing > 0.0) {
+    u_time_ -= 0.0166666667f;
+  } else {
+    u_time_ += 0.0166666667f;
+  } 
+
   if (closing > 0.0 && glfwGetTime() > closing) {
     enabled = false; 
     shared_ptr<CurrentDialog> current_dialog = resources_->GetCurrentDialog();
     current_dialog->enabled = false;
     glfwSetCursorPos(window_, 0, 0);
+  }
+
+  if (u_time_ > 0.999f) {
+    u_time_ = 0.999f;
+  } else if (u_time_ < 0.0f) {
+    u_time_ = 0.0f;
   }
 }
 
@@ -1269,7 +1175,7 @@ void Inventory::DrawMap() {
 void Inventory::Draw(const Camera& camera, int win_x, int win_y, 
   GLFWwindow* window) {
   if (!enabled) return;
- 
+
   camera_ = camera;
   win_x_ = win_x;
   win_y_ = win_y;
@@ -1292,23 +1198,19 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
 
   switch (state_) {
     case INVENTORY_ITEMS:
-      DrawSpellDescription();
-      DrawSpellbook();
-      DrawItemDescriptionScreen();
       DrawInventory();
-      DrawCogs();
+      DrawSpellbook();
       DrawSpellbar();
       break;
     case INVENTORY_STORE:
-      DrawStore(camera, win_x, win_y, window);
       DrawInventory();
+      DrawStore(camera, win_x, win_y, window);
       break;
     case INVENTORY_SPELLBOOK:
       DrawSpellDescription();
       DrawSpellbook();
       DrawItemDescriptionScreen();
       DrawInventory();
-      DrawCogs();
       DrawSpellbar();
       break;
     case INVENTORY_DIALOG:
@@ -1385,12 +1287,13 @@ void Inventory::Enable(GLFWwindow* window, InventoryState state) {
   store_animation_start_ = glfwGetTime();
 
   show_map_after_ = glfwGetTime() + 0.5;
+  u_time_ = 0.0f;
 }
 
 void Inventory::Disable() { 
   if (closing > 0) return;
 
-  closing = glfwGetTime() + 0.5f;
+  closing = glfwGetTime() + 1.0f;
 
   inventory_pos_start_ = inventory_pos_;
   inventory_pos_target_ = vec2(-575, 0);
@@ -1411,5 +1314,7 @@ void Inventory::Disable() {
   store_pos_start_ = store_pos_;
   store_pos_target_ = vec2(-1160, 0);
   store_animation_start_ = glfwGetTime();
+
+  u_time_ = 1.0f;
 }
 

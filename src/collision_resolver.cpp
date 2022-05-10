@@ -194,15 +194,17 @@ void CollisionResolver::Collide() {
   ResolveCollisions();
   ProcessInContactWith();
 
-  if (resources_->GetConfigs()->render_scene == "town") {
-    shared_ptr<Player> obj= resources_->GetPlayer();
-    vec3 normal;
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  if (configs->render_scene == "town") {
+    shared_ptr<Player> obj = resources_->GetPlayer();
 
+    vec3 normal;
     vec2 obj1_pos = vec2(obj->position.x, obj->position.z);
     float h = resources_->GetHeightMap().GetTerrainHeight(
       obj1_pos, &normal);
-    bool falling = dot(normal, vec3(0, 1, 0)) < 0.9f;
-    if (falling) {
+
+    bool falling = dot(normal, vec3(0, 1, 0)) < 0.85f;
+    if (falling && h <= 130.0f) {
       vec3 displace = normal;
       displace.y = 0;
 
@@ -212,16 +214,23 @@ void CollisionResolver::Collide() {
 
         vec3 cancel_v = -k * displace;
         if (IsNaN(cancel_v)) return;
-        if (length(cancel_v) > 1.0f) return;
+        if (length(cancel_v) > 5.0f) return;
 
-        obj->speed += cancel_v * 1.1f;
-        obj->position += cancel_v;
+        obj->speed += cancel_v * 2.0f;
+        obj->position += cancel_v * 2.0f;
       }
     }
 
     float foot_h = obj->position.y - 6.0f;
-    if (obj->can_jump || foot_h < h) {
-      obj->position.y = h + 6.0f;
+    if (!configs->jumped || foot_h < h) {
+      float target = h + 6.0f;
+      float pos = obj->position.y;
+      float x = target - pos;
+
+      float factor = abs(0.1f * (1.0f / (1.0f + exp(-5.0f * x)) - 0.5f));
+      obj->position.y += factor * x;
+
+      configs->jumped = false;
       obj->can_jump = true;
       obj->touching_the_ground = true;
       obj->speed.y = 0;
@@ -1344,10 +1353,6 @@ void CollisionResolver::TestCollisionBA(shared_ptr<CollisionBA> c) {
 
 // Test Bones - Terrain.
 void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
-  if (c->obj1->IsPlayer()) {
-    return;
-  }
-
   BoundingSphere s1 = c->obj1->GetBoneBoundingSphere(c->bone);
   vec3 normal;
 
@@ -1363,6 +1368,10 @@ void CollisionResolver::TestCollisionBT(shared_ptr<CollisionBT> c) {
     }
   }
   if (c->polygon.vertices.empty()) return;
+
+  if (c->obj1->IsPlayer()) {
+    return;
+  }
 
   static vector<vec2> sample_offsets {
     { 2, -2 },

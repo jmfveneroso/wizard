@@ -769,6 +769,10 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
   if (xml) spell_data->mana_cost = LoadFloatFromXml(xml);
 
   item_id_to_spell_data_[spell_data->item_id] = spell_data;
+
+  if (spell_data->name == "Spell Shot") {
+    spell_data->learned = true;
+  }
 }
 
 void Resources::LoadAssets(const std::string& directory) {
@@ -3487,6 +3491,15 @@ void Resources::UpdateAnimationFrames() {
       mesh = asset->first_mesh;
     }
 
+    if (asset->name == "fire") {
+      float size = Random(1, 5) * 0.125f;
+      string particle_name = "particle-smoke-" +
+        boost::lexical_cast<string>(Random(0, 3));
+      vec3 offset = vec3(Random(-25, 26) / 30.0f, 1 + Random(-15, 16) / 30.0f, Random(-25, 26) / 30.0f);
+      CreateParticleEffect(1, obj->position + offset, 
+        vec3(0, 1.0f, 0), vec3(1.0, 0.6, 0.0), size, 24.0f, 1.0f, particle_name);          
+    }
+
     if (obj->status != STATUS_DEAD) {
       float animation_speed = 1.0f;
       if (obj->asset_group != nullptr) {
@@ -4605,8 +4618,8 @@ void Resources::CreateTown() {
   shared_ptr<GameObject> obj = GetObjectByName("town-portal");
   obj->invisibility = !configs_->town_portal_active;
 
-  ObjPtr bonfire_obj = GetObjectByName("bonfire-001");
-  ObjPtr p = CreateOneParticle(bonfire_obj->position + vec3(0, 3, 0), 1000000.0f, "bonfire", 7);
+  // ObjPtr bonfire_obj = GetObjectByName("bonfire-001");
+  // ObjPtr p = CreateOneParticle(bonfire_obj->position + vec3(0, 1.6, 0), 1000000.0f, "bonfire", 3);
 }
 
 void Resources::EnterTownPortal() {
@@ -4790,7 +4803,7 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   }
 
   for (auto [id, spell] : arcane_spell_data_) {
-    spell->learned = false;
+    spell->learned = (id == 9);
     spell->level = 0;
   }
 
@@ -6438,4 +6451,11 @@ bool Resources::UseTeleportRod() {
     }
   }
   return false;
+}
+
+shared_ptr<ArcaneSpellData> Resources::GetArcaneSpell(int spell_id) {
+  if (arcane_spell_data_.find(spell_id) == arcane_spell_data_.end()) {
+    return nullptr;
+  }
+  return arcane_spell_data_[spell_id];
 }

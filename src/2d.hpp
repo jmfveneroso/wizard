@@ -39,7 +39,10 @@ class Draw2D {
   void DrawRectangle(GLfloat, GLfloat, GLfloat, GLfloat, vec3);
 
   void DrawImage(const string& texture, GLfloat x, GLfloat y, GLfloat width, 
-    GLfloat height, GLfloat transparency, vec2 uv = vec2(0, 0), vec2 dimensions = vec2(1, 1));
+    GLfloat height, GLfloat transparency, vec2 uv = vec2(0, 0), vec2 dimensions = vec2(1, 1), string shader = "2d_image");
+
+  void DrawLoadingImage(const string& texture, GLfloat x, GLfloat y, 
+    GLfloat width, GLfloat height, float u_time = 0.0f);
 
   void DrawRotatedImage(const string& texture, GLfloat x, GLfloat y, GLfloat width, 
     GLfloat height, GLfloat transparency, float rotation, vec2 uv = vec2(0, 0), 

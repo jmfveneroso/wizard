@@ -23,13 +23,20 @@ uniform vec3 player_pos;
 uniform float light_radius;
 
 void main(){
-  vec4 out_color = vec4(0.0);
-  out_color = texture(texture_sampler, in_data.UV).rgba;
+  vec4 out_color = texture(texture_sampler, in_data.UV).rgba;
 
-  float d = distance(player_pos, in_data.position);
-  float depth = clamp(d / light_radius, 0, 1);
-  vec4 fog_color = vec4(0, 0, 0, 1);
-  out_color = mix(out_color, fog_color, depth);
+  // vec3 v = normalize(player_pos - in_data.position);
+  // float factor = abs(dot(v, in_data.normal));
+  // out_color.a *= factor;
+
+  if (out_color.a < 0.5) {
+    discard;
+  }
+
+  // float d = distance(player_pos, in_data.position);
+  // float depth = clamp(d / light_radius, 0, 1);
+  // vec4 fog_color = vec4(0, 0, 0, 1);
+  // out_color = mix(out_color, fog_color, depth);
 
   color = out_color;
 }

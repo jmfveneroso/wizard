@@ -73,7 +73,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
          }
       } else {
         shared_ptr<GameAsset> asset = item->GetAsset();
-        if (item->GetAsset()->name == "merchant") {
+        if (item->GetAsset()->name == "merchant_body") {
           resources_->TalkTo(item->name);
         } else if (item->GetAsset()->name == "spell_door_block") {
           Dungeon& dungeon = resources_->GetDungeon();
@@ -591,64 +591,6 @@ bool PlayerInput::UseItem(int position) {
       configs->active_items[position] = 0;
       return true;
     }
-    // case 24: {
-    //   obj->active_animation = "Armature|shoot";
-    //   player->player_action = PLAYER_CASTING;
-    //   obj->frame = 0;
-    //   scepter->frame = 0;
-    //   animation_frame_ = 60;
-    //   resources_->CreateChargeMagicMissileEffect();
-    //   player->selected_spell = 1;
-    //   debounce_ = 20;
-    //   configs->spellbar[configs->selected_spell] = 0;
-    //   current_spell_ = resources_->GetArcaneSpellData()[1];
-    //   return true;
-    // }
-    // case 11: {
-    //   resources_->CastFlashMissile(camera_);
-    //   // resources_->CastHeal(player);
-    //   debounce_ = 20;
-    //   break;
-    // } 
-    // case 12: {
-    //   resources_->CastDarkvision();
-    //   configs->spellbar_quantities[configs->selected_spell]--;
-    //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-    //     configs->spellbar[configs->selected_spell] = 0;
-    //   }
-    //   debounce_ = 20;
-    //   break;
-    // } 
-    // case 4: {
-    //   ObjPtr item = configs->interacting_item;
-    //   if (item && item->type == GAME_OBJ_DOOR) {
-    //     shared_ptr<Door> door = static_pointer_cast<Door>(item);
-    //     if (door->state == 4) {
-    //       door->state = DOOR_CLOSED;
-    //       obj->active_animation = "Armature|shoot";
-    //       player->player_action = PLAYER_CASTING;
-    //       obj->frame = 0;
-    //       scepter->frame = 0;
-    //       animation_frame_ = 20;
-    //       player->selected_spell = 4;
-    //       configs->spellbar_quantities[configs->selected_spell]--;
-    //       if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-    //         configs->spellbar[configs->selected_spell] = 0;
-    //       }
-    //     }
-    //   }
-    //   debounce_ = 20;
-    //   break;
-    // }
-    // case 18: {
-    //   resources_->CastTrueSeeing();
-    //   configs->spellbar_quantities[configs->selected_spell]--;
-    //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-    //     configs->spellbar[configs->selected_spell] = 0;
-    //   }
-    //   debounce_ = 20;
-    //   break;
-    // } 
     default: {
       break;
     }
@@ -701,9 +643,8 @@ bool PlayerInput::CastSpellOrUseItem() {
     return false;
   }
   
-  int item_id = configs->spellbar[configs->selected_spell];
   shared_ptr<ArcaneSpellData> arcane_spell =  
-    resources_->WhichArcaneSpell(item_id);
+    resources_->GetArcaneSpell(configs->selected_spell);
   if (arcane_spell) {
     current_spell_ = arcane_spell;
 
@@ -960,6 +901,26 @@ void PlayerInput::ProcessPlayerDrawing() {
   }
 }
 
+void PlayerInput::ProcessPlayerFlipping() {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  obj->active_animation = "Armature|flip_page";
+  scepter->active_animation = "Armature|flip_page";
+
+  shared_ptr<Mesh> mesh = resources_->GetMesh(obj);
+  int num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
+  if (obj->frame >= num_frames-10) {
+    obj->frame = 0;
+    scepter->frame = 0;
+    obj->active_animation = "Armature|idle.001";
+    scepter->active_animation = "Armature|idle.001";
+    player->player_action = PLAYER_IDLE;
+  }
+}
+
 void PlayerInput::ProcessPlayerCasting() {
   shared_ptr<Player> player = resources_->GetPlayer();
   shared_ptr<Configs> configs = resources_->GetConfigs();
@@ -1112,6 +1073,29 @@ void PlayerInput::StartDrawing() {
   player->player_action = PLAYER_DRAWING;
 }
 
+void PlayerInput::StartFlipping() {
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+  obj->frame = 0;
+  obj->repeat_animation = false;
+  scepter->frame = 0;
+
+  shared_ptr<Player> player = resources_->GetPlayer();
+  player->player_action = PLAYER_FLIPPING;
+}
+
+bool PlayerInput::SelectSpell(int spell_id) {
+  shared_ptr<ArcaneSpellData> arcane_spell = resources_->GetArcaneSpell(spell_id);
+
+  if (!arcane_spell) return false;
+  if (!arcane_spell->learned) return false;
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  configs->selected_spell = spell_id;
+  StartFlipping();
+  return true;
+}
+
 Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   static double last_time = glfwGetTime();
   double current_time = glfwGetTime();
@@ -1245,6 +1229,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         if (player->can_jump || configs->levitate) {
           player->can_jump = false;
           player->speed.y += jump_force;
+          configs->jumped = true;
         }
       }
 
@@ -1281,9 +1266,8 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         obj->active_animation = "Armature|idle.001";
       }
 
-      int item_id = configs->spellbar[configs->selected_spell];
-      shared_ptr<ArcaneSpellData> arcane_spell =  
-        resources_->WhichArcaneSpell(item_id);
+      shared_ptr<ArcaneSpellData> arcane_spell = 
+        resources_->GetArcaneSpell(configs->selected_spell);
       if (arcane_spell && configs->render_scene != "town") {
         if (arcane_spell->spell_id == 3) { // Spell wall.
           spell_wall_pos_ = resources_->GetSpellWallRayCollision(player, c.position, 
@@ -1338,6 +1322,10 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     }
     case PLAYER_DRAWING: {
       ProcessPlayerDrawing();
+      break;
+    }
+    case PLAYER_FLIPPING: {
+      ProcessPlayerFlipping();
       break;
     }
     default: break;
@@ -1401,12 +1389,27 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell++;
+      shared_ptr<ArcaneSpellData> arcane_spell =  
+        resources_->GetArcaneSpell(configs->selected_spell);
+
+      bool found_spell = false;
+      for (int i = arcane_spell->spell_id + 1; i <= 9; i++) {
+        if (!SelectSpell(i)) continue;
+        found_spell = true;
+        break;
+      }
+
+      if (!found_spell) {
+        for (int i = 0; i < arcane_spell->spell_id; i++) {
+          if (!SelectSpell(i)) continue;
+          break;
+        }
+      }
+
       shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
       shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
       obj->frame = 0;
       scepter->frame = 0;
-      if (configs->selected_spell > 6) configs->selected_spell = 0;
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
@@ -1419,14 +1422,46 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       UseItem(2);
     }
     throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS && 
+     glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      player->scepter = -1;
+      player->charges = 0;
+      player->scepter_timeout = 0;
+
+      UseItem(0);
+      // SelectSpell(7);
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS && 
+     glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      player->scepter = -1;
+      player->charges = 0;
+      player->scepter_timeout = 0;
+
+      UseItem(1);
+      // SelectSpell(8);
+    }
+    throttle_counter_ = 5;
+  } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS && 
+     glfwGetKey(window, GLFW_KEY_LEFT_ALT) == GLFW_PRESS) {
+    if (throttle_counter_ < 0) {
+      player->scepter = -1;
+      player->charges = 0;
+      player->scepter_timeout = 0;
+
+      UseItem(2);
+    }
+    throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
     if (throttle_counter_ < 0) {
       player->scepter = -1;
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 0;
       configs->selected_tile = 1;
+      SelectSpell(0);
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
@@ -1435,7 +1470,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 1;
+      SelectSpell(1);
       configs->selected_tile = 2;
     }
     throttle_counter_ = 5;
@@ -1445,7 +1480,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 2;
+      SelectSpell(2);
       configs->selected_tile = 3;
     }
     throttle_counter_ = 5;
@@ -1455,7 +1490,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 3;
+      SelectSpell(3);
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_5) == GLFW_PRESS) {
@@ -1464,7 +1499,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 4;
+      SelectSpell(4);
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_6) == GLFW_PRESS) {
@@ -1473,7 +1508,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 5;
+      SelectSpell(5);
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_7) == GLFW_PRESS) {
@@ -1482,34 +1517,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->charges = 0;
       player->scepter_timeout = 0;
 
-      configs->selected_spell = 6;
-    }
-    throttle_counter_ = 5;
-  } else if (glfwGetKey(window, GLFW_KEY_8) == GLFW_PRESS) {
-    if (throttle_counter_ < 0) {
-      player->scepter = -1;
-      player->charges = 0;
-      player->scepter_timeout = 0;
-
-      UseItem(0);
-    }
-    throttle_counter_ = 5;
-  } else if (glfwGetKey(window, GLFW_KEY_9) == GLFW_PRESS) {
-    if (throttle_counter_ < 0) {
-      player->scepter = -1;
-      player->charges = 0;
-      player->scepter_timeout = 0;
-
-      UseItem(1);
-    }
-    throttle_counter_ = 5;
-  } else if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
-    if (throttle_counter_ < 0) {
-      player->scepter = -1;
-      player->charges = 0;
-      player->scepter_timeout = 0;
-
-      UseItem(2);
+      SelectSpell(6);
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_RIGHT_BRACKET) == GLFW_PRESS) {

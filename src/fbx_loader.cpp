@@ -116,9 +116,9 @@ void ExtractSkeleton(FbxScene* scene, FbxData* data) {
          data->name == "resources/models_fbx/merchant_staff.fbx" ||
          data->name == "resources/models_fbx/merchant_cloak.fbx" ||
          data->name == "resources/models_fbx/merchant_pants.fbx") {
-        time.SetFrame(0, FbxTime::eFrames60); // TODO: 60 frames.
+        time.SetFrame(0, FbxTime::eFrames24); // TODO: 60 frames.
       } else { 
-        time.SetFrame(0, FbxTime::eFrames60);
+        time.SetFrame(0, FbxTime::eFrames24);
       }
 
       FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
@@ -353,7 +353,7 @@ void ExtractSkin(FbxScene* scene, FbxData* data) {
   //   //   geometry_transform;
 
   //   FbxTime time; 
-  //   time.SetFrame(0, FbxTime::eFrames60); 
+  //   time.SetFrame(0, FbxTime::eFrames24); 
   //   FbxAMatrix transform_offset = node->EvaluateGlobalTransform(time) * 
   //     GetGeometryTransformation(scene->GetRootNode());
   //   FbxAMatrix mGlobalTransform = transform_offset.Inverse() *
@@ -445,11 +445,11 @@ void ExtractAnimations(FbxScene* scene, FbxData* data) {
     FbxTakeInfo* take_info = scene->GetTakeInfo(anim_stack_name); 
     FbxTime start = take_info->mLocalTimeSpan.GetStart(); 
     FbxTime end = take_info->mLocalTimeSpan.GetStop(); 
-    FbxLongLong frame_count = end.GetFrameCount(FbxTime::eFrames60);
-    for (FbxLongLong i = start.GetFrameCount(FbxTime::eFrames60); 
+    FbxLongLong frame_count = end.GetFrameCount(FbxTime::eFrames24);
+    for (FbxLongLong i = start.GetFrameCount(FbxTime::eFrames24); 
       i <= frame_count; ++i) { 
       FbxTime time; 
-      time.SetFrame(i, FbxTime::eFrames60); 
+      time.SetFrame(i, FbxTime::eFrames24); 
 
       Keyframe keyframe;
       keyframe.time = i;

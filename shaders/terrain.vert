@@ -17,6 +17,7 @@ out FragData {
   vec3 eye_dir_tangentspace;
   float alpha;
   vec4 shadow_coord; 
+  mat3 TBN;
 } out_data;
 
 // Values that stay constant for the whole mesh.
@@ -90,7 +91,7 @@ void main(){
   vec3 tangent_cameraspace = (V * M * vec4(vec3(1, 0, 0), 0)).xyz;
   vec3 bitangent_cameraspace = (V * M * vec4(vec3(0, 0, 1), 0)).xyz;
 
-  mat3 TBN = transpose(mat3(
+  out_data.TBN = transpose(mat3(
     tangent_cameraspace,
     bitangent_cameraspace,
     normal_cameraspace
@@ -105,6 +106,6 @@ void main(){
   vec3 light_dir_cameraspace = normalize(light_pos_cameraspace + eye_dir_cameraspace);
   eye_dir_cameraspace = normalize(eye_dir_cameraspace);
   
-  out_data.light_dir_tangentspace = normalize(TBN * light_dir_cameraspace);
-  out_data.eye_dir_tangentspace = normalize(TBN * eye_dir_cameraspace);
+  out_data.light_dir_tangentspace = normalize(out_data.TBN * light_dir_cameraspace);
+  out_data.eye_dir_tangentspace = normalize(out_data.TBN * eye_dir_cameraspace);
 }

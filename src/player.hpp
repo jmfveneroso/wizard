@@ -43,8 +43,11 @@ class PlayerInput {
   void ProcessPlayerCasting();
   void ProcessPlayerChanneling();
   void ProcessPlayerDrawing();
+  void ProcessPlayerFlipping();
   void StartDrawing();
+  void StartFlipping();
   bool DecreaseCharges(int item_id);
+  bool SelectSpell(int spell_id);
 
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 

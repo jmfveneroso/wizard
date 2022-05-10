@@ -22,6 +22,7 @@ uniform mat4 V;
 uniform mat3 MV3x3;
 uniform vec2 tile_pos;
 uniform float tile_size;
+uniform vec3 player_pos;
 
 // Animation.
 uniform float enable_animation;
@@ -29,7 +30,6 @@ uniform mat4 joint_transforms[200];
 
 void main(){
   out_data.UV = tile_pos + vertexUV * tile_size;
-  // out_data.UV = vertexUV;
 
   vec4 position = vec4(vertexPosition_modelspace, 1.0);
   vec4 normal = vec4(vertexNormal_modelspace, 0.0);
@@ -55,6 +55,7 @@ void main(){
   out_data.position = (M * position).xyz;
 
   gl_Position = MVP * position;
-  out_data.normal = (V * M * normal).xyz; 
+  // out_data.normal = (V * M * normal).xyz; 
+  out_data.normal = (M * normal).xyz;
 }
 

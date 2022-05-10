@@ -86,6 +86,8 @@ class Renderer {
   vector<GLuint> shadow_framebuffers_ { 0, 0, 0 };
   vector<GLuint> shadow_textures_ { 0, 0, 0 };
 
+  float u_time_ = 0.0f;
+
   // Parallelism. 
   bool terminate_ = false;
   const int kMaxThreads = 16;
@@ -116,6 +118,7 @@ class Renderer {
     const vector<vector<Polygon>>& occluder_convex_hulls);
   void DrawObjectShadow(ObjPtr obj, int level);
   void Draw3dParticle(shared_ptr<Particle> obj);
+  void DrawFire(ObjPtr obj, shared_ptr<Mesh> mesh, GLuint program_id, GLuint texture_id);
   void DrawObject(ObjPtr obj, int mode = 0);
 
   void GetVisibleObjects(shared_ptr<OctreeNode> octree_node);

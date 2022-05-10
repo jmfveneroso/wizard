@@ -387,6 +387,10 @@ void Terrain::AddPointLightsToProgram(shared_ptr<Clipmap> clipmap,
         shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
         light_color = asset->light_color;
         quadratic = asset->quadratic;
+        if (asset->flickers) {
+          float noise = 0.125 * sin(glfwGetTime() * 4.0) + 0.1 * sin(glfwGetTime() * 10.0f) + 0.075 * sin(glfwGetTime() * 20.0f);
+          quadratic += 0.5 * asset->quadratic * noise;
+        }
       }
     }
 
@@ -401,6 +405,8 @@ void Terrain::AddPointLightsToProgram(shared_ptr<Clipmap> clipmap,
 }
 
 void Terrain::UpdateLights(int level, vec3 player_pos) {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
   int tile_size = GetTileSize(level + 1);
 
   ivec2 offset = ivec2(0, 0);
@@ -411,19 +417,24 @@ void Terrain::UpdateLights(int level, vec3 player_pos) {
   int x = offset.x; int y = offset.y;
 
   for (int region = 0 ; region < NUM_SUBREGIONS; region++) {
-    vec2 tl = vec2(subregion_top_left[region] + subregion_offsets[region] * offset);
-    vec2 s = vec2(subregion_size[region] + subregion_size_offsets[region] * offset);
+    // vec2 tl = vec2(subregion_top_left[region] + subregion_offsets[region] * offset);
+    // vec2 s = vec2(subregion_size[region] + subregion_size_offsets[region] * offset);
 
-    vec2 start = tl * float(tile_size); 
-    vec2 end = start + s * float(tile_size);
+    // vec2 start = tl * float(tile_size); 
+    // vec2 end = start + s * float(tile_size);
  
-    vec2 middle_point = vec2(clipmaps_[level]->clipmap_top_left) + vec2(start + end) * 0.5f;
-    float h = (clipmaps_[level]->min_height + clipmaps_[level]->max_height) * MAX_HEIGHT * 0.5f;
-    vec3 subregion_center = vec3(middle_point.x, h, middle_point.y);
+    // vec2 middle_point = vec2(clipmaps_[level]->clipmap_top_left) + vec2(start + end) * 0.5f;
+    // float h = (clipmaps_[level]->min_height + clipmaps_[level]->max_height) * MAX_HEIGHT * 0.5f;
+    // vec3 subregion_center = vec3(middle_point.x, h, middle_point.y);
 
-    float max_size = length(vec2(end) - vec2(start)) * 0.5f;
-    clipmaps_[level]->light_points[region] = resources_->GetKClosestLightPoints(
-      subregion_center, 5, max_size);
+    // float max_size = length(vec2(end) - vec2(start)) * 0.5f;
+    // clipmaps_[level]->light_points[region] = resources_->GetKClosestLightPoints(
+    //   subregion_center, 5, max_size);
+
+    if (configs->render_scene == "town") {
+      ObjPtr fire = resources_->GetObjectByName("fire-001");
+      clipmaps_[level]->light_points[region] = { fire };
+    }
   }
 }
 
@@ -518,7 +529,7 @@ void Terrain::UpdateClipmaps(vec3 player_pos) {
       }
     }
 
-    // UpdateLights(i, player_pos);
+    UpdateLights(i, player_pos);
   }
 }
 
@@ -574,7 +585,6 @@ mat4 Terrain::GetShadowMatrix(bool bias) {
   mat4 view_matrix = lookAt(
     player->position + normalize(configs->sun_position) * 300.0f,
     player->position,
-    // camera_.up
     vec3(0, 1, 0)
   );
 
@@ -603,7 +613,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
   float h = resources_->GetHeightMap().GetTerrainHeight(vec2(player_pos.x, player_pos.z), &normal);
   int last_visible_index = CLIPMAP_LEVELS-1;
 
-  const int kFirstIndex = 1;
+  const int kFirstIndex = 0;
   for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
     if (clipmaps_[i]->invalid) break;
     int clipmap_size = (CLIPMAP_SIZE + 1) * TILE_SIZE * GetTileSize(i + 1);
@@ -616,18 +626,15 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     delta_h = 0;
   }
 
+  float proportion = float(WINDOW_WIDTH) / float(WINDOW_HEIGHT);
   mat4 ProjectionMatrix = glm::perspective(glm::radians(FIELD_OF_VIEW), 
-    4.0f / 3.0f, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
-
+    proportion, NEAR_CLIPPING + delta_h / 2.0f, FAR_CLIPPING);
 
   // TODO: don't create buffers for clipmaps that won't be used.
   for (int i = CLIPMAP_LEVELS-1; i >= kFirstIndex; i--) {
     if (i < last_visible_index) break;
 
     GLuint program_id = program_id_;
-    // if (i > 4) {
-    //   program_id = far_program_id_;
-    // }
 
     {
       glUseProgram(program_id);
@@ -669,8 +676,8 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
     glUniformMatrix4fv(GetUniformId(program_id, "M"), 1, GL_FALSE, &ModelMatrix[0][0]);
     glUniformMatrix3fv(GetUniformId(program_id, "MV3x3"), 1, GL_FALSE, &ModelView3x3Matrix[0][0]);
 
-    // mat4 DepthMVP = shadow_matrix0 * ModelMatrix;
-    // glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
+    mat4 DepthMVP = shadow_matrix0 * ModelMatrix;
+    glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP"), 1, GL_FALSE, &DepthMVP[0][0]);
 
     // mat4 DepthMVP1 = shadow_matrix1 * ModelMatrix;
     // glUniformMatrix4fv(GetUniformId(program_id, "DepthMVP1"), 1, GL_FALSE, &DepthMVP1[0][0]);
@@ -753,6 +760,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
       mat4 projection_view_matrix = GetShadowMatrix(false);
       mat4 MVP = projection_view_matrix * ModelMatrix;
       glUniformMatrix4fv(GetUniformId(program_id, "MVP"), 1, GL_FALSE, &MVP[0][0]);
+      cout << "Drawing shadow" << endl;
     }
 
     int cull_count = 0;
@@ -773,7 +781,7 @@ void Terrain::Draw(Camera& camera, mat4 ViewMatrix, vec3 player_pos,
       int x = offset.x; int y = offset.y;
       BindBuffer(subregion_uv_buffers_[region][x][y], 1, 2);
 
-      // AddPointLightsToProgram(clipmaps_[i], region, program_id);
+      AddPointLightsToProgram(clipmaps_[i], region, program_id);
 
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, subregion_buffers_[region][x][y]);
       glDrawElements(GL_TRIANGLES, subregion_buffer_sizes_[region][x][y], 

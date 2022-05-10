@@ -178,6 +178,7 @@ enum PlayerAction {
   PLAYER_CASTING,
   PLAYER_DRAWING,
   PLAYER_CHANNELING,
+  PLAYER_FLIPPING,
 };
 
 enum ActionType {

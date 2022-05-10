@@ -92,6 +92,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
   // TODO: probably should move somewhere else.
   bool emits_light = false;
   float quadratic;  
+  bool flickers = false;  
   vec3 light_color;
 
   bool item = false;

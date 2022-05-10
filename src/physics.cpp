@@ -71,7 +71,11 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     return;
   } else if (physics_behavior == PHYSICS_NO_FRICTION_FLY) { 
   } else {
-    obj->speed += vec3(0, -GRAVITY, 0);
+    if (obj->IsPlayer() && !resources_->GetConfigs()->jumped && 
+      resources_->GetConfigs()->render_scene == "town") {
+    } else {
+      obj->speed += vec3(0, -GRAVITY, 0);
+    }
   }
 
   // Friction.

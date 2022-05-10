@@ -570,7 +570,10 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
 
   glDisable(GL_CULL_FACE);
   glEnable(GL_BLEND);
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glBlendFunc(GL_ONE, GL_ONE);
+
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, texture_id);
   glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
@@ -616,7 +619,7 @@ vector<mat4> Renderer::GetJointTransformsForMerchant() {
   current_look_vector.y = 0;
 
   quat target_rotation = RotationBetweenVectors(current_look_vector, look_vector);
-  if (dot(look_vector, current_look_vector) < 0) {
+  if (dot(look_vector, current_look_vector) < 0.25f) {
     target_rotation = RotationBetweenVectors(current_look_vector, vec3(0, 0, 1));
   }
 
@@ -625,6 +628,45 @@ vector<mat4> Renderer::GetJointTransformsForMerchant() {
 
   joint_transforms[head_bone_id] *= rotation_matrix;
   return joint_transforms;
+}
+
+void Renderer::DrawFire(ObjPtr obj, shared_ptr<Mesh> mesh, GLuint program_id, GLuint texture_id) {
+  glDepthMask(GL_FALSE);
+  glDisable(GL_CULL_FACE);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+  glUniform1i(GetUniformId(program_id, "texture_sampler"), 0);
+  
+  glUniform3f(GetUniformId(program_id, "camera_right_worldspace"), 
+    view_matrix_[0][0], view_matrix_[1][0], view_matrix_[2][0]);
+  glUniform3f(GetUniformId(program_id, "camera_up_worldspace"), 
+    view_matrix_[0][1], view_matrix_[1][1], view_matrix_[2][1]);
+
+  float noise_factor = boost::lexical_cast<float>(resources_->GetGameFlag("noise_factor"));
+  float noise_speed = boost::lexical_cast<float>(resources_->GetGameFlag("noise_speed"));
+  float voronoi_factor = boost::lexical_cast<float>(resources_->GetGameFlag("voronoi_factor"));
+  float voronoi_speed = boost::lexical_cast<float>(resources_->GetGameFlag("voronoi_speed"));
+  float alpha_factor = boost::lexical_cast<float>(resources_->GetGameFlag("alpha_factor"));
+  float fire_alpha = boost::lexical_cast<float>(resources_->GetGameFlag("fire_alpha"));
+  glUniform1f(GetUniformId(program_id, "noise_factor"), noise_factor);
+  glUniform1f(GetUniformId(program_id, "noise_speed"), noise_speed);
+  glUniform1f(GetUniformId(program_id, "voronoi_factor"), voronoi_factor);
+  glUniform1f(GetUniformId(program_id, "voronoi_speed"), voronoi_speed);
+  glUniform1f(GetUniformId(program_id, "alpha_factor"), alpha_factor);
+  glUniform1f(GetUniformId(program_id, "fire_alpha"), fire_alpha);
+
+  mat4 VP = projection_matrix_ * view_matrix_;  
+  glUniformMatrix4fv(GetUniformId(program_id, "VP"), 1, GL_FALSE, &VP[0][0]);
+
+  glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
+
+  glDisable(GL_BLEND);
+  glDepthMask(GL_TRUE);
+  glEnable(GL_DEPTH_TEST);
+  glBindVertexArray(0);
 }
 
 // TODO: split into functions for each shader.
@@ -708,6 +750,8 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       scale = obj->scale * asset->scale * obj->scale_out;
     }
 
+    glUniform1f(GetUniformId(program_id, "u_time"), u_time_);
+
     ModelMatrix = glm::scale(ModelMatrix, vec3(scale));
 
     mat4 ModelViewMatrix = view_matrix_ * ModelMatrix;
@@ -766,6 +810,12 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
     //   obj->position, 3);
 
     vector<ObjPtr> light_points = obj->closest_lights;
+
+    if (configs->render_scene == "town") {
+      ObjPtr fire = resources_->GetObjectByName("fire-001");
+      light_points.push_back(fire);
+    }
+
     for (int i = 0; i < 3; i++) {
       vec3 position = vec3(0, 0, 0);
       vec3 light_color = vec3(0, 0, 0);
@@ -780,6 +830,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
           shared_ptr<GameAsset> asset = light_points[i]->GetAsset();
           light_color = asset->light_color;
           quadratic = asset->quadratic;
+          if (asset->flickers) {
+            float noise = 0.125 * sin(glfwGetTime() * 4.0) + 0.1 * sin(glfwGetTime() * 10.0f) + 0.075 * sin(glfwGetTime() * 20.0f);
+            quadratic += 0.5 * asset->quadratic * noise;
+          }
         }
       }
 
@@ -796,6 +850,17 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
     GLuint texture_id = 0;
     if (!asset->textures.empty()) {
       texture_id = asset->textures[0];
+    }
+
+    if (asset->name == "grimmoire_pages") {
+      auto spell = resources_->GetArcaneSpell(configs->selected_spell);
+      if (obj->active_animation == "Armature|flip_page" && obj->frame <= 22) {
+        texture_id = resources_->GetTextureByName("grimmoire_empty_page");
+      } else if (spell->spell_id == 9) {
+        texture_id = resources_->GetTextureByName("grimmoire_page_spellshot");
+      } else {
+        texture_id = resources_->GetTextureByName("grimmoire_page_windslash");
+      }
     }
 
     if (program_id == resources_->GetShader("animated_object") ||
@@ -963,6 +1028,8 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
 
       glDrawArrays(GL_TRIANGLES, 0, mesh->num_indices);
       glDisable(GL_BLEND);
+    } else if (program_id == resources_->GetShader("fire")) {
+      DrawFire(obj, mesh, program_id, texture_id);
     } else if (program_id == resources_->GetShader("noshadow_object")) {
       glActiveTexture(GL_TEXTURE0);
       glBindTexture(GL_TEXTURE_2D, texture_id);
@@ -1108,8 +1175,9 @@ void Renderer::DrawHypercube() {
 
   static vector<float> hypercube_rotation { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
 
+  float proportion = float(WINDOW_WIDTH) / float(WINDOW_HEIGHT);
   projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
-    4.0f / 3.0f, NEAR_CLIPPING, FAR_CLIPPING);
+    proportion, NEAR_CLIPPING, FAR_CLIPPING);
 
   view_matrix_ = glm::lookAt(
     vec3(0, 0, 0), // Camera is here
@@ -1139,8 +1207,9 @@ void Renderer::Draw() {
     CreateDungeonBuffers();
   }
 
+  float proportion = float(WINDOW_WIDTH) / float(WINDOW_HEIGHT);
   projection_matrix_ = glm::perspective(glm::radians(FIELD_OF_VIEW), 
-    4.0f / 3.0f, NEAR_CLIPPING, FAR_CLIPPING);
+    proportion, NEAR_CLIPPING, FAR_CLIPPING);
 
   // https://www.3dgep.com/understanding-the-view-matrix/#:~:text=The%20view%20matrix%20is%20used,things%20are%20the%20same%20thing!&text=The%20View%20Matrix%3A%20This%20matrix,of%20the%20camera's%20transformation%20matrix.
   view_matrix_ = glm::lookAt(
@@ -1157,12 +1226,13 @@ void Renderer::Draw() {
     );
   }
 
-  // DrawShadows();
+  DrawShadows();
 
   vec3 clear_color = vec3(0.73, 0.81, 0.92);
   if (configs->render_scene == "dungeon") {
     clear_color = vec3(0);
   }
+  u_time_ += 0.01f;
 
   glViewport(0, 0, window_width_, window_height_);
   glClearColor(clear_color.x, clear_color.y, clear_color.z, 1.0);
@@ -1358,20 +1428,16 @@ void Renderer::UpdateCascadedShadows() {
 
 void Renderer::DrawShadows() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  if (dot(vec3(0, 1, 0), normalize(configs->sun_position)) < 0.0f) {
-    return;
-  }
 
   UpdateCascadedShadows();
 
   GLuint transparent_shader = resources_->GetShader("transparent_object");
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 1; i++) {
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_framebuffers_[i]);
     glViewport(0, 0, 1024, 1024);
 
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS); 
-    // glEnable(GL_CULL_FACE);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -1409,7 +1475,7 @@ void Renderer::DrawShadows() {
 // ==================
 
 void Renderer::DrawStatusBars() {
-  draw_2d_->DrawImage("status_bars", 0, 0, 1440, 1440, 1.0);
+  // draw_2d_->DrawImage("status_bars", 0, 0, 1440, 1440, 1.0);
 
   shared_ptr<Player> player = resources_->GetPlayer();
 
@@ -1417,10 +1483,20 @@ void Renderer::DrawStatusBars() {
   float hp_bar_width = player->life / (player->max_life + armor);
   hp_bar_width = (hp_bar_width > 0) ? hp_bar_width : 0;
 
+  float mana_bar_width = player->mana / player->max_mana;
+  mana_bar_width = (mana_bar_width > 0) ? mana_bar_width : 0;
+
+  // draw_2d_->DrawImage("inventory_background", 100, 200, 500, 500, 1.0);
+  // draw_2d_->DrawImage("spells", 500, 200, 500, 500, 1.0);
+  // draw_2d_->DrawImage("store_background", 900, 200, 500, 500, 1.0);
+
   // Draw HP / armor bar.
-  float armor_width = (player->life + armor) / (player->max_life + armor);
-  draw_2d_->DrawImageWithMask("brass", "spellbar_hp_mask", 29, 824, armor_width * 330, 330, 1.0, vec2(0, 0), vec2(armor_width, 1));
-  draw_2d_->DrawImageWithMask("red", "spellbar_hp_mask", 29, 824, hp_bar_width * 330, 330, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
+  draw_2d_->DrawImage("spellbar_base_bar", 1089, 824, 400, 400, 1.0);
+  draw_2d_->DrawImage("spellbar_base_health", 1089 + 26 + ((1 - hp_bar_width) * 288), 824 + 10, 288 * hp_bar_width, 288, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
+
+  // float armor_width = (player->life + armor) / (player->max_life + armor);
+  // draw_2d_->DrawImageWithMask("brass", "spellbar_hp_mask", 29, 824, armor_width * 330, 330, 1.0, vec2(0, 0), vec2(armor_width, 1));
+  // draw_2d_->DrawImageWithMask("red", "spellbar_hp_mask", 29, 824, hp_bar_width * 330, 330, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
   
   string hp_str = boost::lexical_cast<string>(player->life) + " / " +
     boost::lexical_cast<string>(player->max_life);
@@ -1428,58 +1504,61 @@ void Renderer::DrawStatusBars() {
     hp_str += " (" + boost::lexical_cast<string>(armor) + ")";
   }
 
-  draw_2d_->DrawText(hp_str, 300, 900 - 818, 
+  draw_2d_->DrawText(hp_str, 1110, 900 - 818, 
     vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
   float w, h;
 
   // Draw stamina.
-  float stamina_bar_width = player->stamina / player->max_stamina;
-  stamina_bar_width = (stamina_bar_width > 0) ? stamina_bar_width : 0;
-  float stamina_recover_bar_width = player->recover_stamina / player->max_stamina;
-  stamina_recover_bar_width = (stamina_recover_bar_width > 0) ? stamina_recover_bar_width : 0;
+  // float stamina_bar_width = player->stamina / player->max_stamina;
+  // stamina_bar_width = (stamina_bar_width > 0) ? stamina_bar_width : 0;
+  // float stamina_recover_bar_width = player->recover_stamina / player->max_stamina;
+  // stamina_recover_bar_width = (stamina_recover_bar_width > 0) ? stamina_recover_bar_width : 0;
 
-  if (player->recover_stamina > 0.0f) {
-    float w = 0.235555 * stamina_recover_bar_width;
-    float h = 1.0;
-    draw_2d_->DrawImageWithMask("red", "spellbar_stamina_mask", 0, 0, w * 1440, h * 1440, 
-      1.0, vec2(0, 0), vec2(w, h));
-  } else {
-    float w = 0.235555 * stamina_bar_width;
-    float h = 1.0;
-    draw_2d_->DrawImageWithMask("green", "spellbar_stamina_mask", 0, 0, w * 1440, h * 1440, 
-      1.0, vec2(0, 0), vec2(w, h));
-  }
+  // if (player->recover_stamina > 0.0f) {
+  //   float w = 0.235555 * stamina_recover_bar_width;
+  //   float h = 1.0;
+  //   draw_2d_->DrawImageWithMask("red", "spellbar_stamina_mask", 0, 0, w * 1440, h * 1440, 
+  //     1.0, vec2(0, 0), vec2(w, h));
+  // } else {
+  //   float w = 0.235555 * stamina_bar_width;
+  //   float h = 1.0;
+  //   draw_2d_->DrawImageWithMask("green", "spellbar_stamina_mask", 0, 0, w * 1440, h * 1440, 
+  //     1.0, vec2(0, 0), vec2(w, h));
+  // }
 
-  string stamina_str = boost::lexical_cast<string>(int(player->stamina)) + " / " +
-    boost::lexical_cast<string>(int(player->max_stamina));
-  draw_2d_->DrawText(stamina_str, 240, 900 - 872, 
-    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+  // string stamina_str = boost::lexical_cast<string>(int(player->stamina)) + " / " +
+  //   boost::lexical_cast<string>(int(player->max_stamina));
+  // draw_2d_->DrawText(stamina_str, 240, 900 - 872, 
+  //   vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
   // Draw mana.
-  float mana_bar_width = player->mana / player->max_mana;
-  mana_bar_width = (mana_bar_width > 0) ? mana_bar_width : 0;
-  draw_2d_->DrawImageWithMask("blue", "mana_bar_mask", 
-    1089 + (1 - mana_bar_width) * 329, 824, 
-    mana_bar_width * 329, 329, 
-    1.0, vec2(1 - mana_bar_width, 0), vec2(mana_bar_width, 1));
+  draw_2d_->DrawImage("spellbar_base_bar", 29, 824, 400, 400, 1.0);
+  draw_2d_->DrawImage("spellbar_base_mana", 29 + 26, 824 + 10, 288 * mana_bar_width, 288, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
+
+  // draw_2d_->DrawImageWithMask("blue", "mana_bar_mask", 
+  //   1089 + (1 - mana_bar_width) * 329, 824, 
+  //   mana_bar_width * 329, 329, 
+  //   1.0, vec2(1 - mana_bar_width, 0), vec2(mana_bar_width, 1));
 
   string mana_str = boost::lexical_cast<string>(int(player->mana)) + " / " +
     boost::lexical_cast<string>(player->max_mana);
-  draw_2d_->DrawText(mana_str, 1110, 900 - 818, 
+  draw_2d_->DrawText(mana_str, 300, 900 - 818, 
     vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  int item_id =  configs->spellbar[configs->selected_spell];
   shared_ptr<ArcaneSpellData> arcane_spell =  
-    resources_->WhichArcaneSpell(item_id);
+    resources_->GetArcaneSpell(configs->selected_spell);
 
   string active_name;
   if (arcane_spell) {
     active_name = arcane_spell->name;
   } else {
-    const ItemData& item_data = resources_->GetItemData()[item_id];
-    active_name = item_data.name;
+    // int item_id =  configs->spellbar[configs->selected_spell];
+    // if (item_id != -1) {
+    //   const ItemData& item_data = resources_->GetItemData()[item_id];
+    //   active_name = item_data.name;
+    // }
   }
 
   float t;
@@ -1494,7 +1573,7 @@ void Renderer::DrawStatusBars() {
   }
 
   if (!active_name.empty()) {
-    draw_2d_->DrawText(active_name, 1120, 900 - 870, 
+    draw_2d_->DrawText(active_name, 300, 900 - 870, 
       vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
   }
 }
@@ -1840,13 +1919,15 @@ void Renderer::CreateThreads() {
 void Renderer::CreateDungeonBuffers() {
   double start_time = glfwGetTime();
 
-  vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
+  vector<char> instanced_tiles { ' ', '+', '|', ')', 'o', '(', 'd', 'g', 'P', 'c', 's' };
 
   vector<string> model_names { 
     "resources/models_fbx/dungeon_floor.fbx", 
     "resources/models_fbx/dungeon_corner.fbx", 
     "resources/models_fbx/dungeon_wall.fbx", 
+    "resources/models_fbx/dungeon_wall_rims.fbx", 
     "resources/models_fbx/dungeon_arch.fbx",
+    "resources/models_fbx/dungeon_arch_rim.fbx",
     "resources/models_fbx/dungeon_door.fbx",
     "resources/models_fbx/dungeon_arch_gate.fbx",
     "resources/models_fbx/dungeon_pillar.fbx",
@@ -1856,38 +1937,47 @@ void Renderer::CreateDungeonBuffers() {
   };
 
   vector<string> texture_names { 
-    "paving", 
+    "ruined_floor",                               
     "cathedral_wall_diffuse", 
     "cathedral_wall_diffuse", 
+    "brass", 
     "cathedral_wall_diffuse", 
+    "brass", 
     "cathedral_wall_diffuse", 
     "metal_diffuse",
     "cathedral_wall_diffuse",
-    "granite_wall_diffuse",
+    "brass",
+    "medieval_floor_diffuse",
     "medieval_floor_diffuse",
    };
 
   vector<string> normal_texture_names { 
-    "paving_normal", 
+    "ruined_floor_normal", 
     "cathedral_wall_normal", 
     "cathedral_wall_normal", 
-    "cathedral_wall_normal", 
+    "metal_normal", 
     "cathedral_wall_normal", 
     "metal_normal",
     "cathedral_wall_normal", 
-    "granite_wall_normal", 
+    "metal_normal", 
+    "cathedral_wall_normal", 
+    "cathedral_wall_normal", 
+    "medieval_floor_normal",
     "medieval_floor_normal",
   };
 
   vector<string> specular_texture_names { 
-    "paving_roughness", 
+    "ruined_floor_roughness", 
     "cathedral_wall_roughness", 
     "cathedral_wall_roughness", 
-    "cathedral_wall_roughness", 
+    "metal_roughness", 
     "cathedral_wall_roughness", 
     "metal_roughness",
     "cathedral_wall_roughness", 
-    "granite_wall_roughness", 
+    "metal_roughness",
+    "cathedral_wall_roughness", 
+    "cathedral_wall_roughness", 
+    "medieval_floor_roughness",
     "medieval_floor_roughness",
   };
 
@@ -1983,7 +2073,10 @@ void Renderer::CreateDungeonBuffers() {
 
             if (tile == '|') {
               if (dungeon_map[x][z] != '|' && dungeon_map[x][z] != '-') continue;
-            } else if (tile == 'o') {
+            } else if (tile == ')') {
+              if (dungeon_map[x][z] != '|' && dungeon_map[x][z] != '-' &&
+                  dungeon_map[x][z] != 'd' && dungeon_map[x][z] != 'D') continue;
+            } else if (tile == 'o' || tile == '(') {
               if (dungeon_map[x][z] != 'o' && dungeon_map[x][z] != 'O' && 
                 dungeon_map[x][z] != 'g' && dungeon_map[x][z] != 'G') continue;
             } else if (tile == 'd') {
@@ -2108,7 +2201,7 @@ void Renderer::DrawDungeonTiles() {
   Dungeon& dungeon = resources_->GetDungeon();
 
   int num_culled = 0;
-  vector<char> instanced_tiles { ' ', '+', '|', 'o', 'd', 'g', 'P', 'c', 's' };
+  vector<char> instanced_tiles { ' ', '+', '|', ')', 'o', '(', 'd', 'g', 'P', 'c', 's' };
   for (int cx = 0; cx < kDungeonCells; cx++) {
     for (int cz = 0; cz < kDungeonCells; cz++) {
       float size = 140.0f;
@@ -2147,7 +2240,7 @@ void Renderer::DrawDungeonTiles() {
 
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].normal_textures[tile]);
-        glUniform1i(GetUniformId(program_id, "normal_sampler"), 1);
+        glUniform1i(GetUniformId(program_id, "bump_map_sampler"), 1);
 
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, dungeon_render_data[cx][cz].specular_textures[tile]);
@@ -2159,6 +2252,7 @@ void Renderer::DrawDungeonTiles() {
         glUniform1i(GetUniformId(program_id, "draw_diffuse"), draw_diffuse);
         glUniform1f(GetUniformId(program_id, "specular_component"), specular_component);
         glUniform1f(GetUniformId(program_id, "normal_strength"), normal_strength);
+        glUniform1f(GetUniformId(program_id, "metallic_component"), 0.0);
 
         vec3 dungeon_color = dungeon.GetDungeonColor();
         glUniform3fv(GetUniformId(program_id, "dungeon_color"), 1,
@@ -2194,9 +2288,6 @@ void Renderer::DrawDungeonTiles() {
           (float*) &light_color);
 
         glUniform1f(GetUniformId(program_id, "light_radius"), configs->light_radius);
-
-        glUniform3fv(GetUniformId(program_id, "player_pos"), 1,
-          (float*) &resources_->GetPlayer()->position);
 
         glDrawElementsInstanced(
           GL_TRIANGLES, dungeon_render_data[cx][cz].num_indices[tile], 

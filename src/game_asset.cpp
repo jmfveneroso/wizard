@@ -162,6 +162,13 @@ void GameAsset::Load(const pugi::xml_node& asset_xml) {
     float g = boost::lexical_cast<float>(light_xml.attribute("g").value());
     float b = boost::lexical_cast<float>(light_xml.attribute("b").value());
     light_color = vec3(r, g, b);
+
+    try {
+      int f = 
+        boost::lexical_cast<int>(light_xml.attribute("flickers").value());
+      if (f) flickers = true;
+    } catch(boost::bad_lexical_cast const& e) {
+    }
   }
 
   const pugi::xml_node& parent_xml = asset_xml.child("parent");

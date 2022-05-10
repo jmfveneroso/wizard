@@ -47,6 +47,7 @@ class Inventory {
   int win_x_ = 0;
   int win_y_ = 0;
   int debounce_ = 0;
+  float u_time_ = 0;
 
   int selected_item_ = 0;
   int selected_qnty_ = 0;
@@ -128,7 +129,6 @@ class Inventory {
     GLFWwindow* window);
   void MoveItemBack();
   void UpdateAnimations();
-  void DrawCogs();
   void DrawItemDescriptionScreen();
   void DrawStats(const ivec2& pos);
   void DrawOverlay(const ivec2& pos);
@@ -140,7 +140,6 @@ class Inventory {
     GLFWwindow* window);
   void DrawStoreItems(const ivec2& pos);
   // void DrawStoreItemDescription(const ivec2& pos);
-  void DrawEquipment(const ivec2& pos);
   void DrawDialog(GLFWwindow* window);
   void NextPhrase(GLFWwindow* window, const string& next_phrase_name = "");
   void UseItem(int x, int y);
