@@ -128,11 +128,13 @@ struct Configs {
   int store[6] = { 0, 0, 0, 0, 0, 0 };
   vector<vector<int>> store_items_at_level;
 
-  int selected_spell = 9;
+  int selected_spell = 0;
   int spellbar[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   int spellbar_quantities[8] = { 0, 0, 0, 0, 0, 0, 0, 0 };
   int craft_table[5] = { 0, 0, 0, 0, 0 };
-  vector<int> learned_spells { 0, 0, 0, 0, 0, 0, 0, 0 };
+
+  // vector<int> learned_spells { 0, 0, 0, 0, 0, 0, 0, 0 };
+
   vector<tuple<string, float>> messages;
   string overlay;
   string render_scene = "town";
@@ -288,6 +290,7 @@ struct ArcaneSpellData {
   bool learned = false;
   int level = 0;
   float mana_cost = 0;
+  int quantity = 0;
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
@@ -661,7 +664,7 @@ class Resources {
   void CastBouncyBall(ObjPtr owner, const vec3& position, 
     const vec3& direction);
 
-  ObjPtr CastMissile(ObjPtr owner, const vec3& pos, 
+  shared_ptr<Missile> CastMissile(ObjPtr owner, const vec3& pos, 
     const MissileType& missile_type, const vec3& direction,
     const float& velocity);
   void UpdateMissiles();
@@ -783,7 +786,7 @@ class Resources {
     const string& type, float size);
 
   shared_ptr<Missile> GetUnusedMissile();
-  void CastSpellShot(const Camera& camera);
+  shared_ptr<Missile> CastSpellShot(const Camera& camera);
   void CreateDrops(ObjPtr obj, bool static_drops = false);
 
   void CastWindslash(const Camera& camera);
@@ -827,6 +830,8 @@ class Resources {
   void EnterTownPortal();
   bool UseTeleportRod();
   bool CreateBonfire();
+  void CreateMonsters(const char code, int quantity);
+  void CreateTreasures();
 };
 
 #endif // __RESOURCES_HPP__

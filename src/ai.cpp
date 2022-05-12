@@ -480,7 +480,7 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
 bool AI::ScorpionAttack(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
   const int num_missiles = 1;
-  const float missile_speed = 0.5f + Random(0, 5) * 0.2f;
+  const float missile_speed = 1.2f + Random(0, 5) * 0.3f;
 
   resources_->ChangeObjectAnimation(creature, "Armature|attack");
 
@@ -490,12 +490,21 @@ bool AI::ScorpionAttack(ObjPtr creature,
   }
 
   ObjPtr player = resources_->GetPlayer();
-  vec3 target = creature->position + normalize(player->position - creature->position) * 10.0f;
+  vec3 target = player->position;
 
-  vec3 dir = normalize(player->position - creature->position);
-  dir.y = 0.3f;
+  // Predict player pos.
+  if (length(player->speed) > 0.01) {
+    vec2 target_pos = PredictMissileHitLocation(vec2(creature->position.x, creature->position.z), 
+      missile_speed, vec2(player->position.x, player->position.z), 
+      vec2(player->speed.x, player->speed.z), 
+      length(player->speed));
+    target = vec3(target_pos.x, player->position.y, target_pos.y);
+  }
 
-  if (int(creature->frame) >= num_frames - 15 && !action->damage_dealt) {
+  vec3 dir = normalize(target - creature->position);
+  dir.y = 0.1f;
+
+  if (int(creature->frame) >= num_frames - 25 && !action->damage_dealt) {
     action->damage_dealt = true;
     vec3 p2 = creature->position + dir * 200.0f;
     resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), MISSILE_BOUNCYBALL, 

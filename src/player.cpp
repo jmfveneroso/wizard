@@ -649,9 +649,13 @@ bool PlayerInput::CastSpellOrUseItem() {
     current_spell_ = arcane_spell;
 
     Camera c = GetCamera();
+
+    if (arcane_spell->spell_id > 0 && arcane_spell->quantity <= 0) return false;
+    arcane_spell->quantity--;
+
     switch (arcane_spell->spell_id) {
-      case 9: { // Spell shot.
-        if (player->stamina > 0.0f && player->mana >= 1.0f) {
+      case 0: { // Spell shot.
+        // if (player->stamina > 0.0f && player->mana >= 1.0f) {
           obj->active_animation = "Armature|shoot";
 
           player->player_action = PLAYER_CASTING;
@@ -662,29 +666,13 @@ bool PlayerInput::CastSpellOrUseItem() {
           player->mana -= 1;
           player->selected_spell = 0;
           debounce_ = 20;
-          return true;
-        }
-        return false;
-      }
-      case 0: {
-        // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CASTING;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect();
-          player->selected_spell = 0;
-          player->mana -= arcane_spell->mana_cost;
-          debounce_ = 20;
-          return true;
-        }
+        //   return true;
+        // }
         return false;
       }
       case 1: { // Windslash.
         // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 2.0f) {
+        // if (player->stamina > 0.0f && player->mana >= 2.0f) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -693,76 +681,19 @@ bool PlayerInput::CastSpellOrUseItem() {
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 1;
           player->mana -= arcane_spell->mana_cost;
+          --arcane_spell->quantity;
           debounce_ = 20;
+
+          // if (--arcane_spell->quantity == 0) {
+          //   if (!SelectSpell(arcane_spell->spell_id + 1)) {
+          //     SelectSpell(0);
+          //   }
+          // }
           return true;
-        }
         return false;
       }
-      case 2: { // Flash.
-        // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 1.0f) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CASTING;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect();
-          player->selected_spell = 2;
-          player->mana -= arcane_spell->mana_cost;
-          debounce_ = 20;
-          return true;
-        }
-        return false;
-      }
-      case 3: { // Spell wall.
-        // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= 0.1f) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CASTING;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
-          player->selected_spell = 3;
-          player->mana -= arcane_spell->mana_cost;
-          debounce_ = 0;
-          return true;
-        }
-        return false;
-      }
-      case 4: { // Detect monsters.
-        if (player->stamina > 0.0f && arcane_spell->mana_cost) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CASTING;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect();
-          player->selected_spell = 4;
-          player->mana -= arcane_spell->mana_cost;
-          debounce_ = 20;
-          return true;
-        }
-        return false;
-      }
-      case 5: { // Trap.
-        // TODO: set spell cost in config.
-        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CASTING;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
-          player->selected_spell = 5;
-          player->mana -= arcane_spell->mana_cost;
-          debounce_ = 0;
-          return true;
-        }
-        return false;
-      }
-      case 6: { // Fireball.
-        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+      case 2: { // Fireball.
+        // if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -773,11 +704,106 @@ bool PlayerInput::CastSpellOrUseItem() {
           player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
-        }
+        // }
         return false;
       }
-      case 7: { // Decoy.
-        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+      case 3: { // Magma Ray.
+        // if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CHANNELING;
+          channel_until_ = glfwGetTime() + 1.0f;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 8;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 0;
+          return true;
+        // }
+        return false;
+      }
+      case 4: { // Shotgun.
+        // TODO: set spell cost in config.
+        // if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 0;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 20;
+          return true;
+        // }
+        return false;
+      }
+      case 5: { // Flash.
+        // TODO: set spell cost in config.
+        // if (player->stamina > 0.0f && player->mana >= 1.0f) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 2;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 20;
+          return true;
+        // }
+        return false;
+      }
+      case 6: { // Spell wall.
+        // TODO: set spell cost in config.
+        // if (player->stamina > 0.0f && player->mana >= 0.1f) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 3;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 0;
+          return true;
+        // }
+        return false;
+      }
+      case 7: { // Detect monsters.
+        // if (player->stamina > 0.0f && arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 4;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 20;
+          return true;
+        // }
+        return false;
+      }
+      case 8: { // Trap.
+        // TODO: set spell cost in config.
+        // if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+          player->selected_spell = 5;
+          player->mana -= arcane_spell->mana_cost;
+          debounce_ = 0;
+          return true;
+        // }
+        return false;
+      }
+      case 9: { // Decoy.
+        // if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
           obj->active_animation = "Armature|shoot";
           player->player_action = PLAYER_CASTING;
           obj->frame = 0;
@@ -788,93 +814,9 @@ bool PlayerInput::CastSpellOrUseItem() {
           player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
-        }
+        // }
         return false;
       }
-      case 8: { // Magma Ray.
-        if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CHANNELING;
-          channel_until_ = glfwGetTime() + 3.0f;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
-          player->selected_spell = 8;
-          player->mana -= arcane_spell->mana_cost;
-          debounce_ = 0;
-          return true;
-        }
-        return false;
-      }
-      // case 2: {
-      //   resources_->CastLightningRay(player, camera_.position, camera_.direction);
-      //   if (Random(0, 5) == 0) {
-      //     configs->spellbar_quantities[configs->selected_spell]--;
-      //     if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-      //       configs->spellbar[configs->selected_spell] = 0;
-      //     }
-      //   }
-      //   debounce_ = -1;
-      //   return true;
-      // }
-      // case 3: { // Open Lock.
-      //   ObjPtr item = configs->interacting_item;
-      //   if (item && item->type == GAME_OBJ_DOOR) {
-      //     shared_ptr<Door> door = static_pointer_cast<Door>(item);
-      //     if (door->state == 4) {
-      //       door->state = DOOR_CLOSED;
-      //       obj->active_animation = "Armature|shoot";
-      //       player->player_action = PLAYER_CASTING;
-      //       obj->frame = 0;
-      //       scepter->frame = 0;
-      //       animation_frame_ = 20;
-      //       player->selected_spell = 4;
-      //       configs->spellbar_quantities[configs->selected_spell]--;
-      //       if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-      //         configs->spellbar[configs->selected_spell] = 0;
-      //       }
-      //     }
-      //   }
-      //   debounce_ = 20;
-      //   return true;
-      // }
-      // case 4: { // Fireball.
-      //   resources_->CastFireball(c);
-      //   configs->spellbar_quantities[configs->selected_spell]--;
-      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-      //     configs->spellbar[configs->selected_spell] = 0;
-      //   }
-      //   debounce_ = 20;
-      //   return true;
-      // }
-      // case 5: { // Bouncy ball.
-      //   resources_->CastBouncyBall(player, c.position, c.direction);
-      //   configs->spellbar_quantities[configs->selected_spell]--;
-      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-      //     configs->spellbar[configs->selected_spell] = 0;
-      //   }
-      //   debounce_ = 20;
-      //   return true;
-      // }
-      // case 7: { // String Attack.
-      //   resources_->CastStringAttack(player, c.position, c.direction);
-      //   configs->spellbar_quantities[configs->selected_spell]--;
-      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-      //     configs->spellbar[configs->selected_spell] = 0;
-      //   }
-      //   debounce_ = 0;
-      //   return true;
-      // }
-      // case 8: { // Telekinesis.
-      //   resources_->CastTelekinesis();
-      //   configs->spellbar_quantities[configs->selected_spell]--;
-      //   if (configs->spellbar_quantities[configs->selected_spell] == 0) {
-      //     configs->spellbar[configs->selected_spell] = 0;
-      //   }
-      //   debounce_ = 20;
-      //   return true;
-      // }
     }
     return false;
   }
@@ -972,15 +914,21 @@ void PlayerInput::ProcessPlayerCasting() {
     if (current_spell_) {
       switch (current_spell_->spell_id) {
         case 0:
-          resources_->CastShotgun(camera_);
+          resources_->CastSpellShot(camera_);
           break;
         case 1:
           resources_->CastWindslash(camera_);
           break;
         case 2:
+          resources_->CastFireball(player, c.direction);
+          break;
+        case 4:
+          resources_->CastShotgun(camera_);
+          break;
+        case 5:
           resources_->CastFlashMissile(camera_);
           break;
-        case 3: {
+        case 6: {
           spell_wall_pos_ = resources_->GetSpellWallRayCollision(player, c.position, 
             c.direction);
           waypoint_obj->draw = true;
@@ -991,10 +939,10 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastSpellWall(player, spell_wall_pos_);
           break; 
         }
-        case 4:
+        case 7:
           resources_->CastDetectMonsters();
           break;
-        case 5: {
+        case 8: {
           trap_pos_ = resources_->GetTrapRayCollision(player, c.position, 
             c.direction);
 
@@ -1007,10 +955,7 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastSpellTrap(player, trap_pos_);
           break;
         }
-        case 6:
-          resources_->CastFireball(player, c.direction);
-          break;
-        case 7: {
+        case 9: {
           trap_pos_ = resources_->GetTrapRayCollision(player, c.position, 
             c.direction);
 
@@ -1023,9 +968,6 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastDecoy(player, trap_pos_);
           break;
         }
-        case 9:
-          resources_->CastSpellShot(camera_);
-          break;
         default:
           break;
       }
@@ -1088,12 +1030,136 @@ bool PlayerInput::SelectSpell(int spell_id) {
   shared_ptr<ArcaneSpellData> arcane_spell = resources_->GetArcaneSpell(spell_id);
 
   if (!arcane_spell) return false;
-  if (!arcane_spell->learned) return false;
+  // if (!arcane_spell->learned) return false;
+  if (arcane_spell->spell_id > 0 && arcane_spell->quantity <= 0) return false;
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   configs->selected_spell = spell_id;
   StartFlipping();
   return true;
+}
+
+void PlayerInput::ProcessMovement() {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
+  float d = resources_->GetDeltaTime() / 0.016666f;
+
+  int num_keys = 0;
+  if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) num_keys++;
+  if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) num_keys++;
+  if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) num_keys++;
+  if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) num_keys++;
+ 
+  float player_speed = resources_->GetConfigs()->player_speed; 
+  float jump_force = resources_->GetConfigs()->jump_force; 
+
+  float speed = player_speed;
+  if (num_keys > 1) {
+    speed *= 0.707106781;
+  }
+
+  float cur_time = glfwGetTime();
+
+  vec3 right = glm::vec3(
+    sin(player->rotation.y - 3.14f/2.0f), 
+    0,
+    cos(player->rotation.y - 3.14f/2.0f)
+  );
+
+  vec3 front = glm::vec3(
+    cos(player->rotation.x) * sin(player->rotation.y), 
+    0,
+    cos(player->rotation.x) * cos(player->rotation.y)
+  );
+
+  // Move forward.
+  if (glfwGetKey(window_, GLFW_KEY_W) == GLFW_PRESS) {
+    if (cur_time < pressed_w_ && !holding_w_ && cur_time < started_holding_w_ + 0.3f) {
+      player->can_jump = false;
+      player->speed += front * speed * d * 20.0f;
+      player->speed.y += jump_force * 1.0f;
+      configs->jumped = true;
+      pressed_w_ = 0.0f;
+    } else if (!holding_w_) {
+      started_holding_w_ = glfwGetTime();
+      player->speed += front * speed * d;
+      pressed_w_ = glfwGetTime() + 0.3f;
+      holding_w_ = true;
+    } else {
+      player->speed += front * speed * d;
+      pressed_w_ = glfwGetTime() + 0.3f;
+      holding_w_ = true;
+    }
+  } else {
+    holding_w_ = false;
+  }
+
+  // Move backward.
+  if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) {
+    if (cur_time < pressed_s_ && !holding_s_ && cur_time < started_holding_s_ + 0.3f) {
+      player->can_jump = false;
+      player->speed -= front * speed * d * 20.0f;
+      player->speed.y += jump_force * 1.0f;
+      configs->jumped = true;
+      pressed_w_ = 0.0f;
+    } else if (!holding_s_) {
+      started_holding_s_ = glfwGetTime();
+      player->speed -= front * speed * d;
+      pressed_s_ = glfwGetTime() + 0.3f;
+      holding_s_ = true;
+    } else {
+      player->speed -= front * speed * d;
+      pressed_s_ = glfwGetTime() + 0.3f;
+      holding_s_ = true;
+    }
+  } else {
+    holding_s_ = false;
+  }
+
+  // Strafe right.
+  if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) {
+    if (cur_time < pressed_d_ && !holding_d_ && cur_time < started_holding_d_ + 0.3f) {
+      player->can_jump = false;
+      player->speed += right * speed * d * 20.0f;
+      player->speed.y += jump_force * 1.0f;
+      configs->jumped = true;
+      pressed_d_ = 0.0f;
+    } else if (!holding_d_) {
+      started_holding_d_ = glfwGetTime();
+      player->speed += right * speed * d;
+      pressed_d_ = glfwGetTime() + 0.3f;
+      holding_d_ = true;
+    } else {
+      player->speed += right * speed * d;
+      pressed_d_ = glfwGetTime() + 0.3f;
+      holding_d_ = true;
+    }
+  } else {
+    holding_d_ = false;
+  }
+
+  // Strafe left.
+  if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) {
+    if (cur_time < pressed_a_ && !holding_a_ && cur_time < started_holding_a_ + 0.3f) {
+      player->can_jump = false;
+      player->speed -= right * speed * d * 20.0f;
+      player->speed.y += jump_force * 1.0f;
+      configs->jumped = true;
+      pressed_a_ = 0.0f;
+    } else if (!holding_a_) {
+      started_holding_a_ = glfwGetTime();
+      player->speed -= right * speed * d;
+      pressed_a_ = glfwGetTime() + 0.3f;
+      holding_a_ = true;
+    } else {
+      player->speed -= right * speed * d;
+      pressed_a_ = glfwGetTime() + 0.3f;
+      holding_a_ = true;
+    }
+  } else {
+    holding_a_ = false;
+  }
 }
 
 Camera PlayerInput::ProcessInput(GLFWwindow* window) {
@@ -1111,18 +1177,6 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     cout << "Quick casting" << endl;
     --animation_frame_;
   }
-
-  vec3 right = glm::vec3(
-    sin(player->rotation.y - 3.14f/2.0f), 
-    0,
-    cos(player->rotation.y - 3.14f/2.0f)
-  );
-
-  vec3 front = glm::vec3(
-    cos(player->rotation.x) * sin(player->rotation.y), 
-    0,
-    cos(player->rotation.x) * cos(player->rotation.y)
-  );
 
   Camera c = GetCamera();
   camera_ = c;
@@ -1192,36 +1246,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       configs->rest_bar = 0.0f;
 
       if (player->touching_the_ground) {
-        int num_keys = 0;
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) num_keys++;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) num_keys++;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) num_keys++;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) num_keys++;
- 
-        float speed = player_speed;
-        if (num_keys > 1) {
-          speed *= 0.707106781;
-        }
-
-        // Move forward.
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-          player->speed += front * speed * d;
-        }
-
-        // Move backward.
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-          player->speed -= front * speed * d;
-        }
-
-        // Strafe right.
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-          player->speed += right * speed * d;
-        }
-
-        // Strafe left.
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-          player->speed -= right * speed * d;
-        }
+        ProcessMovement();
       }
 
       // Move up.

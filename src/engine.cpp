@@ -179,7 +179,7 @@ void Engine::RunCommand(string command) {
     int item_id = boost::lexical_cast<int>(result[1]);
     resources_->LearnSpell(item_id);
   } else if (result[0] == "learn-all") {
-    for (int i = 0; i < 100; i++) {
+    for (int i = 0; i < 5; i++) {
       resources_->LearnSpell(i);
     }
   } else if (result[0] == "create-2d-particle") {
@@ -252,12 +252,13 @@ void Engine::RunCommand(string command) {
   } else if (result[0] == "load-dungeon") {
     try {
       const string& filename = result[1];
-
-      resources_->ChangeDungeonLevel(0);
-      resources_->DeleteAllObjects();
+      // const string& filename = string("dungeons/dungeon") + 
+      //   boost::lexical_cast<string>(result[1]) + "txt";
 
       Dungeon& dungeon = resources_->GetDungeon();
       if (dungeon.LoadDungeonFromFile(filename)) {
+        resources_->ChangeDungeonLevel(0);
+        resources_->DeleteAllObjects();
         resources_->CreateDungeon(false);
         vec3 pos = dungeon.GetUpstairs();
         resources_->GetPlayer()->ChangePosition(pos);
@@ -268,6 +269,16 @@ void Engine::RunCommand(string command) {
         configs->update_renderer = true;
       }
     } catch(boost::bad_lexical_cast const& e) {
+    }
+  } else if (result[0] == "wave") {
+    if (result.size() == 3) {
+      try {
+        char code = boost::lexical_cast<char>(result[1]);
+        int quantity = boost::lexical_cast<int>(result[2]);
+        resources_->CreateMonsters(code, quantity);
+        resources_->CreateTreasures();
+      } catch(boost::bad_lexical_cast const& e) {
+      }
     }
   } else if (result[0] == "town") {
     resources_->DeleteAllObjects();

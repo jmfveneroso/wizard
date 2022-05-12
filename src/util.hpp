@@ -686,4 +686,7 @@ int GetIndexFromCombination(vector<int> combination, int n, int k);
 vec3 CalculateMissileDirectionToHitTarget(const vec3& pos, const vec3& target, 
   const float& v);
 
+vec2 PredictMissileHitLocation(vec2 source, float source_speed, 
+  vec2 target, vec2 dir, float target_speed);
+
 #endif // __UTIL_HPP__

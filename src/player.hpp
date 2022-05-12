@@ -30,6 +30,18 @@ class PlayerInput {
   vec3 trap_pos_;
   int active_scepter_ = -1;
   float channel_until_ = 0;
+  float started_holding_w_ = 0.0f;
+  float started_holding_a_ = 0.0f;
+  float started_holding_s_ = 0.0f;
+  float started_holding_d_ = 0.0f;
+  bool holding_w_ = false;
+  bool holding_a_ = false;
+  bool holding_s_ = false;
+  bool holding_d_ = false;
+  float pressed_w_ = 0.0f;
+  float pressed_a_ = 0.0f;
+  float pressed_s_ = 0.0f;
+  float pressed_d_ = 0.0f;
 
   void Extract(const Camera& c);
   bool InteractWithItem(GLFWwindow* window, const Camera& c, 
@@ -48,6 +60,7 @@ class PlayerInput {
   void StartFlipping();
   bool DecreaseCharges(int item_id);
   bool SelectSpell(int spell_id);
+  void ProcessMovement();
 
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 

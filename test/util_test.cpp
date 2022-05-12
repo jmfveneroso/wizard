@@ -95,6 +95,38 @@ TEST(CombinationWithIndex, ShouldSucceeed) {
   EXPECT_EQ(9, GetIndexFromCombination({ 3, 2 }, 6, 2));
 }
 
+TEST(PredictMissileHitLocation, ShouldSucceeed) {
+  vec2 hit = PredictMissileHitLocation(vec2(0.0f, 0.0f), 1.0f, 
+    vec2(0.0f, 5.0f), vec2(1.0f, 0.0f), 0.2f);
+
+  EXPECT_NEAR(hit.x, 1.02062, 0.01);
+  EXPECT_NEAR(hit.y, 5, 0.01);
+
+  hit = PredictMissileHitLocation(vec2(0.0f, 0.0f), 1.0f, 
+    vec2(0.0f, 5.0f), vec2(-1.0f, 0.0f), 0.2f);
+
+  EXPECT_NEAR(hit.x, -1.02062, 0.01);
+  EXPECT_NEAR(hit.y, 5, 0.01);
+
+  hit = PredictMissileHitLocation(vec2(0.0f, 0.0f), 1.0f, 
+    vec2(0.0f, 5.0f), vec2(0.0f, 1.0f), 0.2f);
+
+  EXPECT_NEAR(hit.x, 0, 0.01);
+  EXPECT_NEAR(hit.y, 6.44167, 0.01);
+
+  hit = PredictMissileHitLocation(vec2(0.0f, 0.0f), 1.0f, 
+    vec2(0.0f, 5.0f), vec2(1.0f, 1.0f), 0.2f);
+
+  EXPECT_NEAR(hit.x, 0.9291, 0.01);
+  EXPECT_NEAR(hit.y, 5.9291, 0.01);
+
+  hit = PredictMissileHitLocation(vec2(0.0f, 0.0f), 1.0f, 
+    vec2(0.0f, 5.0f), vec2(0.0f, 0.0f), 0.2f);
+
+  EXPECT_NEAR(hit.x, 0.0, 0.01);
+  EXPECT_NEAR(hit.y, 5.0, 0.01);
+}
+
 } // End of namespace
 
 int main(int argc, char **argv) {

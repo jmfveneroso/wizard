@@ -1748,6 +1748,29 @@ void SaveMeshToXml(const Mesh& m, pugi::xml_node& parent) {
 
   unordered_map<string, Animation> animations;
   unordered_map<string, int> bones_to_ids;
+}
 
+vec2 PredictMissileHitLocation(vec2 source, float source_speed, 
+  vec2 target, vec2 dir, float target_speed) {
+  if (length2(dir) < 0.01f) {
+    return target;
+  }
 
+  vec2 v = source - target;
+  float distance = length(v);
+
+  dir = normalize(dir);
+  float cos_alpha = dot(v, dir) / distance;
+
+  // We solve for time.
+  float a = pow(source_speed, 2) - pow(target_speed, 2);
+  float b = 2 * target_speed * distance * cos_alpha;
+  float c = -pow(distance, 2);
+
+  // Simply Bhaskara. The alternative result is impossible because t becomes 
+  // negative.
+  float t = -b + sqrt(b*b - 4*a*c) / (2*a);
+
+  // Compute expected location at missile hit.
+  return target + dir * target_speed * t;
 }

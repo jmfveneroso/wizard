@@ -64,6 +64,7 @@ Dungeon::Dungeon() {
   char_map_[104] = 'N'; // Top-right arch.
   char_map_[105] = 't'; // Spiderling leader.
   char_map_[106] = 'a'; // Bookcase.
+  char_map_[107] = 'f'; // Spawn Point.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -1260,6 +1261,7 @@ void Dungeon::GenerateAsciiDungeon() {
         case 't':
         case 'm':
         case 'W':
+        case 'f':
           ascii_dungeon[x][y] = ' ';
           monsters_and_objs[x][y] = ascii_code;
           continue;
@@ -2137,6 +2139,8 @@ void Dungeon::CalculatePathsToTile(const ivec2& dest, const ivec2& last) {
         const float new_distance  = distance + cost;
 
         const float min_distance = min_distance_[dest.x][dest.y][next_tile.x][next_tile.y];
+
+        // Change these two to get min paths instead of possible paths.
         if (min_distance != 9999999) continue;
         // if (new_distance >= min_distance) continue;
 

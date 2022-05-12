@@ -3271,20 +3271,22 @@ void Resources::LearnSpell(int item_id) {
   auto spell = WhichArcaneSpell(item_id);
   if (!spell) return;
 
-  if (!spell->learned) {
-    AddMessage(string("You learned ") + spell->name);
-    spell->learned = true;
+  spell->quantity += 2;
 
-    // Add the spell to the first empty place in the spellbar.
-    for (int x = 0; x < 8; x++) {
-      if (configs_->spellbar[x] == 0) {
-        configs_->spellbar[x] = item_id;
-        break;
-      }
-    }
-  } else {
-    if (++player_->mana > player_->max_mana) player_->mana = player_->max_mana;
-  }
+  // if (!spell->learned) {
+  //   AddMessage(string("You learned ") + spell->name);
+  //   spell->learned = true;
+
+  //   // Add the spell to the first empty place in the spellbar.
+  //   for (int x = 0; x < 8; x++) {
+  //     if (configs_->spellbar[x] == 0) {
+  //       configs_->spellbar[x] = item_id;
+  //       break;
+  //     }
+  //   }
+  // } else {
+  //   if (++player_->mana > player_->max_mana) player_->mana = player_->max_mana;
+  // }
 }
 
 void Resources::UpdateAnimationFrames() {
@@ -3733,7 +3735,7 @@ void Resources::ProcessTempStatus() {
       case STATUS_DARKVISION: {
         shared_ptr<DarkvisionStatus> darkvision_status = 
           static_pointer_cast<DarkvisionStatus>(temp_status);
-        configs_->light_radius = 120.0f;
+        configs_->light_radius += 30.0f;
         configs_->darkvision = true;
         break;
       }
@@ -4294,6 +4296,10 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
         case 'M': {
           ObjPtr obj = CreateGameObjFromAsset(this, "barrel", pos + vec3(0, 0, 0));
+          break;
+        }
+        case 'f': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "waypoint", pos + vec3(0, 0, 0));
           break;
         }
         case 'r': {
@@ -5583,15 +5589,14 @@ void Resources::CastFlash(const vec3& position) {
   }
 }
 
-ObjPtr Resources::CastMissile(
+shared_ptr<Missile> Resources::CastMissile(
   ObjPtr owner, const vec3& position, const MissileType& missile_type, 
   const vec3& direction, const float& velocity) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
   if (missile_type == MISSILE_BOUNCYBALL) {
-    // obj->UpdateAsset("spell_shot");
-    obj->UpdateAsset("flash_shot");
-    obj->life = 300;
+    obj->UpdateAsset("scorpion_shot");
+    obj->life = 400;
     obj->physics_behavior = PHYSICS_UNDEFINED;
     obj->owner = owner;
   } else {
@@ -5933,7 +5938,7 @@ void Resources::CastImpFire(ObjPtr owner, const vec3& pos,
   obj->associated_particles.push_back(p);
 }
 
-void Resources::CastSpellShot(const Camera& camera) {
+shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
   obj->UpdateAsset("spell_shot");
@@ -5983,6 +5988,7 @@ void Resources::CastSpellShot(const Camera& camera) {
   );
   obj->rotation_matrix = rotation_matrix;
   UpdateObjectPosition(obj);
+  return obj;
 }
 
 void Resources::CastShotgun(const Camera& camera) {
@@ -6002,7 +6008,8 @@ void Resources::CastShotgun(const Camera& camera) {
       dir_ = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
     }
 
-    CastSpellShot(Camera(camera.position, dir_, vec3(0, 1, 0)));
+    shared_ptr<Missile> obj = CastSpellShot(Camera(camera.position, dir_, vec3(0, 1, 0)));
+    // obj->type = MISSILE_BOUNCYBALL;
   }
 }
 
@@ -6474,4 +6481,65 @@ shared_ptr<ArcaneSpellData> Resources::GetArcaneSpell(int spell_id) {
     return nullptr;
   }
   return arcane_spell_data_[spell_id];
+}
+
+void Resources::CreateMonsters(const char code, int quantity) {
+  static unordered_map<char, string> monster_assets { 
+    { 'L', "broodmother" },
+    { 's', "spiderling" },
+    { 'e', "scorpion" },
+    { 't', "spiderling" },
+    { 'I', "imp" },
+    { 'K', "lancet" },
+    { 'S', "white_spine" },
+    { 'w', "blood_worm" },
+    { 'V', "demon-vine" },
+    { 'Y', "dragonfly" },
+    { 'J', "speedling" },
+    { 'W', "wraith" },
+    { 'E', "metal-eye" },
+    { 'b', "beholder" },
+  };
+
+  vector<ivec2> waypoints;
+
+  char** monsters_and_objs = dungeon_.GetMonstersAndObjs();
+  for (int x = 0; x < kDungeonSize; x++) {
+    for (int z = 0; z < kDungeonSize; z++) {
+      if (monsters_and_objs[x][z] != 'f') continue;
+      waypoints.push_back(ivec2(x, z));
+    }
+  }
+
+  for (int i = 0; i < quantity; i++) {
+    int j = Random(0, waypoints.size());
+    float off_x = Random(-10, 11) * 1.0f;
+    float off_y = Random(-10, 11) * 1.0f;
+
+    vec3 pos = kDungeonOffset + vec3(10.0 * waypoints[j].x + off_x, 0, 
+      10.0f * waypoints[j].y + off_y);
+    ObjPtr monster = CreateMonster(this, monster_assets[code], pos + vec3(0, 3, 0), 0);  
+    monster->ai_state = AI_ATTACK;
+  }
+}
+
+void Resources::CreateTreasures() {
+  char** dungeon_map = dungeon_.GetDungeon();
+  for (int x = 0; x < kDungeonSize; x++) {
+    for (int z = 0; z < kDungeonSize; z++) {
+      if (dungeon_map[x][z] != ' ') continue;
+      if (Random(0, 100) != 0) continue;
+
+      float off_x = Random(-10, 11) * 1.0f;
+      float off_y = Random(-10, 11) * 1.0f;
+      vec3 pos = kDungeonOffset + vec3(10.0 * x + off_x, 0, 
+        10.0f * z + off_y);
+
+      int spell_id = Random(1, 5);
+      shared_ptr<ArcaneSpellData> spell = arcane_spell_data_[spell_id];
+      ObjPtr obj = CreateGameObjFromAsset(this,
+        item_data_[spell->item_id].asset_name, pos + vec3(0, 5.3, 0));
+      obj->CalculateCollisionData();
+    }
+  }
 }

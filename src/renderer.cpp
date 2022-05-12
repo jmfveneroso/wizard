@@ -856,7 +856,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       auto spell = resources_->GetArcaneSpell(configs->selected_spell);
       if (obj->active_animation == "Armature|flip_page" && obj->frame <= 22) {
         texture_id = resources_->GetTextureByName("grimmoire_empty_page");
-      } else if (spell->spell_id == 9) {
+      } else if (spell->spell_id == 0) {
         texture_id = resources_->GetTextureByName("grimmoire_page_spellshot");
       } else {
         texture_id = resources_->GetTextureByName("grimmoire_page_windslash");
@@ -1532,19 +1532,14 @@ void Renderer::DrawStatusBars() {
   // draw_2d_->DrawText(stamina_str, 240, 900 - 872, 
   //   vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
-  // Draw mana.
-  draw_2d_->DrawImage("spellbar_base_bar", 29, 824, 400, 400, 1.0);
-  draw_2d_->DrawImage("spellbar_base_mana", 29 + 26, 824 + 10, 288 * mana_bar_width, 288, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
+  // // Draw mana.
+  // draw_2d_->DrawImage("spellbar_base_bar", 29, 824, 400, 400, 1.0);
+  // draw_2d_->DrawImage("spellbar_base_mana", 29 + 26, 824 + 10, 288 * mana_bar_width, 288, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
 
-  // draw_2d_->DrawImageWithMask("blue", "mana_bar_mask", 
-  //   1089 + (1 - mana_bar_width) * 329, 824, 
-  //   mana_bar_width * 329, 329, 
-  //   1.0, vec2(1 - mana_bar_width, 0), vec2(mana_bar_width, 1));
-
-  string mana_str = boost::lexical_cast<string>(int(player->mana)) + " / " +
-    boost::lexical_cast<string>(player->max_mana);
-  draw_2d_->DrawText(mana_str, 300, 900 - 818, 
-    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+  // string mana_str = boost::lexical_cast<string>(int(player->mana)) + " / " +
+  //   boost::lexical_cast<string>(player->max_mana);
+  // draw_2d_->DrawText(mana_str, 300, 900 - 818, 
+  //   vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   shared_ptr<ArcaneSpellData> arcane_spell =  
@@ -1573,6 +1568,8 @@ void Renderer::DrawStatusBars() {
   }
 
   if (!active_name.empty()) {
+    active_name += " (" + boost::lexical_cast<string>(arcane_spell
+      ->quantity) + ")";
     draw_2d_->DrawText(active_name, 300, 900 - 870, 
       vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
   }

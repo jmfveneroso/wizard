@@ -45,7 +45,8 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
   vector<ObjPtr> monsters = resources_->GetMonstersInGroup(unit->monster_group); 
   for (auto& m : monsters) {
     if (m == unit) continue;
-    if (m->ai_state == AI_ATTACK && m->leader) {
+    if (m->ai_state == AI_ATTACK) {
+    // if (m->ai_state == AI_ATTACK && m->leader) {
       group_is_attacking = true;
       break;
     }
@@ -65,9 +66,9 @@ bool Monsters::ShouldHoldback(ObjPtr unit) {
     relevance_diff = 1;
   } 
 
-  if (unit->leader) {
-    group_is_attacking = false;
-  }
+  // if (unit->leader) {
+  //   group_is_attacking = false;
+  // }
 
   int actual_relevance_diff = (player_relevance - unit_relevance);
   return !group_is_attacking && (distance_to_player > chase_distance) &&
@@ -999,6 +1000,7 @@ void Monsters::Scorpion(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
   double distance_to_player = length(player->position - unit->position);
+  bool visible = dungeon.IsTileVisible(unit->position);
 
   float t;
   bool can_hit_player = !dungeon.IsRayObstructed(unit->position, 
@@ -1010,11 +1012,32 @@ void Monsters::Scorpion(ObjPtr unit) {
         break;
       }
 
-      if (!unit->CanUseAbility("ranged-attack") || !can_hit_player) {
+      if (distance_to_player > 80.0f) {
+        if (Random(0, 10) == 0) {
+          vec3 pos = FindSideMove(unit);
+          if (length2(pos) > 0.1f) {
+            unit->actions.push(make_shared<MoveAction>(pos));
+          } else {
+            unit->actions.push(make_shared<MoveToPlayerAction>());
+          }
+        } else {
+          unit->actions.push(make_shared<MoveToPlayerAction>());
+        }
+      } else if (!unit->CanUseAbility("ranged-attack") || !can_hit_player) {
         if (!IsPlayerReachable(unit)) { 
           unit->actions.push(make_shared<ChangeStateAction>(IDLE));
         } else {
-          unit->actions.push(make_shared<MoveToPlayerAction>());
+          if (distance_to_player < 60.0f && visible) {
+            vec3 pos = FindSideMove(unit);
+            bool next_move_visible = dungeon.IsTileVisible(pos);
+            if (length2(pos) > 0.1f && next_move_visible) {
+              unit->actions.push(make_shared<MoveAction>(pos));
+            } else {
+              unit->actions.push(make_shared<MoveToPlayerAction>());
+            }
+          } else {
+            unit->actions.push(make_shared<MoveToPlayerAction>());
+          }
         }
       } else {
         unit->actions.push(make_shared<TakeAimAction>());
