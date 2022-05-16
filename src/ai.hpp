@@ -28,6 +28,8 @@ class AI {
   ObjPtr GetClosestUnit(ObjPtr spider);
 
   bool RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold = 0.75f);
+  bool RotateSpiderWithStrafe(ObjPtr spider, vec3 point, int* move_type,
+    float rotation_threshold);
   void Attack(ObjPtr spider);
   void Idle(ObjPtr spider);
   void Wander(ObjPtr spider);

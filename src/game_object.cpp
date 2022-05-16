@@ -371,29 +371,6 @@ ObjPtr GameObject::GetParent() {
   return parent;
 }
 
-// int GameObject::GetNumFramesInCurrentAnimation() {
-//   Mesh& mesh = GetAsset()->lod_meshes[0];
-//   const Animation& animation = mesh.animations[active_animation];
-//   return animation.keyframes.size();
-// }
-// 
-// bool GameObject::HasAnimation(const string& animation_name) {
-//   Mesh& mesh = GetAsset()->lod_meshes[0];
-//   return (mesh.animations.find(animation_name) != mesh.animations.end());
-// }
-
-// bool GameObject::ChangeAnimation(const string& animation_name) {
-//   if (active_animation == animation_name) return true;
-//   // if (!HasAnimation(animation_name)) {
-//   //   // cout << "Failed to change animation to " << animation_name << " for " <<
-//   //   //   name << endl;
-//   //   return false;
-//   // }
-//   active_animation = animation_name;
-//   frame = 0;
-//   return true;
-// }
-
 string GameObject::GetDisplayName() {
   if (!asset_group) {
     if (type == GAME_OBJ_PLAYER) return "player";

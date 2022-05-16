@@ -65,6 +65,13 @@ class GameObject : public enable_shared_from_this<GameObject> {
   string active_animation = "";
   double frame = 0;
 
+  TransitionType transition_type = TRANSITION_SMOOTH;
+  bool transition_animation = false;
+  string prev_animation = "";
+  float prev_animation_frame = 0;
+  double transition_frame = 0;
+  double transition_duration = 120.0f;
+
   shared_ptr<Sector> current_sector;
   shared_ptr<Region> current_region = nullptr;
   shared_ptr<OctreeNode> octree_node;

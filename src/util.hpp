@@ -259,6 +259,12 @@ enum ItemType {
   ITEM_PASSIVE
 };
 
+enum TransitionType {
+  TRANSITION_NONE = 0,
+  TRANSITION_SMOOTH,
+  TRANSITION_FINISH_ANIMATION,
+};
+
 struct Camera {
   vec3 position; 
   vec3 up; 
@@ -601,6 +607,7 @@ string LoadStringFromXml(const pugi::xml_node& node);
 
 int LoadIntFromXml(const pugi::xml_node& node);
 float LoadFloatFromXml(const pugi::xml_node& node);
+char LoadCharFromXml(const pugi::xml_node& node);
 bool LoadBoolFromXml(const pugi::xml_node& node);
 
 int LoadIntFromXmlOr(const pugi::xml_node& node, const string& name, int def);

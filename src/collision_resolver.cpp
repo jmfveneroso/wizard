@@ -146,7 +146,8 @@ void CollisionResolver::ProcessTentativePair(ObjPtr obj1, ObjPtr obj2) {
 void CollisionResolver::Collide() {
   double start_time = glfwGetTime();
 
-  in_dungeon_ = resources_->GetConfigs()->render_scene == "dungeon";
+  in_dungeon_ = resources_->GetConfigs()->render_scene == "dungeon" ||
+    resources_->GetConfigs()->render_scene == "arena";
 
   if (!in_dungeon_) {
     resources_->GetPlayer()->can_jump = false;

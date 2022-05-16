@@ -135,7 +135,7 @@ bool PlayerInput::InteractWithItem(GLFWwindow* window, const Camera& c,
             resources_->WhichArcaneSpell(item_id);
 
           if (arcane_spell) { 
-            resources_->LearnSpell(item_id);
+            resources_->LearnSpell(arcane_spell->spell_id);
             resources_->RemoveObject(item);
           } else if (item_id == 20) { 
             resources_->GetPlayer()->mana += 1;
@@ -650,8 +650,11 @@ bool PlayerInput::CastSpellOrUseItem() {
 
     Camera c = GetCamera();
 
-    if (arcane_spell->spell_id > 0 && arcane_spell->quantity <= 0) return false;
-    arcane_spell->quantity--;
+    if (player->mana >= arcane_spell->mana_cost) {
+      player->mana -= arcane_spell->mana_cost;
+    } else {
+      return false;
+    }
 
     switch (arcane_spell->spell_id) {
       case 0: { // Spell shot.
@@ -663,7 +666,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           scepter->frame = 0;
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
-          player->mana -= 1;
           player->selected_spell = 0;
           debounce_ = 20;
         //   return true;
@@ -680,7 +682,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 1;
-          player->mana -= arcane_spell->mana_cost;
           --arcane_spell->quantity;
           debounce_ = 20;
 
@@ -701,7 +702,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
           player->selected_spell = 6;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
         // }
@@ -717,7 +717,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
           player->selected_spell = 8;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
         // }
@@ -733,7 +732,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 0;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 20;
           return true;
         // }
@@ -749,7 +747,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 2;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 20;
           return true;
         // }
@@ -765,7 +762,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
           player->selected_spell = 3;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
         // }
@@ -780,7 +776,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect();
           player->selected_spell = 4;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 20;
           return true;
         // }
@@ -796,7 +791,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
           player->selected_spell = 5;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
         // }
@@ -811,7 +805,6 @@ bool PlayerInput::CastSpellOrUseItem() {
           animation_frame_ = 60;
           resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
           player->selected_spell = 7;
-          player->mana -= arcane_spell->mana_cost;
           debounce_ = 0;
           return true;
         // }
@@ -1030,8 +1023,7 @@ bool PlayerInput::SelectSpell(int spell_id) {
   shared_ptr<ArcaneSpellData> arcane_spell = resources_->GetArcaneSpell(spell_id);
 
   if (!arcane_spell) return false;
-  // if (!arcane_spell->learned) return false;
-  if (arcane_spell->spell_id > 0 && arcane_spell->quantity <= 0) return false;
+  if (arcane_spell->spell_id > 0 && !arcane_spell->learned) return false;
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   configs->selected_spell = spell_id;

@@ -35,6 +35,7 @@ class Engine {
   int window_height_ = WINDOW_HEIGHT;
   GLFWwindow* window_;
   int throttle_counter_ = 0;
+  bool before_frame_debug_ = false;
 
   bool terminate_ = false;
   thread collision_thread_;

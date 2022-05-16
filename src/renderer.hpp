@@ -157,6 +157,7 @@ class Renderer {
   void DrawHand();
   void FindVisibleObjectsAsync();
   void CreateThreads();
+  vector<mat4> GetJointTransforms(ObjPtr obj, MeshPtr mesh);
   vector<mat4> GetJointTransformsForMerchant();
 
  public:

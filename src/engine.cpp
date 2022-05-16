@@ -87,6 +87,10 @@ void Engine::RunCommand(string command) {
     configs->levitate = false;
   } else if (result[0] == "time") {
     configs->stop_time = false;
+  } else if (result[0] == "debug") {
+    before_frame_debug_ = true;
+  } else if (result[0] == "nodebug") {
+    before_frame_debug_ = false;
   } else if (result[0] == "notime") {
     configs->stop_time = true;
   } else if (result[0] == "disable-attacks") {
@@ -249,24 +253,30 @@ void Engine::RunCommand(string command) {
       resources_->GenerateOptimizedOctree();
     } catch(boost::bad_lexical_cast const& e) {
     }
-  } else if (result[0] == "load-dungeon") {
+  } else if (result[0] == "arena") {
     try {
-      const string& filename = result[1];
-      // const string& filename = string("dungeons/dungeon") + 
-      //   boost::lexical_cast<string>(result[1]) + "txt";
+      const string& filename = "dungeons/dungeon1.txt";
 
       Dungeon& dungeon = resources_->GetDungeon();
       if (dungeon.LoadDungeonFromFile(filename)) {
         resources_->ChangeDungeonLevel(0);
         resources_->DeleteAllObjects();
         resources_->CreateDungeon(false);
-        vec3 pos = dungeon.GetUpstairs();
+        vec3 pos = dungeon.GetTilePosition(ivec2(11, 11));
+        configs->wave_reset_timer = glfwGetTime() + 5.0f;
+
         resources_->GetPlayer()->ChangePosition(pos);
-        resources_->GetConfigs()->render_scene = "dungeon";
+        resources_->GetConfigs()->render_scene = "arena";
         resources_->SaveGame();
         resources_->CalculateCollisionData();
         resources_->GenerateOptimizedOctree();
         configs->update_renderer = true;
+        configs->wave_monsters.clear();
+        configs->current_wave = -1;
+
+        for (int i = 0; i < 5; i++) {
+          resources_->LearnSpell(i);
+        }
       }
     } catch(boost::bad_lexical_cast const& e) {
     }
@@ -276,7 +286,6 @@ void Engine::RunCommand(string command) {
         char code = boost::lexical_cast<char>(result[1]);
         int quantity = boost::lexical_cast<int>(result[2]);
         resources_->CreateMonsters(code, quantity);
-        resources_->CreateTreasures();
       } catch(boost::bad_lexical_cast const& e) {
       }
     }
@@ -681,7 +690,10 @@ void Engine::BeforeFrameDebug() {
 void Engine::BeforeFrame() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   {
-    // BeforeFrameDebug();
+    if (before_frame_debug_) {
+      BeforeFrameDebug();
+    }
+
     switch (resources_->GetGameState()) {
       case STATE_GAME: {
         physics_->Run();

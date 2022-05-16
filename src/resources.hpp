@@ -162,7 +162,7 @@ struct Configs {
   // Player stats
   // ----------------------
   int max_life = 3;
-  int max_mana = 10;
+  int max_mana = 20;
   float mana_regen = 0.003f;
   bool can_run = false;
   bool luck_charm = false;
@@ -189,6 +189,11 @@ struct Configs {
 
   int dungeon_level = 0;
   int max_dungeon_level = 0;
+
+  // Arena.
+  int current_wave = -1;
+  vector<ObjPtr> wave_monsters;
+  float wave_reset_timer = 0.0f;
 
   bool disable_collision = false;
   bool disable_ai = false;
@@ -421,7 +426,6 @@ class Resources {
   vector<shared_ptr<GameObject>> lights_;
   vector<shared_ptr<GameObject>> items_;
   vector<shared_ptr<GameObject>> extractables_;
-  vector<shared_ptr<GameObject>> rotating_planks_;
   vector<shared_ptr<Particle>> particles_3d_;
 
   shared_ptr<Player> player_ = nullptr;
@@ -580,7 +584,6 @@ class Resources {
   void SetGameState(GameState new_state) { game_state_ = new_state; }
   void Cleanup();
   void RunPeriodicEvents();
-  void ProcessRotatingPlanksOrientation();
 
   void AddGameObject(shared_ptr<GameObject> game_obj);
   void CalculateCollisionData(bool recalculate = false);
@@ -711,7 +714,8 @@ class Resources {
 
   HeightMap& GetHeightMap() { return height_map_; }
   Dungeon& GetDungeon() { return dungeon_; }
-  bool ChangeObjectAnimation(ObjPtr obj, const string& animation_name);
+  bool ChangeObjectAnimation(ObjPtr obj, const string& animation_name, 
+    bool transition = true, TransitionType type = TRANSITION_SMOOTH);
 
   // Events.
   void RegisterOnEnterEvent(const string& region_name, const string& unit_name, 
@@ -724,6 +728,7 @@ class Resources {
     const string& phrase_name, const string& callback);
   void RegisterOnHeightBelowEvent(float h, const string& callback);
   void ProcessOnPlayerMoveEvent();
+  void ProcessArenaEvents();
 
   void Rest();
 
@@ -831,7 +836,6 @@ class Resources {
   bool UseTeleportRod();
   bool CreateBonfire();
   void CreateMonsters(const char code, int quantity);
-  void CreateTreasures();
 };
 
 #endif // __RESOURCES_HPP__

@@ -14,6 +14,6 @@ int main(int argc, char **argv) {
   );
 
   int time = ms.count();
-  dungeon.GenerateDungeon(6, time);
+  dungeon.GenerateDungeon(0, time);
   return 0;
 }

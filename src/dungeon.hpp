@@ -73,6 +73,10 @@ struct LevelData {
       dungeon_cells(dungeon_cells) {}
 };
 
+struct Wave {
+  vector<tuple<char, int>> monsters_and_count;
+};
+
 class Dungeon {
   std::default_random_engine generator_;
 
@@ -207,6 +211,7 @@ class Dungeon {
   };
 
   unordered_map<int, LevelData> level_data_;
+  vector<Wave> wave_data_;
 
   vector<ivec2> code_to_offset_ {
     ivec2(+1, +1), ivec2(+0, +1), ivec2(-1, +1), 
@@ -366,6 +371,7 @@ class Dungeon {
   int GetRandomLearnableSpell(int dungeon_level);
   vec3 GetDungeonColor();
   bool LoadDungeonFromFile(const string& filename);
+  Wave GetWave(int wave);
 };
 
 #endif // __DUNGEON_HPP__

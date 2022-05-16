@@ -105,7 +105,7 @@ void Renderer::GetVisibleObjects(
   aabb.dimensions = octree_node->half_dimensions * 2.0f;
 
   vec3 closest = ClosestPtPointAABB(player_pos_, aabb);
-  if (resources_->GetConfigs()->render_scene == "dungeon" && 
+  if (resources_->GetConfigs()->render_scene != "town" && 
       length(closest - player_pos_) > resources_->GetConfigs()->light_radius + 5) {
    return;
   }
@@ -255,7 +255,7 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
 
   // Distance cull.
   obj->distance = length(camera_.position - obj->position);
-  if (resources_->GetConfigs()->render_scene == "dungeon" && 
+  if (resources_->GetConfigs()->render_scene != "town" && 
       obj->distance > resources_->GetConfigs()->light_radius + 5) { 
     return true;
   }
@@ -457,7 +457,7 @@ vector<ObjPtr> Renderer::GetVisibleObjects(vec4 frustum_planes[6]) {
 
 void Renderer::DrawOutside() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
-  if (configs->render_scene == "dungeon" && configs->draw_dungeon) {
+  if (configs->render_scene != "town" && configs->draw_dungeon) {
     DrawDungeonTiles();
     return;
   }
@@ -585,6 +585,92 @@ void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
   glDisable(GL_BLEND);
   glBindVertexArray(0);
 }
+
+vector<mat4> Renderer::GetJointTransforms(ObjPtr obj, MeshPtr mesh) {
+  vector<mat4> joint_transforms;
+
+  if (!obj->transition_animation) {
+    if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
+      const Animation& animation = mesh->animations[obj->active_animation];
+      for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+        joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+      }
+    } else {
+      ThrowError("Animation ", obj->active_animation, " for object ",
+        obj->name, " and asset ", obj->GetAsset()->name, " does not exist");
+    }
+    return joint_transforms;
+  }
+
+  const Animation& prev_animation = mesh->animations[obj->prev_animation];
+  const Animation& cur_animation = mesh->animations[obj->active_animation];
+
+  float interpolation_factor = obj->transition_frame / obj->transition_duration;
+
+  // cout << "------------------------------------------------------------" << endl;
+  // cout << "In transition" << endl;
+  // cout << "frame: " << obj->frame << endl;
+  // cout << "transition_frame: " << obj->transition_frame << endl;
+  // cout << "transition_duration: " << obj->transition_duration << endl;
+  // cout << "prev_animation_frame: " << obj->prev_animation_frame << endl;
+  // cout << "interpolation_factor: " << interpolation_factor<< endl;
+  // cout << "prev_animation: " << obj->prev_animation << endl;
+  // cout << "cur_animation: " << obj->active_animation << endl;
+
+  int num_transforms = cur_animation.keyframes[obj->frame].transforms.size();
+  for (int i = 0; i < num_transforms; i++) {
+    switch (obj->transition_type) {
+      case TRANSITION_SMOOTH: {
+        // mat4 prev_transform = prev_animation.keyframes[obj->prev_animation_frame].transforms[i];
+        // mat4 cur_transform = cur_animation.keyframes[0].transforms[i];
+
+        // // TODO: Implement scale.
+        // // vec3 prev_scale;
+        // // prev_scale.x = length(vec3(prev_transform[0][0], prev_transform[0][1], prev_transform[0][2]));
+        // // prev_scale.y = length(vec3(prev_transform[1][0], prev_transform[1][1], prev_transform[1][2]));
+        // // prev_scale.z = length(vec3(prev_transform[2][0], prev_transform[2][1], prev_transform[2][2]));
+
+        // // vec3 cur_scale;
+        // // cur_scale.x = length(vec3(cur_transform[0][0], cur_transform[0][1], cur_transform[0][2]));
+        // // cur_scale.y = length(vec3(cur_transform[1][0], cur_transform[1][1], cur_transform[1][2]));
+        // // cur_scale.z = length(vec3(cur_transform[2][0], cur_transform[2][1], cur_transform[2][2]));
+
+        // quat prev_rotation = quat_cast(mat3(prev_transform));
+        // quat cur_rotation = quat_cast(mat3(cur_transform));
+        // quat final_rotation = glm::mix(prev_rotation, cur_rotation, interpolation_factor);
+        // mat4 joint_transform = mat4_cast(final_rotation);
+ 
+        // vec3 prev_translation = vec3(prev_transform[3][0], prev_transform[3][1], prev_transform[3][2]);
+        // vec3 cur_translation = vec3(cur_transform[3][0], cur_transform[3][1], cur_transform[3][2]);
+        // vec3 translation = glm::mix(prev_translation, cur_translation, interpolation_factor);
+
+        // joint_transform[3][0] = translation.x;
+        // joint_transform[3][1] = translation.y;
+        // joint_transform[3][2] = translation.z;
+        // joint_transform[3][3] = 1.0f;
+
+        // joint_transforms.push_back(joint_transform);
+        float frame = obj->prev_animation_frame + obj->transition_frame;
+        mat4 joint_transform = prev_animation.keyframes[frame].transforms[i];
+        joint_transforms.push_back(joint_transform);
+        break;
+      }
+      case TRANSITION_FINISH_ANIMATION: {
+        float frame = obj->prev_animation_frame + obj->transition_frame;
+        mat4 joint_transform = prev_animation.keyframes[frame].transforms[i];
+        joint_transforms.push_back(joint_transform);
+        break;
+      }
+      default: {
+        const Animation& animation = mesh->animations[obj->active_animation];
+        joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        break;
+      }
+    }
+  }
+  return joint_transforms;
+}
+
 
 vector<mat4> Renderer::GetJointTransformsForMerchant() {
   ObjPtr obj = resources_->GetObjectByName("mammon");
@@ -786,7 +872,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
 
     glUniform1f(GetUniformId(program_id, "light_radius"), configs->light_radius);
 
-    if (configs->render_scene == "dungeon") {
+    if (configs->render_scene != "town") {
       glUniform1f(GetUniformId(program_id, "outdoors"), 0);
       glUniform1f(GetUniformId(program_id, "in_dungeon"), 1);
     } else {
@@ -867,16 +953,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
         program_id == resources_->GetShader("outdoor_animated_object") ||
         program_id == resources_->GetShader("animated_object_noshadow")) {
       glDisable(GL_CULL_FACE);
-      vector<mat4> joint_transforms;
-      if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
-        const Animation& animation = mesh->animations[obj->active_animation];
-        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
-          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
-        }
-      } else {
-        ThrowError("Animation ", obj->active_animation, " for object ",
-          obj->name, " and asset ", asset->name, " does not exist");
-      }
+      vector<mat4> joint_transforms = GetJointTransforms(obj, mesh);
 
       if (asset->name == "merchant_body") {
         // GetJointTransformsForMerchant();
@@ -1229,7 +1306,7 @@ void Renderer::Draw() {
   DrawShadows();
 
   vec3 clear_color = vec3(0.73, 0.81, 0.92);
-  if (configs->render_scene == "dungeon") {
+  if (configs->render_scene != "town") {
     clear_color = vec3(0);
   }
   u_time_ += 0.01f;
@@ -1241,7 +1318,7 @@ void Renderer::Draw() {
   GetFrustumPlanes(frustum_planes_);
   vector<ObjPtr> objects = GetVisibleObjects(frustum_planes_);
 
-  if (configs->render_scene == "dungeon") {
+  if (configs->render_scene != "town") {
     shared_ptr<Player> player = resources_->GetPlayer();
     Dungeon& dungeon = resources_->GetDungeon();
     ivec2 player_tile = dungeon.GetDungeonTile(player->position);
@@ -1326,7 +1403,7 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
       asset->shader == resources_->GetShader("animated_object") ||
       asset->shader == resources_->GetShader("animated_transparent_object"));
 
-    bool in_dungeon = resources_->GetConfigs()->render_scene == "dungeon";
+    bool in_dungeon = resources_->GetConfigs()->render_scene != "town";
 
     if (is_animated && obj->IsCreature()) {
       program_id = resources_->GetShader("animated_shadow");
@@ -1533,13 +1610,13 @@ void Renderer::DrawStatusBars() {
   //   vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
   // // Draw mana.
-  // draw_2d_->DrawImage("spellbar_base_bar", 29, 824, 400, 400, 1.0);
-  // draw_2d_->DrawImage("spellbar_base_mana", 29 + 26, 824 + 10, 288 * mana_bar_width, 288, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
+  draw_2d_->DrawImage("spellbar_base_bar", 29, 824, 400, 400, 1.0);
+  draw_2d_->DrawImage("spellbar_base_mana", 29 + 26, 824 + 10, 288 * mana_bar_width, 288, 1.0, vec2(0, 0), vec2(hp_bar_width, 1));
 
-  // string mana_str = boost::lexical_cast<string>(int(player->mana)) + " / " +
-  //   boost::lexical_cast<string>(player->max_mana);
-  // draw_2d_->DrawText(mana_str, 300, 900 - 818, 
-  //   vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+  string mana_str = boost::lexical_cast<string>(int(player->mana)) + " / " +
+    boost::lexical_cast<string>(player->max_mana);
+  draw_2d_->DrawText(mana_str, 300, 900 - 818, 
+    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   shared_ptr<ArcaneSpellData> arcane_spell =  
@@ -1555,6 +1632,26 @@ void Renderer::DrawStatusBars() {
     //   active_name = item_data.name;
     // }
   }
+
+  // Draw arena.
+  if (configs->render_scene == "arena") {
+    int num_dead = 0;
+    for (auto monster : configs->wave_monsters) {
+      if (monster->status == STATUS_DEAD) num_dead++;
+    }
+
+    float timer = configs->wave_reset_timer - glfwGetTime();
+
+    string s = string("Wave ") + 
+      boost::lexical_cast<string>(configs->current_wave) + ": " +
+      boost::lexical_cast<string>(num_dead) + " / " + 
+      boost::lexical_cast<string>(configs->wave_monsters.size()) + 
+      " -- Reset in: " + boost::lexical_cast<string>(timer);
+    draw_2d_->DrawText(s, 50, 900 - 50, 
+      vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+  }
+
+
 
   float t;
   vec3 q;

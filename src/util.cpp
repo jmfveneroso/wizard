@@ -1091,6 +1091,10 @@ float LoadFloatFromXml(const pugi::xml_node& node) {
   return boost::lexical_cast<float>(node.text().get());
 }
 
+char LoadCharFromXml(const pugi::xml_node& node) {
+  return boost::lexical_cast<char>(node.text().get());
+}
+
 bool LoadBoolFromXml(const pugi::xml_node& node) {
   return boost::lexical_cast<bool>(node.text().get());
 }

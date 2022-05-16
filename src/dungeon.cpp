@@ -2996,6 +2996,23 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
       l.dungeon_color = vec3(r, g, b);
     }
   }
+
+  wave_data_.clear();
+  pugi::xml_node wave_xml = xml.child("waves");
+  for (pugi::xml_node node_xml = wave_xml.child("wave"); node_xml; 
+    node_xml = node_xml.next_sibling("wave")) {
+
+    wave_data_.push_back(Wave());
+    Wave& wave = wave_data_[wave_data_.size() - 1];
+
+    const pugi::xml_node& xml_monsters = node_xml.child("monsters");
+    for (pugi::xml_node xml_monster = xml_monsters.child("monster"); xml_monster; 
+      xml_monster = xml_monster.next_sibling("monster")) {
+      int count = boost::lexical_cast<int>(xml_monster.attribute("count").value());
+      char monster_id = LoadCharFromXml(xml_monster);
+      wave.monsters_and_count.push_back({ monster_id, count });
+    }
+  }
 }
 
 void Dungeon::CalculatePathsAsync() {
@@ -3132,6 +3149,12 @@ bool Dungeon::LoadDungeonFromFile(const string& filename) {
   GenerateAsciiDungeon();
   CalculateAllPaths();
   PrintMap();
+
   // CalculateRelevance();
   return true;
+}
+
+Wave Dungeon::GetWave(int wave) {
+  if (wave < 0 || wave >= wave_data_.size()) return Wave();
+  return wave_data_[wave];
 }

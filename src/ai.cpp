@@ -24,7 +24,7 @@ vec3 GetTilePosition(const ivec2& tile) {
 
 void AI::ChangeState(ObjPtr obj, AiState state) {
   obj->ai_state = state;
-  obj->frame = 0;
+  // obj->frame = 0;
   obj->state_changed_at = glfwGetTime();
 }
 
@@ -64,7 +64,6 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
   to_point.y = 0;
 
   const vec3 front = vec3(0, 0, 1);
-  // const vec3 up = vec3(0, 1, 0);
  
   // At rest position, the object forward direction is +Z and up is +Y.
   spider->forward = normalize(to_point);
@@ -80,6 +79,63 @@ bool AI::RotateSpider(ObjPtr spider, vec3 point, float rotation_threshold) {
     normalize(cur_forward));
 
   bool is_rotating = abs(dot(h_rotation, cur_h_rotation)) < rotation_threshold;
+  spider->cur_rotation =  
+    RotateTowards(spider->cur_rotation, target_rotation, turn_rate);
+  spider->rotation_matrix = mat4_cast(spider->cur_rotation);
+  return is_rotating; 
+}
+
+bool AI::RotateSpiderWithStrafe(ObjPtr spider, vec3 point, int* move_type,
+  float rotation_threshold) {
+  vec3 to_point = point - spider->position;
+  to_point.y = 0;
+
+  const vec3 front = vec3(0, 0, 1);
+  const vec3 right = vec3(1, 0, 0);
+  const vec3 left  = vec3(-1, 0, 0);
+ 
+  // Check if object is facing the correct direction.
+  vec3 cur_forward = spider->rotation_matrix * front;
+  cur_forward.y = 0;
+
+  quat cur_front_rotation = RotationBetweenVectors(front, 
+    normalize(cur_forward));
+
+  // At rest position, the object forward direction is +Z and up is +Y.
+  spider->forward = normalize(to_point);
+
+  quat target_front_rotation = RotationBetweenVectors(front, spider->forward);
+  quat target_right_rotation = RotationBetweenVectors(right, spider->forward);
+  quat target_left_rotation = RotationBetweenVectors(left, spider->forward);
+
+  // Check which is better: front, strafe left or strafe right.
+  float front_magnitude = abs(dot(target_front_rotation, cur_front_rotation));
+  float right_magnitude = abs(dot(target_right_rotation, cur_front_rotation));
+  float left_magnitude = abs(dot(target_left_rotation, cur_front_rotation));
+
+  float best_magnitude = 0.0f;
+  quat target_rotation;
+
+  // Front.
+  if (front_magnitude > right_magnitude && front_magnitude > left_magnitude) {
+    best_magnitude = front_magnitude;
+    target_rotation = target_front_rotation;
+    *move_type = 0;
+  // Right.
+  } else if (right_magnitude > left_magnitude) {
+    best_magnitude = right_magnitude;
+    target_rotation = target_right_rotation;
+    *move_type = 1;
+  // Left.
+  } else {
+    best_magnitude = left_magnitude;
+    target_rotation = target_left_rotation;
+    *move_type = 2;
+  } 
+
+  float turn_rate = spider->GetAsset()->base_turn_rate;
+
+  bool is_rotating = best_magnitude < rotation_threshold;
   spider->cur_rotation =  
     RotateTowards(spider->cur_rotation, target_rotation, turn_rate);
   spider->rotation_matrix = mat4_cast(spider->cur_rotation);
@@ -349,7 +405,7 @@ bool AI::ImpAttack(ObjPtr creature,
    
     vec3 dir = normalize(target - pos);
     resources_->CastImpFire(creature, pos, dir);
-    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.0;
   }
   return false;
 }
@@ -482,10 +538,25 @@ bool AI::ScorpionAttack(ObjPtr creature,
   const int num_missiles = 1;
   const float missile_speed = 1.2f + Random(0, 5) * 0.3f;
 
-  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+  ObjPtr target_unit = creature->GetCurrentTarget();
+
+  if (!action->initiated) {
+    action->initiated = true;
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+  }
+
+  bool is_rotating = RotateSpider(creature, target_unit->position, 0.8f);
+  if (is_rotating) {
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+    return false;
+  }
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack", true, TRANSITION_NONE);
 
   int num_frames = creature->GetNumFramesInCurrentAnimation();
-  if (int(creature->frame) >= num_frames - 5) {
+  if (int(creature->frame) >= num_frames - 3) {
     return true;
   }
 
@@ -501,15 +572,24 @@ bool AI::ScorpionAttack(ObjPtr creature,
     target = vec3(target_pos.x, player->position.y, target_pos.y);
   }
 
+  RotateSpider(creature, target, 0.99f);
+
   vec3 dir = normalize(target - creature->position);
   dir.y = 0.1f;
 
-  if (int(creature->frame) >= num_frames - 25 && !action->damage_dealt) {
+  if (int(creature->frame) >= 41 && !action->damage_dealt) {
     action->damage_dealt = true;
     vec3 p2 = creature->position + dir * 200.0f;
     resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), MISSILE_BOUNCYBALL, 
       dir, missile_speed);
     creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+
+    shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
+    // int bone_id = mesh->bones_to_ids["muzzle_bone"];
+    int bone_id = mesh->bones_to_ids["Bone"];
+    BoundingSphere s = creature->GetBoneBoundingSphere(bone_id);
+    resources_->CreateParticleEffect(10, s.center,
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 3.0, 24.0f, 15.0f, "fireball");          
   }
   return false;
 }
@@ -648,6 +728,9 @@ bool AI::ProcessTakeAimAction(ObjPtr spider, shared_ptr<TakeAimAction> action) {
 
   if (spider->levitating) {
     resources_->ChangeObjectAnimation(spider, "Armature|climbing");
+  } else if (spider->GetAsset()->name == "scorpion") {
+    resources_->ChangeObjectAnimation(spider, "Armature|idle", 
+      TRANSITION_FINISH_ANIMATION);
   } else {
     resources_->ChangeObjectAnimation(spider, "Armature|walking");
   }
@@ -693,10 +776,6 @@ bool AI::ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action) {
 }
 
 bool AI::ProcessMoveAction(ObjPtr spider, vec3 destination) {
-  if (spider->GetType() == ASSET_CREATURE) {
-    resources_->ChangeObjectAnimation(spider, "Armature|walking");
-  }
-
   vec3 to_next_location = destination - spider->position;
 
   // TODO: create function GetPhysicsBehavior.
@@ -709,16 +788,35 @@ bool AI::ProcessMoveAction(ObjPtr spider, vec3 destination) {
 
   to_next_location.y = 0;
 
+  shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+    int num_frames = GetNumFramesInAnimation(*mesh, 
+      spider->active_animation);
+
   float dist_next_location = length(to_next_location);
   if (dist_next_location < 1.0f) {
     return true;
   }
 
-  if (spider->GetType() == ASSET_CREATURE) {
-    bool is_rotating = RotateSpider(spider, destination);
-    if (is_rotating && physics_behavior == PHYSICS_FLY) {
+  if (spider->GetAsset()->name == "scorpion") {
+    int movement_type = 0;
+    bool is_rotating = RotateSpiderWithStrafe(spider, destination, 
+      &movement_type, 0.75);
+
+    vector<string> animations { "Armature|walking", "Armature|strafe_right", 
+      "Armature|strafe_left" };
+    resources_->ChangeObjectAnimation(spider, animations[movement_type], 
+      TRANSITION_FINISH_ANIMATION);
+
+    if (is_rotating) {
       return false;
-    } 
+    }
+  } else {
+    bool is_rotating = RotateSpider(spider, destination, 0.75);
+    if (is_rotating) {
+      return false;
+    }
+
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
   }
 
   float speed = spider->current_speed;
@@ -1193,6 +1291,8 @@ void AI::ProcessNextAction(ObjPtr spider) {
     return;
   }
 
+  if (spider->transition_animation) return;
+
   shared_ptr<Action> action = spider->actions.front();
   switch (action->type) {
     case ACTION_MOVE: {
@@ -1200,12 +1300,12 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<MoveAction>(action);
       if (ProcessMoveAction(spider, move_action)) {
         spider->PopAction();
-        shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
-          int num_frames = GetNumFramesInAnimation(*mesh, 
-            spider->active_animation);
-        if (spider->frame >= num_frames) {
-          spider->frame = 0;
-        }
+        // shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+        //   int num_frames = GetNumFramesInAnimation(*mesh, 
+        //     spider->active_animation);
+        // if (spider->frame >= num_frames) {
+        //   spider->frame = 0;
+        // }
       }
       break;
     }
@@ -1214,7 +1314,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<LongMoveAction>(action);
       if (ProcessLongMoveAction(spider, move_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1223,7 +1323,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<RandomMoveAction>(action);
       if (ProcessRandomMoveAction(spider, random_move_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1240,14 +1340,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<TakeAimAction>(action);
       if (ProcessTakeAimAction(spider, take_aim_action)) {
         spider->PopAction();
-        spider->frame = 0;
-
-        shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
-          int num_frames = GetNumFramesInAnimation(*mesh, 
-            spider->active_animation);
-        if (spider->frame >= num_frames) {
-          spider->frame = 0;
-        }
+        // spider->frame = 0;
       }
       break;
     }
@@ -1256,7 +1349,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<MeeleeAttackAction>(action);
       if (ProcessMeeleeAttackAction(spider, meelee_attack_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1265,7 +1358,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<SpiderClimbAction>(action);
       if (ProcessSpiderClimbAction(spider, spider_climb_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1274,7 +1367,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<SpiderJumpAction>(action);
       if (ProcessSpiderJumpAction(spider, spider_jump_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1288,7 +1381,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
           int num_frames = GetNumFramesInAnimation(*mesh, 
             spider->active_animation);
         if (spider->frame >= num_frames) {
-          spider->frame = 0;
+          // spider->frame = 0;
         }
       }
       break;
@@ -1303,7 +1396,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
           int num_frames = GetNumFramesInAnimation(*mesh, 
             spider->active_animation);
         if (spider->frame >= num_frames) {
-          spider->frame = 0;
+          // spider->frame = 0;
         }
       }
       break;
@@ -1318,7 +1411,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
           int num_frames = GetNumFramesInAnimation(*mesh, 
             spider->active_animation);
         if (spider->frame >= num_frames) {
-          spider->frame = 0;
+          // spider->frame = 0;
         }
       }
       break;
@@ -1328,7 +1421,6 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<MoveToPlayerAction>(action);
       if (ProcessMoveToPlayerAction(spider, move_to_player_action)) {
         spider->PopAction();
-        // spider->frame = 0;
       }
       break;
     }
@@ -1337,7 +1429,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<MoveAwayFromPlayerAction>(action);
       if (ProcessMoveAwayFromPlayerAction(spider, move_away_from_player_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1346,7 +1438,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<RangedAttackAction>(action);
       if (ProcessRangedAttackAction(spider, ranged_attack_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1355,7 +1447,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<CastSpellAction>(action);
       if (ProcessCastSpellAction(spider, cast_spell_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1364,7 +1456,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<ChangeStateAction>(action);
       if (ProcessChangeStateAction(spider, change_state_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1373,7 +1465,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<StandAction>(action);
       if (ProcessStandAction(spider, stand_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1382,7 +1474,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<TalkAction>(action);
       if (ProcessTalkAction(spider, talk_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1391,7 +1483,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<AnimationAction>(action);
       if (ProcessAnimationAction(spider, animation_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1400,7 +1492,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<UseAbilityAction>(action);
       if (ProcessUseAbilityAction(spider, use_ability_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1409,7 +1501,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<DefendAction>(action);
       if (ProcessDefendAction(spider, defend_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1418,7 +1510,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<TeleportAction>(action);
       if (ProcessTeleportAction(spider, teleport_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1427,7 +1519,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<FireballAction>(action);
       if (ProcessFireballAction(spider, fireball_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }
@@ -1436,7 +1528,7 @@ void AI::ProcessNextAction(ObjPtr spider) {
         static_pointer_cast<ParalysisAction>(action);
       if (ProcessParalysisAction(spider, paralysis_action)) {
         spider->PopAction();
-        spider->frame = 0;
+        // spider->frame = 0;
       }
       break;
     }

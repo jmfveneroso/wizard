@@ -1027,7 +1027,7 @@ void Monsters::Scorpion(ObjPtr unit) {
         if (!IsPlayerReachable(unit)) { 
           unit->actions.push(make_shared<ChangeStateAction>(IDLE));
         } else {
-          if (distance_to_player < 60.0f && visible) {
+          if (distance_to_player < 50.0f && visible) {
             vec3 pos = FindSideMove(unit);
             bool next_move_visible = dungeon.IsTileVisible(pos);
             if (length2(pos) > 0.1f && next_move_visible) {
@@ -1040,7 +1040,6 @@ void Monsters::Scorpion(ObjPtr unit) {
           }
         }
       } else {
-        unit->actions.push(make_shared<TakeAimAction>());
         unit->actions.push(make_shared<RangedAttackAction>());
       }
       break;

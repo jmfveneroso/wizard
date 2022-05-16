@@ -766,7 +766,10 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
   if (xml) spell_data->spell_graph_pos = LoadIVec2FromXml(xml);
 
   xml = spell_xml.child("mana-cost");
-  if (xml) spell_data->mana_cost = LoadFloatFromXml(xml);
+  if (xml) {
+    spell_data->mana_cost = LoadFloatFromXml(xml);
+    cout << "Mana cost: " << spell_data->mana_cost << endl;
+  }
 
   item_id_to_spell_data_[spell_data->item_id] = spell_data;
 
@@ -2709,7 +2712,8 @@ void Resources::IssueMoveOrder(const string& unit_name,
   if (!waypoint) return;
 }
 
-bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) {
+bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name, 
+  bool transition, TransitionType type) {
   if (obj->active_animation == animation_name) {
     return true;
   }
@@ -2717,6 +2721,36 @@ bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name) 
   shared_ptr<Mesh> mesh = GetMesh(obj);
   if (!MeshHasAnimation(*mesh, animation_name)) {
     return false;
+  }
+
+  if (!obj->active_animation.empty() && transition && type != TRANSITION_NONE) {
+    float num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
+
+    if (obj->frame < num_frames - 5) {
+      // cout << "==================================================" << endl;
+      // cout << "Transitioning" << endl;
+      // cout << "prev: " << obj->active_animation << endl;
+      // cout << "next: " << animation_name << endl;
+      // cout << "frame: " << obj->frame << endl;
+      // cout << "==================================================" << endl;
+      obj->prev_animation = obj->active_animation;
+      obj->prev_animation_frame = obj->frame;
+      obj->transition_frame = 0;
+      obj->transition_animation = true;
+      obj->transition_type = type;
+
+      if (type == TRANSITION_SMOOTH) {
+        // obj->transition_duration = num_frames - obj->frame;
+        // if (obj->transition_duration > 20.0f) obj->transition_duration = 20.0f;
+        obj->transition_duration = num_frames - obj->frame;
+        obj->animation_speed = 2.5f;
+      } else if (type == TRANSITION_FINISH_ANIMATION) {
+        obj->transition_duration = num_frames - obj->frame;
+        obj->animation_speed = 2.5f;
+      }
+    }
+  } else {
+    obj->frame = 0;
   }
 
   obj->active_animation = animation_name;
@@ -3265,28 +3299,18 @@ void Resources::StartQuest(const string& quest_name) {
   AddMessage(string("Quest " + quests_[quest_name]->title + " started."));
 }
 
-void Resources::LearnSpell(int item_id) {
-  if (item_id == 9) return;
+void Resources::LearnSpell(int spell_id) {
+  if (spell_id == 0) return;
 
-  auto spell = WhichArcaneSpell(item_id);
+  auto spell = GetArcaneSpell(spell_id);
   if (!spell) return;
 
-  spell->quantity += 2;
-
-  // if (!spell->learned) {
-  //   AddMessage(string("You learned ") + spell->name);
-  //   spell->learned = true;
-
-  //   // Add the spell to the first empty place in the spellbar.
-  //   for (int x = 0; x < 8; x++) {
-  //     if (configs_->spellbar[x] == 0) {
-  //       configs_->spellbar[x] = item_id;
-  //       break;
-  //     }
-  //   }
-  // } else {
-  //   if (++player_->mana > player_->max_mana) player_->mana = player_->max_mana;
-  // }
+  if (!spell->learned) {
+    AddMessage(string("You learned ") + spell->name);
+    spell->learned = true;
+  } else {
+    if (++player_->mana > player_->max_mana) player_->mana = player_->max_mana;
+  }
 }
 
 void Resources::UpdateAnimationFrames() {
@@ -3508,18 +3532,31 @@ void Resources::UpdateAnimationFrames() {
         animation_speed = obj->GetAsset()->animation_speed;
       }
 
-      // TODO: store pointer to active animation. (This lookup takes 1.6% of frame time).
-      const Animation& animation = mesh->animations[obj->active_animation];
-      obj->frame += 1.0f * d * animation_speed;
-      if (configs_->quick_casting && name == "hand-001") {
-        obj->frame += 1.0f * d;
-      }
+      if (obj->transition_animation) {
+        obj->transition_frame += 1.0f * d * obj->animation_speed;
 
-      if (obj->frame >= animation.keyframes.size()) {
-        if (obj->GetRepeatAnimation()) {
+        const Animation& prev_animation = mesh->animations[obj->prev_animation];
+        if (obj->transition_frame >= obj->transition_duration) {
+          obj->transition_animation = false;
+          obj->transition_frame = 0;
+          obj->animation_speed = 1.0f;
           obj->frame = 0;
-        } else {
-          obj->frame = animation.keyframes.size() - 1;
+          obj->transition_type = TRANSITION_NONE;
+        }
+      } else {
+        // TODO: store pointer to active animation. (This lookup takes 1.6% of frame time).
+        const Animation& animation = mesh->animations[obj->active_animation];
+        obj->frame += 1.0f * d * animation_speed;
+        if (configs_->quick_casting && name == "hand-001") {
+          obj->frame += 1.0f * d;
+        }
+
+        if (obj->frame >= animation.keyframes.size()) {
+          if (obj->GetRepeatAnimation()) {
+            obj->frame = 0;
+          } else {
+            obj->frame = animation.keyframes.size() - 1;
+          }
         }
       }
     }
@@ -3862,44 +3899,8 @@ void Resources::ProcessTempStatus() {
   }
 }
 
-void Resources::ProcessRotatingPlanksOrientation() {
-  if (configs_->render_scene != "dungeon") return;
-
-  ivec2 player_tile = dungeon_.GetDungeonTile(player_->position);
-  if (!dungeon_.IsValidTile(player_tile)) return;
-
-  char** dungeon_map = dungeon_.GetDungeon();
-  char code = dungeon_map[player_tile.x][player_tile.y];
-
-  bool invert = true;
-  if (code == '2' || code == '3') {
-    invert = true;
-  } else if (code == '1' || code == '4') {
-    invert = false;
-  } else {
-    return;
-  }
-
-  for (ObjPtr obj : rotating_planks_) {
-    float magnitude = length(obj->torque);
-    if (obj->dungeon_piece_type == '/') { // Horizontal.
-      if (invert) {
-        obj->torque = vec3(0, 0, magnitude);
-      } else {
-        obj->torque = vec3(0, 0, -magnitude);
-      }
-    } else if (obj->dungeon_piece_type == '\\') { // Vertical.
-      if (invert) {
-        obj->torque = vec3(magnitude, 0, 0);
-      } else {
-        obj->torque = vec3(-magnitude, 0, 0);
-      }
-    }
-  }
-}
-
 void Resources::ProcessDriftAwayEvent() {
-  if (configs_->render_scene == "dungeon") return;
+  if (configs_->render_scene != "town") return;
 
   if (configs_->drifting_away) {
     if (configs_->fading_out < 0.0f) {
@@ -3960,10 +3961,10 @@ void Resources::RunPeriodicEvents() {
   ProcessDriftAwayEvent();
   ProcessPlayerDeathEvent();
   ProcessTempStatus();
-  ProcessRotatingPlanksOrientation();
+  ProcessArenaEvents();
 
   // TODO: create time function.
-  if (configs_->render_scene == "dungeon") {
+  if (configs_->render_scene != "town") {
     configs_->time_of_day = 12.0f;
   }
 
@@ -4027,7 +4028,6 @@ void Resources::DeleteAllObjects() {
   moving_objects_.clear();
   items_.clear();
   extractables_.clear();
-  rotating_planks_.clear();
   lights_.clear();
   missiles_.clear();
   particle_container_.clear();
@@ -4253,13 +4253,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case '3': 
         case '4': {
           tile = CreateRoom(this, "dungeon_pre_platform", pos, 0);
-          break;
-        }
-        case '\\': {
-          tile = CreateRoom(this, "dungeon_plank", pos, 1);
-          tile->torque = vec3(1, 0, 0) * float(Random(3, 6)) * 0.002f;
-          tile->dungeon_piece_type = '\\';
-          rotating_planks_.push_back(tile);
           break;
         }
         case '%': {
@@ -6523,23 +6516,66 @@ void Resources::CreateMonsters(const char code, int quantity) {
   }
 }
 
-void Resources::CreateTreasures() {
-  char** dungeon_map = dungeon_.GetDungeon();
+void Resources::ProcessArenaEvents() {
+  static unordered_map<char, string> monster_assets { 
+    { 'L', "broodmother" },
+    { 's', "spiderling" },
+    { 'e', "scorpion" },
+    { 't', "spiderling" },
+    { 'I', "imp" },
+    { 'K', "lancet" },
+    { 'S', "white_spine" },
+    { 'w', "blood_worm" },
+    { 'V', "demon-vine" },
+    { 'Y', "dragonfly" },
+    { 'J', "speedling" },
+    { 'W', "wraith" },
+    { 'E', "metal-eye" },
+    { 'b', "beholder" },
+  };
+
+  if (configs_->render_scene != "arena") return;
+
+  bool all_dead = true;
+  for (auto monster : configs_->wave_monsters) {
+    if (monster->status == STATUS_DEAD) continue;
+    all_dead = false;
+    break;
+  }
+
+  if (!all_dead) return;
+
+  if (!configs_->wave_monsters.empty()) {
+    configs_->wave_monsters.clear();
+    configs_->wave_reset_timer = glfwGetTime() + 5.0f;
+    return;
+  }
+
+  if (glfwGetTime() < configs_->wave_reset_timer) return;
+
+  Wave wave = dungeon_.GetWave(++configs_->current_wave);
+
+  vector<ivec2> waypoints;
+  char** monsters_and_objs = dungeon_.GetMonstersAndObjs();
   for (int x = 0; x < kDungeonSize; x++) {
     for (int z = 0; z < kDungeonSize; z++) {
-      if (dungeon_map[x][z] != ' ') continue;
-      if (Random(0, 100) != 0) continue;
+      if (monsters_and_objs[x][z] != 'f') continue;
+      waypoints.push_back(ivec2(x, z));
+    }
+  }
 
+  for (const auto& [monster_type, count] : wave.monsters_and_count) {
+    for (int i = 0; i < count; i++) {
+      int j = Random(0, waypoints.size());
       float off_x = Random(-10, 11) * 1.0f;
       float off_y = Random(-10, 11) * 1.0f;
-      vec3 pos = kDungeonOffset + vec3(10.0 * x + off_x, 0, 
-        10.0f * z + off_y);
+      vec3 pos = kDungeonOffset + vec3(10.0 * waypoints[j].x + off_x, 0, 
+        10.0f * waypoints[j].y + off_y);
 
-      int spell_id = Random(1, 5);
-      shared_ptr<ArcaneSpellData> spell = arcane_spell_data_[spell_id];
-      ObjPtr obj = CreateGameObjFromAsset(this,
-        item_data_[spell->item_id].asset_name, pos + vec3(0, 5.3, 0));
-      obj->CalculateCollisionData();
+      ObjPtr monster = CreateMonster(this, monster_assets[monster_type], 
+        pos + vec3(0, 3, 0), 0);  
+      monster->ai_state = AI_ATTACK;
+      configs_->wave_monsters.push_back(monster);
     }
   }
 }
