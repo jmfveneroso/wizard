@@ -1,6 +1,6 @@
-cd build
+cd build_run
 cmake ..
 if make; then
   cd ..
-  ./build/main
+  ./build_run/main
 fi

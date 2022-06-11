@@ -26,6 +26,7 @@ class PlayerInput {
   shared_ptr<Particle> channeling_particle = nullptr;
   GLFWwindow* window_ = nullptr;
   bool lft_click_;
+  bool rgt_click_;
   vec3 spell_wall_pos_;
   vec3 trap_pos_;
   int active_scepter_ = -1;
@@ -51,8 +52,10 @@ class PlayerInput {
   void PlaceObject(GLFWwindow* window, const Camera& c);
   void EditObject(GLFWwindow* window, const Camera& c);
   bool CastSpellOrUseItem();
+  bool CastShield();
   bool UseItem(int position);
   void ProcessPlayerCasting();
+  void ProcessPlayerShield();
   void ProcessPlayerChanneling();
   void ProcessPlayerDrawing();
   void ProcessPlayerFlipping();

@@ -84,7 +84,7 @@ class GameAsset : public enable_shared_from_this<GameAsset> {
 
   // Skeleton.
   unordered_map<int, string> bone_to_mesh_name; // TODO: think of something better.
-  unordered_map<int, BoundingSphere> bones;
+  unordered_map<int, Bone> bones;
 
   shared_ptr<GameAsset> parent = nullptr;
 

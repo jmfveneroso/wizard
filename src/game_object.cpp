@@ -484,11 +484,11 @@ void GameObject::CollisionDataToXml(pugi::xml_node& parent) {
   switch (GetCollisionType()) {
     case COL_BONES: {
       pugi::xml_node bones_xml = node.append_child("bones");
-      for (const auto& [bone_id, bs] : bones) {
+      for (const auto& [bone_id, bone] : bones) {
         pugi::xml_node bs_node = bones_xml.append_child("bone");
         bs_node.append_attribute("id") = bone_id;
-        AppendXmlNode(bs_node, "center", bs.center);
-        AppendXmlTextNode(bs_node, "radius", bs.radius);
+        AppendXmlNode(bs_node, "center", bone.bs.center);
+        AppendXmlTextNode(bs_node, "radius", bone.bs.radius);
       }
       break;
     }
@@ -758,7 +758,7 @@ void Region::Load(pugi::xml_node& xml) {
 }
 
 BoundingSphere GameObject::GetBoneBoundingSphere(int bone_id) {
-  BoundingSphere s = bones[bone_id];
+  BoundingSphere s = bones[bone_id].bs;
   if (!asset_group) {
     return s + position;
   }
@@ -790,8 +790,8 @@ shared_ptr<Player> CreatePlayer(Resources* resources) {
 
   player->collision_type_ = COL_BONES;
   player->bounding_sphere = BoundingSphere(vec3(0, -3.0, 0), 3.0f);
-  player->bones[0] = BoundingSphere(vec3(0, -1.5, 0), 1.5f);
-  player->bones[1] = BoundingSphere(vec3(0, -4.5, 0), 1.5f);
+  player->bones[0].bs = BoundingSphere(vec3(0, -1.5, 0), 1.5f);
+  player->bones[1].bs = BoundingSphere(vec3(0, -4.5, 0), 1.5f);
 
   player->position = resources->GetConfigs()->initial_player_pos;
   resources->AddGameObject(player);
@@ -895,6 +895,10 @@ PhysicsBehavior GameObject::GetPhysicsBehavior() {
 bool GameObject::IsCreature() {
   if (!asset_group) return false;
   return GetAsset()->type == ASSET_CREATURE;
+}
+
+bool GameObject::IsMissile() {
+  return type == GAME_OBJ_MISSILE;
 }
 
 bool GameObject::IsCreatureCollider() {
@@ -1048,9 +1052,8 @@ void GameObject::CalculateCollisionData() {
 
   switch (GetCollisionType()) {
     case COL_BONES: {
-      for (const auto& [bone_id, bounding_sphere] : game_asset->bones) {
-        bones[bone_id] = bounding_sphere;
-        cout << "blablation: " << GetDisplayName() << " " << bone_id << endl;
+      for (const auto& [bone_id, bone] : game_asset->bones) {
+        bones[bone_id] = bone;
       }
       bounding_sphere = GetAssetBoundingSphere(mesh->polygons);
       aabb = GetAABBFromPolygons(mesh->polygons); 
@@ -1197,7 +1200,7 @@ void GameObject::LoadCollisionData(pugi::xml_node& xml) {
       bounding_sphere.center = LoadVec3FromXml(center_xml);
       const pugi::xml_node& radius_xml = bone_xml.child("radius");
       bounding_sphere.radius = boost::lexical_cast<float>(radius_xml.text().get());
-      bones[bone_id] = bounding_sphere;
+      bones[bone_id].bs = bounding_sphere;
     }
   }
 
@@ -1337,6 +1340,23 @@ void GameObject::AddTemporaryStatus(shared_ptr<TemporaryStatus> new_status) {
   temp_status[new_status->status] = new_status;
 }
 
+bool GameObject::HasTemporaryStatus(Status status) {
+  if (temp_status.find(status) == temp_status.end()) {
+    return false;
+  }
+
+  auto t_status = temp_status[status];
+  if (t_status->duration <= 0) {
+    return false;
+  }
+
+  double cur_time = glfwGetTime();
+  if (cur_time > t_status->issued_at + t_status->duration) {
+    return false;
+  }
+  return true;
+}
+
 bool GameObject::IsDestructible(){
   if (!asset_group) return false;
   return asset_group->IsDestructible();
@@ -1370,18 +1390,18 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
   }
 
   // Reduce damage using armor class.
-  damage = int(damage);
-  if (damage == 0) damage = 1;
+  // damage = int(damage);
+  // if (damage == 0) damage = 1;
 
-  if (armor > 0) {
-    if (damage > armor) {
-      damage -= armor;
-      armor= 0;
-    } else {
-      armor -= damage;
-      damage = 0;
-    }
-  }
+  // if (armor > 0) {
+  //   if (damage > armor) {
+  //     damage -= armor;
+  //     armor= 0;
+  //   } else {
+  //     armor -= damage;
+  //     damage = 0;
+  //   }
+  // }
 
   life -= damage;
 

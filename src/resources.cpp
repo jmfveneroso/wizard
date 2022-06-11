@@ -771,6 +771,11 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
     cout << "Mana cost: " << spell_data->mana_cost << endl;
   }
 
+  xml = spell_xml.child("damage");
+  if (xml) {
+    spell_data->damage = ParseDiceFormula(xml.text().get());
+  }
+
   item_id_to_spell_data_[spell_data->item_id] = spell_data;
 
   if (spell_data->name == "Spell Shot") {
@@ -1309,8 +1314,8 @@ void Resources::CreateParticleEffect(int num_particles, vec3 pos, vec3 normal,
 shared_ptr<Particle> Resources::CreateChargeMagicMissileEffect(const string& particle_name) {
   if (IsHoldingScepter()) {
     ObjPtr obj = GetObjectByName("scepter-001");
-    for (const auto& [bone_id, bs] : obj->bones) {
-      shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
+    for (const auto& [bone_id, bone] : obj->bones) {
+      shared_ptr<Particle> p = CreateOneParticle(bone.bs.center, 60.0f, 
         particle_name, 0.5f);
       p->associated_obj = obj;
       p->offset = vec3(0);
@@ -1319,8 +1324,8 @@ shared_ptr<Particle> Resources::CreateChargeMagicMissileEffect(const string& par
     }
   } else {
     ObjPtr obj = GetObjectByName("hand-001");
-    for (const auto& [bone_id, bs] : obj->bones) {
-      shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
+    for (const auto& [bone_id, bone] : obj->bones) {
+      shared_ptr<Particle> p = CreateOneParticle(bone.bs.center, 60.0f, 
         particle_name, 0.5f);
       p->associated_obj = obj;
       p->offset = vec3(0);
@@ -1329,6 +1334,21 @@ shared_ptr<Particle> Resources::CreateChargeMagicMissileEffect(const string& par
     }
   }
   return nullptr;
+}
+
+shared_ptr<Particle> Resources::CreateChargeOpenHandEffect(
+  const string& particle_name) {
+  ObjPtr obj = GetObjectByName("hand-001");
+  shared_ptr<Mesh> mesh = GetMesh(obj);
+  int bone_id = mesh->bones_to_ids["hand"];
+
+  BoundingSphere bs = obj->GetBoneBoundingSphere(bone_id);
+  shared_ptr<Particle> p = CreateOneParticle(bs.center, 60.0f, 
+    particle_name, 2.0f);
+  p->associated_obj = obj;
+  p->offset = vec3(0);
+  p->associated_bone = bone_id;
+  return p;
 }
 
 void Resources::UpdateHand(const Camera& camera) {
@@ -2723,7 +2743,8 @@ bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name,
     return false;
   }
 
-  if (!obj->active_animation.empty() && transition && type != TRANSITION_NONE) {
+  if (!obj->active_animation.empty() && transition && type != TRANSITION_NONE && 
+    type != TRANSITION_KEEP_FRAME) {
     float num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
 
     if (obj->frame < num_frames - 5) {
@@ -2740,15 +2761,19 @@ bool Resources::ChangeObjectAnimation(ObjPtr obj, const string& animation_name,
       obj->transition_type = type;
 
       if (type == TRANSITION_SMOOTH) {
-        // obj->transition_duration = num_frames - obj->frame;
-        // if (obj->transition_duration > 20.0f) obj->transition_duration = 20.0f;
         obj->transition_duration = num_frames - obj->frame;
-        obj->animation_speed = 2.5f;
+        if (obj->transition_duration > 20.0f) obj->transition_duration = 20.0f;
+        // obj->transition_duration = num_frames - obj->frame;
+        // obj->animation_speed = 2.5f;
       } else if (type == TRANSITION_FINISH_ANIMATION) {
         obj->transition_duration = num_frames - obj->frame;
         obj->animation_speed = 2.5f;
+      } else if (type == TRANSITION_WAIT) {
+        obj->transition_duration = num_frames - obj->frame;
       }
     }
+  } else if (type == TRANSITION_KEEP_FRAME) {
+
   } else {
     obj->frame = 0;
   }
@@ -3343,38 +3368,38 @@ void Resources::UpdateAnimationFrames() {
       switch (door->state) {
         case DOOR_CLOSED: {
           door->frame = 0;
-          ChangeObjectAnimation(door, "Armature|open");
+          ChangeObjectAnimation(door, "Armature|open", true, TRANSITION_KEEP_FRAME);
           break;
         }
         case DOOR_OPENING: {
-          ChangeObjectAnimation(door, "Armature|open");
+          ChangeObjectAnimation(door, "Armature|open"), true, TRANSITION_KEEP_FRAME;
           door->frame += 1.0f * d;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|open");
           if (door->frame >= num_frames - 1) {
             door->state = DOOR_OPEN;
             door->frame = 0;
-            ChangeObjectAnimation(door, "Armature|close");
+            ChangeObjectAnimation(door, "Armature|close", true, TRANSITION_KEEP_FRAME);
           }
           break;
         }
         case DOOR_OPEN: {
           door->frame = 0;
-          ChangeObjectAnimation(door, "Armature|close");
+          ChangeObjectAnimation(door, "Armature|close", true, TRANSITION_KEEP_FRAME);
           break;
         }
         case DOOR_CLOSING: {
-          ChangeObjectAnimation(door, "Armature|close");
+          ChangeObjectAnimation(door, "Armature|close", true, TRANSITION_KEEP_FRAME);
           door->frame += 1.0f * d;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|close");
           if (door->frame >= num_frames - 1) {
             door->state = DOOR_CLOSED;
             door->frame = 0;
-            ChangeObjectAnimation(door, "Armature|open");
+            ChangeObjectAnimation(door, "Armature|open", true, TRANSITION_KEEP_FRAME);
           }
           break; 
         }
         case DOOR_DESTROYING: {
-          ChangeObjectAnimation(door, "Armature|destroying");
+          ChangeObjectAnimation(door, "Armature|destroying", true, TRANSITION_KEEP_FRAME);
           door->frame += 1.0f * d;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
           if (door->frame >= num_frames - 1) {
@@ -3384,7 +3409,7 @@ void Resources::UpdateAnimationFrames() {
           break;
         }
         case DOOR_DESTROYED: {
-          ChangeObjectAnimation(door, "Armature|destroying");
+          ChangeObjectAnimation(door, "Armature|destroying", true, TRANSITION_KEEP_FRAME);
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
           door->frame = num_frames - 1;
           break;
@@ -3402,18 +3427,18 @@ void Resources::UpdateAnimationFrames() {
 
       switch (actionable->state) {
         case 0: // idle.
-          ChangeObjectAnimation(actionable, "Armature|idle");
+          ChangeObjectAnimation(actionable, "Armature|idle", true, TRANSITION_KEEP_FRAME);
           actionable->frame += 1.0f * d;
           break;
         case 1: { // start.
-          ChangeObjectAnimation(actionable, "Armature|start");
+          ChangeObjectAnimation(actionable, "Armature|start", true, TRANSITION_KEEP_FRAME);
           actionable->frame += 1.0f * d;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|start");
           if (actionable->frame >= num_frames - 1) {
             actionable->state = 2;
             actionable->frame = 0;
-            ChangeObjectAnimation(actionable, "Armature|on");
-            if (actionable->GetAsset()->name == "large_chest_wood") {
+            ChangeObjectAnimation(actionable, "Armature|on", true, TRANSITION_KEEP_FRAME);
+            if (actionable->GetAsset()->name == "large_chest_wood", true, TRANSITION_KEEP_FRAME) {
               RemoveObject(actionable);
             }
           }
@@ -3430,17 +3455,17 @@ void Resources::UpdateAnimationFrames() {
           break;
         }
         case 2: // on.
-          ChangeObjectAnimation(actionable, "Armature|on");
+          ChangeObjectAnimation(actionable, "Armature|on", true, TRANSITION_KEEP_FRAME);
           actionable->frame += 1.0f * d;
           break;
         case 3: { // shutdown.
-          ChangeObjectAnimation(actionable, "Armature|shutdown");
+          ChangeObjectAnimation(actionable, "Armature|shutdown", true, TRANSITION_KEEP_FRAME);
           actionable->frame++;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|shutdown");
           if (actionable->frame >= num_frames - 1) {
             actionable->state = 0;
             actionable->frame = 0;
-            ChangeObjectAnimation(actionable, "Armature|idle");
+            ChangeObjectAnimation(actionable, "Armature|idle", true, TRANSITION_KEEP_FRAME);
           }
           break;
         }
@@ -3460,12 +3485,12 @@ void Resources::UpdateAnimationFrames() {
 
       switch (destructible->state) {
         case DESTRUCTIBLE_IDLE: {
-          ChangeObjectAnimation(destructible, "Armature|idle");
+          ChangeObjectAnimation(destructible, "Armature|idle", true, TRANSITION_KEEP_FRAME);
           destructible->frame = 0;
           break;
         }
         case DESTRUCTIBLE_DESTROYING: {
-          ChangeObjectAnimation(destructible, "Armature|destroying");
+          ChangeObjectAnimation(destructible, "Armature|destroying", true, TRANSITION_KEEP_FRAME);
           destructible->frame += 1.0f * d;
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
           if (destructible->frame >= num_frames - 1) {
@@ -3475,7 +3500,7 @@ void Resources::UpdateAnimationFrames() {
           break;
         }
         case DESTRUCTIBLE_DESTROYED: {
-          ChangeObjectAnimation(destructible, "Armature|destroying");
+          ChangeObjectAnimation(destructible, "Armature|destroying", true, TRANSITION_KEEP_FRAME);
           int num_frames = GetNumFramesInAnimation(*mesh, "Armature|destroying");
           destructible->frame = num_frames - 1;
           break;
@@ -3746,6 +3771,7 @@ void Resources::ProcessTempStatus() {
   configs_->mana_regen = 0.003f;
   configs_->shield_of_protection = false;
   configs_->quick_casting = false;
+  configs_->shield_on = false;
 
   const float stamina_regen = boost::lexical_cast<float>(GetGameFlag("stamina_recovery_rate"));
 
@@ -3814,6 +3840,12 @@ void Resources::ProcessTempStatus() {
         shared_ptr<ManaRegenStatus> status = 
           static_pointer_cast<ManaRegenStatus>(temp_status);
         configs_->mana_regen += 0.015f;
+        break;
+      }
+      case STATUS_SHIELD: {
+        shared_ptr<ShieldStatus> status = 
+          static_pointer_cast<ShieldStatus>(temp_status);
+        configs_->shield_on = true;
         break;
       }
       default:
@@ -4065,32 +4097,60 @@ ObjPtr Resources::CreateBookshelf(const vec3& pos, const ivec2& tile) {
   char** dungeon_map = dungeon_.GetDungeon();
 
   int rotation = 0;
-  static vector<ivec2> offsets { ivec2(0, -1), ivec2(-1, 0), ivec2(0, 1), ivec2(1, 0) };
+  static vector<ivec2> offsets { ivec2(0, -1), ivec2(-1, 0), 
+    ivec2(0, 1), ivec2(1, 0) };
   for (int i = 0; i < 4; i++) {
     ivec2 off = offsets[i];
-    if (!dungeon_.IsTileClear(tile + off)) {
+    ivec2 t = tile + off;
+    if (dungeon_map[t.x][t.y] == '-' || dungeon_map[t.x][t.y] == '|' ||
+        dungeon_map[t.x][t.y] == '+') {
       rotation = i;
       break;
     }
   }
 
-  int book_num = Random(0, 4);
-  switch (book_num) {
-    case 1:
-      CreateRoom(this, "book_1", pos, rotation);
-      break;
-    case 2:
-      CreateRoom(this, "book_2", pos, rotation);
-      break;
-    case 3:
-      CreateRoom(this, "book_1", pos, rotation);
-      CreateRoom(this, "book_2", pos, rotation);
-      break;
-    default:
-      break;
+  if (rotation == 0 || rotation == 2) {
+    CreateGameObjFromAsset(this, "big_candle", pos + vec3(-5, 0, 0));
+    CreateGameObjFromAsset(this, "small_fire", pos + vec3(-5, 7.2, 0));
+    CreateGameObjFromAsset(this, "big_candle", pos + vec3(+5, 0, 0));
+    CreateGameObjFromAsset(this, "small_fire", pos + vec3(+5, 7.2, 0));
+  } else {
+    CreateGameObjFromAsset(this, "big_candle", pos + vec3(0, 0, -5));
+    CreateGameObjFromAsset(this, "small_fire", pos + vec3(0, 7.2, -5));
+    CreateGameObjFromAsset(this, "big_candle", pos + vec3(0, 0, +5));
+    CreateGameObjFromAsset(this, "small_fire", pos + vec3(0, 7.2, +5));
   }
 
-  return CreateRoom(this, "bookshelf", pos, rotation);
+  int spell_id = dungeon_.GetRandomLearnableSpell(configs_->dungeon_level);
+  if (spell_id != -1) {
+    shared_ptr<ArcaneSpellData> spell = arcane_spell_data_[spell_id];
+
+    vec2 pos_offset = vec2(offsets[rotation]) * 4.0f;
+    ObjPtr obj = CreateGameObjFromAsset(this,
+      item_data_[spell->item_id].asset_name, pos + vec3(pos_offset.x, 2.75, pos_offset.y));
+    obj->CalculateCollisionData();
+    obj->physics_behavior = PHYSICS_FIXED;
+  }
+
+  cout << "Bookshelf: " << rotation << endl;
+
+  // int book_num = Random(0, 4);
+  // switch (book_num) {
+  //   case 1:
+  //     CreateRoom(this, "book_1", pos, rotation);
+  //     break;
+  //   case 2:
+  //     CreateRoom(this, "book_2", pos, rotation);
+  //     break;
+  //   case 3:
+  //     CreateRoom(this, "book_1", pos, rotation);
+  //     CreateRoom(this, "book_2", pos, rotation);
+  //     break;
+  //   default:
+  //     break;
+  // }
+
+  return CreateRoom(this, "bookshelf2", pos, rotation);
 }
 
 void Resources::CreateRandomMonster(const vec3& pos) {
@@ -4270,6 +4330,11 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'a':
           CreateBookshelf(pos + vec3(0, 0.1, 0), ivec2(x, z));
           break;
+        case 'i': {
+          CreateGameObjFromAsset(this, "big_candle", pos + vec3(0, 0, 0));
+          CreateGameObjFromAsset(this, "small_fire", pos + vec3(0, 9.2, 0));
+          break;
+        }
         case 'q': {
           CreateGameObjFromAsset(this, "altar", pos);
           int crystal_type = Random(0, 2);
@@ -4363,11 +4428,12 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case 'L': case 'w': case 's': case 'S': case 'V': case 'Y': case 'e':
-        case 'J': case 'K': case 'W': case 'E': case 'I': case 'b': { // Is Monster.
+        case 'J': case 'K': case 'W': case 'E': case 'I': case 'b': case 'h': { // Is Monster.
           static unordered_map<char, string> monster_assets { 
             { 'L', "broodmother" },
             { 's', "spiderling" },
             { 'e', "scorpion" },
+            { 'h', "red_metal_eye" },
             { 't', "spiderling" },
             { 'I', "imp" },
             { 'K', "lancet" },
@@ -4450,7 +4516,6 @@ char** GetCurrentDungeonLevel() {
 
 void Resources::SaveGame() {
   shared_ptr<Player> player = GetPlayer();
-
   pugi::xml_document doc;
   pugi::xml_node xml = doc.append_child("xml");
   AppendXmlNode(xml, "initial-player-pos", player->position);
@@ -4832,13 +4897,16 @@ void Resources::CastFireball(ObjPtr owner, const vec3& direction) {
     ObjPtr focus;
     if (IsHoldingScepter()) {
       focus = GetObjectByName("scepter-001");
+      for (const auto& [bone_id, bs] : focus->bones) {
+        BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
+        obj->position = s.center;
+      }
     } else {
       focus = GetObjectByName("hand-001");
-    }
-
-    for (const auto& [bone_id, bs] : focus->bones) {
-      BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
-      obj->position = s.center;
+      shared_ptr<Mesh> mesh = GetMesh(focus);
+      int bone_id = mesh->bones_to_ids["indx_tip"];
+      BoundingSphere bs = focus->GetBoneBoundingSphere(bone_id);
+      obj->position = bs.center;
     }
   } else {
     BoundingSphere s = owner->GetBoneBoundingSphere(1); 
@@ -4931,13 +4999,16 @@ void Resources::CastBouncyBall(ObjPtr owner, const vec3& position,
       ObjPtr focus;
       if (IsHoldingScepter()) {
         focus = GetObjectByName("scepter-001");
+        for (const auto& [bone_id, bs] : focus->bones) {
+          BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
+          obj->position = s.center;
+        }
       } else {
         focus = GetObjectByName("hand-001");
-      }
-
-      for (const auto& [bone_id, bs] : focus->bones) {
-        BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
-        obj->position = s.center;
+        shared_ptr<Mesh> mesh = GetMesh(focus);
+        int bone_id = mesh->bones_to_ids["indx_tip"];
+        BoundingSphere bs = focus->GetBoneBoundingSphere(bone_id);
+        obj->position = bs.center;
       }
     } else {
       BoundingSphere s = owner->GetBoneBoundingSphere(1); 
@@ -5155,13 +5226,16 @@ void Resources::CastWindslash(const Camera& camera) {
   ObjPtr focus;
   if (IsHoldingScepter()) {
     focus = GetObjectByName("scepter-001");
+    for (const auto& [bone_id, bs] : focus->bones) {
+      BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
+      obj->position = s.center;
+    }
   } else {
     focus = GetObjectByName("hand-001");
-  }
-
-  for (const auto& [bone_id, bs] : focus->bones) {
-    BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
-    obj->position = s.center;
+    shared_ptr<Mesh> mesh = GetMesh(focus);
+    int bone_id = mesh->bones_to_ids["indx_tip"];
+    BoundingSphere bs = focus->GetBoneBoundingSphere(bone_id);
+    obj->position = bs.center;
   }
 
   vec3 p2 = camera.position + camera.direction * 200.0f;
@@ -5350,24 +5424,24 @@ vec3 Resources::GetTrapRayCollision(ObjPtr owner, const vec3& position,
   return dungeon_.GetTilePosition(tile);
 }
 
-void Resources::CastLightningRay(ObjPtr owner, const vec3& position, 
+void Resources::CastMagmaRay(ObjPtr owner, const vec3& position, 
   const vec3& direction, int bone_id) {
+  const float magma_damage = boost::lexical_cast<float>(
+    GetGameFlag("magma_ray_damage"));
   vec3 right = normalize(cross(direction, vec3(0, 1, 0)));
   vec3 up = cross(right, direction);
 
   vec3 pos = position; 
   if (owner->IsPlayer()) {
     ObjPtr hand = GetObjectByName("hand-001");
-    for (const auto& [bone_id, bs] : hand->bones) {
-      BoundingSphere s = hand->GetBoneBoundingSphere(bone_id);
-      pos = s.center;
-    }
+    BoundingSphere s = hand->GetBoneBoundingSphereByBoneName("indx_tip");
+    pos = s.center;
   } else {
     BoundingSphere s = owner->GetBoneBoundingSphere(bone_id); // 10, 14, 6, 1.
     pos = s.center;
   }
 
-  vec3 p2 = position + direction * 3000.0f;
+  vec3 p2 = pos + direction * 3000.0f;
   vec3 normal = normalize(p2 - pos);
 
   float t = 99999999999.9f;
@@ -5412,7 +5486,10 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   float particle_size = 0.5f + 0.25 * Random(1, 6);
   if (collided_obj) {
     if ((obj->IsCreature() || obj->IsPlayer()) && obj->life > 0.0f) {
-      obj->DealDamage(owner, 0.01f, vec3(0, 1, 0), /*take_hit_animation=*/false);
+      obj->AddTemporaryStatus(make_shared<BurningStatus>(1.0f, 1));
+
+      obj->DealDamage(owner, magma_damage, vec3(0, 1, 0), 
+        /*take_hit_animation=*/false);
     }
     CreateOneParticle(pos + end * 0.95f, 35.0f, "particle-fire", particle_size);
   } else if (collided_dungeon) {
@@ -5447,8 +5524,6 @@ void Resources::CastLightningRay(ObjPtr owner, const vec3& position,
   } else {
     cylinder_size += 0.03f * Random(0, 5);
   }
-  
-
 
   CreateCylinder(vec3(0), end, cylinder_size, vertices, uvs, indices,
     mesh->polygons);
@@ -5589,7 +5664,7 @@ shared_ptr<Missile> Resources::CastMissile(
 
   if (missile_type == MISSILE_BOUNCYBALL) {
     obj->UpdateAsset("scorpion_shot");
-    obj->life = 400;
+    obj->life = 400.0f;
     obj->physics_behavior = PHYSICS_UNDEFINED;
     obj->owner = owner;
   } else {
@@ -5854,7 +5929,7 @@ shared_ptr<Missile> Resources::GetUnusedMissile() {
   return obj;
 }
 
-void Resources::CastMagicMissile(const Camera& camera) {
+void Resources::CastMagicMissile(const Camera& camera, int level) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
   obj->position = camera.position; 
@@ -5862,16 +5937,25 @@ void Resources::CastMagicMissile(const Camera& camera) {
   ObjPtr focus;
   if (IsHoldingScepter()) {
     focus = GetObjectByName("scepter-001");
+    for (const auto& [bone_id, bs] : focus->bones) {
+      BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
+      obj->position = s.center;
+    }
   } else {
     focus = GetObjectByName("hand-001");
+    shared_ptr<Mesh> mesh = GetMesh(focus);
+    int bone_id = mesh->bones_to_ids["indx_tip"];
+    BoundingSphere bs = focus->GetBoneBoundingSphere(bone_id);
+    obj->position = bs.center;
   }
 
-  for (const auto& [bone_id, bs] : focus->bones) {
-    BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
-    obj->position = s.center;
+  if (level == 1) {
+    obj->UpdateAsset("magic_missile_1");
+  } else if (level == 2) {
+    obj->UpdateAsset("magic_missile_2");
+  } else {
+    obj->UpdateAsset("magic_missile");
   }
-
-  obj->UpdateAsset("magic_missile");
   obj->CalculateCollisionData();
 
   obj->scale_in = 0.0f;
@@ -5943,6 +6027,7 @@ shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
   obj->scale_in = 1.0f;
   obj->scale_out = 0.0f;
   obj->associated_particles.clear();
+  obj->spell = 0;
 
   // obj->position = camera.position; 
   // ObjPtr hand = GetObjectByName("hand-001");
@@ -5957,13 +6042,16 @@ shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
   ObjPtr focus;
   if (IsHoldingScepter()) {
     focus = GetObjectByName("scepter-001");
+    for (const auto& [bone_id, bs] : focus->bones) {
+      BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
+      obj->position = s.center;
+    }
   } else {
     focus = GetObjectByName("hand-001");
-  }
-
-  for (const auto& [bone_id, bs] : focus->bones) {
-    BoundingSphere s = focus->GetBoneBoundingSphere(bone_id);
-    obj->position = s.center;
+    shared_ptr<Mesh> mesh = GetMesh(focus);
+    int bone_id = mesh->bones_to_ids["indx_tip"];
+    BoundingSphere bs = focus->GetBoneBoundingSphere(bone_id);
+    obj->position = bs.center;
   }
 
   vec3 p2 = camera.position + camera.direction * 200.0f;
@@ -5986,7 +6074,7 @@ shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
 
 void Resources::CastShotgun(const Camera& camera) {
   const int num_missiles = 8;
-  const float missile_speed = 2.0f;
+  const float missile_speed = 1.0f;
   const float spread = 0.01f;
 
   vec3 p2 = camera.position + camera.direction * 200.0f;
@@ -6002,7 +6090,8 @@ void Resources::CastShotgun(const Camera& camera) {
     }
 
     shared_ptr<Missile> obj = CastSpellShot(Camera(camera.position, dir_, vec3(0, 1, 0)));
-    // obj->type = MISSILE_BOUNCYBALL;
+    obj->type = MISSILE_BOUNCYBALL;
+    obj->life = 180.0f;
   }
 }
 
@@ -6521,6 +6610,8 @@ void Resources::ProcessArenaEvents() {
     { 'L', "broodmother" },
     { 's', "spiderling" },
     { 'e', "scorpion" },
+    { 'h', "red_metal_eye" },
+    { 'E', "metal_eye" },
     { 't', "spiderling" },
     { 'I', "imp" },
     { 'K', "lancet" },
@@ -6530,7 +6621,6 @@ void Resources::ProcessArenaEvents() {
     { 'Y', "dragonfly" },
     { 'J', "speedling" },
     { 'W', "wraith" },
-    { 'E', "metal-eye" },
     { 'b', "beholder" },
   };
 

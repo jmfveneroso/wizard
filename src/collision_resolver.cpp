@@ -3,8 +3,6 @@
 
 #include <chrono>
 
-const float kWaterHeight = 5.0f;
-
 vector<vector<CollisionPair>> kAllowedCollisionPairs {
   // Sphere / Bones / Quick Sphere / Perfect / OBB /  AABB / Terrain / Ray
   { CP_SS,    CP_SB,  CP_SQ,         CP_SP,    CP_SO, CP_SA, CP_ST, CP_SR }, // Sphere 
@@ -110,8 +108,11 @@ bool CollisionResolver::IsPairCollidable(ObjPtr obj1, ObjPtr obj2) {
     return false;
   }
 
+  // TODO: create a list elsewhere.
   if ((obj1->IsCreature() && obj2->IsPickableItem()) || 
     (obj1->IsPickableItem() && obj2->IsCreature()) ||
+    (obj1->IsMissile() && obj2->IsPickableItem()) || 
+    (obj1->IsPickableItem() && obj2->IsMissile()) ||
     (obj1->IsPickableItem() && obj2->IsPickableItem()) ||
     (obj1->IsPlayer() && obj2->IsPickableItem()) ||
     (obj1->IsPickableItem() && obj2->IsPlayer()) ||
@@ -504,7 +505,8 @@ vector<shared_ptr<CollisionSS>> GetCollisionsSS(ObjPtr obj1, ObjPtr obj2) {
 // Sphere - Bones.
 vector<shared_ptr<CollisionSB>> GetCollisionsSB(ObjPtr obj1, ObjPtr obj2) {
   vector<shared_ptr<CollisionSB>> collisions;
-  for (const auto& [bone_id, bs] : obj2->bones) {
+  for (const auto& [bone_id, bone] : obj2->bones) {
+    if (!bone.collidable) continue;
     collisions.push_back(make_shared<CollisionSB>(obj1, obj2, bone_id));
   }
   return collisions;
@@ -589,8 +591,10 @@ vector<shared_ptr<CollisionBB>> GetCollisionsBB(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionBB>> collisions;
-  for (const auto& [bone_id_1, bs1] : obj1->bones) {
-    for (const auto& [bone_id_2, bs2] : obj2->bones) {
+  for (const auto& [bone_id_1, bone1] : obj1->bones) {
+    if (!bone1.collidable) continue;
+    for (const auto& [bone_id_2, bone2] : obj2->bones) {
+      if (!bone2.collidable) continue;
       collisions.push_back(make_shared<CollisionBB>(obj1, obj2, bone_id_1, 
         bone_id_2));
     }
@@ -616,7 +620,8 @@ vector<shared_ptr<CollisionBP>> GetCollisionsBPAux(
   }
 
   vector<shared_ptr<CollisionBP>> cols;
-  for (const auto& [bone_id, bs1] : obj1->bones) {
+  for (const auto& [bone_id, bone] : obj1->bones) {
+    if (!bone.collidable) continue;
     cols.push_back(make_shared<CollisionBP>(obj1, obj2, bone_id, node->polygon));
   }
   return cols;
@@ -653,7 +658,8 @@ vector<shared_ptr<CollisionBO>> GetCollisionsBO(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionBO>> cols;
-  for (const auto& [bone_id, bs] : obj1->bones) {
+  for (const auto& [bone_id, bone] : obj1->bones) {
+    if (!bone.collidable) continue;
     cols.push_back(make_shared<CollisionBO>(obj1, obj2, bone_id));
   }
   return cols;
@@ -664,7 +670,8 @@ vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1,
   shared_ptr<Resources> resources, bool in_dungeon) {
   if (in_dungeon) {
     vector<shared_ptr<CollisionBT>> cols;
-    for (const auto& [bone_id, bs] : obj1->bones) {
+    for (const auto& [bone_id, bone] : obj1->bones) {
+      if (!bone.collidable) continue;
       cols.push_back(make_shared<CollisionBT>(obj1, bone_id, Polygon()));
     }
     return cols;
@@ -683,7 +690,8 @@ vector<shared_ptr<CollisionBT>> GetCollisionsBT(ObjPtr obj1,
 
   vector<shared_ptr<CollisionBT>> cols;
   for (const auto& polygon : polygons) {
-    for (const auto& [bone_id, bs] : obj1->bones) {
+    for (const auto& [bone_id, bone] : obj1->bones) {
+      if (!bone.collidable) continue;
       cols.push_back(make_shared<CollisionBT>(obj1, bone_id, polygon));
     }
     break;
@@ -765,7 +773,8 @@ vector<shared_ptr<CollisionQB>> GetCollisionsQB(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionQB>> collisions;
-  for (const auto& [bone_id, bs] : obj2->bones) {
+  for (const auto& [bone_id, bone] : obj2->bones) {
+    if (!bone.collidable) continue;
     collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
   }
   return collisions;
@@ -908,7 +917,8 @@ void CollisionResolver::FindCollisionsWithDungeon(
       aabb.dimensions = vec3(10, 100, 10);
 
       if (obj1->GetCollisionType() == COL_BONES) {
-        for (const auto& [bone_id, bs] : obj1->bones) {
+        for (const auto& [bone_id, bone] : obj1->bones) {
+          if (!bone.collidable) continue;
           collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
         }
       } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
@@ -1070,7 +1080,8 @@ void CollisionResolver::TestCollisionsWithDungeon() {
         aabb.dimensions = vec3(10, 100, 10);
 
         if (obj1->GetCollisionType() == COL_BONES) {
-          for (const auto& [bone_id, bs] : obj1->bones) {
+          for (const auto& [bone_id, bone] : obj1->bones) {
+            if (!bone.collidable) continue;
             collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
           }
         } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
@@ -1197,7 +1208,6 @@ void CollisionResolver::TestCollisionSP(shared_ptr<CollisionSP> c) {
   if (c->collided) {
     const vec3& surface_normal = c->polygon.normal;
     const vec3 v = c->obj1->position - c->obj1->prev_position;
-    const vec3 v2 = c->obj2->position - c->obj2->prev_position;
 
     bool in_contact;
     c->displacement_vector = CorrectDisplacementOnFlatSurfaces(
@@ -1799,12 +1809,18 @@ void CollisionResolver::TestCollision(ColPtr c) {
 }
 
 int CollisionResolver::CalculateMissileDamage(shared_ptr<Missile> missile) {
-  shared_ptr<GameAsset> asset = missile->GetAsset();
-  int dmg = ProcessDiceFormula(asset->damage);
+  shared_ptr<ArcaneSpellData> spell = resources_->GetArcaneSpell(
+    missile->spell);
+
+  int dmg = ProcessDiceFormula(spell->damage);
+
+  // int dmg = ProcessDiceFormula(asset->damage);
   return dmg;
 }
 
 void CollisionResolver::ResolveMissileCollision(ColPtr c) {
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
   ObjPtr obj1 = c->obj1;
   ObjPtr obj2 = c->obj2;
 
@@ -1840,11 +1856,20 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
       return;
     }
     case MISSILE_BOUNCYBALL: {
-      if (obj2 && (obj2->IsPlayer() || obj2->IsCreature())) {
-        obj1->life = 0.0f;
-        obj2->DealDamage(missile->owner, 1.0f, normal, 
-          /*take_hit_animation=*/false);
-        return;
+      if (obj2) {
+        bool should_bounce = false;
+        if (obj2->IsPlayer()) {
+          should_bounce = configs->shield_on;
+        } else if (obj1->IsCreature()) {
+          should_bounce = false;
+        }
+
+        if (!should_bounce) {
+          obj1->life = 0.0f;
+          obj2->DealDamage(missile->owner, 1.0f, normal, 
+            /*take_hit_animation=*/false);
+          return;
+        }
       }
 
       // resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
@@ -1941,8 +1966,11 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 
             float damage = CalculateMissileDamage(missile);
 
-            bool take_hit = false;
-            take_hit = missile->type != MISSILE_SPELL_SHOT;
+            bool take_hit = true;
+
+            // bool take_hit = false;
+            // take_hit = missile->type != MISSILE_SPELL_SHOT;
+
             obj2->DealDamage(missile->owner, damage, normal, take_hit, 
               c->point_of_contact);
           }

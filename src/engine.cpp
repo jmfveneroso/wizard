@@ -274,12 +274,14 @@ void Engine::RunCommand(string command) {
         configs->wave_monsters.clear();
         configs->current_wave = -1;
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 11; i++) {
           resources_->LearnSpell(i);
         }
       }
     } catch(boost::bad_lexical_cast const& e) {
     }
+  } else if (result[0] == "nowave") {
+    configs->current_wave = 999;
   } else if (result[0] == "wave") {
     if (result.size() == 3) {
       try {
@@ -747,15 +749,14 @@ void Engine::Run() {
     last_time = current_time;
     resources_->SetDeltaTime(delta_time_);
 
-    BeforeFrame();
 
     resources_->Lock();
-    Camera c = player_input_->GetCamera();
-    renderer_->SetCamera(c);
-
     renderer_->Draw();
     resources_->Unlock();
 
+    BeforeFrame();
+    Camera c = player_input_->GetCamera();
+    renderer_->SetCamera(c);
     AfterFrame();
 
     glfwSwapBuffers(window_);

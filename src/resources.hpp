@@ -87,6 +87,7 @@ struct Configs {
   bool place_object = false;
   int place_axis = -1;
   bool stop_time = false;
+  bool shield_on = false;
   bool scale_object = false;
   vec3 scale_pivot = vec3(0);
   vec3 scale_dimensions = vec3(10, 10, 10);
@@ -296,6 +297,7 @@ struct ArcaneSpellData {
   int level = 0;
   float mana_cost = 0;
   int quantity = 0;
+  DiceFormula damage { 0, 0, 0 };
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
@@ -639,14 +641,14 @@ class Resources {
   shared_ptr<OctreeNode> GetOctreeRoot();
 
   // TODO: move to particle / missiles.
-  void CastMagicMissile(const Camera& camera);
+  void CastMagicMissile(const Camera& camera, int level = 0);
   void CastImpFire(ObjPtr owner, const vec3& pos, const vec3& direction);
   void CastBurningHands(const Camera& camera);
   void CastStringAttack(ObjPtr owner, const vec3& position, 
     const vec3& direction);
   void CastBlindingRay(ObjPtr owner, const vec3& position, 
     const vec3& direction);
-  void CastLightningRay(ObjPtr owner, const vec3& position, 
+  void CastMagmaRay(ObjPtr owner, const vec3& position, 
     const vec3& direction, int bone = -1);
   void CastHeal(ObjPtr owner);
   void CastFlash(const vec3& position);
@@ -677,6 +679,8 @@ class Resources {
     vec3 color, float size, float life, float spread, 
     const string& type = "explosion");
   shared_ptr<Particle> CreateChargeMagicMissileEffect(const string& particle_name = "particle-sparkle");
+  shared_ptr<Particle> CreateChargeOpenHandEffect(
+    const string& particle_name = "particle-sparkle");
   void InitMissiles();
   void InitParticles();
   int FindUnusedParticle();

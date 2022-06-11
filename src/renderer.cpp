@@ -650,6 +650,7 @@ vector<mat4> Renderer::GetJointTransforms(ObjPtr obj, MeshPtr mesh) {
         // joint_transform[3][3] = 1.0f;
 
         // joint_transforms.push_back(joint_transform);
+
         float frame = obj->prev_animation_frame + obj->transition_frame;
         mat4 joint_transform = prev_animation.keyframes[frame].transforms[i];
         joint_transforms.push_back(joint_transform);
@@ -818,7 +819,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
         next_action = obj->actions.front();
       }
  
-      if (next_action->type == ACTION_TELEPORT) {
+      if (next_action && next_action->type == ACTION_TELEPORT) {
         program_id = resources_->GetShader("detect_monster");
       }
     }
@@ -940,10 +941,12 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
 
     if (asset->name == "grimmoire_pages") {
       auto spell = resources_->GetArcaneSpell(configs->selected_spell);
-      if (obj->active_animation == "Armature|flip_page" && obj->frame <= 22) {
+      if (obj->active_animation == "Armature|flip_page" && obj->frame <= 30) {
         texture_id = resources_->GetTextureByName("grimmoire_empty_page");
       } else if (spell->spell_id == 0) {
         texture_id = resources_->GetTextureByName("grimmoire_page_spellshot");
+      } else if (spell->spell_id == 3) {
+        texture_id = resources_->GetTextureByName("grimmoire_page_magma_ray");
       } else {
         texture_id = resources_->GetTextureByName("grimmoire_page_windslash");
       }
@@ -2202,7 +2205,6 @@ void Renderer::CreateDungeonBuffers() {
                 !resources_->GetDungeon().IsChamber(x, z)) { // Not upstairs. Draw ceiling.
                 // Create ceiling.
                 mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 50, 0));
-                // mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 25, 0));
                 model_matrices.push_back(ModelMatrix);
               }
             } else if (tile == ' ') {  

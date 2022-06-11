@@ -18,6 +18,14 @@ void GameAsset::LoadBones(const pugi::xml_node& skeleton_xml) {
 
     const string bone_mesh_name = bone_xml.text().get();
     bone_to_mesh_name[bone_id] = bone_mesh_name;
+    bones[bone_id] = Bone(bone_id, bone_name);
+
+    bool collidable = true;
+    if (bone_xml.attribute("collidable")) {
+      collidable = (string(bone_xml.attribute("collidable").value()) != "false");
+    }
+
+    bones[bone_id].collidable = collidable;
   }
 }
 
@@ -378,7 +386,7 @@ void GameAsset::CalculateCollisionData() {
             " does not exist.");
         }
 
-        bones[bone_id] = GetAssetBoundingSphere(bone_hit_box->polygons);
+        bones[bone_id].bs = GetAssetBoundingSphere(bone_hit_box->polygons);
       }
       break;
     }
@@ -492,11 +500,11 @@ void GameAsset::CollisionDataToXml(pugi::xml_node& parent) {
 
   if (collision_type_ == COL_BONES) {
     pugi::xml_node bones_xml = node.append_child("bones");
-    for (const auto& [bone_id, bs] : bones) {
+    for (const auto& [bone_id, bone] : bones) {
       pugi::xml_node bs_node = bones_xml.append_child("bone");
       bs_node.append_attribute("id") = bone_id;
-      AppendXmlNode(bs_node, "center", bs.center);
-      AppendXmlTextNode(bs_node, "radius", bs.radius);
+      AppendXmlNode(bs_node, "center", bone.bs.center);
+      AppendXmlTextNode(bs_node, "radius", bone.bs.radius);
     }
   }
 }
@@ -593,7 +601,9 @@ void GameAsset::LoadCollisionData(pugi::xml_node& xml) {
       bounding_sphere.center = LoadVec3FromXml(center_xml);
       const pugi::xml_node& radius_xml = bone_xml.child("radius");
       bounding_sphere.radius = boost::lexical_cast<float>(radius_xml.text().get());
-      bones[bone_id] = bounding_sphere;
+
+      // TODO: fix collision data load code.
+      bones[bone_id].bs = bounding_sphere;
     }
   }
 

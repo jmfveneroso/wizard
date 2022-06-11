@@ -16,6 +16,9 @@ struct Room {
   bool has_stairs;
   bool is_miniset;
   int room_id;
+
+  ivec2 top_left;
+  ivec2 bot_right;
   vector<ivec2> tiles; 
   Room(int room_id) : room_id(room_id) {}
 };
@@ -24,6 +27,7 @@ struct Miniset {
   vector<vector<int>> search;
   vector<vector<int>> replace;
 
+  Miniset() {}
   Miniset(
     vector<vector<int>> search, vector<vector<int>> replace
   ) : search(search), replace(replace) {}
@@ -114,7 +118,7 @@ class Dungeon {
 
   char** chambers_;
 
-  const unordered_map<string, Miniset> kMinisets {
+  unordered_map<string, Miniset> kMinisets {
     { "STAIRS_UP", { 
         {   
           { 13, 13, 13, 13 }, 
@@ -185,22 +189,16 @@ class Dungeon {
         }
       } 
     },
-    { "WORM_KING", { 
+    { "BOOKCASE", { 
         {   
-          { 13, 13, 13, 13, 13, 13 }, 
-          { 13, 15, 13, 13, 15, 13 }, 
-          { 13, 13, 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13, 13, 13 }, 
-          { 13, 15, 13, 13, 15, 13 }, 
-          { 13, 13, 13, 13, 13, 13 }, 
+          { 13, 13, 13 }, 
+          { 13, 13, 13 }, 
+          { 13, 13, 13 }, 
         },
         {   
-          {  3,  1,  1,  1,  1,  3 }, 
-          {  2, 94, 13, 13, 13,  2 }, 
-          {  2, 13, 13, 13, 13,  2 }, 
-          {  2, 13, 13, 13, 13,  2 }, 
-          {  2, 13, 13, 13, 13,  2 }, 
-          {  3,  1, 25,  1,  1,  3 }, 
+          {  109, 1, 109 }, 
+          {  106, 1, 106 }, 
+          {  109, 1, 109 }, 
         }
       } 
     },
@@ -257,7 +255,7 @@ class Dungeon {
   void L5VertWall(int i, int j, char p, int dy);
   void AddSecretWalls();
   void AddWalls();
-  bool PlaceMiniSet(const string& miniset, 
+  bool PlaceMiniSet(const string& miniset, shared_ptr<Room> room = nullptr,
     bool maximize_distance_to_stairs = false);
 
   int PlaceMonsterGroup(int x, int y, int size = 0);
@@ -342,6 +340,7 @@ class Dungeon {
 
   int GetRoom(const ivec2& tile);
   bool IsChamber(int x, int y);
+  int GetThemeRoomType(int x, int y);
   bool IsMovementObstructed(vec3 start, vec3 end, float& t);
   bool IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls=false);
   void SetLevelData(const LevelData& level_data);
@@ -372,6 +371,8 @@ class Dungeon {
   vec3 GetDungeonColor();
   bool LoadDungeonFromFile(const string& filename);
   Wave GetWave(int wave);
+  char GetTileAt(const ivec2& tile);
+  char GetTileAt(const vec3& position);
 };
 
 #endif // __DUNGEON_HPP__

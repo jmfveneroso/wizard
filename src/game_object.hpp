@@ -79,7 +79,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   // Mostly useful for skeleton. May be good to have a hierarchy of nodes.
   shared_ptr<GameObject> parent;
 
-  unordered_map<int, BoundingSphere> bones;
+  unordered_map<int, Bone> bones;
 
   int parent_bone_id = -1;
 
@@ -177,6 +177,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool IsPickableItem();
   bool IsMovingObject();
   bool IsCreature();
+  bool IsMissile();
   bool IsAsset(const string& asset_name);
   bool IsNpc();
   bool IsRegion();
@@ -246,6 +247,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   void ChangePosition(const vec3& pos);
   void ClearActions();
   void AddTemporaryStatus(shared_ptr<TemporaryStatus> temp_status);
+  bool HasTemporaryStatus(Status status);
   void ClearTemporaryStatus(Status status);
   void DealDamage(shared_ptr<GameObject> attacker, float damage, vec3 normal = vec3(0, 1, 0), bool take_hit_animation = true, vec3 point_of_contact = vec3(0, 0, 0));
   void MeeleeAttack(shared_ptr<GameObject> obj, vec3 normal = vec3(0, 1, 0));
@@ -294,7 +296,7 @@ struct Missile : public GameObject {
   shared_ptr<GameObject> owner = nullptr;
   MissileType type = MISSILE_MAGIC_MISSILE;
   vector<shared_ptr<Particle>> associated_particles;
-
+  int spell = 0;
   Missile(Resources* resources) 
     : GameObject(resources, GAME_OBJ_MISSILE) {}
 };
@@ -496,6 +498,18 @@ struct QuickCastingStatus : TemporaryStatus {
 struct ManaRegenStatus : TemporaryStatus {
   ManaRegenStatus(float duration, int strength) 
     : TemporaryStatus(STATUS_MANA_REGEN, duration, strength) {
+  }
+};
+
+struct ShieldStatus : TemporaryStatus {
+  ShieldStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_SHIELD, duration, strength) {
+  }
+};
+
+struct BurningStatus : TemporaryStatus {
+  BurningStatus(float duration, int strength) 
+    : TemporaryStatus(STATUS_BURNING, duration, strength) {
   }
 };
 

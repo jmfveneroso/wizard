@@ -709,7 +709,8 @@ bool PlayerInput::CastSpellOrUseItem() {
       }
       case 3: { // Magma Ray.
         // if (player->stamina > 0.0f && player->mana >= arcane_spell->mana_cost) {
-          obj->active_animation = "Armature|shoot";
+          player->mana += arcane_spell->mana_cost;
+          obj->active_animation = "Armature|channel_ray";
           player->player_action = PLAYER_CHANNELING;
           channel_until_ = glfwGetTime() + 1.0f;
           obj->frame = 0;
@@ -767,19 +768,18 @@ bool PlayerInput::CastSpellOrUseItem() {
         // }
         return false;
       }
-      case 7: { // Detect monsters.
-        // if (player->stamina > 0.0f && arcane_spell->mana_cost) {
-          obj->active_animation = "Armature|shoot";
-          player->player_action = PLAYER_CASTING;
-          obj->frame = 0;
-          scepter->frame = 0;
-          animation_frame_ = 60;
-          resources_->CreateChargeMagicMissileEffect();
-          player->selected_spell = 4;
-          debounce_ = 20;
-          return true;
-        // }
-        return false;
+      case 7: { // Power shot.
+        resources_->ChangeObjectAnimation(obj, "Armature|start_charging", true,
+          TRANSITION_FINISH_ANIMATION);
+
+        player->player_action = PLAYER_CHANNELING;
+        channel_until_ = glfwGetTime() + 5.0f;
+        obj->frame = 0;
+        scepter->frame = 0;
+        animation_frame_ = 180;
+        player->selected_spell = 8;
+        debounce_ = 0;
+        return true;
       }
       case 8: { // Trap.
         // TODO: set spell cost in config.
@@ -810,10 +810,51 @@ bool PlayerInput::CastSpellOrUseItem() {
         // }
         return false;
       }
+      case 10: { // Detect monsters.
+        // if (player->stamina > 0.0f && arcane_spell->mana_cost) {
+          obj->active_animation = "Armature|shoot";
+          player->player_action = PLAYER_CASTING;
+          obj->frame = 0;
+          scepter->frame = 0;
+          animation_frame_ = 60;
+          resources_->CreateChargeMagicMissileEffect();
+          player->selected_spell = 8;
+          debounce_ = 20;
+          return true;
+        // }
+        return false;
+      }
     }
     return false;
   }
 
+  return true;
+}
+
+bool PlayerInput::CastShield() {
+  Camera c = GetCamera();
+
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  if (resources_->IsHoldingScepter()) {
+    return false;
+  }
+
+  if (configs->render_scene == "town") {
+    return false;
+  }
+
+  obj->active_animation = "Armature|open_palm";
+
+  player->player_action = PLAYER_SHIELD;
+  obj->frame = 0;
+  scepter->frame = 0;
+  animation_frame_ = 60;
+
+  debounce_ = 20;
   return true;
 }
 
@@ -842,8 +883,10 @@ void PlayerInput::ProcessPlayerFlipping() {
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
 
-  obj->active_animation = "Armature|flip_page";
-  scepter->active_animation = "Armature|flip_page";
+  resources_->ChangeObjectAnimation(obj, "Armature|flip_page", true,
+    TRANSITION_NONE);
+  resources_->ChangeObjectAnimation(scepter, "Armature|flip_page", true,
+    TRANSITION_NONE);
 
   shared_ptr<Mesh> mesh = resources_->GetMesh(obj);
   int num_frames = GetNumFramesInAnimation(*mesh, obj->active_animation);
@@ -932,9 +975,6 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastSpellWall(player, spell_wall_pos_);
           break; 
         }
-        case 7:
-          resources_->CastDetectMonsters();
-          break;
         case 8: {
           trap_pos_ = resources_->GetTrapRayCollision(player, c.position, 
             c.direction);
@@ -961,10 +1001,52 @@ void PlayerInput::ProcessPlayerCasting() {
           resources_->CastDecoy(player, trap_pos_);
           break;
         }
+        case 10:
+          resources_->CastDetectMonsters();
+          break;
         default:
           break;
       }
     }
+  }
+}
+
+void PlayerInput::ProcessPlayerShield() {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+  Camera c = GetCamera();
+
+  debounce_ = 20;
+
+  obj->active_animation = "Armature|open_palm";
+  scepter->active_animation = "Armature|open_palm";
+
+  if (resources_->IsHoldingScepter() || animation_frame_ == 0 || 
+    (!rgt_click_ && animation_frame_ > 40)) {
+    if (resources_->IsHoldingScepter()) {
+      obj->active_animation = "Armature|hold_scepter";
+      scepter->active_animation = "Armature|hold_scepter";
+    } else {
+      obj->active_animation = "Armature|idle.001";
+      scepter->active_animation = "Armature|idle.001";
+    }
+    obj->frame = 0;
+    scepter->frame = 0;
+
+    player->player_action = PLAYER_IDLE;
+    current_spell_ = nullptr;
+  } else if (animation_frame_ == 40) {
+    shared_ptr<Mesh> mesh = resources_->GetMesh(obj);
+    int bone_id = mesh->bones_to_ids["hand"];
+    BoundingSphere bs = obj->GetBoneBoundingSphere(bone_id);
+    shared_ptr<Particle> p = resources_->CreateOneParticle(
+      player->position + c.direction * 5.0f, 60.0f, "shield_spell_effect", 5.0f);
+    p->associated_obj = obj;
+    p->offset = vec3(0);
+    p->associated_bone = bone_id;
+    player->AddTemporaryStatus(make_shared<ShieldStatus>(0.5f, 1));
   }
 }
 
@@ -975,24 +1057,85 @@ void PlayerInput::ProcessPlayerChanneling() {
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
   Camera c = GetCamera();
 
-  if (lft_click_ && glfwGetTime() < channel_until_) {
-    obj->frame = 20;
-    scepter->frame = 20;
-    animation_frame_ = 0;
+  if (!current_spell_) {
+    return;
+  }
 
-    if (!channeling_particle || channeling_particle->life < 0.0f) {
-      channeling_particle = 
-        resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+  switch (current_spell_->spell_id) {
+    case 3: { // Magma Ray.
+      if (obj->frame < 20) {
+      } else if (lft_click_ && player->mana > current_spell_->mana_cost) { //  && glfwGetTime() < channel_until_
+        player->mana -= current_spell_->mana_cost;
+        obj->frame = 20;
+        scepter->frame = 20;
+        animation_frame_ = 0;
+
+        if (!channeling_particle || channeling_particle->life < 0.0f) {
+          channeling_particle = 
+            resources_->CreateChargeMagicMissileEffect("particle-sparkle-fire");
+        }
+        resources_->CastMagmaRay(player, c.position, c.direction);
+      } else {
+        obj->frame = 0;
+        scepter->frame = 0;
+        player->player_action = PLAYER_IDLE;
+        if (channeling_particle) {
+          channeling_particle->life = 0.0f;
+        }
+        channeling_particle = nullptr;
+      }
+      break;
     }
-    resources_->CastLightningRay(player, c.position, c.direction);
-  } else {
-    obj->frame = 0;
-    scepter->frame = 0;
-    player->player_action = PLAYER_IDLE;
-    if (channeling_particle) {
-      channeling_particle->life = 0.0f;
+    case 7: { // Power Shot.
+      if (obj->transition_animation && 
+        obj->active_animation == "Armature|start_charging") {
+        break;
+      }
+
+      // resources_->ChangeObjectAnimation(obj, "Armature|charge", true,
+      //   TRANSITION_WAIT);
+
+      if (animation_frame_ < 0) {
+        animation_frame_ = 0;
+      }
+
+      float channeling_power = float(180 - animation_frame_) / 180.0f;
+      int level = 0;
+      if (channeling_power < 0.5f) {
+        if (channeling_particle && channeling_particle->life > 0.0f && channeling_particle->particle_type->name == "particle-sparkle-green") {
+        } else {
+          if (channeling_particle) channeling_particle->life = 0.0f;
+          channeling_particle = 
+            resources_->CreateChargeOpenHandEffect("particle-sparkle-green");
+        }
+      } else if (channeling_power < 0.75f) {
+        if (channeling_particle && channeling_particle->life > 0.0f && channeling_particle->particle_type->name == "particle-sparkle-fire") {
+        } else {
+          if (channeling_particle) channeling_particle->life = 0.0f;
+          channeling_particle = 
+            resources_->CreateChargeOpenHandEffect("particle-sparkle-fire");
+        }
+        level = 1;
+      } else {
+        if (channeling_particle && channeling_particle->life > 0.0f && channeling_particle->particle_type->name == "particle-sparkle") {
+        } else {
+          if (channeling_particle) channeling_particle->life = 0.0f;
+          channeling_particle = 
+            resources_->CreateChargeOpenHandEffect("particle-sparkle");
+        }
+        level = 2;
+      }
+
+      if (!lft_click_) { // Finished channeling.
+        if (channeling_particle) channeling_particle->life = 0.0f;
+        resources_->ChangeObjectAnimation(obj, "Armature|charge_release", true,
+          TRANSITION_FINISH_ANIMATION);
+        player->player_action = PLAYER_IDLE;
+        current_spell_ = nullptr;
+        resources_->CastMagicMissile(camera_, level);
+      }
+      break;
     }
-    channeling_particle = nullptr;
   }
 }
 
@@ -1166,7 +1309,6 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   --animation_frame_;
 
   if (configs->quick_casting) {
-    cout << "Quick casting" << endl;
     --animation_frame_;
   }
 
@@ -1198,6 +1340,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   }
 
   lft_click_ = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+  rgt_click_ = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
 
   float player_speed = resources_->GetConfigs()->player_speed; 
   float jump_force = resources_->GetConfigs()->jump_force; 
@@ -1280,7 +1423,8 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         obj->active_animation = "Armature|hold_scepter";
         scepter->active_animation = "Armature|hold_scepter";
       } else {
-        obj->active_animation = "Armature|idle.001";
+        resources_->ChangeObjectAnimation(obj, "Armature|idle.001", true,
+          TRANSITION_FINISH_ANIMATION);
       }
 
       shared_ptr<ArcaneSpellData> arcane_spell = 
@@ -1313,6 +1457,12 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         } else {
           debounce_ = 20;
         }
+      } else if (rgt_click_) {
+        if (debounce_ < 0) {
+          CastShield();
+        } else {
+          debounce_ = 20;
+        }
       } else if (glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS) {
         if (debounce_ < 0) {
           // resources_->CastParalysis(player, player->position + c.direction * 100.0f);
@@ -1331,6 +1481,10 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
     }
     case PLAYER_CASTING: {
       ProcessPlayerCasting();
+      break;
+    }
+    case PLAYER_SHIELD: {
+      ProcessPlayerShield();
       break;
     }
     case PLAYER_CHANNELING: {

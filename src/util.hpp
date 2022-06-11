@@ -153,6 +153,8 @@ enum Status {
   STATUS_INVULNERABLE,
   STATUS_QUICK_CASTING,
   STATUS_MANA_REGEN,
+  STATUS_SHIELD,
+  STATUS_BURNING,
 };
 
 enum AiState {
@@ -179,6 +181,7 @@ enum PlayerAction {
   PLAYER_DRAWING,
   PLAYER_CHANNELING,
   PLAYER_FLIPPING,
+  PLAYER_SHIELD,
 };
 
 enum ActionType {
@@ -263,6 +266,8 @@ enum TransitionType {
   TRANSITION_NONE = 0,
   TRANSITION_SMOOTH,
   TRANSITION_FINISH_ANIMATION,
+  TRANSITION_WAIT,
+  TRANSITION_KEEP_FRAME,
 };
 
 struct Camera {
@@ -473,6 +478,18 @@ struct PlayerMoveEvent : Event {
   PlayerMoveEvent () : Event(EVENT_ON_PLAYER_MOVE) {}
   PlayerMoveEvent(string type, float h, string callback)
     : Event(EVENT_ON_PLAYER_MOVE), type(type), h(h), callback(callback) {}
+};
+
+struct Bone {
+  int bone_id;
+  string name;
+  BoundingSphere bs;
+  bool collidable = true;
+  Bone() {}
+  Bone(int bone_id, string name)
+    : bone_id(bone_id), name(name) {}
+  Bone(const Bone& bone) : bone_id(bone.bone_id), name(bone.name), bs(bone.bs), 
+    collidable(bone.collidable) {}
 };
 
 using MeshPtr = shared_ptr<Mesh>;

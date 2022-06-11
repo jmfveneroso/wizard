@@ -116,10 +116,15 @@ void main(){
 
   vec3 out_color = diffuse + reflected;
 
-  // Point lights.
-  for (int i = 0; i < NUM_POINT_LIGHTS; i++) {
-    out_color += CalcPointLight(point_lights[i], n, in_data.position, base);
-  }
+  // // Point lights.
+  // for (int i = 0; i < NUM_POINT_LIGHTS; i++) {
+  //   out_color += CalcPointLight(point_lights[i], n, in_data.position, base);
+  // }
+
+  float d = distance(player_pos, in_data.position);
+  float depth = clamp(d / light_radius, 0, 1);
+  vec3 fog_color = vec3(0, 0, 0);
+  out_color = mix(out_color, fog_color, depth);
 
   color = vec4(out_color, 1.0);
 }

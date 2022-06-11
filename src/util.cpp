@@ -1553,7 +1553,7 @@ void CreateCylinder(const vec3& source, const vec3& dest, float radius,
   angle = 0;
   y = length(dest - source);
   uv_x = 0;
-  uv_y = 1.0f;
+  uv_y = length(dest - source) / 5.0f;
   for (int i = 0; i < num_points_in_circle; i++) {
     float x = radius * cos(angle);
     float z = radius * sin(angle);

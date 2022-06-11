@@ -1,5 +1,6 @@
 #include "dungeon.hpp"
 #include "util.hpp"
+#include <boost/algorithm/string.hpp>
 #include <queue>
 #include <vector>
 
@@ -65,6 +66,8 @@ Dungeon::Dungeon() {
   char_map_[105] = 't'; // Spiderling leader.
   char_map_[106] = 'a'; // Bookcase.
   char_map_[107] = 'f'; // Spawn Point.
+  char_map_[108] = 'h'; // Red Metal Eye.
+  char_map_[109] = 'i'; // Brazier.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -519,7 +522,7 @@ void Dungeon::PrintMap() {
 void Dungeon::PrintRooms() {
   for (int y = 0; y < kDungeonSize; y++) {
     for (int x = 0; x < kDungeonSize; x++) {
-      int room_id = + room[x][y];
+      int room_id = room[x][y];
       if (room_id == -1) {
         cout << ' ' << " ";
       } else {
@@ -979,7 +982,7 @@ float Dungeon::GetDistanceToStairs(const ivec2& tile) {
 }
 
 bool Dungeon::PlaceMiniSet(const string& miniset_name, 
-  bool maximize_distance_to_stairs) {
+  shared_ptr<Room> the_room, bool maximize_distance_to_stairs) {
   const Miniset& miniset = kMinisets.find(miniset_name)->second;
   const int w = miniset.search.size();
   const int h = miniset.search[0].size();
@@ -989,29 +992,69 @@ bool Dungeon::PlaceMiniSet(const string& miniset_name,
   vector<ivec2> possibilities;
 
   int num_tries = (maximize_distance_to_stairs) ? 1000 : 10;
+
   for (int tries = 0; tries < num_tries; tries++) {
-    for (int y = Random(0, kDungeonSize - h); y < kDungeonSize - h; y++) {
-      for (int x = Random(0, kDungeonSize - w); x < kDungeonSize - w; x++) {
+    int start_x, start_y;
+    int end_x, end_y;
+    if (the_room) {
+      int tile_index = Random(0, the_room->tiles.size());
+      ivec2 tile = the_room->tiles[tile_index];
+
+      start_x = tile.x - 1;
+      start_y = tile.y - 1;
+      // start_x = the_room->top_left.x - 1;
+      // start_y = the_room->top_left.y - 1;
+      end_x = the_room->bot_right.x + 1;
+      end_y = the_room->bot_right.y + 1;
+    } else {
+      start_x = Random(0, kDungeonSize - w);
+      start_y = Random(0, kDungeonSize - h);
+      end_x = kDungeonSize - w;
+      end_y = kDungeonSize - h;
+    }
+
+    for (int y = start_y; y <= end_y; y++) {
+      for (int x = start_x; x <= end_x; x++) {
+        bool in_room = the_room == nullptr;
+
         bool valid = true;
         for (int step_y = 0; step_y < h; step_y++) {
           for (int step_x = 0; step_x < w; step_x++) {
             if (!search[step_x][step_y]) continue;
-            if (dungeon[x + step_x][y + step_y] != search[step_x][step_y] || 
-                (flags[x + step_x][y + step_y] & (0xFF | DLRG_SECRET))) {
+            if (dungeon[x + step_x][y + step_y] != search[step_x][step_y]) {
               valid = false;
               break;
             }
-            if (miniset_name == "STAIRS_UP") {
-              if ((flags[x + step_x][y + step_y] & (0xFF | DLRG_NO_CEILING))) {
-                valid = false;
-                break;
-              }
-            }
+
+            // if (dungeon[x + step_x][y + step_y] != search[step_x][step_y] || 
+            //     (flags[x + step_x][y + step_y] & (0xFF | DLRG_SECRET))) {
+            //   valid = false;
+            //   break;
+            // }
+            // if (miniset_name == "STAIRS_UP") {
+            //   if ((flags[x + step_x][y + step_y] & (0xFF | DLRG_NO_CEILING))) {
+            //     valid = false;
+            //     break;
+            //   }
+            // }
           }
         }
 
-        if (valid && IsGoodPlaceLocation(x+w/2, y+h/2, 20.0f, 0.0f)) {
-          possibilities.push_back(ivec2(x, y));
+        // if (!in_room) continue;
+
+        // if (the_room) {
+        //   int current_room = room[x][y];
+        //   if (current_room != the_room->room_id) {
+        //     continue;
+        //   }
+        // }
+
+        if (valid) {
+          if (the_room) {
+            possibilities.push_back(ivec2(x, y));
+          } else if (IsGoodPlaceLocation(x+w/2, y+h/2, 20.0f, 0.0f)) {
+            possibilities.push_back(ivec2(x, y));
+          }
         }
       }
     }
@@ -1246,6 +1289,7 @@ void Dungeon::GenerateAsciiDungeon() {
       switch (ascii_code) {
         case 's':
         case 'e':
+        case 'h':
         case 'S':
         case 'E':
         case 'V':
@@ -1270,6 +1314,8 @@ void Dungeon::GenerateAsciiDungeon() {
         case 'M':
         case 'r':
         case 'X':
+        case 'a':
+        case 'i':
         case 'Q':
         case '^':
         case '/':
@@ -1299,18 +1345,39 @@ bool Dungeon::CreateThemeRoomLibrary(int room_num) {
   shared_ptr<Room> room = room_stats[room_num];
 
   // Place pedestals.
-  int num_to_place = 1;
-  for (int i = 0; i < 100; i++) {
-    int tile_index = Random(0, room->tiles.size());
-    ivec2 tile = room->tiles[tile_index];
-    if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
-    if (dungeon[tile.x][tile.y] == 66) continue;
-    if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+  // int num_to_place = 1;
+  // for (int i = 0; i < 100; i++) {
+  //   int tile_index = Random(0, room->tiles.size());
+  //   ivec2 tile = room->tiles[tile_index];
+  //   if (IsTileNextToDoor(tile) || IsTileNextToWall(tile)) continue;
+  //   if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
 
-    dungeon[tile.x][tile.y] = 99;
-    if (--num_to_place == 0) break;
+  //   dungeon[tile.x][tile.y] = 99;
+  //   if (--num_to_place == 0) break;
+  // }
+  // if (num_to_place > 0) return false;
+
+  // Place bookcase.
+  if (Random(0, 2) == 0) {
+    if (!PlaceMiniSet("BOOKCASE_V1", room, false)) {
+      PlaceMiniSet("BOOKCASE_H1", room, false);
+    }
+  } else {
+    if (!PlaceMiniSet("BOOKCASE_H1", room, false)) {
+      PlaceMiniSet("BOOKCASE_V1", room, false);
+    }
   }
-  if (num_to_place > 0) return false;
+  // int num_to_place = 1;
+  // for (int i = 0; i < 100; i++) {
+  //   int tile_index = Random(0, room->tiles.size());
+  //   ivec2 tile = room->tiles[tile_index];
+  //   if (IsTileNextToDoor(tile) || !IsTileNextToWall(tile)) continue;
+  //   if (!IsValidPlaceLocation(tile.x, tile.y)) continue;
+
+  //   dungeon[tile.x][tile.y] = 106;
+  //   if (--num_to_place == 0) break;
+  // }
+  // if (num_to_place > 0) return false;
 
   // Place monsters. TODO: should depend on level.
   int num_monsters = 2;
@@ -1679,6 +1746,16 @@ int Dungeon::FillRoom(ivec2 tile, shared_ptr<Room> current_room) {
     current_room->tiles.push_back(tile);
     num_tiles++;
   }
+
+  current_room->top_left = ivec2(99, 99);
+  current_room->bot_right = ivec2(-1, -1);
+  for (auto tile : current_room->tiles) {
+    current_room->top_left.x = std::min(current_room->top_left.x, tile.x);
+    current_room->top_left.y = std::min(current_room->top_left.y, tile.y);
+    current_room->bot_right.x = std::max(current_room->bot_right.x, tile.x);
+    current_room->bot_right.y = std::max(current_room->bot_right.y, tile.y);
+  }
+
   return num_tiles;
 }
 
@@ -1708,6 +1785,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   // random_num = -1403164; // Error.
   // random_num = -780185899; // White spine door find.
   // random_num = -464376179; // Beholder.
+  // random_num = -916558998;
 
   initialized_ = true;
   srand(random_num);
@@ -1741,7 +1819,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
     // Place staircase.
     if (!PlaceMiniSet("STAIRS_UP")) {
       done_flag = false; 
-    } else if (!PlaceMiniSet("STAIRS_DOWN", true)) {
+    } else if (!PlaceMiniSet("STAIRS_DOWN", nullptr, true)) {
       cout << "Could not place downstairs" << endl;
       done_flag = false;
     }
@@ -1877,7 +1955,7 @@ bool Dungeon::IsRoomTile(const ivec2& tile) {
     case 65:
     case 75:
       return true;
-    case 25:
+    case 5:
     case 6:
       return !GetFlag(tile, DLRG_DOOR_CLOSED);
     default: 
@@ -1897,6 +1975,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case '^':
     case 's':
     case 'e':
+    case 'h':
     case 'S':
     case 'L':
     case 'b':
@@ -1940,6 +2019,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
     case '^':
     case 's':
     case 'e':
+    case 'h':
     case 'S':
     case 'Q':
     case 'r':
@@ -1961,6 +2041,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case '^':
         case 's':
         case 'e':
+        case 'h':
         case 'S':
         case 'Q':
         case 'r':
@@ -2002,6 +2083,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
           case '^':
           case 's':
           case 'e':
+          case 'h':
           case 'S':
           case 'Q':
           case 'r':
@@ -2029,6 +2111,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case '^':
         case 's':
         case 'e':
+        case 'h':
         case 'S':
         case 'Q':
         case 'r':
@@ -2479,6 +2562,7 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case '\\':
     case 's':
     case 'e':
+    case 'h':
     case 'S':
     case 'Q':
     case 'E':
@@ -2500,6 +2584,8 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case '(':
     case ')':
     case 'X':
+    case 'a':
+    case 'i':
     case 'W':
     case 'M':
     case 'r':
@@ -3013,6 +3099,48 @@ void Dungeon::LoadLevelDataFromXml(const string& filename) {
       wave.monsters_and_count.push_back({ monster_id, count });
     }
   }
+
+  for (pugi::xml_node node_xml = xml.child("miniset"); node_xml; 
+    node_xml = node_xml.next_sibling("miniset")) {
+    string name = node_xml.attribute("name").value();
+
+    kMinisets[name] = Miniset();
+    cout << "Loaing " << name << endl;
+
+    pugi::xml_node search_xml = node_xml.child("search");
+    for (pugi::xml_node xml_row = search_xml.child("row"); xml_row; 
+      xml_row = xml_row.next_sibling("row")) {
+
+      string row_content = LoadStringFromXml(xml_row);
+
+      vector<string> words;
+      boost::split(words, row_content, boost::is_any_of(" ")); 
+
+      vector<int> converted;
+      for (const auto w : words) {
+        converted.push_back(boost::lexical_cast<int>(w));
+      }
+      kMinisets[name].search.push_back(converted);
+    }
+
+    pugi::xml_node replace_xml = node_xml.child("replace");
+    for (pugi::xml_node xml_row = replace_xml.child("row"); xml_row; 
+      xml_row = xml_row.next_sibling("row")) {
+
+      string row_content = LoadStringFromXml(xml_row);
+
+      vector<string> words;
+      boost::split(words, row_content, boost::is_any_of(" ")); 
+
+      vector<int> converted;
+      for (const auto w : words) {
+        converted.push_back(boost::lexical_cast<int>(w));
+      }
+      kMinisets[name].replace.push_back(converted);
+    }
+    cout << "r " << kMinisets[name].search.size() << endl;
+    cout << "s " << kMinisets[name].replace.size() << endl;
+  }
 }
 
 void Dungeon::CalculatePathsAsync() {
@@ -3157,4 +3285,17 @@ bool Dungeon::LoadDungeonFromFile(const string& filename) {
 Wave Dungeon::GetWave(int wave) {
   if (wave < 0 || wave >= wave_data_.size()) return Wave();
   return wave_data_[wave];
+}
+
+char Dungeon::GetTileAt(const ivec2& tile) {
+  if (!IsValidTile(tile)) return '\0';
+  return ascii_dungeon[tile.x][tile.y];
+}
+
+char Dungeon::GetTileAt(const vec3& position) {
+  return GetTileAt(GetDungeonTile(position));
+}
+
+int Dungeon::GetThemeRoomType(int x, int y) {
+  return 0;
 }

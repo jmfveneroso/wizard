@@ -21,7 +21,7 @@ uniform mat4 VP;
 
 void main() {
   vec3 particle_center_worldspace = (M * vec4(0, 0, 0, 1)).xyz;
-  float particle_size = 2.0f;
+  float particle_size = 1.0f;
   
   vec3 vertex_pos_worldspace = particle_center_worldspace 
     + camera_right_worldspace * square_vertices.x * particle_size
