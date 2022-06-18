@@ -68,6 +68,7 @@ Dungeon::Dungeon() {
   char_map_[107] = 'f'; // Spawn Point.
   char_map_[108] = 'h'; // Red Metal Eye.
   char_map_[109] = 'i'; // Brazier.
+  char_map_[110] = 'j'; // Shooter Bug.
 
   monsters_and_objs = new char*[kDungeonSize];
   ascii_dungeon = new char*[kDungeonSize];
@@ -1289,6 +1290,7 @@ void Dungeon::GenerateAsciiDungeon() {
       switch (ascii_code) {
         case 's':
         case 'e':
+        case 'j':
         case 'h':
         case 'S':
         case 'E':
@@ -1975,6 +1977,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, bool consider_door_state) {
     case '^':
     case 's':
     case 'e':
+    case 'j':
     case 'h':
     case 'S':
     case 'L':
@@ -2019,6 +2022,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
     case '^':
     case 's':
     case 'e':
+    case 'j':
     case 'h':
     case 'S':
     case 'Q':
@@ -2041,6 +2045,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case '^':
         case 's':
         case 'e':
+        case 'j':
         case 'h':
         case 'S':
         case 'Q':
@@ -2083,6 +2088,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
           case '^':
           case 's':
           case 'e':
+          case 'j':
           case 'h':
           case 'S':
           case 'Q':
@@ -2111,6 +2117,7 @@ bool Dungeon::IsTileClear(const ivec2& tile, const ivec2& next_tile) {
         case '^':
         case 's':
         case 'e':
+        case 'j':
         case 'h':
         case 'S':
         case 'Q':
@@ -2562,6 +2569,7 @@ bool Dungeon::IsTileTransparent(const ivec2& tile) {
     case '\\':
     case 's':
     case 'e':
+    case 'j':
     case 'h':
     case 'S':
     case 'Q':

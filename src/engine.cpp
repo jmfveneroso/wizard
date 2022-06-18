@@ -454,6 +454,13 @@ bool Engine::ProcessGameInput() {
         }
         throttle_counter_ = 10;
         return false;
+      } else if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
+        if (throttle_counter_ < 0) {
+          inventory_->Enable(window, INVENTORY_SPELLBOOK);
+          resources_->SetGameState(STATE_INVENTORY);
+        }
+        throttle_counter_ = 10;
+        return false;
       } else if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
         if (throttle_counter_ < 0) {
           EnableMap();

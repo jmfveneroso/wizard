@@ -12,6 +12,7 @@ class Monsters {
   void MiniSpiderling(ObjPtr unit);
   void Spiderling(ObjPtr unit);
   void Scorpion(ObjPtr unit);
+  void ShooterBug(ObjPtr unit);
   void RedMetalEye(ObjPtr unit);
   void FlyingMetalEye(ObjPtr unit);
   void Lancet(ObjPtr unit);

@@ -260,18 +260,18 @@ void Inventory::DrawStats(const ivec2& pos) {
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
-  draw_2d_->DrawText(
-    boost::lexical_cast<string>(configs->dungeon_level),
-    pos.x + 156, 
-    kWindowHeight - (pos.y + 55), 
-    vec4(1), 
-    0.6, false,  "avenir_light_oblique");
+  // draw_2d_->DrawText(
+  //   boost::lexical_cast<string>(configs->dungeon_level),
+  //   pos.x + 156, 
+  //   kWindowHeight - (pos.y + 55), 
+  //   vec4(1), 
+  //   0.6, false,  "avenir_light_oblique");
 
-  draw_2d_->DrawText(boost::lexical_cast<string>(configs->max_dungeon_level),
-    pos.x + 132, 
-    kWindowHeight - (pos.y + 83), 
-    vec4(1), 
-    0.6, false,  "avenir_light_oblique");
+  // draw_2d_->DrawText(boost::lexical_cast<string>(configs->max_dungeon_level),
+  //   pos.x + 132, 
+  //   kWindowHeight - (pos.y + 83), 
+  //   vec4(1), 
+  //   0.6, false,  "avenir_light_oblique");
 
   draw_2d_->DrawText(
     boost::lexical_cast<string>(configs->gold),
@@ -694,10 +694,10 @@ void Inventory::UseItem(int x, int y) {
 void Inventory::DrawSpellbook() {
   ivec2 pos = vec2(win_x_, win_y_) + spellbook_pos_;
 
-  int x = 1440 / 2 - 395 + 400;
-  int y = 900 / 2 - 458 / 2;
+  int x = 1440 / 2 - 450;
+  int y = 900 / 2 - 450;
 
-  draw_2d_->DrawLoadingImage("spells", x, y, 500, 500, u_time_);
+  draw_2d_->DrawLoadingImage("pentagram", x, y, 900, 900, u_time_);
 
   for (int i = 0; i < 10; i++) {
     shared_ptr<ArcaneSpellData> spell = resources_->GetArcaneSpell(i);
@@ -1199,7 +1199,7 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
   switch (state_) {
     case INVENTORY_ITEMS:
       DrawInventory();
-      DrawSpellbook();
+      // DrawSpellbook();
       DrawSpellbar();
       break;
     case INVENTORY_STORE:
@@ -1207,10 +1207,11 @@ void Inventory::Draw(const Camera& camera, int win_x, int win_y,
       DrawStore(camera, win_x, win_y, window);
       break;
     case INVENTORY_SPELLBOOK:
-      DrawSpellDescription();
       DrawSpellbook();
-      DrawItemDescriptionScreen();
-      DrawInventory();
+      // DrawSpellDescription();
+      // DrawSpellbook();
+      // DrawItemDescriptionScreen();
+      // DrawInventory();
       DrawSpellbar();
       break;
     case INVENTORY_DIALOG:

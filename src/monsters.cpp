@@ -1142,6 +1142,79 @@ void Monsters::Scorpion(ObjPtr unit) {
   }
 }
 
+void Monsters::ShooterBug(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  double distance_to_player = length(player->position - unit->position);
+  bool visible = dungeon.IsTileVisible(unit->position);
+
+  float t;
+  bool can_hit_player = !dungeon.IsRayObstructed(unit->position, 
+    player->position, t);
+
+  switch (unit->ai_state) {
+    case AI_ATTACK: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (distance_to_player > 80.0f) {
+        if (Random(0, 10) == 0) {
+          vec3 pos = FindSideMove(unit);
+          if (length2(pos) > 0.1f) {
+            unit->actions.push(make_shared<MoveAction>(pos));
+          } else {
+            unit->actions.push(make_shared<MoveToPlayerAction>());
+          }
+        } else {
+          unit->actions.push(make_shared<MoveToPlayerAction>());
+        }
+      } else if (!unit->CanUseAbility("ranged-attack") || !can_hit_player) {
+        if (!IsPlayerReachable(unit)) { 
+          unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+        } else {
+          if (distance_to_player < 50.0f && visible) {
+            vec3 pos = FindSideMove(unit);
+            bool next_move_visible = dungeon.IsTileVisible(pos);
+            if (length2(pos) > 0.1f && next_move_visible) {
+              unit->actions.push(make_shared<MoveAction>(pos));
+            } else {
+              unit->actions.push(make_shared<MoveToPlayerAction>());
+            }
+          } else {
+            unit->actions.push(make_shared<MoveToPlayerAction>());
+          }
+        }
+      } else {
+        unit->actions.push(make_shared<RangedAttackAction>());
+      }
+      break;
+    }
+    case IDLE: {
+      if (!unit->actions.empty()) {
+        break;
+      } else if (CanDetectPlayer(unit)) {
+        unit->ClearActions();
+        unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
+      } else if (unit->actions.empty()) {
+        unit->actions.push(make_shared<IdleAction>(1));
+      }
+      break;
+    }
+    case START: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+}
+
 void Monsters::FlyingMetalEye(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
@@ -1639,6 +1712,8 @@ void Monsters::RunMonsterAi(ObjPtr obj) {
     Spiderling(obj); 
   } else if (obj->GetAsset()->name == "scorpion") {
     Scorpion(obj); 
+  } else if (obj->GetAsset()->name == "shooter_bug") {
+    ShooterBug(obj); 
   } else if (obj->GetAsset()->name == "red_metal_eye") {
     RedMetalEye(obj); 
   } else if (obj->GetAsset()->name == "metal_eye") {

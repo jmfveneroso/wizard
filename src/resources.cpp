@@ -4378,14 +4378,14 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case 'X': {
           ObjPtr obj = CreateGameObjFromAsset(this, "pedestal", pos + vec3(0, 0, 0));
 
-          int spell_id = dungeon_.GetRandomLearnableSpell(configs_->dungeon_level);
-          if (spell_id != -1) {
-            shared_ptr<ArcaneSpellData> spell = arcane_spell_data_[spell_id];
-            obj = CreateGameObjFromAsset(this,
-              item_data_[spell->item_id].asset_name, pos + vec3(0, 5.3, 0));
-            obj->CalculateCollisionData();
-            obj->physics_behavior = PHYSICS_FIXED;
-          }
+          // int spell_id = dungeon_.GetRandomLearnableSpell(configs_->dungeon_level);
+          // if (spell_id != -1) {
+          //   shared_ptr<ArcaneSpellData> spell = arcane_spell_data_[spell_id];
+          //   obj = CreateGameObjFromAsset(this,
+          //     item_data_[spell->item_id].asset_name, pos + vec3(0, 5.3, 0));
+          //   obj->CalculateCollisionData();
+          //   obj->physics_behavior = PHYSICS_FIXED;
+          // }
 
           // switch (Random(0, 4)) {
           //   case 0:
@@ -4428,11 +4428,13 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case 'L': case 'w': case 's': case 'S': case 'V': case 'Y': case 'e':
-        case 'J': case 'K': case 'W': case 'E': case 'I': case 'b': case 'h': { // Is Monster.
+        case 'J': case 'K': case 'W': case 'E': case 'I': case 'b': case 'h':
+        case 'j': { // Is Monster.
           static unordered_map<char, string> monster_assets { 
             { 'L', "broodmother" },
             { 's', "spiderling" },
             { 'e', "scorpion" },
+            { 'j', "shooter_bug" },
             { 'h', "red_metal_eye" },
             { 't', "spiderling" },
             { 'I', "imp" },
@@ -6036,7 +6038,6 @@ shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
   //   obj->position = s.center;
   // }
 
-
   obj->position = camera.position; 
 
   ObjPtr focus;
@@ -6570,6 +6571,7 @@ void Resources::CreateMonsters(const char code, int quantity) {
     { 'L', "broodmother" },
     { 's', "spiderling" },
     { 'e', "scorpion" },
+    { 'j', "shooter_bug" },
     { 't', "spiderling" },
     { 'I', "imp" },
     { 'K', "lancet" },
@@ -6610,6 +6612,7 @@ void Resources::ProcessArenaEvents() {
     { 'L', "broodmother" },
     { 's', "spiderling" },
     { 'e', "scorpion" },
+    { 'j', "shooter_bug" },
     { 'h', "red_metal_eye" },
     { 'E', "metal_eye" },
     { 't', "spiderling" },

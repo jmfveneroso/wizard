@@ -40,6 +40,8 @@ class AI {
     shared_ptr<RangedAttackAction> action);
   bool ScorpionAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
+  bool ShooterBugAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
   bool RedMetalEyeAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
   bool MetalEyeAttack(ObjPtr creature, 

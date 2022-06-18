@@ -300,6 +300,8 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
     return WhiteSpineAttack(creature, action);
   } else if (creature->GetAsset()->name == "scorpion") {
     return ScorpionAttack(creature, action);
+  } else if (creature->GetAsset()->name == "shooter_bug") {
+    return ShooterBugAttack(creature, action);
   } else if (creature->GetAsset()->name == "red_metal_eye") {
     return RedMetalEyeAttack(creature, action);
   } else if (creature->GetAsset()->name == "metal_eye") {
@@ -580,6 +582,68 @@ bool AI::ScorpionAttack(ObjPtr creature,
     shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
     int bone_id = mesh->bones_to_ids["muzzle_bone"];
     BoundingSphere s = creature->GetBoneBoundingSphere(bone_id);
+    resources_->CreateParticleEffect(10, s.center,
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 3.0, 24.0f, 15.0f, "fireball");          
+  }
+  return false;
+}
+
+bool AI::ShooterBugAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const int num_missiles = 1;
+  const float missile_speed = 1.2f + Random(0, 5) * 0.3f;
+
+  ObjPtr target_unit = creature->GetCurrentTarget();
+
+  if (!action->initiated) {
+    action->initiated = true;
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+  }
+
+  bool is_rotating = RotateSpider(creature, target_unit->position, 0.8f);
+  if (is_rotating) {
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+    return false;
+  }
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack", true, TRANSITION_NONE);
+
+  int num_frames = creature->GetNumFramesInCurrentAnimation();
+  if (int(creature->frame) >= num_frames - 3) {
+    return true;
+  }
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position;
+
+  // Predict player pos.
+  if (length(player->speed) > 0.01) {
+    vec2 target_pos = PredictMissileHitLocation(vec2(creature->position.x, creature->position.z), 
+      missile_speed, vec2(player->position.x, player->position.z), 
+      vec2(player->speed.x, player->speed.z), 
+      length(player->speed));
+    target = vec3(target_pos.x, player->position.y, target_pos.y);
+  }
+
+  RotateSpider(creature, target, 0.99f);
+
+  vec3 dir = normalize(target - creature->position);
+  dir.y = -0.1f;
+
+  if (int(creature->frame) >= 43 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 p2 = creature->position + dir * 200.0f;
+
+    shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
+    int bone_id = mesh->bones_to_ids["tail4"];
+    BoundingSphere s = creature->GetBoneBoundingSphere(bone_id);
+
+    resources_->CastMissile(creature, s.center, MISSILE_BOUNCYBALL, 
+      dir, missile_speed);
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+
     resources_->CreateParticleEffect(10, s.center,
       vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 3.0, 24.0f, 15.0f, "fireball");          
   }
@@ -895,7 +959,6 @@ bool AI::ProcessMoveAction(ObjPtr spider, vec3 destination) {
     }
   }
 
-
   shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
     int num_frames = GetNumFramesInAnimation(*mesh, 
       spider->active_animation);
@@ -907,6 +970,7 @@ bool AI::ProcessMoveAction(ObjPtr spider, vec3 destination) {
   }
 
   if (spider->GetAsset()->name == "scorpion" ||
+      spider->GetAsset()->name == "shooter_bug" ||
       spider->GetAsset()->name == "metal_eye") {
     int movement_type = 0;
     bool is_rotating = RotateSpiderWithStrafe(spider, destination, 
