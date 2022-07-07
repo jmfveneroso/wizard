@@ -2030,7 +2030,6 @@ void Renderer::CreateDungeonBuffers() {
     "resources/models_fbx/dungeon_pillar.fbx",
     "resources/models_fbx/dungeon_ceiling.fbx",
     "resources/models_fbx/dungeon_floor.fbx",
-    "resources/models_fbx/dungeon_floor.fbx",
   };
 
   vector<string> texture_names { 
@@ -2043,9 +2042,9 @@ void Renderer::CreateDungeonBuffers() {
     "cathedral_wall_diffuse", 
     "metal_diffuse",
     "cathedral_wall_diffuse",
-    "brass",
-    "medieval_floor_diffuse",
-    "medieval_floor_diffuse",
+    "wood_planks_diffuse",
+    // "medieval_floor_diffuse",
+    "stone_floor_diffuse",
    };
 
   vector<string> normal_texture_names { 
@@ -2058,9 +2057,9 @@ void Renderer::CreateDungeonBuffers() {
     "cathedral_wall_normal", 
     "metal_normal", 
     "cathedral_wall_normal", 
-    "cathedral_wall_normal", 
-    "medieval_floor_normal",
-    "medieval_floor_normal",
+    "wood_planks_normal",
+    // "medieval_floor_normal",
+    "stone_floor_normal",
   };
 
   vector<string> specular_texture_names { 
@@ -2074,8 +2073,9 @@ void Renderer::CreateDungeonBuffers() {
     "metal_roughness",
     "cathedral_wall_roughness", 
     "cathedral_wall_roughness", 
-    "medieval_floor_roughness",
-    "medieval_floor_roughness",
+    "wood_planks_roughness",
+    // "medieval_floor_roughness",
+    "stone_floor_roughness",
   };
 
   Dungeon& dungeon = resources_->GetDungeon();
@@ -2155,7 +2155,6 @@ void Renderer::CreateDungeonBuffers() {
           &data.raw_mesh.normals[0], GL_STATIC_DRAW);
 
         vector<mat4> model_matrices;
-        char** dungeon_map = resources_->GetDungeonMap();
         float y = 0;
 
         int start_x = 14 * cx;
@@ -2168,53 +2167,56 @@ void Renderer::CreateDungeonBuffers() {
             float room_z = 10.0f * z;
             vec3 pos = kDungeonOffset + vec3(room_x, y, room_z);
 
+            // char ascii_code = dungeon.AsciiCode(x, z);
+            const DungeonTile& dungeon_tile = dungeon.GetTileAt(x, z);
+            char ascii_code = dungeon_tile.ascii_code;
+
             if (tile == '|') {
-              if (dungeon_map[x][z] != '|' && dungeon_map[x][z] != '-') continue;
+              if (ascii_code != '|' && ascii_code != '-') continue;
             } else if (tile == ')') {
-              if (dungeon_map[x][z] != '|' && dungeon_map[x][z] != '-' &&
-                  dungeon_map[x][z] != 'd' && dungeon_map[x][z] != 'D') continue;
+              if (ascii_code != '|' && ascii_code != '-' &&
+                  ascii_code != 'd' && ascii_code != 'D') continue;
             } else if (tile == 'o' || tile == '(') {
-              if (dungeon_map[x][z] != 'o' && dungeon_map[x][z] != 'O' && 
-                dungeon_map[x][z] != 'g' && dungeon_map[x][z] != 'G') continue;
+              if (ascii_code != 'o' && ascii_code != 'O' && 
+                ascii_code != 'g' && ascii_code != 'G') continue;
             } else if (tile == 'd') {
-              if (dungeon_map[x][z] != 'd' && dungeon_map[x][z] != 'D') continue;
+              if (ascii_code != 'd' && ascii_code != 'D') continue;
             } else if (tile == 'g') {
-              if (dungeon_map[x][z] != 'g' && dungeon_map[x][z] != 'G') continue;
+              if (ascii_code != 'g' && ascii_code != 'G') continue;
             } else if (tile == 'P') {
-              if (dungeon_map[x][z] != 'p' && dungeon_map[x][z] != 'P') continue;
+              if (ascii_code != 'p' && ascii_code != 'P') continue;
             } else if (tile == ' ') {
             } else if (tile == 'c') {
             } else if (tile == 's') {
             } else if (tile == '+') {
-              if (dungeon_map[x][z] != '+' && dungeon_map[x][z] != '^' && 
-                  dungeon_map[x][z] != '/') continue;
+              if (ascii_code != '+' && ascii_code != '^' && 
+                  ascii_code != '/') continue;
             } else {
-              if (dungeon_map[x][z] != tile) continue;
+              if (ascii_code != tile) continue;
             }
            
             mat4 ModelMatrix = translate(mat4(1.0), pos);
 
             // Rotate.
-            if (dungeon_map[x][z] == '-' || dungeon_map[x][z] == 'O' || 
-              dungeon_map[x][z] == 'D' || dungeon_map[x][z] == 'G') {
+            if (ascii_code == '-' || ascii_code == 'O' || 
+              ascii_code == 'D' || ascii_code == 'G') {
               ModelMatrix *= rotate(mat4(1.0), 1.57f, vec3(0, 1, 0));
             }
 
             if (tile == 'c') {  
-              if (dungeon_map[x][z] != '<' && dungeon_map[x][z] != '\'' && 
+              if (ascii_code != '<' && ascii_code != '\'' && 
                 !resources_->GetDungeon().IsChamber(x, z)) { // Not upstairs. Draw ceiling.
                 // Create ceiling.
-                mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 50, 0));
+                mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, dungeon_tile.ceiling_height, 0));
+                // mat4 ModelMatrix = translate(mat4(1.0), pos + vec3(0, 40, 0));
                 model_matrices.push_back(ModelMatrix);
               }
-            } else if (tile == ' ') {  
-              if (dungeon_map[x][z] != '>' && dungeon_map[x][z] != '~' &&
-                !resources_->GetDungeon().IsChamber(x, z)) { // Not downstairs. Draw floor.
+            } else if (tile == ' ') { 
+              if (dungeon_tile.floor_type == 0) {
                 model_matrices.push_back(ModelMatrix);
               }
             } else if (tile == 's') {  
-              if (dungeon_map[x][z] != '>' && dungeon_map[x][z] != '~' &&
-                  resources_->GetDungeon().IsChamber(x, z)) {
+              if (dungeon_tile.floor_type == 1) {
                 model_matrices.push_back(ModelMatrix);
               }
             } else {

@@ -597,13 +597,13 @@ bool AI::ShooterBugAttack(ObjPtr creature,
 
   if (!action->initiated) {
     action->initiated = true;
-    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+    resources_->ChangeObjectAnimation(creature, "Armature|walking", true,
       TRANSITION_FINISH_ANIMATION);
   }
 
   bool is_rotating = RotateSpider(creature, target_unit->position, 0.8f);
   if (is_rotating) {
-    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+    resources_->ChangeObjectAnimation(creature, "Armature|walking", true,
       TRANSITION_FINISH_ANIMATION);
     return false;
   }
@@ -1069,7 +1069,7 @@ bool AI::ProcessMoveToPlayerAction(
     next_pos = dungeon.GetNextMove(spider->position, player_pos, 
       min_distance);
 
-    char tile = dungeon.GetTileAt(next_pos);
+    char tile = dungeon.GetTileAt(next_pos).ascii_code;
     switch (tile) {
       case 'd': case 'D': case 'o': case 'O': {
         flight_height = 10.0f;
@@ -1126,7 +1126,7 @@ bool AI::ProcessLongMoveAction(
     next_pos = dungeon.GetNextMove(spider->position, dest, 
       min_distance);
 
-    char tile = dungeon.GetTileAt(next_pos);
+    char tile = dungeon.GetTileAt(next_pos).ascii_code;
     switch (tile) {
       case 'd': case 'D': case 'o': case 'O': {
         flight_height = 10.0f;

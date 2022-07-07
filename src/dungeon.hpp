@@ -6,7 +6,6 @@
 #include <glm/glm.hpp>
 #include <unordered_map>
 #include <queue>
-// #include "util.hpp"
 
 using namespace std;
 using namespace glm;
@@ -81,6 +80,31 @@ struct Wave {
   vector<tuple<char, int>> monsters_and_count;
 };
 
+struct DungeonTile {
+  int dungeon_code;
+  char ascii_code;
+  unsigned int flags;
+  int room;
+  int rotation = 0;
+
+  char monsters_and_objs;
+  int monster_group;
+
+  int visibility;
+  int discovered;
+  char darkness;
+
+  int relevance;
+  int** path;
+  float** min_distance;
+
+  int floor_type = 0;
+  float floor_height;
+  float ceiling_height = 50;
+
+  DungeonTile() {}
+};
+
 class Dungeon {
   std::default_random_engine generator_;
 
@@ -89,16 +113,13 @@ class Dungeon {
   int current_level_ = 0;
   int current_monster_group_ = 0;
 
-  int** dungeon;
-  int** monster_group;
+  DungeonTile** dungeon_tiles_;
+
   int** relevance;
-  unsigned int** flags;
   int** room;
   ivec2 downstairs;
 
   vector<shared_ptr<Room>> room_stats;
-  char** ascii_dungeon;
-  char** monsters_and_objs;
   char** darkness;
 
   int** dungeon_visibility_;
@@ -118,91 +139,7 @@ class Dungeon {
 
   char** chambers_;
 
-  unordered_map<string, Miniset> kMinisets {
-    { "STAIRS_UP", { 
-        {   
-          { 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13 }, 
-        },
-        {   
-          {  0,  0,  0,  0 }, 
-          {  0, 60, 63,  0 }, 
-          {  0, 63, 63,  0 }, 
-          {  0,  0,  0,  0 }, 
-        }
-      } 
-    },
-    { "STAIRS_DOWN", { 
-        {   
-          { 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13 }, 
-        },
-        {   
-          {  0,  0,  0,  0 }, 
-          {  0, 61, 64,  0 }, 
-          {  0, 64, 64,  0 }, 
-          {  0,  0,  0,  0 }, 
-        }
-      } 
-    },
-    { "LARACNA", { 
-        {   
-          { 13, 13, 13, 13, 13, 13 }, 
-          { 13, 15, 13, 13, 15, 13 }, 
-          { 13, 13, 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13, 13, 13 }, 
-          { 13, 15, 13, 13, 15, 13 }, 
-          { 13, 13, 13, 13, 13, 13 }, 
-        },
-        {   
-          {  3,  1,  1,  1,  1,  3 }, 
-          {  2, 68, 13, 13, 13,  2 }, 
-          {  2, 13, 13, 13, 13,  2 }, 
-          {  2, 13, 13, 13, 13,  2 }, 
-          {  2, 13, 13, 13, 13,  2 }, 
-          {  3,  1, 25,  1,  1,  3 }, 
-        }
-      } 
-    },
-    { "MINIBOSS_ROOM", { 
-        {   
-          { 13, 13, 13, 13, 13, 13, 13 }, 
-          { 13, 15, 13, 13, 15, 13, 13 }, 
-          { 13, 13, 13, 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13, 13, 13, 13 }, 
-          { 13, 15, 13, 13, 15, 13, 13 }, 
-          { 13, 13, 13, 13, 13, 13, 13 }, 
-          { 13, 13, 13, 13, 13, 13, 13 }, 
-        },
-        {   
-          {  3,  1,  1,  1, 25,  1, 3 }, 
-          {  2, 93, 13,  2, 13, 13, 2 }, 
-          {  2, 13, 13,  2, 13, 13, 2 }, 
-          {  2, 13, 13,  2, 13, 13, 2 }, 
-          {  2, 13, 13,  2, 13, 13, 2 }, 
-          {  2, 13, 13,  2, 13, 93, 2 }, 
-          {  3,  1, 25,  1,  1,  1, 3 }, 
-        }
-      } 
-    },
-    { "BOOKCASE", { 
-        {   
-          { 13, 13, 13 }, 
-          { 13, 13, 13 }, 
-          { 13, 13, 13 }, 
-        },
-        {   
-          {  109, 1, 109 }, 
-          {  106, 1, 106 }, 
-          {  109, 1, 109 }, 
-        }
-      } 
-    },
-  };
+  unordered_map<string, Miniset> kMinisets;
 
   const unordered_map<int, int> monster_type_to_leader_type_ {
     { 62, 105 }
@@ -241,7 +178,7 @@ class Dungeon {
   bool GenerateChambers();
   bool GenerateRooms();
   void ClearFlags();
-  bool CheckRoom(int x, int y, int width, int height);
+  bool CheckRoom(int x, int y, int width, int height, bool allow_chamber = true);
   void RoomGen(int x, int y, int w, int h, int dir, int counter = 0);
   int GetArea();
   void MakeMarchingTiles();
@@ -256,7 +193,7 @@ class Dungeon {
   void AddSecretWalls();
   void AddWalls();
   bool PlaceMiniSet(const string& miniset, shared_ptr<Room> room = nullptr,
-    bool maximize_distance_to_stairs = false);
+    bool maximize_distance_to_stairs = false, int rotation = 0);
 
   int PlaceMonsterGroup(int x, int y, int size = 0);
   bool IsValidPlaceLocation(int x, int y);
@@ -275,6 +212,7 @@ class Dungeon {
 
   bool CreateThemeRoomChest(int room_num);
   bool CreateThemeRoomLibrary(int room_num);
+  bool CreateThemeRoomBigLibrary(int room_num);
   bool CreateThemeRoomPedestal(int room_num);
   bool CreateThemeRoomMob(int room_num);
   bool CreateThemeRooms();
@@ -295,9 +233,7 @@ class Dungeon {
   void PrintMap();
   void PrintRooms();
 
-  char** GetDungeon();
   int**** GetDungeonPath() { return dungeon_path_; }
-  char** GetMonstersAndObjs();
   char** GetDarkness();
 
   vec3 GetNextMove(const vec3& source, const vec3& dest, float& min_distance);
@@ -357,8 +293,10 @@ class Dungeon {
   ivec2 GetPortalTouchedByRay(vec3 start, vec3 end);
   ivec2 GetTileTouchedByRay(vec3 start, vec3 end);
   void SetFlag(ivec2 tile, int flag);
+  void SetFlag(int x, int y, int flag);
   void UnsetFlag(ivec2 tile, int flag);
   bool GetFlag(ivec2 tile, int flag);
+  bool GetFlag(int x, int y, int flag);
   vec3 GetPathToTile(const vec3& start, const vec3& end);
   void ClearPaths();
   void CalculateAllPathsAsync(const ivec2& tile);
@@ -371,8 +309,21 @@ class Dungeon {
   vec3 GetDungeonColor();
   bool LoadDungeonFromFile(const string& filename);
   Wave GetWave(int wave);
-  char GetTileAt(const ivec2& tile);
-  char GetTileAt(const vec3& position);
+  DungeonTile& GetTileAt(int x, int y);
+  DungeonTile& GetTileAt(const ivec2& tile);
+  DungeonTile& GetTileAt(const vec3& position);
+ 
+  int Code(int x, int y);
+  void SetCode(int x, int y, int code);
+
+  char AsciiCode(int x, int y);
+  void SetAsciiCode(int x, int y, char code);
+
+  char MonstersAndObjs(int x, int y);
+  void SetMonstersAndObjs(int x, int y, char code);
+
+  int MonsterGroup(int x, int y);
+  void SetMonsterGroup(int x, int y, int code);
 };
 
 #endif // __DUNGEON_HPP__

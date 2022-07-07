@@ -753,8 +753,11 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
   xml = spell_xml.child("description");
   if (xml) spell_data->description = xml.text().get();
 
-  xml = spell_xml.child("icon");
+  xml = spell_xml.child("image");
   if (xml) spell_data->image_name = xml.text().get();
+
+  xml = spell_xml.child("icon");
+  if (xml) spell_data->spell_icon = xml.text().get();
 
   xml = spell_xml.child("item-id");
   if (xml) spell_data->item_id = LoadIntFromXml(xml);
@@ -768,13 +771,13 @@ void Resources::LoadSpell(const pugi::xml_node& spell_xml) {
   xml = spell_xml.child("mana-cost");
   if (xml) {
     spell_data->mana_cost = LoadFloatFromXml(xml);
-    cout << "Mana cost: " << spell_data->mana_cost << endl;
   }
 
   xml = spell_xml.child("damage");
-  if (xml) {
-    spell_data->damage = ParseDiceFormula(xml.text().get());
-  }
+  if (xml) spell_data->damage = ParseDiceFormula(xml.text().get());
+
+  xml = spell_xml.child("upgrade");
+  if (xml) spell_data->upgrade = ParseDiceFormula(xml.text().get());
 
   item_id_to_spell_data_[spell_data->item_id] = spell_data;
 
@@ -3325,16 +3328,18 @@ void Resources::StartQuest(const string& quest_name) {
 }
 
 void Resources::LearnSpell(int spell_id) {
-  if (spell_id == 0) return;
-
   auto spell = GetArcaneSpell(spell_id);
   if (!spell) return;
 
   if (!spell->learned) {
     AddMessage(string("You learned ") + spell->name);
+    configs_->level_up_frame = 0;
     spell->learned = true;
   } else {
-    if (++player_->mana > player_->max_mana) player_->mana = player_->max_mana;
+    configs_->level_up_frame = 0;
+    spell->spell_level++;
+    AddMessage(string("You learned ") + spell->name + " at level " +
+               boost::lexical_cast<string>(spell->spell_level));
   }
 }
 
@@ -4094,16 +4099,16 @@ ObjPtr CreateRoom(Resources* resources, const string& asset_name,
 }
 
 ObjPtr Resources::CreateBookshelf(const vec3& pos, const ivec2& tile) {
-  char** dungeon_map = dungeon_.GetDungeon();
-
   int rotation = 0;
   static vector<ivec2> offsets { ivec2(0, -1), ivec2(-1, 0), 
     ivec2(0, 1), ivec2(1, 0) };
   for (int i = 0; i < 4; i++) {
     ivec2 off = offsets[i];
     ivec2 t = tile + off;
-    if (dungeon_map[t.x][t.y] == '-' || dungeon_map[t.x][t.y] == '|' ||
-        dungeon_map[t.x][t.y] == '+') {
+
+    char ascii_code = dungeon_.AsciiCode(t.x, t.y);
+    if (ascii_code == '-' || ascii_code == '|' ||
+        ascii_code == '+') {
       rotation = i;
       break;
     }
@@ -4194,8 +4199,6 @@ void Resources::CreateDungeon(bool generate_dungeon) {
     dungeon_.GenerateDungeon(configs_->dungeon_level, random_num);
   }
 
-  char** dungeon_map = dungeon_.GetDungeon();
-  char** monsters_and_objs = dungeon_.GetMonstersAndObjs();
   char** darkness = dungeon_.GetDarkness();
 
   float y = 0;
@@ -4208,7 +4211,9 @@ void Resources::CreateDungeon(bool generate_dungeon) {
       ObjPtr tile2 = nullptr;
       vec3 pos = kDungeonOffset + vec3(room_x, y, room_z);
 
-      switch (dungeon_map[x][z]) { 
+      DungeonTile& dungeon_tile = dungeon_.GetTileAt(x, z);
+      char ascii_code = dungeon_tile.ascii_code;
+      switch (ascii_code) { 
         case ' ': {
           tile = CreateRoom(this, "dungeon_ceiling_hull", pos, 0);
           break;
@@ -4268,17 +4273,23 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case '<': {
-          CreateGameObjFromAsset(this, "dungeon_platform_up", pos + vec3(5, 0, 5));
-          ObjPtr obj = CreateGameObjFromAsset(this, "stairs_up_hull", pos + vec3(5, 0, 5));
+          // CreateGameObjFromAsset(this, "dungeon_platform_up", pos + vec3(5, 0, 5));
+          // ObjPtr obj = CreateGameObjFromAsset(this, "stairs_up_hull", pos + vec3(5, 0, 5));
+          // obj->CalculateCollisionData();
+          vec3 offset = vec3(0, 0, 0);
+          CreateGameObjFromAsset(this, "dungeon_platform_down", pos + offset);
+          ObjPtr obj = CreateGameObjFromAsset(this, "stairs_down_hull", pos + offset);
           obj->CalculateCollisionData();
           break;
         }
         case '>': {
-          CreateGameObjFromAsset(this, "dungeon_platform_down", pos + vec3(5, 0, 5));
-          ObjPtr obj = CreateGameObjFromAsset(this, "stairs_down_hull", pos + vec3(5, 0, 5));
+          // vec3 offset = vec3(5, 0, 5);
+          vec3 offset = vec3(0, 0, 0);
+          CreateGameObjFromAsset(this, "dungeon_platform_down", pos + offset);
+          ObjPtr obj = CreateGameObjFromAsset(this, "stairs_down_hull", pos + offset);
           obj->CalculateCollisionData();
-          obj = CreateGameObjFromAsset(this, "stairs_down_creature_hull", pos + vec3(5, 0, 5));
-          obj->CalculateCollisionData();
+          // obj = CreateGameObjFromAsset(this, "stairs_down_creature_hull", pos + offset);
+          // obj->CalculateCollisionData();
           break;
         }
         case 'P': {
@@ -4303,7 +4314,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         case '&': {
           tile = CreateRoom(this, "dungeon_secret_wall", pos, 0);
           ObjPtr tile3 = CreateRoom(this, "dungeon_floor", pos, 0);
-          tile3->dungeon_piece_type = dungeon_map[x][z];
+          tile3->dungeon_piece_type = ascii_code;
           tile3->dungeon_tile = ivec2(x, z);
           break;
         }
@@ -4326,7 +4337,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
         }
       }
 
-      switch (monsters_and_objs[x][z]) { 
+      switch (dungeon_.MonstersAndObjs(x, z)) { 
         case 'a':
           CreateBookshelf(pos + vec3(0, 0.1, 0), ivec2(x, z));
           break;
@@ -4406,6 +4417,14 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           // obj->physics_behavior = PHYSICS_FIXED;
           break;
         }
+        case 'k': {
+          tile = CreateRoom(this, "dungeon_library", pos, dungeon_tile.rotation);
+          break;
+        }
+        case 'l': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "dungeon_table", pos);
+          break;
+        }
         case 'c': {
           ObjPtr obj = CreateGameObjFromAsset(this, "chest", pos + vec3(0, 0, 0));
           obj->rotation_matrix = rotate(mat4(1.0), Random(0, 4) * 0.785f, 
@@ -4418,7 +4437,15 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           break;
         }
         case 'm': {
-          CreateRandomMonster(pos + vec3(0, 3, 0));
+          ObjPtr obj = CreateGameObjFromAsset(this, "chair", pos);
+          obj->rotation_matrix = rotate(mat4(1.0), 1 * 0.785f, 
+            vec3(0, 1, 0));
+          break;
+        }
+        case 'n': {
+          ObjPtr obj = CreateGameObjFromAsset(this, "chair", pos);
+          obj->rotation_matrix = rotate(mat4(1.0), 3 * 0.785f, 
+            vec3(0, 1, 0));
           break;
         }
         case 't': {
@@ -4449,7 +4476,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
             { 'b', "beholder" },
           };
    
-          char code = monsters_and_objs[x][z];
+          char code = dungeon_.MonstersAndObjs(x, z);
 
           if (monster_assets.find(code) == monster_assets.end()) {
             ThrowError("Could not find monster asset: : ", code);
@@ -4460,7 +4487,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           int level = 0;
 
           ObjPtr monster;
-          if (monsters_and_objs[x][z] == 'L') {
+          if (code == 'L') {
             monster = CreateMonster(this, monster_assets[code], 
               pos - vec3(0, 1.5, 0), level);  
             CreateGameObjFromAsset(this, "big_web", pos + vec3(0, 0.2, 0));
@@ -4472,7 +4499,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
           if (code == 't') {
             monster->leader = true;
           }
-          monster->monster_group = dungeon_.GetMonsterGroup(ivec2(x, z));
+          monster->monster_group = dungeon_.MonsterGroup(x, z);
           monster_groups_[monster->monster_group].push_back(monster);
           break;
         }
@@ -4492,12 +4519,12 @@ void Resources::CreateDungeon(bool generate_dungeon) {
       }
 
       if (tile) {
-        tile->dungeon_piece_type = dungeon_map[x][z];
+        tile->dungeon_piece_type = ascii_code;
         tile->dungeon_tile = ivec2(x, z);
       }
 
       if (tile2) {
-        tile2->dungeon_piece_type = dungeon_map[x][z];
+        tile2->dungeon_piece_type = ascii_code;
         tile2->dungeon_tile = ivec2(x, z);
       }
     }
@@ -4815,7 +4842,6 @@ void Resources::LoadConfig(const std::string& xml_filename) {
     configs_->spellbar[i] = 0;
     configs_->spellbar_quantities[i] = 0;
   }
-  configs_->spellbar[0] = 9;
 
   // Clear equipment.
   for (int i = 0; i < 4; i++) {
@@ -4866,19 +4892,21 @@ void Resources::LoadConfig(const std::string& xml_filename) {
   }
 
   for (auto [id, spell] : arcane_spell_data_) {
-    spell->learned = (id == 9);
+    if (spell->name == "Spell Shot") {
+      spell->learned = true;
+    }
     spell->level = 0;
   }
 
-  pugi::xml_node learned_spells_xml = xml.child("learned-spells");
-  for (pugi::xml_node spell_xml = learned_spells_xml.child("spell"); spell_xml; 
-    spell_xml = spell_xml.next_sibling("spell")) {
-    int spell_id = boost::lexical_cast<int>(spell_xml.text().get());
-    arcane_spell_data_[spell_id]->learned = true;
+  // pugi::xml_node learned_spells_xml = xml.child("learned-spells");
+  // for (pugi::xml_node spell_xml = learned_spells_xml.child("spell"); spell_xml; 
+  //   spell_xml = spell_xml.next_sibling("spell")) {
+  //   int spell_id = boost::lexical_cast<int>(spell_xml.text().get());
+  //   arcane_spell_data_[spell_id]->learned = true;
 
-    int level = boost::lexical_cast<int>(spell_xml.attribute("level").value());
-    arcane_spell_data_[spell_id]->level = true;
-  }
+  //   int level = boost::lexical_cast<int>(spell_xml.attribute("level").value());
+  //   arcane_spell_data_[spell_id]->level = true;
+  // }
 
   player_->status = STATUS_NONE;
 }
@@ -6404,8 +6432,7 @@ bool Resources::CastSpellWall(ObjPtr owner, const vec3& position) {
   if (!dungeon_.IsValidTile(tile)) return false;
 
   bool should_rotate = false;
-  char** dungeon_map = dungeon_.GetDungeon();
-  switch (dungeon_map[tile.x][tile.y]) {
+  switch (dungeon_.AsciiCode(tile.x, tile.y)) {
     case 'D':
     case 'O': {
       should_rotate = true;
@@ -6432,7 +6459,6 @@ bool Resources::CastSpellWall(ObjPtr owner, const vec3& position) {
   CalculateCollisionData();
   GenerateOptimizedOctree();
 
-  // dungeon_map[tile.x][tile.y] = '+';
   dungeon_.SetFlag(tile, DLRG_SPELL_WALL);
   dungeon_.CalculateAllPathsAsync(tile);
   return true;
@@ -6498,7 +6524,7 @@ void Resources::DestroyDoor(ObjPtr obj) {
 }
 
 void Resources::CastDetectMonsters() {
-  player_->AddTemporaryStatus(make_shared<TrueSeeingStatus>(10.0f, 1));
+  player_->AddTemporaryStatus(make_shared<TrueSeeingStatus>(30.0f, 1));
 }
 
 void Resources::CastMagicPillar(ObjPtr obj) {
@@ -6548,7 +6574,6 @@ void Resources::ChangeDungeonLevel(int new_level) {
 bool Resources::UseTeleportRod() {
   ivec2 player_tile = dungeon_.GetDungeonTile(player_->position);
 
-  char** dungeon_map = dungeon_.GetDungeon();
   for (int tries = 0; tries < 1000; tries++) {
     ivec2 tile = ivec2(Random(0, kDungeonSize), Random(0, kDungeonSize));
     if (dungeon_.IsValidTile(tile) && dungeon_.IsTileClear(tile)) {
@@ -6587,10 +6612,9 @@ void Resources::CreateMonsters(const char code, int quantity) {
 
   vector<ivec2> waypoints;
 
-  char** monsters_and_objs = dungeon_.GetMonstersAndObjs();
   for (int x = 0; x < kDungeonSize; x++) {
     for (int z = 0; z < kDungeonSize; z++) {
-      if (monsters_and_objs[x][z] != 'f') continue;
+      if (dungeon_.MonstersAndObjs(x, z) != 'f') continue;
       waypoints.push_back(ivec2(x, z));
     }
   }
@@ -6649,10 +6673,9 @@ void Resources::ProcessArenaEvents() {
   Wave wave = dungeon_.GetWave(++configs_->current_wave);
 
   vector<ivec2> waypoints;
-  char** monsters_and_objs = dungeon_.GetMonstersAndObjs();
   for (int x = 0; x < kDungeonSize; x++) {
     for (int z = 0; z < kDungeonSize; z++) {
-      if (monsters_and_objs[x][z] != 'f') continue;
+      if (dungeon_.MonstersAndObjs(x, z) != 'f') continue;
       waypoints.push_back(ivec2(x, z));
     }
   }

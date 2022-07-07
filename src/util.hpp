@@ -697,6 +697,12 @@ struct DiceFormula {
     bonus = a.bonus;
     return *this;
   } 
+  int GetMin() {
+    return num_die + bonus;
+  } 
+  int GetMax() {
+    return num_die * dice + bonus;
+  } 
 };
 
 DiceFormula ParseDiceFormula(string s);

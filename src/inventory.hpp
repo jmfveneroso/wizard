@@ -13,7 +13,7 @@ enum InventoryState {
   INVENTORY_DIALOG,
   INVENTORY_STORE,
   INVENTORY_SPELL_SELECTION,
-  INVENTORY_MAP
+  INVENTORY_MAP,
 };
 
 enum ItemOrigin {
@@ -74,6 +74,7 @@ class Inventory {
   vec2 inventory_pos_;
   vec2 inventory_pos_start_;
   vec2 inventory_pos_target_;
+  vec2 learn_spell_pos_;
   const float inventory_animation_duration_ = 1.0f;
   float inventory_animation_start_ = 0.0f;
 

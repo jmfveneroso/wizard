@@ -1417,8 +1417,12 @@ void GameObject::DealDamage(ObjPtr attacker, float damage, vec3 normal,
     point_of_contact = position;
   }
 
-  resources_->CreateParticleEffect(10, point_of_contact, normal * 1.0f, 
-    vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
+  if (!IsPlayer()) {
+    // shared_ptr<Particle> p = resources_->CreateOneParticle(point_of_contact, 
+    //   17.0f,  "blood", 1.0f);
+    resources_->CreateParticleEffect(10, point_of_contact, normal * 1.0f, 
+      vec3(1.0, 0.5, 0.5), 1.0, 17.0f, 4.0f, "blood");
+  }
 
   if (life <= 0) {
     status = STATUS_DYING; // This status is irreversible.

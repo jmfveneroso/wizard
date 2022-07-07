@@ -237,7 +237,6 @@ ivec2 Monsters::FindSafeTile(ObjPtr unit) {
 ivec2 Monsters::FindChokepoint(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
-  char** dungeon_map = dungeon.GetDungeon();
 
   for (int k = 0; k < 10; k++) {
     vector<ivec2> possible_tiles;
@@ -247,7 +246,7 @@ ivec2 Monsters::FindChokepoint(ObjPtr unit) {
         ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
        
         if (!dungeon.IsTileClear(new_tile)) continue;
-        switch (dungeon_map [new_tile.x][new_tile.y]) {
+        switch (dungeon.AsciiCode(new_tile.x, new_tile.y)) {
           case 'd':
           case 'D': {
             break;
@@ -270,7 +269,6 @@ ivec2 Monsters::FindChokepoint(ObjPtr unit) {
 
 ivec2 Monsters::FindFleeTile(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
-  char** dungeon_map = dungeon.GetDungeon();
 
   ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
 
@@ -289,7 +287,7 @@ ivec2 Monsters::FindFleeTile(ObjPtr unit) {
     if (!dungeon.IsValidTile(new_tile)) continue;
     if (!dungeon.IsTileClear(new_tile)) continue;
     if (!dungeon.IsReachable(unit->position, dungeon.GetTilePosition(new_tile))) continue;
-    if (dungeon_map[new_tile.x][new_tile.y] != ' ') continue;
+    if (dungeon.AsciiCode(new_tile.x, new_tile.y) != ' ') continue;
 
     double dist = length(dungeon.GetTilePosition(new_tile) - player->position);
     if (dist <= max_dist_from_player) continue;
@@ -372,7 +370,6 @@ ivec2 Monsters::FindClosestPassage(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
 
-  char** dungeon_map = dungeon.GetDungeon();
   for (int k = 0; k < 5; k++) {
     for (int i = -1; i < 1; i++) {
       for (int j = -1; j < 1; j++) {
@@ -380,7 +377,7 @@ ivec2 Monsters::FindClosestPassage(ObjPtr unit) {
         ivec2 new_tile = unit_tile_pos + ivec2(i*k, j*k);
         if (!dungeon.IsValidTile(new_tile)) continue;
   
-        switch (dungeon_map[new_tile.x][new_tile.y]) {
+        switch (dungeon.AsciiCode(new_tile.x, new_tile.y)) {
           case 'o':
           case 'O':
           case 'd':
@@ -648,7 +645,8 @@ void Monsters::Spiderling(ObjPtr unit) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(ACTIVE));
       } else if (unit->actions.empty()) {
-        unit->actions.push(make_shared<IdleAction>(1));
+        // unit->actions.push(make_shared<IdleAction>(1));
+        unit->actions.push(make_shared<RandomMoveAction>());
       }
       break;
     }
@@ -1197,7 +1195,8 @@ void Monsters::ShooterBug(ObjPtr unit) {
         unit->ClearActions();
         unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
       } else if (unit->actions.empty()) {
-        unit->actions.push(make_shared<IdleAction>(1));
+        // unit->actions.push(make_shared<IdleAction>(1));
+        unit->actions.push(make_shared<RandomMoveAction>());
       }
       break;
     }

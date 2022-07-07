@@ -260,25 +260,12 @@ void Inventory::DrawStats(const ivec2& pos) {
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
 
-  // draw_2d_->DrawText(
-  //   boost::lexical_cast<string>(configs->dungeon_level),
-  //   pos.x + 156, 
-  //   kWindowHeight - (pos.y + 55), 
-  //   vec4(1), 
-  //   0.6, false,  "avenir_light_oblique");
-
-  // draw_2d_->DrawText(boost::lexical_cast<string>(configs->max_dungeon_level),
-  //   pos.x + 132, 
-  //   kWindowHeight - (pos.y + 83), 
-  //   vec4(1), 
-  //   0.6, false,  "avenir_light_oblique");
-
   draw_2d_->DrawText(
     boost::lexical_cast<string>(configs->gold),
-    pos.x + 104, 
-    kWindowHeight - (pos.y + 107), 
-    vec4(1), 
-    0.6, false,  "avenir_light_oblique");
+    pos.x + 190, 
+    kWindowHeight - (pos.y + 80), 
+    vec4(0.9), 
+    1.0, false,  "avenir_light_oblique");
 }
 
 void Inventory::DrawItems(const ivec2& pos) {
@@ -426,8 +413,8 @@ void Inventory::DrawOverlay(const ivec2& pos) {
 void Inventory::DrawInventory() {
   ivec2 pos = vec2(win_x_, win_y_) + inventory_pos_;
 
-  int x = 1440 / 2 - 395;
-  int y = 900 / 2 - 458 / 2;
+  int x = 1440 / 2 - 250;
+  int y = 900 / 2 - 250;
   draw_2d_->DrawLoadingImage("inventory_background", x, y, 500, 500, u_time_);
 
   DrawStats(ivec2(x, y));
@@ -437,14 +424,18 @@ void Inventory::DrawInventory() {
 
 void Inventory::DrawContextPanel(int x, int y, const string& name, 
   const string& description) {
-  draw_2d_->DrawText(name, x + 5, kWindowHeight - (y + 10), 
-    vec4(1, 0.69, 0.23, 1), 0.6, false, "avenir_light_oblique");
+  draw_2d_->DrawImage("spell_context_panel", x, y, 500, 500, u_time_);
+
+  x += 100;
+  y += 120;
+  draw_2d_->DrawText(name, x + 5, kWindowHeight - (y - 25), 
+    vec4(0.5, 0.29, 0.23, 1), 1.0, false, "avenir_light_oblique");
 
   vector<string> words;
   boost::split(words, description, boost::is_any_of(" "));
 
   string line = "";
-  const int kMaxLineSize = 40;
+  const int kMaxLineSize = 30;
   for (const auto& w : words) {
     if (line.empty()) {
       line = w;
@@ -457,15 +448,15 @@ void Inventory::DrawContextPanel(int x, int y, const string& name,
     }
 
     draw_2d_->DrawText(line, x + 10, kWindowHeight - (y + 25), 
-      vec4(1), 0.6, false, "avenir_light_oblique");
-    y += 15;
+      vec4(0, 0, 0, 1), 1.0, false, "avenir_light_oblique");
+    y += 25;
 
     line = w;
   }
 
   if (line.size() > 0) {
     draw_2d_->DrawText(line, x + 10, kWindowHeight - (y + 25), 
-      vec4(1), 0.6, false, "avenir_light_oblique");
+      vec4(0, 0, 0, 1), 1.0, false, "avenir_light_oblique");
   }
 }
 
@@ -691,29 +682,78 @@ void Inventory::UseItem(int x, int y) {
   crystal_combination_frame_ = 0;
 }
 
+string ReplaceSpellVariables(ArcaneSpellData& spell, 
+  const string& description) {
+
+  int min_dmg = spell.damage.GetMin();
+  int max_dmg = spell.damage.GetMax();
+  for (int i = 1; i <= spell.spell_level; i++) {
+    min_dmg += spell.upgrade.GetMin();
+    max_dmg += spell.upgrade.GetMax();
+  }
+
+  unordered_map<string, string> patterns;
+
+  // Damage.
+  string replace = boost::lexical_cast<string>(min_dmg);
+  if (min_dmg != max_dmg) {
+    replace += "-" + boost::lexical_cast<string>(max_dmg);
+  }
+  patterns["dmg"] = replace;
+
+  string result;
+  for (int i = 0; i < description.size(); i++) {
+    const char c = description[i];
+    if (c == '$') {
+      string pattern;
+      for (i++; i < description.size(); i++) {
+        if (description[i] == ' ') break;
+        pattern += description[i];
+      }
+      i--;
+      result += patterns[pattern];
+      continue;
+    }
+    result += c;
+  }
+
+  return result;
+}
+
 void Inventory::DrawSpellbook() {
   ivec2 pos = vec2(win_x_, win_y_) + spellbook_pos_;
 
-  int x = 1440 / 2 - 450;
-  int y = 900 / 2 - 450;
+  const int base_x = 1440 / 2 - 450;
+  const int base_y = 900 / 2 - 450;
+  int x = base_x;
+  int y = base_y;
 
   draw_2d_->DrawLoadingImage("pentagram", x, y, 900, 900, u_time_);
 
   for (int i = 0; i < 10; i++) {
     shared_ptr<ArcaneSpellData> spell = resources_->GetArcaneSpell(i);
-    if (!spell) return;
-    if (!spell->learned) return;
+    if (!spell) continue;
+    if (!spell->learned) continue;
 
-    int off_x = i % 3;
-    int off_y = i / 3;
-    int left = x + 60 + off_x * 79;
-    int top = y + 45 + off_x * 10 + off_y * 76;
+    int left = x + spell->spell_graph_pos.x;
+    int top = y + spell->spell_graph_pos.y;
 
     const ItemData& item_data = resources_->GetItemData()[spell->item_id];
     draw_2d_->DrawImage(item_data.image, left, top, 44, 44, 1.0); 
     if (IsMouseInCircle(ivec2(left + 22, top + 22), 22)) {
-      const string& description = resources_->GetString(spell->description);
-      DrawContextPanel(x + 68, y + 344, spell->name, description);
+      string description = resources_->GetString(spell->description);
+
+      description = ReplaceSpellVariables(*spell, description);
+
+      // Show in the left. 
+      int panel_x = 1440 / 2 - 510;
+      if (left < 1440 / 2 - 30) {
+        panel_x = 1440 / 2 + 10;
+      }
+      
+      DrawContextPanel(panel_x, 900 / 2 - 250, 
+        spell->name + " LVL " + 
+        boost::lexical_cast<string>(spell->spell_level), description);
     }
   } 
 }
@@ -1122,15 +1162,13 @@ void Inventory::DrawMap() {
 
   ivec2 dungeon_top_left = player_tile + ivec2(vec2(map_offset_) * 0.0667f) - ivec2(30, 20);
 
-  char** dungeon_map = dungeon.GetDungeon();
-  char** monsters_and_objs = dungeon.GetMonstersAndObjs();
   for (int y = dungeon_top_left.y; y < dungeon_top_left.y + 40; y++) {
     for (int x = dungeon_top_left.x; x < dungeon_top_left.x + 60; x++) {
       if (x < 0 || y < 0 || x >= kDungeonSize || y >= kDungeonSize) continue;
 
       vec2 pos = dungeon_origin + vec2(x * 15, y * 15);
 
-      char code = dungeon_map[x][y];
+      char code = dungeon.AsciiCode(x, y);
       if (code != '.') {
         int relevance = dungeon.GetRelevance(ivec2(x, y));
         // draw_2d_->DrawText(boost::lexical_cast<string>(relevance),

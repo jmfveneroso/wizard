@@ -889,7 +889,6 @@ void CollisionResolver::FindCollisionsWithDungeon(
   if (!obj1) return;
 
   Dungeon& dungeon = resources_->GetDungeon();
-  char** dungeon_map = dungeon.GetDungeon();
 
   shared_ptr<Player> player = resources_->GetPlayer();
   ivec2 player_tile = dungeon.GetDungeonTile(player->position);
@@ -906,7 +905,7 @@ void CollisionResolver::FindCollisionsWithDungeon(
       if (tile_pos.x < 0 || tile_pos.y < 0 || tile_pos.x >= 80 || 
         tile_pos.y >= 80) continue;
 
-      char tile = dungeon_map[tile_pos.x][tile_pos.y];
+      char tile = dungeon.AsciiCode(tile_pos.x, tile_pos.y);
       if (tile == '^' || tile == '/') tile = '+';
 
       if (tile != '+' && tile != '-' && tile != '|') continue;
@@ -1047,7 +1046,6 @@ void CollisionResolver::TestCollisionsWithTerrain() {
 
 void CollisionResolver::TestCollisionsWithDungeon() {
   Dungeon& dungeon = resources_->GetDungeon();
-  char** dungeon_map = dungeon.GetDungeon();
 
   shared_ptr<Player> player = resources_->GetPlayer();
   ivec2 player_tile = dungeon.GetDungeonTile(player->position);
@@ -1071,7 +1069,7 @@ void CollisionResolver::TestCollisionsWithDungeon() {
         if (tile_pos.x < 0 || tile_pos.y < 0 || tile_pos.x >= 80 || 
           tile_pos.y >= 80) continue;
 
-        char tile = dungeon_map[tile_pos.x][tile_pos.y];
+        char tile = dungeon.AsciiCode(tile_pos.x, tile_pos.y);
         if (tile != '+' && tile != '-' && tile != '|') continue;
 
         AABB aabb;
@@ -1483,6 +1481,7 @@ void CollisionResolver::TestCollisionQB(shared_ptr<CollisionQB> c) {
     } else {
       c->displacement_vector = c->point_of_contact - c->obj1->position;
     }
+    c->point_of_contact = c->obj1->prev_position;
     c->normal = normalize(s1.center - s2.center);
     FillCollisionBlankFields(c);
   }
@@ -1813,6 +1812,9 @@ int CollisionResolver::CalculateMissileDamage(shared_ptr<Missile> missile) {
     missile->spell);
 
   int dmg = ProcessDiceFormula(spell->damage);
+  for (int i = 1; i <= spell->spell_level; i++) {
+    dmg += ProcessDiceFormula(spell->upgrade);
+  }
 
   // int dmg = ProcessDiceFormula(asset->damage);
   return dmg;
@@ -1833,6 +1835,8 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
   }
 
   shared_ptr<Missile> missile = static_pointer_cast<Missile>(obj1);
+
+  if (missile->life < 0.0f) return;
 
   // TODO: the object should have a callback function that gets called when it
   // collides.
@@ -1980,7 +1984,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 
           // TODO: particle effect from xml.
           if (missile->type != MISSILE_WIND_SLASH) {
-            resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+            resources_->CreateOneParticle(c->point_of_contact, 34.0f,  
               "magical-explosion", 2.5f);
           }
         } else {
@@ -1989,7 +1993,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
         }
       } else {
         if (missile->type != MISSILE_WIND_SLASH) {
-          resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+          resources_->CreateOneParticle(c->point_of_contact, 34.0f,  
             "magical-explosion", 2.5f);
         }
       }
@@ -2034,7 +2038,7 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
             "windslash-collision", 5.0f);
         }
       } else {
-        resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+        resources_->CreateOneParticle(c->point_of_contact, 34.0f,  
           "magical-explosion", 2.5f);
       }
     }

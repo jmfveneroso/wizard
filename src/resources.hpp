@@ -283,6 +283,7 @@ struct ArcaneSpellData {
   string name;
   string description;
   string image_name;
+  string spell_icon;
 
   int type = 0; // 0 - complex, 1 - layered, 2 - white, 3 - black, 4 - base.
   int spell_id = 0;
@@ -298,6 +299,7 @@ struct ArcaneSpellData {
   float mana_cost = 0;
   int quantity = 0;
   DiceFormula damage { 0, 0, 0 };
+  DiceFormula upgrade { 0, 0, 0 };
 
   ArcaneSpellData() {}
   ArcaneSpellData(string name, string description, string image_name, int type,
@@ -627,7 +629,6 @@ class Resources {
   void SetDeltaTime(double delta_time) { delta_time_ = delta_time; }
   unordered_map<string, shared_ptr<Npc>>& GetNpcs() { return npcs_; }
   unordered_map<string, shared_ptr<Quest>>& GetQuests() { return quests_; }
-  char** GetDungeonMap() { return dungeon_.GetDungeon(); }
 
   // ====================
 

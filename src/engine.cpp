@@ -339,7 +339,7 @@ void Engine::RunCommand(string command) {
     } catch(boost::bad_lexical_cast const& e) {
     }
   } else if (result[0] == "detect-monsters") {
-    configs->detect_monsters = true;
+    resources_->CastDetectMonsters();
   } else if (result[0] == "no-detect-monsters") {
     configs->detect_monsters = false;
   } else if (result[0] == "set-flag") {
