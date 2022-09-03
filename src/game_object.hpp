@@ -56,6 +56,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool draw = true;
   bool freeze = false;
   bool never_cull = false;
+  bool always_cull = false;
   bool collidable = true;
   bool summoned = false;
   bool levitating = false;
@@ -145,7 +146,10 @@ class GameObject : public enable_shared_from_this<GameObject> {
   bool leader = false;
   int monster_group = -1;
   bool was_hit = false;
+  bool saw_player_attack = false;
   bool stunned = false;
+
+  bool active_weave = false;
 
   unordered_map<string, string> memory;
 
@@ -160,6 +164,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   float item_sparkle = 0.0f;
   unordered_set<int> hit_list;
   shared_ptr<GameObject> stun_obj = nullptr;
+  shared_ptr<GameObject> created_obj = nullptr;
 
   GameObject(Resources* resources) : resources_(resources) {}
   GameObject(Resources* resources, GameObjectType type) 
@@ -595,6 +600,33 @@ struct SpiderJumpAction : Action {
     : Action(ACTION_SPIDER_JUMP), destination(destination) {}
 };
 
+struct FrogJumpAction : Action {
+  bool finished_jump = false;
+  bool finished_rotating = false;
+  float chanel_until = 0.0f;
+  vec3 destination;
+  FrogJumpAction(vec3 destination) 
+    : Action(ACTION_FROG_JUMP), destination(destination) {}
+};
+
+struct FrogShortJumpAction : Action {
+  bool finished_jump = false;
+  bool finished_rotating = false;
+  vec3 destination;
+  FrogShortJumpAction(vec3 destination) 
+    : Action(ACTION_FROG_SHORT_JUMP), destination(destination) {}
+};
+
+struct RedMetalSpinAction : Action {
+  bool started = false;
+  float shot_countdown = 0.0f;
+  bool shot = false;
+  float shot_2_countdown = 0.0f;
+  bool shot_2 = false;
+  RedMetalSpinAction() 
+    : Action(ACTION_RED_METAL_SPIN) {}
+};
+
 struct RangedAttackAction : Action {
   bool initiated = false;
   bool damage_dealt = false;
@@ -607,6 +639,19 @@ struct RangedAttackAction : Action {
 struct MeeleeAttackAction : Action {
   bool damage_dealt = false;
   MeeleeAttackAction() : Action(ACTION_MEELEE_ATTACK) {}
+};
+
+struct ChargeAction : Action {
+  bool finished_rotating = false;
+  bool started = false;
+  float channel_until = 0.0f;
+  bool damage_dealt = false;
+  ChargeAction() : Action(ACTION_CHARGE) {}
+};
+
+struct SweepAttackAction : Action {
+  bool damage_dealt = false;
+  SweepAttackAction() : Action(ACTION_SWEEP_ATTACK) {}
 };
 
 struct ChangeStateAction : Action {
@@ -683,7 +728,9 @@ struct DefendAction : Action {
 };
 
 struct TeleportAction : Action {
+  bool started = false;
   bool channeling = true;
+  float channel_until = 0.0f;
   vec3 position;
   TeleportAction(vec3 position) 
     : Action(ACTION_TELEPORT), position(position) {}
@@ -705,6 +752,17 @@ struct ParalysisAction : Action {
   vec3 target = vec3(0);
   ParalysisAction(vec3 target=vec3(0)) : Action(ACTION_PARALYSIS),  
     target(target) {}
+};
+
+struct FlyLoopAction : Action {
+  bool started = false;
+  float circle_radius = 0.0f;
+  vec3 circle_front;
+  vec3 circle_center;
+  float until = 0.0f;
+  bool right = false;
+
+  FlyLoopAction() : Action(ACTION_FLY_LOOP) {}
 };
 
 shared_ptr<Player> CreatePlayer(Resources* resources);

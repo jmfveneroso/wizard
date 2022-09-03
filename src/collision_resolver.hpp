@@ -342,11 +342,15 @@ class CollisionResolver {
 
   void CreatePillarOnCollision(ColPtr col);
   void ApplySlowEffectOnCollision(ColPtr col);
+  void RandomSpellPowerup(ColPtr col);
+  void FrogJump(ColPtr col);
 
   unordered_map<string, void (CollisionResolver::*)(ColPtr)> 
     collision_effect_callbacks_ {
     { "slow", &CollisionResolver::ApplySlowEffectOnCollision },
-    { "pillar", &CollisionResolver::CreatePillarOnCollision }
+    { "pillar", &CollisionResolver::CreatePillarOnCollision },
+    { "random_spell_powerup", &CollisionResolver::RandomSpellPowerup },
+    { "frog_jump", &CollisionResolver::FrogJump },
   };
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);

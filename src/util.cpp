@@ -1406,6 +1406,7 @@ string ActionTypeToStr(const ActionType& type) {
     { ACTION_SPIDER_JUMP, "action-spider-jump" },           
     { ACTION_SPIDER_WEB, "action-spider-web" },           
     { ACTION_DEFEND, "action-defend" },           
+    { ACTION_FLY_LOOP, "action-fly-loop" },           
   });
   return action_type_to_str[type];
 }
@@ -1777,4 +1778,22 @@ vec2 PredictMissileHitLocation(vec2 source, float source_speed,
 
   // Compute expected location at missile hit.
   return target + dir * target_speed * t;
+}
+
+vector<vector<int>> RotateMatrix(const vector<vector<int>>& mat) {
+  int m = mat.size();
+  if (m == 0) return mat;
+
+  int n = mat[0].size();
+  if (n == 0) return mat;
+
+  vector<vector<int>> result(n, vector<int>(m));
+
+  for (int x = 0; x < m; x++) {
+    for (int y = 0; y < n; y++) {
+      result[y][m-x-1] = mat[x][y];
+    }
+  }
+
+  return result;
 }

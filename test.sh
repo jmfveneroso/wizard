@@ -7,7 +7,7 @@ if make; then
     ./$filename
   done 
 
-  cd ../..
-  ./build/test/dungeon_main
+  # cd ../..
+  # ./build/test/dungeon_main
   # ./build/test/fbx_test
 fi

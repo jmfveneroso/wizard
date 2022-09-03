@@ -167,8 +167,10 @@ uniform vec3 player_position;
 
 vec3 GetSky(vec3 position) {
   // vec3 sky_color = vec3(0.2, 0.35, 0.4);
-  vec3 sky_color = vec3(0.03, 0.03, 0.125);
-  vec3 sunset_color = vec3(0.25, 0.13, 0.0);
+  // vec3 sky_color = vec3(0.03, 0.03, 0.125);
+  // vec3 sunset_color = vec3(0.25, 0.13, 0.0);
+  vec3 sky_color = vec3(0.4, 0.7, 0.8);
+  vec3 sunset_color = vec3(0.99, 0.54, 0.0);
 
   float sun_pos = 1.5 * (1 - dot(vec3(0, 1, 0), sun_position));
   sun_pos = clamp(sun_pos, 0.0, 1.0);
@@ -248,7 +250,8 @@ layout(location = 0) out vec3 color;
 uniform sampler2D SkyTextureSampler;
 
 void main(){
-  vec3 pos = normalize(in_data.position - (player_position - vec3(0, 1000, 0)));
+  // vec3 pos = normalize(in_data.position - (player_position - vec3(0, 1000, 0)));
+  vec3 pos = normalize(in_data.position - (player_position - vec3(1000, 0, 0)));
 
   vec3 sky = GetSky(pos);
   vec3 sun = GetSun(pos);

@@ -53,6 +53,20 @@ TEST(Collisions, TestIntersectRayAABB) {
   EXPECT_TRUE(result);
 }
 
+TEST(Collisions, TestIntersectSphereAABB) {
+  AABB aabb = AABB(vec3(11600, -100, 7600), vec3(400, 100, 400)); 
+  BoundingSphere s = BoundingSphere(vec3(11710, -3, 7710), 1.5);
+
+  vec3 v;
+  vec3 p;
+  bool collided = IntersectSphereAABB(s, aabb, v, p);
+
+  EXPECT_TRUE(collided);
+  EXPECT_NEAR(v[0], 0, 0.01);
+  EXPECT_NEAR(v[1], 4.5, 0.01);
+  EXPECT_NEAR(v[2], 0, 0.01);
+}
+
 } // End of namespace
 
 int main(int argc, char **argv) {

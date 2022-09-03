@@ -11,9 +11,14 @@ class Monsters {
 
   void MiniSpiderling(ObjPtr unit);
   void Spiderling(ObjPtr unit);
+  void Goblin(ObjPtr unit);
+  void Frog(ObjPtr unit);
+  void RedFrog(ObjPtr unit);
   void Scorpion(ObjPtr unit);
   void ShooterBug(ObjPtr unit);
   void RedMetalEye(ObjPtr unit);
+  void BlackMage(ObjPtr unit);
+  void GoblinChieftain(ObjPtr unit);
   void FlyingMetalEye(ObjPtr unit);
   void Lancet(ObjPtr unit);
   void Broodmother(ObjPtr unit);
@@ -21,8 +26,13 @@ class Monsters {
   void WhiteSpine(ObjPtr unit);
   void Imp(ObjPtr unit);
   void Wraith(ObjPtr unit);
+  void Skeleton(ObjPtr unit);
+  void Skirmisher(ObjPtr unit);
+  void GlaiveMaster(ObjPtr unit);
   void BloodWorm(ObjPtr unit);
   void Beholder(ObjPtr unit);
+  void BigBeholder(ObjPtr unit);
+  void Minotaur(ObjPtr unit);
   bool IsAttackAction(shared_ptr<Action> action);
   bool ShouldHoldback(ObjPtr unit);
   ivec2 FindSafeTile(ObjPtr unit);
@@ -32,6 +42,8 @@ class Monsters {
   ivec2 FindClosestPassage(ObjPtr unit);
   ivec2 FindAmbushTile(ObjPtr unit);
   ivec2 FindChokepoint(ObjPtr unit);
+  ivec2 FindRandomTile(ObjPtr unit, int max_k = 5);
+  ivec2 GetFrogJumpTile(ObjPtr unit);
   bool IsPlayerReachable(ObjPtr unit);
   ivec2 IsPlayerReachableThroughDoor(ObjPtr unit);
   bool CanDetectPlayer(ObjPtr unit);

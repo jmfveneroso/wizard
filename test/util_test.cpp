@@ -1,8 +1,11 @@
 #include <iostream>
 #include "gtest/gtest.h"
+#include "gmock/gmock.h"
 #include "util.hpp"
 
 using namespace std;
+
+using ::testing::ElementsAre;
 
 namespace {
 
@@ -125,6 +128,23 @@ TEST(PredictMissileHitLocation, ShouldSucceeed) {
 
   EXPECT_NEAR(hit.x, 0.0, 0.01);
   EXPECT_NEAR(hit.y, 5.0, 0.01);
+}
+
+TEST(RotateMatrix, ShouldSucceeed) {
+  vector<vector<int>> mat {
+    {13, 13, 13, 13},
+    {1, 1, 2, 1},
+    {22, 22, 22, 22},
+  };
+
+  vector<vector<int>> result = RotateMatrix(mat);
+
+  ASSERT_THAT(result.size(), 4);
+
+  EXPECT_THAT(result[0], ElementsAre(22, 1, 13));
+  EXPECT_THAT(result[1], ElementsAre(22, 1, 13));
+  EXPECT_THAT(result[2], ElementsAre(22, 2, 13));
+  EXPECT_THAT(result[3], ElementsAre(22, 1, 13));
 }
 
 } // End of namespace

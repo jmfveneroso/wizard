@@ -61,6 +61,13 @@ struct Quest {
   string description;
 };
 
+enum GameplayStyle {
+  GAMEPLAY_DEFAULT = 0,
+  GAMEPLAY_WEAVE,
+  GAMEPLAY_SKY_ARENA,
+  GAMEPLAY_RANDOM,
+};
+
 struct Configs {
   vec3 world_center = kWorldCenter;
   vec3 initial_player_pos = vec3(10947.5, 172.5, 7528);
@@ -74,6 +81,7 @@ struct Configs {
   float time_of_day = 7.0f;
   vec3 sun_position = vec3(0.87f, 0.5f, 0.0f); 
   bool disable_attacks = false;
+  float attacked_at = 0.0f;
   string edit_terrain = "none";
   bool levitate = false;
   float jump_force = 0.3f;
@@ -218,6 +226,16 @@ struct Configs {
   int town_portal_dungeon_level;
 
   bool quick_casting = false;
+
+  GameplayStyle gameplay_style = GAMEPLAY_DEFAULT;
+
+  // Weave.
+  vector<ObjPtr> selected_weave_vortices;
+
+  // Random spells.
+  vector<int> random_spells;
+  int random_spells_next_spell = 0;
+  float picking_spell = 0.0f; 
 };
 
 struct ItemBonus {
@@ -386,8 +404,8 @@ class Resources {
   int random_item_id = kRandomItemOffset;
 
   shared_ptr<Configs> configs_;
-  // GameState game_state_ = STATE_EDITOR;
-  GameState game_state_ = STATE_START_SCREEN;
+  // GameState game_state_ = STATE_START_SCREEN;
+  GameState game_state_ = STATE_GAME;
 
   shared_ptr<CurrentDialog> current_dialog_ = make_shared<CurrentDialog>();
 
@@ -653,6 +671,7 @@ class Resources {
     const vec3& direction, int bone = -1);
   void CastHeal(ObjPtr owner);
   void CastFlash(const vec3& position);
+  void CastPush(const vec3& position);
   void CastDarkvision();
   void CastTrueSeeing();
   void CastFireExplosion(ObjPtr owner, const vec3& position, 
@@ -841,6 +860,14 @@ class Resources {
   bool UseTeleportRod();
   bool CreateBonfire();
   void CreateMonsters(const char code, int quantity);
+
+  unordered_map<int, shared_ptr<Particle>> weave_vortex_map_;
+  vector<ObjPtr> weave_vortices_;
+  void CreateWeave();
+  void UpdateWeave();
+  bool PowerupRandomSpell();
+
+  // void UpdateWeave(const char code, int quantity);
 };
 
 #endif // __RESOURCES_HPP__

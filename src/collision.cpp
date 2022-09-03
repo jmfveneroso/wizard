@@ -575,12 +575,47 @@ bool TestSphereAABB(const BoundingSphere& s, const AABB& aabb) {
   return length2(closest_point - s.center) < s.radius * s.radius;
 }
 
+vec3 ClosestPtPointInAABBSurface(const vec3& p, const AABB& aabb) {
+  vec3 aabb_min = aabb.point;
+  vec3 aabb_max = aabb.point + aabb.dimensions;
+  vec3 q;
+
+  float min_length = 9999999;
+  for (int i = 0; i < 3; i++) {
+    float l = abs(aabb_min[i] - p[i]);
+    if (l < min_length) {
+      min_length = l;
+      q = p;
+      q[i] = aabb_min[i];
+    }
+  }
+
+  for (int i = 0; i < 3; i++) {
+    float l = abs(aabb_max[i] - p[i]);
+    if (l < min_length) {
+      min_length = l;
+      q = p;
+      q[i] = aabb_max[i];
+    }
+  }
+  return q;
+}
+
 bool IntersectSphereAABB(const BoundingSphere& s, const AABB& aabb, 
   vec3& displacement_vector, vec3& point_of_contact) {
   point_of_contact = ClosestPtPointAABB(s.center, aabb);
 
   float t = length(point_of_contact - s.center);
-  if (t < s.radius) {
+  if (t < 0.01f) { // Inside the sphere.
+    point_of_contact = ClosestPtPointInAABBSurface(s.center, aabb);
+    t = length(point_of_contact - s.center);
+    displacement_vector = normalize(point_of_contact - s.center) * 
+      (s.radius + t);
+    return true;
+  } else if (t < s.radius) {
+    vec3 bla = s.center - point_of_contact;
+    vec3 nbla = normalize(bla);
+
     displacement_vector = normalize(s.center - point_of_contact) *  
       (s.radius - t);
     return true;

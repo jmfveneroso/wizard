@@ -46,6 +46,12 @@ class AI {
     shared_ptr<RangedAttackAction> action);
   bool MetalEyeAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
+  bool SkirmisherAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+  bool GlaiveMasterAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+  bool BlackMageAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
 
   bool ImpAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
@@ -54,6 +60,8 @@ class AI {
 
   bool WraithAttack(ObjPtr creature, shared_ptr<RangedAttackAction> action);
 
+  bool ProcessSweepAttackAction(ObjPtr spider, 
+    shared_ptr<SweepAttackAction> action);
   bool ProcessMoveAction(ObjPtr spider, shared_ptr<MoveAction> action);
   bool ProcessMoveAction(ObjPtr spider, vec3 destination);
   bool ProcessLongMoveAction(ObjPtr spider, shared_ptr<LongMoveAction> action);
@@ -70,6 +78,7 @@ class AI {
     shared_ptr<RangedAttackAction> action);
   bool ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action);
   bool ProcessAnimationAction(ObjPtr spider, shared_ptr<AnimationAction> action);
+  bool ProcessChargeAction(ObjPtr spider, shared_ptr<ChargeAction> action);
   bool ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action);
   bool ProcessMoveToPlayerAction(ObjPtr spider, 
     shared_ptr<MoveToPlayerAction> action);
@@ -81,6 +90,12 @@ class AI {
     shared_ptr<SpiderClimbAction> action);
   bool ProcessSpiderJumpAction(ObjPtr spider, 
     shared_ptr<SpiderJumpAction> action);
+  bool ProcessFrogJumpAction(ObjPtr spider, 
+    shared_ptr<FrogJumpAction> action);
+  bool ProcessRedMetalSpinAction(ObjPtr spider, 
+    shared_ptr<RedMetalSpinAction> action);
+  bool ProcessFrogShortJumpAction(ObjPtr spider, 
+    shared_ptr<FrogShortJumpAction> action);
   bool ProcessSpiderEggAction(ObjPtr spider, 
     shared_ptr<SpiderEggAction> action);
   bool ProcessWormBreedAction(ObjPtr spider, 
@@ -95,6 +110,8 @@ class AI {
     shared_ptr<FireballAction> action);
   bool ProcessParalysisAction(ObjPtr creature, 
     shared_ptr<ParalysisAction> action);
+  bool ProcessFlyLoopAction(ObjPtr creature, 
+    shared_ptr<FlyLoopAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);

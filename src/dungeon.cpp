@@ -72,6 +72,7 @@ Dungeon::Dungeon() {
   char_map_[112] = 'l'; // Dungeon table.
   char_map_[113] = 'm'; // Chair.
   char_map_[114] = 'n'; // Chair.
+  char_map_[115] = 'R'; // Weave.
 
   dungeon_tiles_ = new DungeonTile*[kDungeonSize];
   for (int i = 0; i < kDungeonSize; ++i) {
@@ -1051,13 +1052,49 @@ float Dungeon::GetDistanceToStairs(const ivec2& tile) {
   return length(vec2(tile) - vec2(downstairs));
 }
 
+vector<vector<int>> Dungeon::RotateMiniset(
+  vector<vector<int>> mat, int rotations) {
+  rotations = rotations % 4;
+
+  if (rotations == 0) return mat;
+
+  for (int i = 0; i < rotations; i++) {
+    mat = RotateMatrix(mat);
+  }
+
+  if (rotations % 2 == 1) {
+    for (int x = 0; x < mat.size(); x++) {
+      for (int y = 0; y < mat[x].size(); y++) {
+        if      (mat[x][y] == 1 ) mat[x][y] = 2;
+        else if (mat[x][y] == 2 ) mat[x][y] = 1;
+        else if (mat[x][y] == 11) mat[x][y] = 12;
+        else if (mat[x][y] == 12) mat[x][y] = 11;
+        else if (mat[x][y] == 25) mat[x][y] = 26;
+        else if (mat[x][y] == 26) mat[x][y] = 25;
+        else if (mat[x][y] == 35) mat[x][y] = 36;
+        else if (mat[x][y] == 36) mat[x][y] = 35;
+      }
+    }
+  }
+
+  return mat;
+}
+
 bool Dungeon::PlaceMiniSet(const string& miniset_name, 
   shared_ptr<Room> the_room, bool maximize_distance_to_stairs, int rotation) {
   const Miniset& miniset = kMinisets.find(miniset_name)->second;
-  const int w = miniset.search.size();
-  const int h = miniset.search[0].size();
-  const vector<vector<int>>& search = miniset.search;
-  const vector<vector<int>>& replace = miniset.replace;
+
+  vector<vector<int>> search = miniset.search;
+  vector<vector<int>> replace = miniset.replace;
+ 
+  if (miniset_name == "STAIRS_UP" || miniset_name == "STAIRS_DOWN") {
+    rotation = Random(0, 4);
+    search = RotateMiniset(search, rotation);
+    replace = RotateMiniset(replace, rotation);
+  }
+
+  const int w = search.size();
+  const int h = search[0].size();
 
   vector<ivec2> possibilities;
 
@@ -1095,22 +1132,8 @@ bool Dungeon::PlaceMiniSet(const string& miniset_name,
               valid = false;
               break;
             }
-
-            // if (dungeon[x + step_x][y + step_y] != search[step_x][step_y] || 
-            //     (flags[x + step_x][y + step_y] & (0xFF | DLRG_SECRET))) {
-            //   valid = false;
-            //   break;
-            // }
-            // if (miniset_name == "STAIRS_UP") {
-            //   if ((flags[x + step_x][y + step_y] & (0xFF | DLRG_NO_CEILING))) {
-            //     valid = false;
-            //     break;
-            //   }
-            // }
           }
         }
-
-        // if (!in_room) continue;
 
         if (valid) {
           if (the_room) {
@@ -1370,6 +1393,7 @@ void Dungeon::GenerateAsciiDungeon() {
         case 't':
         case 'm':
         case 'n':
+        case 'R':
         case 'W':
         case 'f':
           SetAsciiCode(x, y, ' ');
@@ -1422,9 +1446,9 @@ bool Dungeon::CreateThemeRoomBigLibrary(int room_num) {
     PlaceMiniSet("BOOKCASE_WALL_H2", room, false, 3);
   }
 
-  for (int i = 0; i < 4; i++) {
-    if (PlaceMiniSet("TABLE", room, false)) break;
-  }
+  // for (int i = 0; i < 4; i++) {
+  //   if (PlaceMiniSet("TABLE", room, false)) break;
+  // }
 
   if (Random(0, 2) == 0) {
     if (!PlaceMiniSet("BOOKCASE_V1", room, false)) {
@@ -1758,7 +1782,7 @@ bool Dungeon::CreateThemeRooms() {
   if (num_theme_rooms == 0 || theme_room_types.size() == 0) return true;
 
   for (int i = 0; i < num_theme_rooms; i++) {
-    CreateEmptyRoom();
+    // CreateEmptyRoom();
   }
 
   vector<int> valid_room_indices;
@@ -1880,80 +1904,6 @@ void Dungeon::FindRooms() {
       cout << "num_tiles: " << num_tiles << endl;
     }
   }
-}
-
-void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
-  current_level_ = dungeon_level;
-
-  // random_num = -224500967; // To produce the spider behind gate issue.
-  // random_num = -406152290; // To produce movement issue.
-  // random_num = -851805335; // Arrow trap.
-  // random_num = -721664489; // Broodmother.
-  // random_num = -1403164; // Error.
-  // random_num = -780185899; // White spine door find.
-  // random_num = -464376179; // Beholder.
-  // random_num = -916558998;
-
-  initialized_ = true;
-  srand(random_num);
-  cout << "Dungeon seed: " << random_num << endl;
-
-  const int min_area = level_data_[current_level_].dungeon_area;
-
-  bool done_flag = false;
-  do {
-    do {
-      Clear();
-      GenerateChambers();
-      GenerateRooms();
-    } while (GetArea() < min_area);
-
-    // PrintPreMap();
-
-    MakeMarchingTiles();
-
-    // GenerateAsciiDungeon();
-    // PrintMap();
-
-    FillChambers();
-
-    AddWalls();
-    // AddSecretWalls();
-    ClearFlags();
-
-    done_flag = true;
-    
-    // Place staircase.
-    if (!PlaceMiniSet("STAIRS_UP")) {
-      done_flag = false; 
-    } else if (!PlaceMiniSet("STAIRS_DOWN", nullptr, true)) {
-      cout << "Could not place downstairs" << endl;
-      done_flag = false;
-    }
-
-    const vector<string>& minisets = level_data_[current_level_].minisets;
-    for (const string& miniset : minisets) { 
-      if (!PlaceMiniSet(miniset, 0)) {
-        done_flag = false;
-      }
-    }
-
-    FindRooms();
-    if (!CreateThemeRooms()) {
-      done_flag = false;
-    }
-  } while (done_flag == false);
-
-  PlaceMonsters();
-  PlaceObjects();
-  PlaceTraps();
-
-  GenerateAsciiDungeon();
-  PrintMap();
-
-  cout << "Calculating paths..." << endl;
-  CalculateAllPaths();
-  CalculateRelevance();
 }
 
 char** Dungeon::GetDarkness() {
@@ -2350,8 +2300,14 @@ int DistanceHeuristic(const ivec2& a, const ivec2& b) {
 }
 
 vec3 Dungeon::GetPathToTile(const vec3& start, const vec3& end) {
-  ivec2 source_tile = GetClosestClearTile(start);
-  ivec2 dest_tile = GetClosestClearTile(end);
+  ivec2 source_tile;
+  ivec2 dest_tile;
+  try {
+    source_tile = GetClosestClearTile(start);
+    dest_tile = GetClosestClearTile(end);
+  } catch (const runtime_error& error) {
+    return vec3(0);
+  }
 
   TileMinHeap tile_heap; // Open list.
   tile_heap.push({ source_tile, 0.0f, 0.0f, ivec2(0, 0) });
@@ -2526,8 +2482,14 @@ bool Dungeon::IsReachable(const vec3& source, const vec3& dest) {
 }
 
 ivec2 Dungeon::IsReachableThroughDoor(const vec3& source, const vec3& dest) {
-  ivec2 source_tile = GetClosestClearTile(source);
-  ivec2 dest_tile = GetClosestClearTile(dest);
+  ivec2 source_tile;
+  ivec2 dest_tile;
+  try {
+    source_tile = GetClosestClearTile(source);
+    dest_tile = GetClosestClearTile(dest);
+  } catch (const runtime_error& error) {
+    return ivec2(-1, -1);
+  }
 
   ivec2 best_door = ivec2(-1, -1);
   float min_distance = 9999999;
@@ -2572,8 +2534,14 @@ ivec2 Dungeon::IsReachableThroughDoor(const vec3& source, const vec3& dest) {
 
 vec3 Dungeon::GetNextMove(const vec3& source, const vec3& dest, 
   float& min_distance) {
-  ivec2 source_tile = GetClosestClearTile(source);
-  ivec2 dest_tile = GetClosestClearTile(dest);
+  ivec2 source_tile;
+  ivec2 dest_tile;
+  try {
+    source_tile = GetClosestClearTile(source);
+    dest_tile = GetClosestClearTile(dest);
+  } catch (const runtime_error& error) {
+    return vec3(0);
+  }
 
   int code = dungeon_path_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
   min_distance = min_distance_[dest_tile.x][dest_tile.y][source_tile.x][source_tile.y];
@@ -2701,6 +2669,10 @@ bool Dungeon::IsRayObstructed(vec3 start, vec3 end, float& t, bool only_walls) {
     current = start + t * step;
 
     ivec2 tile = GetDungeonTile(current);
+    if (tile.x == -1 || tile.y == -1) {
+      break;
+    }
+
     if (only_walls) {
       switch (AsciiCode(tile.x, tile.y)) {
         case '+':
@@ -2974,10 +2946,16 @@ vec3 Dungeon::GetDownstairs() {
 }
 
 vec3 Dungeon::GetUpstairs() {
+  vector<ivec2> offsets { {-1, 0}, {0, -1}, {1, 0}, {0, 1} };
   for (int i = 0; i < kDungeonSize; i++) {
     for (int j = 0; j < kDungeonSize; j++) {
       if (AsciiCode(i, j) == '<') {
-        return GetTilePosition(ivec2(i, j)) - vec3(10, 0, 0);
+        for (const auto& o : offsets) {
+          if (!IsTileClear(ivec2(i, j) + o, false)) continue;
+          // return GetTilePosition(ivec2(i, j)) - vec3(10, 0, 0);
+          return GetTilePosition(ivec2(i, j) + o);
+        }
+        throw runtime_error("Could not find empty tile.");
       }
     }
   }
@@ -3272,8 +3250,14 @@ int Dungeon::GetRelevance(const ivec2& tile) {
 }
 
 vector<ivec2> Dungeon::GetPath(const vec3& start, const vec3& end) {
-  ivec2 source_tile = GetClosestClearTile(start);
-  ivec2 dest_tile = GetClosestClearTile(end);
+  ivec2 source_tile;
+  ivec2 dest_tile;
+  try {
+    source_tile = GetClosestClearTile(start);
+    dest_tile = GetClosestClearTile(end);
+  } catch (const runtime_error& error) {
+    return {};
+  }
 
   vector<ivec2> path;
   ivec2 cur_tile = source_tile;
@@ -3390,3 +3374,85 @@ DungeonTile& Dungeon::GetTileAt(const vec3& position) {
 int Dungeon::GetThemeRoomType(int x, int y) {
   return 0;
 }
+
+void Dungeon::CreateWeave() {
+  for (int x = 0; x < kDungeonSize; x++) {
+    for (int z = 0; z < kDungeonSize; z++) {
+      DungeonTile& dungeon_tile = GetTileAt(x, z);
+      if (dungeon_tile.dungeon_code != 13) continue;
+      
+      if (Random(0, 20) != 0) continue;
+      SetCode(x, z, 115);
+    }
+  }
+}
+
+void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
+  current_level_ = dungeon_level;
+
+  // random_num = -916558998;
+
+  initialized_ = true;
+  srand(random_num);
+  cout << "Dungeon seed: " << random_num << endl;
+
+  const int min_area = level_data_[current_level_].dungeon_area;
+
+  bool done_flag = false;
+  do {
+    do {
+      Clear();
+      GenerateChambers();
+      GenerateRooms();
+    } while (GetArea() < min_area);
+
+    // PrintPreMap();
+
+    MakeMarchingTiles();
+
+    // GenerateAsciiDungeon();
+    // PrintMap();
+
+    FillChambers();
+
+    AddWalls();
+    // AddSecretWalls();
+    ClearFlags();
+
+    done_flag = true;
+    
+    // Place staircase.
+    if (!PlaceMiniSet("STAIRS_UP")) {
+      done_flag = false; 
+      cout << "Could not place upstairs" << endl;
+    } else if (!PlaceMiniSet("STAIRS_DOWN", nullptr, true)) {
+      cout << "Could not place downstairs" << endl;
+      done_flag = false;
+    }
+
+    const vector<string>& minisets = level_data_[current_level_].minisets;
+    for (const string& miniset : minisets) { 
+      if (!PlaceMiniSet(miniset, 0)) {
+        done_flag = false;
+      }
+    }
+
+    FindRooms();
+    if (!CreateThemeRooms()) {
+      // done_flag = false;
+    }
+  } while (done_flag == false);
+
+  PlaceMonsters();
+  PlaceObjects();
+  PlaceTraps();
+  CreateWeave();
+
+  GenerateAsciiDungeon();
+  PrintMap();
+
+  cout << "Calculating paths..." << endl;
+  CalculateAllPaths();
+  CalculateRelevance();
+}
+

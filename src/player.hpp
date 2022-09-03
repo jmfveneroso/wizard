@@ -64,6 +64,8 @@ class PlayerInput {
   bool DecreaseCharges(int item_id);
   bool SelectSpell(int spell_id);
   void ProcessMovement();
+  void CastWeave();
+  void CastRandomSpell();
 
  public:
   PlayerInput(shared_ptr<Resources> asset_catalog, 

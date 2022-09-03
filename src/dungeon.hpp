@@ -223,6 +223,7 @@ class Dungeon {
   float GetDistanceToStairs(const ivec2& tile);
   shared_ptr<Room> CreateEmptyRoom(const ivec2& dimensions = ivec2(-1, -1));
   int GetIntCode(const char c);
+  vector<vector<int>> RotateMiniset(vector<vector<int>> mat, int rotations);
 
   bool invert_distance_ = false;
 
@@ -324,6 +325,7 @@ class Dungeon {
 
   int MonsterGroup(int x, int y);
   void SetMonsterGroup(int x, int y, int code);
+  void CreateWeave();
 };
 
 #endif // __DUNGEON_HPP__

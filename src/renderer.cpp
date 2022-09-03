@@ -235,6 +235,8 @@ bool Renderer::CullObject(shared_ptr<GameObject> obj,
   if (obj->never_cull) return false;
   if (obj->IsInvisible() && !resources_->GetConfigs()->see_invisible) 
     return true;
+  if (obj->always_cull)
+    return true;
   if (obj->IsSecret() && resources_->GetConfigs()->see_invisible) 
     return true;
   // TODO: draw hand without object.
@@ -459,7 +461,10 @@ void Renderer::DrawOutside() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   if (configs->render_scene != "town" && configs->draw_dungeon) {
     DrawDungeonTiles();
-    return;
+  
+    if (configs->render_scene != "arena") {
+      return;
+    }
   }
 
   ObjPtr player = resources_->GetPlayer();
@@ -475,15 +480,35 @@ void Renderer::DrawOutside() {
   //   terrain_->UpdateClipmaps(camera_.position);
   //   updated_clipmaps = false;
   // }
-  terrain_->UpdateClipmaps(camera_.position);
 
-  mat4 shadow_matrix0 = GetShadowMatrix(true, 0);
-  mat4 shadow_matrix1 = GetShadowMatrix(true, 1);
-  mat4 shadow_matrix2 = GetShadowMatrix(true, 2);
+  // if (configs->render_scene != "arena") {
+  static vec3 pos = vec3(0.0f);
+  pos.x += 0.2f;
 
-  // TODO: pass frustum planes.
-  terrain_->Draw(camera_, view_matrix_, camera_.position, shadow_matrix0, 
-    shadow_matrix1, shadow_matrix2, false);
+  vec3 old_pos = camera_.position;
+  camera_.position = camera_.position + pos;
+    terrain_->UpdateClipmaps(camera_.position);
+
+  view_matrix_ = glm::lookAt(
+    camera_.position,                     // Camera is here
+    camera_.position + camera_.direction, // and looks here : at the same position, plus "direction"
+    camera_.up                            // Head is up (set to vec3(0, -1, 0) to look upside-down)
+  );
+
+    mat4 shadow_matrix0 = GetShadowMatrix(true, 0);
+    mat4 shadow_matrix1 = GetShadowMatrix(true, 1);
+    mat4 shadow_matrix2 = GetShadowMatrix(true, 2);
+
+    // TODO: pass frustum planes.
+    terrain_->Draw(camera_, view_matrix_, camera_.position, shadow_matrix0, 
+      shadow_matrix1, shadow_matrix2, false);
+  // }
+  camera_.position = old_pos;
+  view_matrix_ = glm::lookAt(
+    camera_.position,                     // Camera is here
+    camera_.position + camera_.direction, // and looks here : at the same position, plus "direction"
+    camera_.up                            // Head is up (set to vec3(0, -1, 0) to look upside-down)
+  );
 }
 
 void Renderer::Draw3dParticle(shared_ptr<Particle> obj) {
@@ -807,6 +832,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       }
     }
 
+    if (obj->IsCreature() && obj->ai_state == LOADING) {
+      dying = true;
+    }
+
     if (dying) {
       program_id = resources_->GetShader("death");
     } else if (mode == 2 && configs->detect_monsters && obj->IsCreature()) {
@@ -960,7 +989,7 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
 
       if (asset->name == "merchant_body") {
         // GetJointTransformsForMerchant();
-        joint_transforms = GetJointTransformsForMerchant();
+        // joint_transforms = GetJointTransformsForMerchant();
       }
 
       glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
@@ -972,6 +1001,10 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       // TODO: do this programatically.
       GLuint diffuse_texture_id = texture_id;
       if (obj->IsCreature() && obj->IsInvulnerable()) {
+        diffuse_texture_id = resources_->GetTextureByName("granite_wall_diffuse");
+      }
+
+      if (obj->active_weave) {
         diffuse_texture_id = resources_->GetTextureByName("granite_wall_diffuse");
       }
 
@@ -1654,7 +1687,35 @@ void Renderer::DrawStatusBars() {
       vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
   }
 
+  float time_to_push = player->cooldowns["push"] - glfwGetTime();
+  time_to_push = (time_to_push < 0) ? 0 : time_to_push;
+  string str = string("Push: ") + boost::lexical_cast<string>(float(
+    time_to_push));
+  draw_2d_->DrawText(str, 300, 900 - 750, 
+    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
 
+  float time_to_windslash = player->cooldowns["windslash"] - glfwGetTime();
+  time_to_windslash = (time_to_windslash < 0) ? 0 : time_to_windslash;
+  str = string("Windslash: ") + boost::lexical_cast<string>(float(
+    time_to_windslash));
+  draw_2d_->DrawText(str, 300, 900 - 700, 
+    vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+
+  if (configs->gameplay_style == GAMEPLAY_RANDOM) {
+    string str = boost::lexical_cast<string>(float(
+      configs->random_spells_next_spell));
+    draw_2d_->DrawText(str, 300, 900 - 750, 
+      vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+
+    int pos_y = 0;
+    for (int i = configs->random_spells.size() - 1; i >= 0; i--) {
+      const int spell_id = configs->random_spells[i];
+      string str = boost::lexical_cast<string>(spell_id);
+      draw_2d_->DrawText(str, 100, 900 - (200 + 25 * pos_y), 
+        vec4(1, 1, 1, 1), 1.0, false, "avenir_light_oblique");
+      pos_y++;
+    }
+  }
 
   float t;
   vec3 q;
@@ -1682,6 +1743,11 @@ void Renderer::DrawScreenEffects() {
   float taking_hit = configs->taking_hit;
   if (taking_hit > 0.0 || resources_->GetPlayer()->status == STATUS_DEAD) {
     draw_2d_->DrawImage("hit-effect", 0, 0, kWindowWidth, kWindowHeight, taking_hit / 30.0f);
+  }
+
+  float picking_spell = configs->picking_spell;
+  if (picking_spell > 0.0) {
+    draw_2d_->DrawImage("picking-spell", 0, 0, kWindowWidth, kWindowHeight, picking_spell / 30.0f);
   }
 
   if (configs->fading_out > -60.0) {
@@ -2016,6 +2082,7 @@ void Renderer::CreateThreads() {
 void Renderer::CreateDungeonBuffers() {
   double start_time = glfwGetTime();
 
+  // vector<char> instanced_tiles { ' ', '+', '|', ')', 'o', '(', 'd', 'g', 'P', 'c', 's', 'R' };
   vector<char> instanced_tiles { ' ', '+', '|', ')', 'o', '(', 'd', 'g', 'P', 'c', 's' };
 
   vector<string> model_names { 
@@ -2030,6 +2097,7 @@ void Renderer::CreateDungeonBuffers() {
     "resources/models_fbx/dungeon_pillar.fbx",
     "resources/models_fbx/dungeon_ceiling.fbx",
     "resources/models_fbx/dungeon_floor.fbx",
+    "resources/models_fbx/weave_vortex.fbx",
   };
 
   vector<string> texture_names { 
@@ -2045,6 +2113,7 @@ void Renderer::CreateDungeonBuffers() {
     "wood_planks_diffuse",
     // "medieval_floor_diffuse",
     "stone_floor_diffuse",
+    "brass",
    };
 
   vector<string> normal_texture_names { 
@@ -2060,6 +2129,7 @@ void Renderer::CreateDungeonBuffers() {
     "wood_planks_normal",
     // "medieval_floor_normal",
     "stone_floor_normal",
+    "metal_normal",
   };
 
   vector<string> specular_texture_names { 
@@ -2076,6 +2146,7 @@ void Renderer::CreateDungeonBuffers() {
     "wood_planks_roughness",
     // "medieval_floor_roughness",
     "stone_floor_roughness",
+    "metal_roughness",
   };
 
   Dungeon& dungeon = resources_->GetDungeon();
@@ -2186,11 +2257,15 @@ void Renderer::CreateDungeonBuffers() {
             } else if (tile == 'P') {
               if (ascii_code != 'p' && ascii_code != 'P') continue;
             } else if (tile == ' ') {
+              if (ascii_code != ' ' && resources_->GetConfigs()->render_scene == "arena") {
+                continue;
+              }
             } else if (tile == 'c') {
             } else if (tile == 's') {
             } else if (tile == '+') {
               if (ascii_code != '+' && ascii_code != '^' && 
                   ascii_code != '/') continue;
+            } else if (dungeon_tile.monsters_and_objs == 'R' && tile == 'R') {
             } else {
               if (ascii_code != tile) continue;
             }
@@ -2299,6 +2374,7 @@ void Renderer::DrawDungeonTiles() {
   Dungeon& dungeon = resources_->GetDungeon();
 
   int num_culled = 0;
+  // vector<char> instanced_tiles { ' ', '+', '|', ')', 'o', '(', 'd', 'g', 'P', 'c', 's', 'R' };
   vector<char> instanced_tiles { ' ', '+', '|', ')', 'o', '(', 'd', 'g', 'P', 'c', 's' };
   for (int cx = 0; cx < kDungeonCells; cx++) {
     for (int cz = 0; cz < kDungeonCells; cz++) {
@@ -2325,6 +2401,10 @@ void Renderer::DrawDungeonTiles() {
 
       for (int i = 0; i < instanced_tiles.size(); i++) {
         char tile = instanced_tiles[i];
+
+        if (tile == 'c' && resources_->GetConfigs()->render_scene == "arena") {
+          continue;
+        }
 
         GLuint program_id = resources_->GetShader("dungeon");
         glUseProgram(program_id);

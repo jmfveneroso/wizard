@@ -62,6 +62,23 @@ struct DungeonRenderData {
   mat4 model_matrices[1024];
 };
 
+// struct WeaveRenderData {
+//   unordered_map<char, GLuint> vaos;
+//   unordered_map<char, GLuint> vbos;
+//   unordered_map<char, GLuint> uvs;
+//   unordered_map<char, GLuint> normals;
+//   unordered_map<char, GLuint> element_buffers;
+//   unordered_map<char, GLuint> matrix_buffers;
+//   unordered_map<char, GLuint> tangent_buffers;
+//   unordered_map<char, GLuint> bitangent_buffers;
+//   unordered_map<char, GLuint> textures;
+//   unordered_map<char, GLuint> normal_textures;
+//   unordered_map<char, GLuint> specular_textures;
+//   unordered_map<char, unsigned int> num_indices;
+//   unordered_map<char, unsigned int> num_objs;
+//   mat4 model_matrices[1024];
+// };
+
 class Renderer {
   shared_ptr<Resources> resources_;
   shared_ptr<Draw2D> draw_2d_;

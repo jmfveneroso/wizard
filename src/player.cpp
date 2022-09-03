@@ -651,12 +651,14 @@ bool PlayerInput::CastSpellOrUseItem() {
     Camera c = GetCamera();
 
     if (player->mana >= arcane_spell->mana_cost) {
-      player->mana -= arcane_spell->mana_cost;
+      // player->mana -= arcane_spell->mana_cost;
     } else {
       return false;
     }
 
-    switch (arcane_spell->spell_id) {
+    int spell_id = arcane_spell->spell_id;
+
+    switch (spell_id) {
       case 0: { // Spell shot.
         // if (player->stamina > 0.0f && player->mana >= 1.0f) {
           obj->active_animation = "Armature|shoot";
@@ -673,6 +675,7 @@ bool PlayerInput::CastSpellOrUseItem() {
         return false;
       }
       case 1: { // Windslash.
+        if (!player->CanUseAbility("windslash")) return false;
         // TODO: set spell cost in config.
         // if (player->stamina > 0.0f && player->mana >= 2.0f) {
           obj->active_animation = "Armature|shoot";
@@ -839,6 +842,8 @@ bool PlayerInput::CastShield() {
   shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
   shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
 
+  if (!player->CanUseAbility("push")) return false;
+
   if (resources_->IsHoldingScepter()) {
     return false;
   }
@@ -948,13 +953,21 @@ void PlayerInput::ProcessPlayerCasting() {
   } else if (animation_frame_ == 20) {
     ObjPtr waypoint_obj = resources_->GetObjectByName("waypoint-001");
     if (current_spell_) {
-      switch (current_spell_->spell_id) {
+      int spell_id = current_spell_->spell_id;
+      if (configs->gameplay_style == GAMEPLAY_RANDOM) {     
+        if (spell_id == 2) spell_id = 5;
+        if (spell_id == 3) spell_id = 9;
+      }
+
+      switch (spell_id) {
         case 0:
           resources_->CastSpellShot(camera_);
           break;
-        case 1:
+        case 1: {
           resources_->CastWindslash(camera_);
+          player->cooldowns["windslash"] = glfwGetTime() + 10.0f;
           break;
+        }
         case 2:
           resources_->CastFireball(player, c.direction);
           break;
@@ -1046,8 +1059,10 @@ void PlayerInput::ProcessPlayerShield() {
     p->associated_obj = obj;
     p->offset = vec3(0);
     p->associated_bone = bone_id;
-    player->AddTemporaryStatus(make_shared<ShieldStatus>(0.5f, 1));
-  }
+    // player->AddTemporaryStatus(make_shared<ShieldStatus>(0.5f, 1));
+    resources_->CastPush(player->position);
+    player->cooldowns["push"] = glfwGetTime() + 10.0f;
+  } 
 }
 
 void PlayerInput::ProcessPlayerChanneling() {
@@ -1297,6 +1312,92 @@ void PlayerInput::ProcessMovement() {
   }
 }
 
+void PlayerInput::CastWeave() {
+  float t;
+  vec3 q;
+  ObjPtr obj = resources_->IntersectRayObjects(camera_.position, 
+    camera_.direction, 100, INTERSECT_ALL, t, q);
+
+  if (!obj) return;
+  if (obj->GetAsset()->name != "weave_vortex") return;
+
+  // obj->speed = vec3(0, 0.1, 0);
+  obj->active_weave = true;
+
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  configs->selected_weave_vortices.push_back(obj);
+}
+
+void PlayerInput::CastRandomSpell() {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  shared_ptr<GameObject> obj = resources_->GetObjectByName("hand-001");
+  shared_ptr<GameObject> scepter = resources_->GetObjectByName("scepter-001");
+
+  if (configs->random_spells.empty()) return;
+
+  int spell_id = configs->random_spells[0];
+  configs->random_spells.erase(configs->random_spells.begin());
+
+  shared_ptr<ArcaneSpellData> arcane_spell = 
+    resources_->GetArcaneSpell(spell_id);
+  if (!arcane_spell) return;
+
+  current_spell_ = arcane_spell;
+
+  Camera c = GetCamera();
+
+  switch (arcane_spell->spell_id) {
+    case 0: { // Spell shot.
+      obj->active_animation = "Armature|shoot";
+
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect();
+      player->selected_spell = 0;
+      debounce_ = 20;
+      return;
+    }
+    case 1: { // Windslash.
+      if (!player->CanUseAbility("windslash")) return;
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect();
+      player->selected_spell = 1;
+      --arcane_spell->quantity;
+      debounce_ = 20;
+      return;
+    }
+    case 2: { // Flash.
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect();
+      player->selected_spell = 2;
+      debounce_ = 20;
+      return;
+    }
+    case 3: { // Decoy.
+      obj->active_animation = "Armature|shoot";
+      player->player_action = PLAYER_CASTING;
+      obj->frame = 0;
+      scepter->frame = 0;
+      animation_frame_ = 60;
+      resources_->CreateChargeMagicMissileEffect();
+      player->selected_spell = 3;
+      debounce_ = 20;
+      return;
+    }
+  }
+}
+
 Camera PlayerInput::ProcessInput(GLFWwindow* window) {
   static double last_time = glfwGetTime();
   double current_time = glfwGetTime();
@@ -1451,9 +1552,28 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
         }
       }
 
+      if (!lft_click_) {
+        for (int i = 0; i < configs->selected_weave_vortices.size(); i++) {
+          ObjPtr obj = configs->selected_weave_vortices[i];
+          obj->active_weave = false;
+          obj->status = STATUS_DEAD;
+         
+          if (i == configs->selected_weave_vortices.size() - 1) {
+            resources_->CastFireExplosion(player, obj->position, vec3(0));
+          }
+        }
+        configs->selected_weave_vortices.clear();
+      }
+
       if (lft_click_) {
         if (debounce_ < 0) {
-          CastSpellOrUseItem();
+          if (configs->gameplay_style == GAMEPLAY_DEFAULT) {     
+            CastSpellOrUseItem();
+          } else if (configs->gameplay_style == GAMEPLAY_WEAVE) {     
+            CastWeave();
+          } else if (configs->gameplay_style == GAMEPLAY_RANDOM) {     
+            CastRandomSpell();
+          } 
         } else {
           debounce_ = 20;
         }

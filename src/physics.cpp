@@ -38,6 +38,10 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     obj->speed = vec3(0);
   }
 
+  if (!IsNaN(obj->acceleration)) {
+    obj->speed += obj->acceleration;
+  }
+
   if (obj->freeze) {
     return;
   }
@@ -92,6 +96,10 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
   //   obj->speed.x *= 0.95;
   //   obj->speed.y *= 0.99;
   //   obj->speed.z *= 0.95;
+  } else if (physics_behavior == PHYSICS_FLY) {
+    obj->speed.x *= 0.9;
+    obj->speed.y *= 0.99;
+    obj->speed.z *= 0.9;
   } else {
     // if (physics_behavior == PHYSICS_FLY) {
     //   obj->speed.x *= 0.9;

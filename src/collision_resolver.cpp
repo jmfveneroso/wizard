@@ -773,9 +773,38 @@ vector<shared_ptr<CollisionQB>> GetCollisionsQB(ObjPtr obj1, ObjPtr obj2) {
   }
 
   vector<shared_ptr<CollisionQB>> collisions;
-  for (const auto& [bone_id, bone] : obj2->bones) {
-    if (!bone.collidable) continue;
-    collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
+
+  if (obj2->asset_group != nullptr && obj2->GetAsset()->name == "red_metal_eye") {
+    for (const auto& [bone_id, bone] : obj2->bones) {
+      if (bone.name == "muzzle_bone") {
+        collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
+      }
+    }
+    for (const auto& [bone_id, bone] : obj2->bones) {
+      if (bone.name != "muzzle_bone") {
+        collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
+      }
+    }
+  } else if (obj2->asset_group != nullptr && obj2->GetAsset()->name == "broodmother_body") {
+    for (const auto& [bone_id, bone] : obj2->bones) {
+      if (bone.name == "ball1" ||
+          bone.name == "ball2" ||
+          bone.name == "ball3") {
+        collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
+      }
+    }
+    for (const auto& [bone_id, bone] : obj2->bones) {
+      if (bone.name != "ball1" &&
+          bone.name != "ball2" &&
+          bone.name != "ball3") {
+        collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
+      }
+    }
+  } else {
+    for (const auto& [bone_id, bone] : obj2->bones) {
+      if (!bone.collidable) continue;
+      collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
+    }
   }
   return collisions;
 }
@@ -899,6 +928,34 @@ void CollisionResolver::FindCollisionsWithDungeon(
     return;
   }
 
+  if (resources_->GetConfigs()->render_scene == "arena") {
+    AABB aabb;
+    aabb.point = kDungeonOffset + vec3(-5, -100, -5);
+    // aabb.dimensions = vec3(400, 100, 400);
+    aabb.dimensions = vec3(140, 100, 140);
+
+    if (obj1->GetCollisionType() == COL_BONES) {
+      if (obj1->asset_group != nullptr && obj1->GetAsset()->name == "red_metal_eye") {
+        for (const auto& [bone_id, bone] : obj1->bones) {
+          if (bone.name != "muzzle_bone") {
+            if (!bone.collidable) continue;
+            collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+          }
+        }
+      } else {
+        for (const auto& [bone_id, bone] : obj1->bones) {
+          if (!bone.collidable) continue;
+          collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+        }
+      }
+    } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
+      collisions.push_back(make_shared<CollisionQA>(obj1, aabb));
+    } else if (obj1->GetCollisionType() == COL_OBB) {
+      collisions.push_back(make_shared<CollisionOA>(obj1, aabb));
+    }
+    return;
+  }
+
   for (int x = -1; x <= 1; x++) {
     for (int y = -1; y <= 1; y++) {
       ivec2 tile_pos = ivec2(obj_tile.x + x, obj_tile.y + y);
@@ -908,7 +965,22 @@ void CollisionResolver::FindCollisionsWithDungeon(
       char tile = dungeon.AsciiCode(tile_pos.x, tile_pos.y);
       if (tile == '^' || tile == '/') tile = '+';
 
-      if (tile != '+' && tile != '-' && tile != '|') continue;
+      switch (tile) {
+        case '+':
+        case '-':
+        case '|':
+        case '^':
+        case '/':
+        case '>':
+        case '<':
+        case '~':
+        case '\'': {
+          break;
+        }
+        default: {
+          continue;
+        }
+      }
 
       AABB aabb;
       aabb.point = dungeon.GetTilePosition(tile_pos);
@@ -938,7 +1010,11 @@ vector<ColPtr> CollisionResolver::CollideObjects(ObjPtr obj1, ObjPtr obj2) {
 
   if (!obj2) {
     vector<ColPtr> collisions;
-    FindCollisionsWithTerrain(collisions, obj1);
+
+    if (resources_->GetConfigs()->render_scene != "arena") {
+      FindCollisionsWithTerrain(collisions, obj1);
+    }
+
     if (in_dungeon_) {
       FindCollisionsWithDungeon(collisions, obj1);
     }
@@ -1078,9 +1154,18 @@ void CollisionResolver::TestCollisionsWithDungeon() {
         aabb.dimensions = vec3(10, 100, 10);
 
         if (obj1->GetCollisionType() == COL_BONES) {
-          for (const auto& [bone_id, bone] : obj1->bones) {
-            if (!bone.collidable) continue;
-            collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+          if (obj1->asset_group != nullptr && obj1->GetAsset()->name == "red_metal_eye") {
+            for (const auto& [bone_id, bone] : obj1->bones) {
+              if (bone.name != "muzzle_bone") {
+                if (!bone.collidable) continue;
+                collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+              }
+            }
+          } else {
+            for (const auto& [bone_id, bone] : obj1->bones) {
+              if (!bone.collidable) continue;
+              collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+            }
           }
         } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
           collisions.push_back(make_shared<CollisionQA>(obj1, aabb));
@@ -1812,9 +1897,9 @@ int CollisionResolver::CalculateMissileDamage(shared_ptr<Missile> missile) {
     missile->spell);
 
   int dmg = ProcessDiceFormula(spell->damage);
-  for (int i = 1; i <= spell->spell_level; i++) {
-    dmg += ProcessDiceFormula(spell->upgrade);
-  }
+  // for (int i = 1; i <= spell->spell_level; i++) {
+  //   dmg += ProcessDiceFormula(spell->upgrade);
+  // }
 
   // int dmg = ProcessDiceFormula(asset->damage);
   return dmg;
@@ -1859,6 +1944,30 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
       obj1->life = -1;
       return;
     }
+    case MISSILE_RED_METAL_EYE: {
+      if (obj2) {
+        bool should_bounce = false;
+        if (obj2->IsPlayer() || obj1->IsCreature()) {
+          should_bounce = false;
+        }
+
+        if (!should_bounce) {
+          obj1->life = 0.0f;
+          obj2->DealDamage(missile->owner, 1.0f, normal, 
+            /*take_hit_animation=*/false);
+          
+          return;
+        }
+      }
+
+      obj1->position = obj1->prev_position + vec3(0, 0.1, 0);
+      // obj1->position += c->displacement_vector * 1.1f;
+      if (dot(obj1->speed, c->normal) < 0.0f) {
+        obj1->speed += dot(obj1->speed, c->normal) * c->normal * -2.0f;
+      }
+
+      return;
+    }
     case MISSILE_BOUNCYBALL: {
       if (obj2) {
         bool should_bounce = false;
@@ -1879,8 +1988,10 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
       // resources_->CreateParticleEffect(5, missile->position, normal * 2.0f, 
       //   vec3(1.0, 1.0, 1.0), -1.0, 40.0f, 0.25f);
 
-      obj1->position = obj1->prev_position;
-      obj1->speed += dot(obj1->speed, c->normal) * c->normal * -1.9f;
+      obj1->position = obj1->prev_position + vec3(0, 0.1, 0);
+      if (dot(obj1->speed, c->normal) < 0.0f) {
+        obj1->speed += dot(obj1->speed, c->normal) * c->normal * -2.0f;
+      }
       return;
     }
     case MISSILE_HOOK: {
@@ -1919,6 +2030,14 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
       resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
         "magical-explosion", 2.5f);
       obj1->life = -1;
+      return;
+    }
+    case MISSILE_IMP_FIRE: {
+      missile->owner->RangedAttack(obj2);
+      obj1->life = -1;
+      vec3 v = normalize(missile->speed);
+      v.y = 0;
+      obj2->speed += v * 2.5f;
       return;
     }
     case MISSILE_SPIDER_WEB_SHOT: {
@@ -1974,9 +2093,46 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
 
             // bool take_hit = false;
             // take_hit = missile->type != MISSILE_SPELL_SHOT;
+   
+            if (obj2->GetAsset()->name == "red_metal_eye") {
+              shared_ptr<CollisionQB> col = static_pointer_cast<CollisionQB>(c);
+              int bone = col->bone;
+              if (obj2->bones[bone].name == "muzzle_bone") { 
+                obj2->DealDamage(missile->owner, damage, normal, take_hit, 
+                  c->point_of_contact);
+                obj2->speed += obj1->speed * 0.3f;
+              }
+            } else if (obj2->GetAsset()->name == "broodmother_body") {
+              shared_ptr<CollisionQB> col = static_pointer_cast<CollisionQB>(c);
+              int bone = col->bone;
+              string bone_name = obj2->bones[bone].name;
+              bool hit = false;
+              if (bone_name == "ball1" && obj2->memory.count("ball1") == 0) {
+                hit = true;
+                obj2->memory["ball1"] = "dead";
+              } else if (bone_name == "ball2" && obj2->memory.count("ball2") == 0) {
+                hit = true;
+                obj2->memory["ball2"] = "dead";
+              } else if (bone_name == "ball3" && obj2->memory.count("ball3") == 0) {
+                hit = true;
+                obj2->memory["ball3"] = "dead";
+              }
 
-            obj2->DealDamage(missile->owner, damage, normal, take_hit, 
-              c->point_of_contact);
+              if (hit) {
+                obj2->DealDamage(missile->owner, damage, normal, take_hit, 
+                  c->point_of_contact);
+                resources_->CreateParticleEffect(10, c->point_of_contact,
+                  vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, 
+                  "fireball");          
+              }
+            } else {
+              obj2->DealDamage(missile->owner, damage, normal, take_hit, 
+                c->point_of_contact);
+
+              if (obj2->GetAsset()->name != "goblin_chieftain") {
+                obj2->speed += obj1->speed * 0.3f;
+              }
+            }
           }
 
           // resources_->CreateParticleEffect(10, position, normal * 1.0f, 
@@ -2002,7 +2158,17 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
       }
     }
   } else {
-    if (obj2) {
+    if (obj2 && obj2->GetAsset()->name == "horse_skull") {
+      if (missile->type == MISSILE_WIND_SLASH) {
+      } else {
+        cout << "torquetorque" << endl;
+        resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+          "magical-explosion", 2.5f);
+        c->displacement_vector = obj1->speed;
+        ApplyTorque(c);
+        obj2->speed += obj1->speed;
+      }
+    } else if (obj2) {
       if (obj2->IsDestructible()) {
         shared_ptr<Destructible> destructible = 
           static_pointer_cast<Destructible>(obj2);
@@ -2034,8 +2200,11 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
             "grind-green", 2.5f);
           return;
         } else {
-          resources_->CreateOneParticle(obj1->position, 40.0f,  
-            "windslash-collision", 5.0f);
+          // resources_->CreateOneParticle(obj1->position, 40.0f,  
+          //   "windslash-collision", 5.0f);
+          resources_->CreateOneParticle(c->point_of_contact, 40.0f,  
+            "grind-green", 2.5f);
+          return;
         }
       } else {
         resources_->CreateOneParticle(c->point_of_contact, 34.0f,  
@@ -2103,7 +2272,7 @@ void CollisionResolver::ResolveParticleCollision(ColPtr c) {
     // if (!obj2->IsCreature()) return;
     if (particle->hit_list.find(obj2->id) != particle->hit_list.end()) return;
 
-    obj2->DealDamage(particle->owner, particle->damage, vec3(0, 1, 0));
+    obj2->DealDamage(particle->owner, 1, vec3(0, 1, 0));
     obj2->speed += normalize(obj2->position - particle->position) * 0.7f;
 
     particle->hit_list.insert(obj2->id);
@@ -2115,8 +2284,6 @@ void CollisionResolver::ResolveParticleCollision(ColPtr c) {
     // if (!obj2->IsCreature()) return;
     if (particle->hit_list.find(obj2->id) != particle->hit_list.end()) return;
 
-    cout << "Hit my baby a: " << obj2->id << endl;
-    cout << "Hit my baby b: " << particle->owner->id << endl;
     obj2->DealDamage(particle->owner, particle->damage, vec3(0, 1, 0));
 
     particle->hit_list.insert(obj2->id);
@@ -2260,6 +2427,51 @@ void CollisionResolver::CreatePillarOnCollision(ColPtr c) {
   resources_->CastMagicPillar(displacing_obj);
 }
 
+void CollisionResolver::RandomSpellPowerup(ColPtr c) {
+  ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
+  if (c->obj1->IsFixed()) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
+  }
+
+  if (!displaced_obj->IsPlayer()) return;
+
+  if (resources_->PowerupRandomSpell()) {
+    displacing_obj->status = STATUS_DEAD;
+  }
+}
+
+void CollisionResolver::FrogJump(ColPtr c) {
+  ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
+
+  if (displaced_obj == nullptr || displacing_obj == nullptr) {
+    return;
+  }
+
+  if (!displaced_obj->IsPlayer()) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
+  }
+
+  if (!displaced_obj->IsPlayer()) return;
+
+  if (!displacing_obj->CanUseAbility("frog-jump-dmg")) return;
+
+  // vec3 v = normalize(displaced_obj->position - displacing_obj->position);
+  vec3 v = normalize(displacing_obj->speed);
+  v.y = 0;
+  displaced_obj->speed += v * 2.5f;
+
+  displaced_obj->DealDamage(displacing_obj, 1.0f, -v, 
+    /*take_hit_animation=*/false);
+
+  displacing_obj->cooldowns["frog-jump-dmg"] = glfwGetTime() + 2;
+}
+
 void CollisionResolver::ResolveCollisions() {
   unordered_set<int> ids;
   while (!collisions_.empty()) {
@@ -2291,7 +2503,7 @@ void CollisionResolver::ResolveCollisions() {
 
     if (!effect_on_collision.empty()) {
       (this->*collision_effect_callbacks_[effect_on_collision])(c);
-      continue;
+      // continue;
     }
 
     if (obj1->type == GAME_OBJ_MISSILE ||

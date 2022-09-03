@@ -262,7 +262,7 @@ void Engine::RunCommand(string command) {
         resources_->ChangeDungeonLevel(0);
         resources_->DeleteAllObjects();
         resources_->CreateDungeon(false);
-        vec3 pos = dungeon.GetTilePosition(ivec2(11, 11));
+        vec3 pos = dungeon.GetTilePosition(ivec2(6, 6));
         configs->wave_reset_timer = glfwGetTime() + 5.0f;
 
         resources_->GetPlayer()->ChangePosition(pos);
@@ -288,6 +288,14 @@ void Engine::RunCommand(string command) {
         char code = boost::lexical_cast<char>(result[1]);
         int quantity = boost::lexical_cast<int>(result[2]);
         resources_->CreateMonsters(code, quantity);
+      } catch(boost::bad_lexical_cast const& e) {
+      }
+    }
+  } else if (result[0] == "set-wave") {
+    if (result.size() == 2) {
+      try {
+        int wave_num = boost::lexical_cast<int>(result[1]);
+        configs->current_wave = wave_num;
       } catch(boost::bad_lexical_cast const& e) {
       }
     }
@@ -346,6 +354,10 @@ void Engine::RunCommand(string command) {
     if (result.size() == 3) {
       resources_->SetGameFlag(result[1], result[2]);
     }
+  } else if (result[0] == "weave") {
+    // resources_->CreateWeave();
+    // configs->gameplay_style = GAMEPLAY_WEAVE;
+    configs->gameplay_style = GAMEPLAY_RANDOM;
   }
 }
 

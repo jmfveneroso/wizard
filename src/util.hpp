@@ -98,6 +98,8 @@ enum MissileType {
   MISSILE_FLASH,
   MISSILE_IMP_FIRE,
   MISSILE_PARALYSIS,
+  MISSILE_RED_METAL_EYE,
+  MISSILE_GLAIVE,
 };
 
 enum PhysicsBehavior {
@@ -172,7 +174,8 @@ enum AiState {
   DEFEND = 11,
   START = 12,
   FLEE = 13,
-  BERSERK = 14
+  BERSERK = 14,
+  LOADING = 15,
 };
 
 enum PlayerAction {
@@ -206,11 +209,17 @@ enum ActionType {
   ACTION_SPIDER_EGG,
   ACTION_WORM_BREED,
   ACTION_SPIDER_JUMP,
+  ACTION_FROG_JUMP,
+  ACTION_FROG_SHORT_JUMP,
   ACTION_SPIDER_WEB,
   ACTION_DEFEND,
   ACTION_TELEPORT,
   ACTION_FIREBALL,
   ACTION_PARALYSIS,
+  ACTION_RED_METAL_SPIN,
+  ACTION_SWEEP_ATTACK,
+  ACTION_CHARGE,
+  ACTION_FLY_LOOP,
 };
 
 enum ParticleBehavior {
@@ -718,5 +727,7 @@ vec3 CalculateMissileDirectionToHitTarget(const vec3& pos, const vec3& target,
 
 vec2 PredictMissileHitLocation(vec2 source, float source_speed, 
   vec2 target, vec2 dir, float target_speed);
+
+vector<vector<int>> RotateMatrix(const vector<vector<int>>& mat);
 
 #endif // __UTIL_HPP__

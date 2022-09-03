@@ -224,7 +224,10 @@ bool AI::ProcessStatus(ObjPtr spider) {
       resources_->ChangeObjectAnimation(spider, "Armature|taking_hit", 
         false, TRANSITION_SMOOTH);
 
-      if (spider->frame >= 35) {
+      shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
+      int num_frames = GetNumFramesInAnimation(*mesh, "Armature|taking_hit");
+
+      if (spider->frame >= 35 || spider->frame >= num_frames - 5) {
         spider->status = STATUS_NONE;
       }
       return false;
@@ -250,8 +253,25 @@ bool AI::ProcessStatus(ObjPtr spider) {
       if (is_dead) {
         // resources_->CreateParticleEffect(64, spider->position, 
         //   vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
-        spider->status = STATUS_DEAD;
-        cout << spider->name << " is dead" << endl;
+        if (spider->GetAsset()->name == "skeleton") {
+          if (spider->ai_state != IDLE) {
+            ObjPtr skull = CreateGameObjFromAsset(resources_.get(), "horse_skull", 
+              spider->position);
+            float x = Random(0, 11) * .05f;
+            float z = Random(0, 11) * .05f;
+            skull->speed = spider->speed;
+            skull->torque = cross(normalize(skull->speed), vec3(1, 1, 0)) * 5.0f;
+            spider->ai_state = IDLE;
+            spider->ClearActions();
+            spider->cooldowns["rebirth"] = glfwGetTime() + 10.0f;
+            spider->created_obj = skull;
+            spider->always_cull = true;
+            spider->life = 100.0f;
+            spider->status = STATUS_NONE;
+          }
+        } else {
+          spider->status = STATUS_DEAD;
+        }
       }
       return false;
     }
@@ -310,6 +330,12 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
     return ImpAttack(creature, action);
   } else if (creature->GetAsset()->name == "beholder") {
     return BeholderAttack(creature, action);
+  } else if (creature->GetAsset()->name == "skirmisher") {
+    return SkirmisherAttack(creature, action);
+  } else if (creature->GetAsset()->name == "glaive_master") {
+    return GlaiveMasterAttack(creature, action);
+  } else if (creature->GetAsset()->name == "black_mage_body") {
+    return BlackMageAttack(creature, action);
   }
 
   if (creature->GetAsset()->name == "wraith") {
@@ -320,15 +346,23 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
 }
 
 bool AI::ProcessDefendAction(ObjPtr creature, shared_ptr<DefendAction> action) {
-  resources_->ChangeObjectAnimation(creature, "Armature|defend");
+  resources_->ChangeObjectAnimation(creature, "Armature|defend", 
+    false, TRANSITION_NONE);
 
-  if (!action->started && int(creature->frame) >= 40) {
+  if (!action->started) {
     if (!creature->CanUseAbility("defend")) return true;
-    creature->repeat_animation = false;
     action->started = true;
-    action->until = glfwGetTime() + 3.0f;
-    creature->cooldowns["defend"] = glfwGetTime() + 10;
-    creature->AddTemporaryStatus(make_shared<InvulnerableStatus>(3.0f, 20.0f));
+    action->until = glfwGetTime() + 0.5f;
+
+    if (creature->GetAsset()->name == "goblin_chieftain") {
+      creature->cooldowns["defend"] = glfwGetTime() + 1.5;
+    } else {
+      creature->cooldowns["defend"] = glfwGetTime() + 2;
+    }
+
+    creature->AddTemporaryStatus(make_shared<InvulnerableStatus>(1.0f, 20.0f));
+  } else if (action->started && creature->frame > 35) {
+    return true;
   }
   return false;
 }
@@ -337,18 +371,19 @@ bool AI::ProcessTeleportAction(ObjPtr creature,
   shared_ptr<TeleportAction> action) {
   resources_->ChangeObjectAnimation(creature, "Armature|walking");
 
-  if (action->channeling) {
-    int num_frames = creature->GetNumFramesInCurrentAnimation();
-    if (creature->frame >= num_frames - 5) {
-      action->channeling = false;
-    }
-    return false;
+  if (!action->started) {
+    creature->cooldowns["teleport"] = glfwGetTime() + 10;
+    action->started = true;
+    action->channel_until = glfwGetTime() + 0.5;
+  }
+
+  if (glfwGetTime() < action->channel_until) {
+    resources_->CreateParticleEffect(1, creature->position + vec3(0, 3, 0), 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, "fireball");          
   } else {
     creature->position = action->position;
     resources_->CreateParticleEffect(10, creature->position + vec3(0, 3, 0), 
       vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 5.0, 24.0f, 15.0f, "fireball");          
-    creature->cooldowns["teleport"] = glfwGetTime() + 10;
-    cout << "Teleport done" << endl;
     return true;
   }
   return false;
@@ -409,55 +444,49 @@ bool AI::BeholderAttack(ObjPtr creature,
   shared_ptr<RangedAttackAction> action) {
   resources_->ChangeObjectAnimation(creature, "Armature|attack");
 
-  // if (int(creature->frame) >= 110) return true;
-  if (action->initiated) {
-    action->until -= 1.0f;
-    if (action->until <= 0.0f) return true;
-  }
-
   ObjPtr player = resources_->GetPlayer();
   vec3 target = player->position + vec3(0, -3.0f, 0);
   if (length2(action->target) > 0.1f) {
     target = action->target;
   }
 
-  bool is_rotating = RotateSpider(creature, target, 0.01f);
-  if (is_rotating) return false;
+  static const vector<int> bones { 10, 18, 6, 14, };
+
+  if (!action->initiated) {
+    creature->hit_list.clear();
+    bool is_rotating = RotateSpider(creature, target, 0.01f);
+    if (is_rotating) return false;
+
+    action->until = 60.0f;
+    action->initiated = true;
+
+    for (int i = 0; i < 4; i++) {
+      BoundingSphere bs = creature->GetBoneBoundingSphere(bones[i]);
+     
+      shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 60.0f, 
+        "particle-sparkle-fire", 5.0f);
+      p->associated_obj = creature;
+      p->offset = vec3(0);
+      p->associated_bone = bones[i];
+    }
+    action->initiated = true;
+  }
+
+  action->until -= 1.0f;
+  if (action->until <= 0.0f) return true;
 
   BoundingSphere s = creature->GetBoneBoundingSphere(0);
   vec3 pos = s.center;
 
-  if (creature->frame >= 26 || action->initiated) {
-    vector<int> bones { 10, 18, 6, 14, };
+  vec3 v = creature->forward * (0.1f + float(60 - action->until) / 2.0f) - vec3(0, 3, 0);
+  for (int i = 0; i < 4; i++) {
+    float random_noise = Random(-5, 6) * 0.01f;
+    vec3 v2 = rotate(v, random_noise, vec3(0, 1, 0));
+    if (i < 2) v2.y += 0.2f;
 
-    if (!action->initiated) {
-      action->until = 60.0f;
-      action->initiated = true;
-
-      for (int i = 0; i < 4; i++) {
-        BoundingSphere bs = creature->GetBoneBoundingSphere(bones[i]);
-       
-        shared_ptr<Particle> p = resources_->CreateOneParticle(bs.center, 60.0f, 
-          "particle-sparkle-fire", 5.0f);
-        p->associated_obj = creature;
-        p->offset = vec3(0);
-        p->associated_bone = bones[i];
-      }
-    }
-
-    vec3 v = creature->forward * float(60 - action->until) / 2.0f - vec3(0, 3, 0);
-    for (int i = 0; i < 4; i++) {
-      float random_noise = Random(-5, 6) * 0.003f;
-      vec3 v2 = rotate(v, random_noise, vec3(0, 1, 0));
-      if (i < 2) v2.y += 0.2f;
-
-      resources_->CastMagmaRay(creature, creature->position, normalize(v2), bones[i]);
-    }
-   
-    // vec3 dir = normalize(target - pos);
-    // resources_->CastImpFire(creature, pos, dir);
-    // creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+    resources_->CastMagmaRay(creature, creature->position, normalize(v2), bones[i]);
   }
+  
   return false;
 }
 
@@ -483,6 +512,71 @@ bool AI::ProcessParalysisAction(ObjPtr creature,
     vec3 dir = normalize(target - pos);
     resources_->CastParalysis(creature, target);
     creature->cooldowns["paralysis"] = glfwGetTime() + 1.5;
+  }
+  return false;
+}
+
+bool AI::ProcessFlyLoopAction(ObjPtr creature, 
+  shared_ptr<FlyLoopAction> action) {
+  cout << "joey" << endl;
+  ObjPtr player = resources_->GetPlayer();
+
+  bool is_rotating = RotateSpider(creature, player->position, 0.95f);
+  if (!action->started) {
+    action->circle_front = player->position - creature->position;
+    action->circle_front.y = 0;
+    action->circle_front = normalize(action->circle_front);
+
+    action->circle_radius = 20.0f;
+
+    vec3 dir = vec3(0, action->circle_radius, 0);
+    if (creature->position.y > 50.0f) {
+      dir = vec3(0, -action->circle_radius, 0);
+    } else if (creature->position.y < 10.0f) {
+      dir = vec3(0, action->circle_radius, 0);
+    } else {
+      dir = vec3(0, action->circle_radius, 0);
+      // float ang = ((float) Random(0, 101) / 100.0f) * 2 * 3.1416f;
+      // mat4 m = rotate(mat4(1.0f), ang, action->circle_front);
+      // dir = vec3(m * vec4(dir, 1.0f));
+    }
+
+    action->circle_center = creature->position + dir;
+    
+    action->until = glfwGetTime() + 5.0f;
+    action->right = Random(0, 2) == 0;
+    action->started = true;
+  }
+
+  vec3 to_circle_center = creature->position - action->circle_center;
+  to_circle_center -= dot(to_circle_center, action->circle_front) * action->circle_front;
+
+  vec3 n_to_circle_center = normalize(to_circle_center);
+  vec3 speed_vector = cross(n_to_circle_center, action->circle_front) * 0.05f;
+
+  if (action->right) {
+    creature->speed += speed_vector;
+  } else {
+    creature->speed -= speed_vector;
+  }
+
+  // if (creature->position.y > 50.0f) {
+  //   creature->speed -= vec3(0, 0.05, 0);
+  // } else if (creature->position.y < 10.0f) {
+  //   creature->speed += vec3(0, 0.05, 0);
+  // }
+
+  cout << "circle_center: " << action->circle_center << endl;
+  cout << "creature->position: " << creature->position << endl;
+  cout << "speed_vector: " << speed_vector<< endl;
+  cout << "n_to_circle_center: " << n_to_circle_center << endl;
+  cout << "================" << endl;
+
+  float radius = length(to_circle_center);
+  creature->speed += n_to_circle_center * (action->circle_radius - radius) * 0.02f;
+
+  if (glfwGetTime() > action->until) {
+    return true;
   }
   return false;
 }
@@ -528,6 +622,117 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
   return false;
 }
 
+bool AI::SkirmisherAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const float missile_speed = 3.0f;
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 58) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  if (creature->frame >= 42 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 dir = target - creature->position + vec3(0, 3, 0);
+    dir.y = 0;
+    dir = normalize(dir);
+
+    resources_->CastMissile(creature, creature->position + vec3(0, 3, 0),  
+      MISSILE_GLAIVE, dir, missile_speed);
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+  }
+  return false;
+}
+
+bool AI::GlaiveMasterAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const float missile_speed = 3.0f;
+  const int num_missiles = 5;
+  const float spread = 0.25;
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 58) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  if (creature->frame >= 42 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 dir = target - creature->position + vec3(0, 3, 0);
+    dir.y = 0;
+    dir = normalize(dir);
+
+    resources_->CastMissile(creature, creature->position + vec3(0, 3, 0),  
+      MISSILE_GLAIVE, dir, missile_speed);
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 2.5;
+
+    for (int i = 0; i < num_missiles; i++) {
+      vec3 p2 = creature->position + dir * 200.0f;
+      vec3 dir_ = dir;
+
+      if (i > 0) {
+        float x_ang = (float) Random(-5, 6) * spread;
+        vec3 right = cross(dir, vec3(0, 1, 0));
+        mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+        dir_ = vec3(m * vec4(dir, 1.0f));
+      }
+
+      resources_->CastMissile(creature, creature->position + vec3(0, 3, 0),  
+        MISSILE_GLAIVE, dir_, missile_speed);
+    }
+  }
+  return false;
+}
+
+bool AI::BlackMageAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const float missile_speed = 0.5f;
+
+  if (!action->initiated) {
+    action->initiated = true;
+    action->until = glfwGetTime() + 1.0f;
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+  }
+
+  if (glfwGetTime() > action->until) {
+    resources_->ChangeObjectAnimation(creature, "Armature|attack");
+  } else {
+    resources_->CreateParticleEffect(1, creature->position, 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, "fireball");          
+    return false;
+  }
+
+  if (int(creature->frame) >= 58) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  if (creature->frame >= 42 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 dir = target - creature->position + vec3(0, 3, 0);
+    dir.y = 0;
+    dir = normalize(dir);
+
+    resources_->CastMissile(creature, creature->position + vec3(0, 3, 0),  
+      MISSILE_IMP_FIRE, dir, missile_speed);
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 3.0;
+  }
+  return false;
+}
+
 bool AI::ScorpionAttack(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
   const int num_missiles = 1;
@@ -560,10 +765,11 @@ bool AI::ScorpionAttack(ObjPtr creature,
 
   // Predict player pos.
   if (length(player->speed) > 0.01) {
-    vec2 target_pos = PredictMissileHitLocation(vec2(creature->position.x, creature->position.z), 
-      missile_speed, vec2(player->position.x, player->position.z), 
-      vec2(player->speed.x, player->speed.z), 
-      length(player->speed));
+    // vec2 target_pos = PredictMissileHitLocation(vec2(creature->position.x, creature->position.z), 
+    //   missile_speed, vec2(player->position.x, player->position.z), 
+    //   vec2(player->speed.x, player->speed.z), 
+    //   length(player->speed));
+    vec2 target_pos = vec2(player->position.x, player->position.z);
     target = vec3(target_pos.x, player->position.y, target_pos.y);
   }
 
@@ -575,8 +781,8 @@ bool AI::ScorpionAttack(ObjPtr creature,
   if (int(creature->frame) >= 41 && !action->damage_dealt) {
     action->damage_dealt = true;
     vec3 p2 = creature->position + dir * 200.0f;
-    resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), MISSILE_BOUNCYBALL, 
-      dir, missile_speed);
+    resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), 
+      MISSILE_BOUNCYBALL, dir, missile_speed);
     creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
 
     shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
@@ -624,6 +830,7 @@ bool AI::ShooterBugAttack(ObjPtr creature,
       missile_speed, vec2(player->position.x, player->position.z), 
       vec2(player->speed.x, player->speed.z), 
       length(player->speed));
+    // vec2 target_pos = vec2(player->position.x, player->position.z);
     target = vec3(target_pos.x, player->position.y, target_pos.y);
   }
 
@@ -653,7 +860,7 @@ bool AI::ShooterBugAttack(ObjPtr creature,
 bool AI::RedMetalEyeAttack(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
   const int num_missiles = 1;
-  const float missile_speed = 1.2f + Random(0, 5) * 0.3f;
+  const float missile_speed = 1.0f;
 
   ObjPtr target_unit = creature->GetCurrentTarget();
 
@@ -697,8 +904,9 @@ bool AI::RedMetalEyeAttack(ObjPtr creature,
   if (int(creature->frame) >= 41 && !action->damage_dealt) {
     action->damage_dealt = true;
     vec3 p2 = creature->position + dir * 200.0f;
-    resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), MISSILE_BOUNCYBALL, 
-      dir, missile_speed);
+    resources_->CastMissile(creature, 
+      creature->position + vec3(0, 2, 0), MISSILE_RED_METAL_EYE, dir, 
+      missile_speed);
     creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
 
     shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
@@ -829,6 +1037,33 @@ bool AI::ProcessMeeleeAttackAction(ObjPtr spider,
       cout << "Meelee attack hit: " << length(dir) << endl;
       spider->MeeleeAttack(target, normalize(dir));
       action->damage_dealt = true;
+      target->speed += normalize(target->position - spider->position) * 0.3f;
+    }
+  }
+  return false;
+}
+
+bool AI::ProcessSweepAttackAction(ObjPtr spider, 
+  shared_ptr<SweepAttackAction> action) {
+  if (resources_->GetConfigs()->disable_attacks) {
+    return true;
+  }
+
+  resources_->ChangeObjectAnimation(spider, "Armature|attack");
+
+  int num_frames = spider->GetNumFramesInCurrentAnimation();
+  if (spider->frame >= num_frames - 5) {
+    return true;
+  }
+
+  if (!action->damage_dealt && spider->frame > 20) {
+    ObjPtr target = spider->GetCurrentTarget();
+
+    vec3 dir = target->position - spider->position;
+    if (length(dir) < 40.0f) {
+      spider->MeeleeAttack(target, normalize(dir));
+      action->damage_dealt = true;
+      target->speed += normalize(target->position - spider->position) * 0.5f;
     }
   }
   return false;
@@ -878,6 +1113,7 @@ bool AI::ProcessRandomMoveAction(ObjPtr spider,
   for (int i = 0; i < 9; i++) {
     int x = Random(-1, 2);
     int y = Random(-1, 2);
+    if (x == 0 && y == 0) continue;
 
     next_tile = spider_tile + ivec2(x, y);
     if (!dungeon.IsTileClear(next_tile)) continue;
@@ -1057,11 +1293,11 @@ bool AI::ProcessMoveToPlayerAction(
 
   float min_distance = 0.0f;
 
-  float flight_height = 0.0f;
-  if (spider->GetPhysicsBehavior() == PHYSICS_FLY) {
-    if (spider->position.y < 20.0f) flight_height = spider->position.y + 1.0f;
-    else flight_height = spider->position.y + Random(-2, 2) * 1.0f;
-  }
+  float flight_height = 3.0f;
+  // if (spider->GetPhysicsBehavior() == PHYSICS_FLY) {
+  //   if (spider->position.y < 20.0f) flight_height = spider->position.y + 1.0f;
+  //   else flight_height = spider->position.y + Random(-2, 2) * 1.0f;
+  // }
 
   vec3 next_pos;
   float t;
@@ -1072,7 +1308,7 @@ bool AI::ProcessMoveToPlayerAction(
     char tile = dungeon.GetTileAt(next_pos).ascii_code;
     switch (tile) {
       case 'd': case 'D': case 'o': case 'O': {
-        flight_height = 10.0f;
+        flight_height = 3.0f;
         break;
       }
     }
@@ -1114,11 +1350,11 @@ bool AI::ProcessLongMoveAction(
   //   action->last_position = spider->position;
   // }
 
-  float flight_height = 0.0f;
-  if (spider->GetPhysicsBehavior() == PHYSICS_FLY) {
-    if (spider->position.y < 20.0f) flight_height = spider->position.y + 1.0f;
-    else flight_height = spider->position.y + Random(-2, 2) * 1.0f;
-  }
+  float flight_height = 3.0f;
+  // if (spider->GetPhysicsBehavior() == PHYSICS_FLY) {
+  //   if (spider->position.y < 20.0f) flight_height = spider->position.y + 1.0f;
+  //   else flight_height = spider->position.y + Random(-2, 2) * 1.0f;
+  // }
 
   vec3 next_pos;
   float t;
@@ -1129,7 +1365,7 @@ bool AI::ProcessLongMoveAction(
     char tile = dungeon.GetTileAt(next_pos).ascii_code;
     switch (tile) {
       case 'd': case 'D': case 'o': case 'O': {
-        flight_height = 10.0f;
+        flight_height = 3.0f;
         break;
       }
     }
@@ -1183,7 +1419,6 @@ bool AI::ProcessSpiderClimbAction(ObjPtr spider,
 
 bool AI::ProcessSpiderJumpAction(ObjPtr spider, 
   shared_ptr<SpiderJumpAction> action) {
-
   if (!action->finished_rotating) {
     resources_->ChangeObjectAnimation(spider, "Armature|walking");
     bool is_rotating = RotateSpider(spider, action->destination, 0.99f);
@@ -1208,7 +1443,11 @@ bool AI::ProcessSpiderJumpAction(ObjPtr spider,
     resources_->ChangeObjectAnimation(spider, "Armature|jump");
     vec3 v = action->destination - spider->position;
     v.y = 0;
-    spider->speed += normalize(v) * 0.5f + vec3(0, 0.5f, 0);
+    if (spider->GetAsset()->name == "goblin_chieftain") {
+      spider->speed += normalize(v) * 0.9f + vec3(0, 0.6f, 0);
+    } else {
+      spider->speed += normalize(v) * 0.5f + vec3(0, 0.5f, 0);
+    }
     action->finished_jump = true;
     spider->can_jump = false;
   } else if (spider->frame >= 35) {
@@ -1217,10 +1456,212 @@ bool AI::ProcessSpiderJumpAction(ObjPtr spider,
   return false;
 }
 
+bool AI::ProcessFrogShortJumpAction(ObjPtr spider, 
+  shared_ptr<FrogShortJumpAction> action) {
+  if (!action->finished_rotating) {
+    if (!spider->can_jump) {
+      return true;
+    }
+
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+    bool is_rotating = RotateSpider(spider, action->destination, 0.99f);
+    if (is_rotating) {
+      return false;
+    }
+    action->finished_rotating = true;
+  }
+
+  if (!action->finished_jump) {
+    if (!spider->can_jump) {
+      return true;
+    }
+
+    Dungeon& dungeon = resources_->GetDungeon();
+    float t;
+    if (dungeon.IsMovementObstructed(spider->position, action->destination, t)) {
+      return true;
+    }
+
+    spider->frame = 0;
+    resources_->ChangeObjectAnimation(spider, "Armature|jump");
+    vec3 v = action->destination - spider->position;
+    v.y = 0;
+    spider->speed += normalize(v) * 0.5f + vec3(0, 0.5f, 0);
+    action->finished_jump = true;
+    spider->can_jump = false;
+  } else if (spider->can_jump) {
+    return true;
+  } 
+  return false;
+}
+
+bool AI::ProcessRedMetalSpinAction(ObjPtr spider, 
+  shared_ptr<RedMetalSpinAction> action) {
+  const int num_missiles = 1;
+  const float missile_speed = 0.8f;
+
+  resources_->ChangeObjectAnimation(spider, "Armature|spin");
+
+  if (!action->started) {
+    action->started = true;
+    action->shot_countdown = glfwGetTime() + 1;
+    action->shot_2_countdown = glfwGetTime() + 1.5;
+  }
+
+  if (glfwGetTime() > action->shot_countdown + 2) {
+    spider->cooldowns["spin"] = glfwGetTime() + 8;
+    return true;
+  }
+
+  if (glfwGetTime() > action->shot_countdown && !action->shot) {
+    action->shot = true;
+
+    float rotation = 0.0f;
+    vec3 pos = spider->position;
+    pos.y = kDungeonOffset.y;
+    for (int i = 0; i < 18; i++) {
+      mat4 rotation_matrix = rotate(
+        mat4(1.0),
+        rotation,
+        vec3(0.0f, 1.0f, 0.0f)
+      );
+
+      vec3 dir = vec3(rotation_matrix * vec4(0, 0.5f, 1, 1));
+      shared_ptr<Missile> missile = resources_->CastMissile(spider, 
+        spider->position + dir * 3.0f + vec3(0, 2, 0), MISSILE_RED_METAL_EYE, 
+        dir, missile_speed);
+      missile->life = 120.0f;
+      rotation += 6.28f / 18.0f;
+    }
+  }
+
+  if (glfwGetTime() > action->shot_2_countdown && !action->shot_2) {
+    action->shot_2 = true;
+
+    float rotation = 0.5f * 6.28f / 18.0f;
+    vec3 pos = spider->position;
+    pos.y = kDungeonOffset.y;
+    for (int i = 0; i < 18; i++) {
+      mat4 rotation_matrix = rotate(
+        mat4(1.0),
+        rotation,
+        vec3(0.0f, 1.0f, 0.0f)
+      );
+
+      vec3 dir = vec3(rotation_matrix * vec4(0, 0.25f, 1, 1));
+      shared_ptr<Missile> missile = resources_->CastMissile(spider, 
+        spider->position + dir * 3.0f + vec3(0, 2, 0), MISSILE_RED_METAL_EYE, 
+        dir, missile_speed);
+      missile->life = 120.0f;
+      rotation += 6.28f / 18.0f;
+    }
+  }
+
+  return false;
+}
+
+bool AI::ProcessFrogJumpAction(ObjPtr spider, 
+  shared_ptr<FrogJumpAction> action) {
+  if (!action->finished_rotating) {
+    if (!spider->can_jump) {
+      return true;
+    }
+
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+    bool is_rotating = RotateSpider(spider, action->destination, 0.99f);
+    if (is_rotating) {
+      return false;
+    }
+    action->finished_rotating = true;
+
+    if (spider->GetAsset()->name == "red_frog") {
+      action->chanel_until = glfwGetTime() + 1;
+    } else {
+      action->chanel_until = glfwGetTime() + 2;
+    }
+  }
+
+  if (glfwGetTime() < action->chanel_until) {
+    resources_->CreateParticleEffect(1, spider->position + vec3(0, 3, 0), 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, "fireball");          
+    return false;
+  }
+
+  if (!action->finished_jump) {
+    if (!spider->can_jump) {
+      return true;
+    }
+
+    Dungeon& dungeon = resources_->GetDungeon();
+    float t;
+
+    spider->frame = 0;
+    resources_->ChangeObjectAnimation(spider, "Armature|jump");
+    vec3 v = resources_->GetPlayer()->position - spider->position;
+    v.y = 0;
+    spider->speed += normalize(v) * 1.5f + vec3(0, 0.3f, 0);
+    action->finished_jump = true;
+    spider->can_jump = false;
+  } else if (spider->frame >= 35) {
+    return true;
+  } 
+  return false;
+}
+
+bool AI::ProcessChargeAction(ObjPtr spider, 
+  shared_ptr<ChargeAction> action) {
+  if (!action->finished_rotating) {
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+    bool is_rotating = RotateSpider(spider, resources_->GetPlayer()->position, 0.99f);
+    if (is_rotating) {
+      return false;
+    }
+    action->finished_rotating = true;
+
+    action->channel_until = glfwGetTime() + 1;
+  }
+
+  if (glfwGetTime() < action->channel_until) {
+    resources_->CreateParticleEffect(1, spider->position + vec3(0, 3, 0), 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, "fireball");          
+    return false;
+  }
+
+  if (!action->damage_dealt) {
+    spider->cooldowns["charge"] = glfwGetTime() + 10;
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+    spider->frame = 0;
+    vec3 v = resources_->GetPlayer()->position - spider->position;
+    v.y = 0;
+    spider->speed += normalize(v) * 5.0f;
+    action->damage_dealt = true;
+    return false;
+  } 
+
+  resources_->ChangeObjectAnimation(spider, "Armature|attack");
+
+  int num_frames = spider->GetNumFramesInCurrentAnimation();
+  if (spider->frame >= num_frames - 5) {
+    return true;
+  }
+
+  if (!action->damage_dealt && spider->frame > 20) {
+    ObjPtr target = spider->GetCurrentTarget();
+
+    vec3 dir = target->position - spider->position;
+    if (length(dir) < 40.0f) {
+      spider->MeeleeAttack(target, normalize(dir));
+      action->damage_dealt = true;
+      target->speed += normalize(target->position - spider->position) * 0.5f;
+    }
+  }
+  return false;
+}
+
 bool AI::ProcessSpiderEggAction(ObjPtr spider, 
   shared_ptr<SpiderEggAction> action) {
   resources_->ChangeObjectAnimation(spider, "Armature|walking");
-
+ 
   if (!action->created_particle_effect) {
     auto bone = spider->bones[23];
     shared_ptr<Particle> p = resources_->CreateOneParticle(bone.bs.center, 300.0f, 
@@ -1557,6 +1998,24 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_CHARGE: {
+      shared_ptr<ChargeAction> charge_action =  
+        static_pointer_cast<ChargeAction>(action);
+      if (ProcessChargeAction(spider, charge_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_SWEEP_ATTACK: {
+      shared_ptr<SweepAttackAction> sweep_attack_action =  
+        static_pointer_cast<SweepAttackAction>(action);
+      if (ProcessSweepAttackAction(spider, sweep_attack_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
     case ACTION_SPIDER_CLIMB: {
       shared_ptr<SpiderClimbAction> spider_climb_action =  
         static_pointer_cast<SpiderClimbAction>(action);
@@ -1570,6 +2029,33 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<SpiderJumpAction> spider_jump_action =  
         static_pointer_cast<SpiderJumpAction>(action);
       if (ProcessSpiderJumpAction(spider, spider_jump_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_FROG_JUMP: {
+      shared_ptr<FrogJumpAction> frog_jump_action =  
+        static_pointer_cast<FrogJumpAction>(action);
+      if (ProcessFrogJumpAction(spider, frog_jump_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_FROG_SHORT_JUMP: {
+      shared_ptr<FrogShortJumpAction> frog_short_jump_action =  
+        static_pointer_cast<FrogShortJumpAction>(action);
+      if (ProcessFrogShortJumpAction(spider, frog_short_jump_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
+    case ACTION_RED_METAL_SPIN: {
+      shared_ptr<RedMetalSpinAction> red_metal_spin_action =  
+        static_pointer_cast<RedMetalSpinAction>(action);
+      if (ProcessRedMetalSpinAction(spider, red_metal_spin_action)) {
         spider->PopAction();
         // spider->frame = 0;
       }
@@ -1736,6 +2222,14 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_FLY_LOOP: {
+      shared_ptr<FlyLoopAction> fly_loop_action =  
+        static_pointer_cast<FlyLoopAction>(action);
+      if (ProcessFlyLoopAction(spider, fly_loop_action)) {
+        spider->PopAction();
+      }
+      break;
+    }
     default: {
       break;
     }
@@ -1851,6 +2345,11 @@ void AI::Run() {
   shared_ptr<Configs> configs = resources_->GetConfigs();
   if (configs->disable_ai) return;
 
+  ivec2 tile = resources_->GetDungeon().GetDungeonTile(resources_->GetPlayer()->position);
+  if (!resources_->GetDungeon().IsValidTile(tile)) {
+    return;
+  }
+
   RunAiInOctreeNode(resources_->GetOctreeRoot());
   ProcessPlayerAction(resources_->GetPlayer());
 
@@ -1906,6 +2405,14 @@ void AI::ProcessUnitAiAsync() {
     ai_tasks_.pop();
     running_tasks_++;
     ai_mutex_.unlock();
+
+    ivec2 tile = resources_->GetDungeon().GetDungeonTile(obj->position);
+    if (!resources_->GetDungeon().IsValidTile(tile)) {
+      ai_mutex_.lock();
+      running_tasks_--;
+      ai_mutex_.unlock();
+      continue;
+    }
 
     // Check status. If taking hit, dying, poisoned, etc.
     if (ProcessStatus(obj)) {
