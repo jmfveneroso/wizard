@@ -1130,18 +1130,21 @@ string LoadStringFromXmlOr(const pugi::xml_node& node, const string& name, const
 mat4 GetBoneTransform(Mesh& mesh, const string& animation_name, 
   int bone_id, int frame) {
   if (mesh.animations.find(animation_name) == mesh.animations.end()) {
-    throw runtime_error(string("Animation ") + animation_name + 
-      " does not exist in Util:868");
+    return mat4(1.0f);
+    // throw runtime_error(string("Animation ") + animation_name + 
+    //   " does not exist in Util:868");
   }
 
   const Animation& animation = mesh.animations[animation_name];
   if (frame >= animation.keyframes.size()) {
-    throw runtime_error(string("Frame outside scope") + 
-      " does not exist in Util:875");
+    return mat4(1.0f);
+    // throw runtime_error(string("Frame outside scope") + 
+    //   " does not exist in Util:875");
   }
 
   if (bone_id >= animation.keyframes[frame].transforms.size()) {
-    throw runtime_error(string("Bone id does not exist") + " in Util:879");
+    return mat4(1.0f);
+    // throw runtime_error(string("Bone id does not exist") + " in Util:879");
   }
 
   return animation.keyframes[frame].transforms[bone_id];

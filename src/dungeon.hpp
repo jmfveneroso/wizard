@@ -251,6 +251,7 @@ class Dungeon {
   bool IsWebFloor(const ivec2& tile);
   bool IsTileClear(const ivec2& tile, bool consider_door_state = true);
   bool IsTileClear(const ivec2& tile, const ivec2& next_tile);
+  bool IsTileBorder(const ivec2& tile);
   bool IsTileTransparent(const ivec2& tile);
   bool IsTileVisible(const ivec2& tile);
   bool IsTileVisible(const vec3& position);

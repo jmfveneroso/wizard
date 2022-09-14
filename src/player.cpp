@@ -1752,7 +1752,11 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       player->scepter_timeout = 0;
 
       configs->selected_tile = 1;
-      SelectSpell(0);
+      // SelectSpell(0);
+
+      configs->selected_spell = 1;
+      CastSpellOrUseItem();
+      configs->selected_spell = 0;
     }
     throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {

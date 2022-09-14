@@ -617,8 +617,11 @@ vector<mat4> Renderer::GetJointTransforms(ObjPtr obj, MeshPtr mesh) {
   if (!obj->transition_animation) {
     if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
       const Animation& animation = mesh->animations[obj->active_animation];
-      for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
-        joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+    
+      if (animation.keyframes.size() > obj->frame) {
+        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+        }
       }
     } else {
       ThrowError("Animation ", obj->active_animation, " for object ",
@@ -642,7 +645,11 @@ vector<mat4> Renderer::GetJointTransforms(ObjPtr obj, MeshPtr mesh) {
   // cout << "prev_animation: " << obj->prev_animation << endl;
   // cout << "cur_animation: " << obj->active_animation << endl;
 
-  int num_transforms = cur_animation.keyframes[obj->frame].transforms.size();
+  int num_transforms = 0;
+  if (cur_animation.keyframes.size() > obj->frame) {
+    num_transforms = cur_animation.keyframes[obj->frame].transforms.size();
+  }
+
   for (int i = 0; i < num_transforms; i++) {
     switch (obj->transition_type) {
       case TRANSITION_SMOOTH: {
@@ -1191,8 +1198,11 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
       Animation& animation = mesh->animations[obj->active_animation];
       if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
         const Animation& animation = mesh->animations[obj->active_animation];
-        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
-          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+
+        if (animation.keyframes.size() > obj->frame) {
+          for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
+            joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+          }
         }
 
         glUniformMatrix4fv(GetUniformId(program_id, "joint_transforms"), 
@@ -1472,8 +1482,12 @@ void Renderer::DrawObjectShadow(shared_ptr<GameObject> obj, int level) {
       vector<mat4> joint_transforms;
       if (mesh->animations.find(obj->active_animation) != mesh->animations.end()) {
         const Animation& animation = mesh->animations[obj->active_animation];
-        for (int i = 0; i < animation.keyframes[obj->frame].transforms.size(); i++) {
-          joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+       
+        if (animation.keyframes.size() > obj->frame) {
+          int n = animation.keyframes[obj->frame].transforms.size();
+          for (int i = 0; i < n; i++) {
+            joint_transforms.push_back(animation.keyframes[obj->frame].transforms[i]);
+          }
         }
       } else {
         ThrowError("Animation ", obj->active_animation, " for object ",

@@ -222,7 +222,7 @@ bool AI::ProcessStatus(ObjPtr spider) {
     case STATUS_TAKING_HIT: {
       // resources_->ChangeObjectAnimation(spider, "Armature|idle");
       resources_->ChangeObjectAnimation(spider, "Armature|taking_hit", 
-        false, TRANSITION_SMOOTH);
+        false, TRANSITION_NONE);
 
       shared_ptr<Mesh> mesh = resources_->GetMesh(spider);
       int num_frames = GetNumFramesInAnimation(*mesh, "Armature|taking_hit");
@@ -253,7 +253,8 @@ bool AI::ProcessStatus(ObjPtr spider) {
       if (is_dead) {
         // resources_->CreateParticleEffect(64, spider->position, 
         //   vec3(0, 2.0f, 0), vec3(0.6, 0.2, 0.8), 5.0, 60.0f, 10.0f);
-        if (spider->GetAsset()->name == "skeleton") {
+        if (spider->GetAsset()->name == "skeleton" ||
+            spider->GetAsset()->name == "wraith") {
           if (spider->ai_state != IDLE) {
             ObjPtr skull = CreateGameObjFromAsset(resources_.get(), "horse_skull", 
               spider->position);
@@ -330,12 +331,17 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
     return ImpAttack(creature, action);
   } else if (creature->GetAsset()->name == "beholder") {
     return BeholderAttack(creature, action);
+  } else if (creature->GetAsset()->name == "big_beholder") {
+    return BigBeholderAttack(creature, action);
   } else if (creature->GetAsset()->name == "skirmisher") {
     return SkirmisherAttack(creature, action);
   } else if (creature->GetAsset()->name == "glaive_master") {
     return GlaiveMasterAttack(creature, action);
   } else if (creature->GetAsset()->name == "black_mage_body") {
     return BlackMageAttack(creature, action);
+  } else if (creature->GetAsset()->name == "little_stag" ||
+             creature->GetAsset()->name == "little_stag_shadow") {
+    return LittleStagAttack(creature, action);
   }
 
   if (creature->GetAsset()->name == "wraith") {
@@ -364,6 +370,59 @@ bool AI::ProcessDefendAction(ObjPtr creature, shared_ptr<DefendAction> action) {
   } else if (action->started && creature->frame > 35) {
     return true;
   }
+  return false;
+}
+
+vec3 AI::FindSideMove(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Player> player = resources_->GetPlayer();
+  vec3 center = player->position;
+
+  ivec2 player_tile_pos = dungeon.GetDungeonTile(player->position);
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+
+  ivec2 step;
+  step.x = sign(player_tile_pos.x - unit_tile_pos.x);
+  step.y = sign(player_tile_pos.y - unit_tile_pos.y);
+
+  ivec2 next_tile;
+  if (Random(0, 2) == 0) {
+    next_tile = ivec2(step.y, -step.x);
+  } else {
+    next_tile = ivec2(-step.y, step.x);
+  }
+
+  if (!dungeon.IsValidTile(unit_tile_pos + next_tile) ||
+      !dungeon.IsTileClear(unit_tile_pos + next_tile)) {
+    next_tile = -next_tile;
+  }
+
+  if (!dungeon.IsValidTile(unit_tile_pos + next_tile) ||
+      !dungeon.IsTileClear(unit_tile_pos + next_tile)) {
+    return vec3(0);
+  }
+
+  return dungeon.GetTilePosition(unit_tile_pos + next_tile);
+}
+
+bool AI::ProcessSideStepAction(ObjPtr creature, 
+  shared_ptr<SideStepAction> action) {
+  if (!creature->can_jump) {
+    return true;
+  }
+
+  vec3 pos = FindSideMove(creature);
+  if (length2(pos) <= 0.1f) {
+    return true;
+  }
+
+  creature->frame = 0;
+  resources_->ChangeObjectAnimation(creature, "Armature|walking");
+  vec3 v = pos - creature->position;
+  v.y = 0;
+
+  creature->speed += normalize(v) * 0.3f + vec3(0, 0.2f, 0);
+  creature->can_jump = false;
   return false;
 }
 
@@ -490,6 +549,52 @@ bool AI::BeholderAttack(ObjPtr creature,
   return false;
 }
 
+bool AI::BigBeholderAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 40) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -6.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
+  int bone_id = mesh->bones_to_ids["head"];
+  BoundingSphere s = creature->GetBoneBoundingSphere(bone_id);
+  vec3 pos = s.center;
+
+  if (creature->frame >= 26 && !action->damage_dealt) {
+    action->damage_dealt = true;
+   
+    // vec3 dir = normalize(target - pos);
+    // resources_->CastParalysis(creature, target);
+    // creature->cooldowns["paralysis"] = glfwGetTime() + 1.5;
+
+    pos.x += Random(-5, 6) * 1.0f;
+    pos.z += Random(-5, 6) * 1.0f;
+    for (int i = 0; i < 4; i++) {
+      ObjPtr shadow = CreateGameObjFromAsset(resources_.get(), 
+        "beholder_eye", pos);
+      creature->created_shadows.push_back(shadow);
+      shadow->ai_state = AI_ATTACK;
+
+      vec3 dir = normalize(creature->position - player->position);
+      vec3 dir_ = dir;
+      float spread = 0.1f;
+      float x_ang = (float) Random(-5, 6) * spread;
+      float y_ang = (float) Random(-3, 4) * spread;
+      vec3 right = cross(dir, vec3(0, 1, 0));
+      mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+      dir_ = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+      shadow->speed += dir_ * 3.0f;
+    }
+  }
+  return false;
+}
+
 bool AI::ProcessParalysisAction(ObjPtr creature, 
   shared_ptr<ParalysisAction> action) {
 
@@ -518,7 +623,7 @@ bool AI::ProcessParalysisAction(ObjPtr creature,
 
 bool AI::ProcessFlyLoopAction(ObjPtr creature, 
   shared_ptr<FlyLoopAction> action) {
-  cout << "joey" << endl;
+  resources_->ChangeObjectAnimation(creature, "Armature|walking");
   ObjPtr player = resources_->GetPlayer();
 
   bool is_rotating = RotateSpider(creature, player->position, 0.95f);
@@ -527,58 +632,100 @@ bool AI::ProcessFlyLoopAction(ObjPtr creature,
     action->circle_front.y = 0;
     action->circle_front = normalize(action->circle_front);
 
-    action->circle_radius = 20.0f;
-
     vec3 dir = vec3(0, action->circle_radius, 0);
-    if (creature->position.y > 50.0f) {
+    if (creature->position.y > 45.0f) {
       dir = vec3(0, -action->circle_radius, 0);
-    } else if (creature->position.y < 10.0f) {
+    } else if (creature->position.y < 22.0f) {
       dir = vec3(0, action->circle_radius, 0);
     } else {
-      dir = vec3(0, action->circle_radius, 0);
-      // float ang = ((float) Random(0, 101) / 100.0f) * 2 * 3.1416f;
-      // mat4 m = rotate(mat4(1.0f), ang, action->circle_front);
-      // dir = vec3(m * vec4(dir, 1.0f));
+      float ang = ((float) Random(0, 101) / 100.0f) * 2 * 3.1416f;
+      mat4 m = rotate(mat4(1.0f), ang, action->circle_front);
+      dir = vec3(m * vec4(dir, 1.0f));
     }
 
     action->circle_center = creature->position + dir;
+    action->circle_center.y = std::min(45.0f, action->circle_center.y);
+    action->circle_center.y = std::max(22.0f, action->circle_center.y);
     
-    action->until = glfwGetTime() + 5.0f;
+    action->until = glfwGetTime() + action->duration;
     action->right = Random(0, 2) == 0;
     action->started = true;
   }
 
-  vec3 to_circle_center = creature->position - action->circle_center;
+  vec3 to_circle_center = action->circle_center - creature->position;
   to_circle_center -= dot(to_circle_center, action->circle_front) * action->circle_front;
-
   vec3 n_to_circle_center = normalize(to_circle_center);
-  vec3 speed_vector = cross(n_to_circle_center, action->circle_front) * 0.05f;
 
-  if (action->right) {
-    creature->speed += speed_vector;
-  } else {
-    creature->speed -= speed_vector;
-  }
+  // vec3 speed_vector = normalize(cross(n_to_circle_center, action->circle_front)) *
+  //   creature->current_speed;
+  vec3 speed_vector = normalize(cross(n_to_circle_center, action->circle_front));
+  speed_vector *= creature->current_speed;
 
-  // if (creature->position.y > 50.0f) {
-  //   creature->speed -= vec3(0, 0.05, 0);
-  // } else if (creature->position.y < 10.0f) {
-  //   creature->speed += vec3(0, 0.05, 0);
-  // }
-
-  cout << "circle_center: " << action->circle_center << endl;
-  cout << "creature->position: " << creature->position << endl;
-  cout << "speed_vector: " << speed_vector<< endl;
-  cout << "n_to_circle_center: " << n_to_circle_center << endl;
-  cout << "================" << endl;
+  creature->speed += speed_vector;
 
   float radius = length(to_circle_center);
-  creature->speed += n_to_circle_center * (action->circle_radius - radius) * 0.02f;
+
+  float magnitude = (action->circle_radius - radius) / action->circle_radius;
+  creature->speed += -n_to_circle_center * magnitude * creature->current_speed;
+
+  vec3 to_player = player->position - creature->position;
+  to_player.y = 0;
+  float l = length(to_player);
+  if (l < 60.0f) {
+    creature->speed -= normalize(to_player) * creature->current_speed * 2.0f;
+  } else if (l > 100.0f) {
+    creature->speed += normalize(to_player) * creature->current_speed * 2.0f;
+  }
 
   if (glfwGetTime() > action->until) {
     return true;
   }
   return false;
+}
+
+bool AI::ProcessSpinAction(ObjPtr creature, 
+  shared_ptr<SpinAction> action) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  resources_->ChangeObjectAnimation(creature, "Armature|spin");
+
+  vec3 v = action->target - creature->position;
+  v.y = 0;
+ 
+  if (length(v) < 5.0f) {
+    creature->speed *= 0.3f;
+    return true;
+  }
+
+  creature->speed = normalize(v) * 2.0f;
+  return false;
+}
+
+bool AI::ProcessMirrorImageAction(ObjPtr creature, 
+  shared_ptr<MirrorImageAction> action) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  resources_->ChangeObjectAnimation(creature, "Armature|spin");
+
+  if (!creature->created_shadows.empty()) {
+    for (ObjPtr shadow : creature->created_shadows) {
+      resources_->RemoveObject(shadow);
+    }
+    creature->created_shadows.clear();
+  }
+  std::cout << "Mirror image" << endl;
+
+  vec3 pos = creature->position; 
+  pos.x += Random(-5, 6) * 1.0f;
+  pos.z += Random(-5, 6) * 1.0f;
+  for (int i = 0; i < 4; i++) {
+    ObjPtr shadow = CreateGameObjFromAsset(resources_.get(), "little_stag_shadow", pos);
+    creature->created_shadows.push_back(shadow);
+    shadow->ai_state = AMBUSH;
+  }
+
+  resources_->CreateParticleEffect(10, creature->position,
+    vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 3.0, 24.0f, 15.0f, "fireball");          
+
+  return true;
 }
 
 bool AI::WhiteSpineAttack(ObjPtr creature, 
@@ -689,6 +836,32 @@ bool AI::GlaiveMasterAttack(ObjPtr creature,
       resources_->CastMissile(creature, creature->position + vec3(0, 3, 0),  
         MISSILE_GLAIVE, dir_, missile_speed);
     }
+  }
+  return false;
+}
+
+bool AI::LittleStagAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  resources_->ChangeObjectAnimation(creature, "Armature|attack");
+
+  if (int(creature->frame) >= 58) return true;
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position + vec3(0, -3.0f, 0);
+  if (length2(action->target) > 0.1f) {
+    target = action->target;
+  }
+
+  if (creature->frame >= 42 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 dir = target - (creature->position + vec3(0, 3, 0));
+    dir.y = 0;
+    dir = normalize(dir);
+
+    if (creature->GetAsset()->name == "little_stag") {
+      resources_->CastShotgun(creature, creature->position + vec3(0, 3, 0), dir);
+    }
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
   }
   return false;
 }
@@ -849,7 +1022,10 @@ bool AI::ShooterBugAttack(ObjPtr creature,
 
     resources_->CastMissile(creature, s.center, MISSILE_BOUNCYBALL, 
       dir, missile_speed);
-    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+
+    if (!action->no_cooldown) {
+      creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+    }
 
     resources_->CreateParticleEffect(10, s.center,
       vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 3.0, 24.0f, 15.0f, "fireball");          
@@ -1010,6 +1186,8 @@ bool AI::WraithAttack(ObjPtr creature,
 
       resources_->CastMissile(creature, s.center, MISSILE_HORN, dir, missile_speed);
     }
+
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 2.0;
   }
   return false;
 }
@@ -1385,8 +1563,15 @@ bool AI::ProcessLongMoveAction(
     }
   }
 
+  vec3 v = dest - spider->position;
+  if (length(v) < action->min_distance) {
+    return true;
+  }
+
   next_pos.y = flight_height;
-  return ProcessMoveAction(spider, next_pos);
+  ProcessMoveAction(spider, next_pos);
+
+  return false;
 }
 
 bool AI::ProcessSpiderClimbAction(ObjPtr spider, 
@@ -1458,6 +1643,8 @@ bool AI::ProcessSpiderJumpAction(ObjPtr spider,
 
 bool AI::ProcessFrogShortJumpAction(ObjPtr spider, 
   shared_ptr<FrogShortJumpAction> action) {
+  Dungeon& dungeon = resources_->GetDungeon();
+
   if (!action->finished_rotating) {
     if (!spider->can_jump) {
       return true;
@@ -1476,7 +1663,6 @@ bool AI::ProcessFrogShortJumpAction(ObjPtr spider,
       return true;
     }
 
-    Dungeon& dungeon = resources_->GetDungeon();
     float t;
     if (dungeon.IsMovementObstructed(spider->position, action->destination, t)) {
       return true;
@@ -1486,10 +1672,14 @@ bool AI::ProcessFrogShortJumpAction(ObjPtr spider,
     resources_->ChangeObjectAnimation(spider, "Armature|jump");
     vec3 v = action->destination - spider->position;
     v.y = 0;
-    spider->speed += normalize(v) * 0.5f + vec3(0, 0.5f, 0);
-    action->finished_jump = true;
+    spider->speed += normalize(v) * 0.5f + vec3(0, 0.7f, 0);
     spider->can_jump = false;
-  } else if (spider->can_jump) {
+
+    action->finished_jump = true;
+    return false;
+  } 
+
+  if (spider->can_jump) {
     return true;
   } 
   return false;
@@ -1575,9 +1765,9 @@ bool AI::ProcessFrogJumpAction(ObjPtr spider,
     action->finished_rotating = true;
 
     if (spider->GetAsset()->name == "red_frog") {
-      action->chanel_until = glfwGetTime() + 1;
+      action->chanel_until = glfwGetTime() + 0.5;
     } else {
-      action->chanel_until = glfwGetTime() + 2;
+      action->chanel_until = glfwGetTime() + 1.0;
     }
   }
 
@@ -1658,6 +1848,67 @@ bool AI::ProcessChargeAction(ObjPtr spider,
   return false;
 }
 
+bool AI::ProcessTrampleAction(ObjPtr spider, 
+  shared_ptr<TrampleAction> action) {
+  shared_ptr<Player> player = resources_->GetPlayer();
+  Dungeon& dungeon = resources_->GetDungeon();
+
+  if (!action->finished_rotating) {
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+    bool is_rotating = RotateSpider(spider, resources_->GetPlayer()->position, 0.99f);
+    if (is_rotating) {
+      return false;
+    }
+    action->finished_rotating = true;
+
+    action->channel_until = glfwGetTime() + 1;
+  }
+
+  if (glfwGetTime() < action->channel_until) {
+    resources_->CreateParticleEffect(1, spider->position + vec3(0, 3, 0), 
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, "fireball");          
+    return false;
+  }
+
+  if (!action->damage_dealt) {
+    spider->cooldowns["trample"] = glfwGetTime() + 5;
+    resources_->ChangeObjectAnimation(spider, "Armature|walking");
+    spider->frame = 0;
+
+    vec2 target_pos = PredictMissileHitLocation(
+      vec2(spider->position.x, spider->position.z), 
+      2.7f, vec2(player->position.x, player->position.z), 
+      vec2(player->speed.x, player->speed.z), 
+      length(player->speed));
+
+    action->target = vec3(target_pos.x, player->position.y, target_pos.y);
+    action->damage_dealt = true;
+    return false;
+  } 
+
+  if (action->damage_dealt) {
+    vec3 v = action->target - spider->position;
+    v.y = 0;
+ 
+    ivec2 spider_tile = dungeon.GetDungeonTile(spider->position);
+    if (spider_tile.x < 2 || spider_tile.y < 2 ||
+        spider_tile.x > 12 || spider_tile.y > 12) {
+      spider->speed *= 0.3f;
+      return true;
+    }
+
+    if (length(v) < 5.0f) {
+      spider->speed *= 0.3f;
+      return true;
+    }
+
+    spider->speed = normalize(v) * 3.0f;
+    return false;
+  }
+
+  return false;
+}
+
 bool AI::ProcessSpiderEggAction(ObjPtr spider, 
   shared_ptr<SpiderEggAction> action) {
   resources_->ChangeObjectAnimation(spider, "Armature|walking");
@@ -1670,13 +1921,38 @@ bool AI::ProcessSpiderEggAction(ObjPtr spider,
     p->offset = vec3(0);
     p->associated_bone = 23;
 
-    action->channel_end = glfwGetTime() + 5.0f;
+    action->channel_end = glfwGetTime() + 4.0f;
     action->created_particle_effect = true;
   }
 
   if (glfwGetTime() > action->channel_end) {
     resources_->CastSpiderEgg(spider);
+    spider->cooldowns["spider-egg"] = glfwGetTime() + 3;
     return true;
+  }
+
+  if (ProcessMoveAction(spider, action->target)) {
+    Dungeon& dungeon = resources_->GetDungeon();
+    ivec2 origin = dungeon.GetDungeonTile(spider->position);
+    ivec2 player_tile = dungeon.GetDungeonTile(resources_->GetPlayer()->position);
+
+    int padding = 4;
+    bool move_to_center = origin.x < padding || origin.y < padding ||
+                          origin.x >= 14 - padding || origin.y >= 14 - padding;
+    if (move_to_center) { 
+      origin = ivec2(7, 7);
+    }    
+
+    ivec2 tile = ivec2(7, 7);
+    for (int tries = 0; tries < 10; tries++) {
+      int x = Random(1, 3);
+      int y = Random(1, 3);
+      ivec2 new_tile = origin + ivec2(x, y);
+      if (!dungeon.IsValidTile(new_tile)) continue;
+      if (length(vec2(player_tile) - vec2(new_tile)) < 5.0f) continue;
+      tile = new_tile;
+    }
+    action->target = dungeon.GetTilePosition(tile);
   }
 
   return false;
@@ -2007,6 +2283,15 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_TRAMPLE: {
+      shared_ptr<TrampleAction> trample_action =  
+        static_pointer_cast<TrampleAction>(action);
+      if (ProcessTrampleAction(spider, trample_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
     case ACTION_SWEEP_ATTACK: {
       shared_ptr<SweepAttackAction> sweep_attack_action =  
         static_pointer_cast<SweepAttackAction>(action);
@@ -2195,6 +2480,15 @@ void AI::ProcessNextAction(ObjPtr spider) {
       }
       break;
     }
+    case ACTION_SIDE_STEP: {
+      shared_ptr<SideStepAction> side_step_action =  
+        static_pointer_cast<SideStepAction>(action);
+      if (ProcessSideStepAction(spider, side_step_action)) {
+        spider->PopAction();
+        // spider->frame = 0;
+      }
+      break;
+    }
     case ACTION_TELEPORT: {
       shared_ptr<TeleportAction> teleport_action =  
         static_pointer_cast<TeleportAction>(action);
@@ -2226,6 +2520,22 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<FlyLoopAction> fly_loop_action =  
         static_pointer_cast<FlyLoopAction>(action);
       if (ProcessFlyLoopAction(spider, fly_loop_action)) {
+        spider->PopAction();
+      }
+      break;
+    }
+    case ACTION_SPIN: {
+      shared_ptr<SpinAction> spin_action =  
+        static_pointer_cast<SpinAction>(action);
+      if (ProcessSpinAction(spider, spin_action)) {
+        spider->PopAction();
+      }
+      break;
+    }
+    case ACTION_MIRROR_IMAGE: {
+      shared_ptr<MirrorImageAction> mirror_image_action =  
+        static_pointer_cast<MirrorImageAction>(action);
+      if (ProcessMirrorImageAction(spider, mirror_image_action)) {
         spider->PopAction();
       }
       break;
@@ -2408,9 +2718,11 @@ void AI::ProcessUnitAiAsync() {
 
     ivec2 tile = resources_->GetDungeon().GetDungeonTile(obj->position);
     if (!resources_->GetDungeon().IsValidTile(tile)) {
-      ai_mutex_.lock();
-      running_tasks_--;
-      ai_mutex_.unlock();
+      if (obj->GetAsset()->name != "big_beholder") {
+        ai_mutex_.lock();
+        running_tasks_--;
+        ai_mutex_.unlock();
+      }
       continue;
     }
 

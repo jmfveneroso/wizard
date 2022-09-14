@@ -165,6 +165,7 @@ class GameObject : public enable_shared_from_this<GameObject> {
   unordered_set<int> hit_list;
   shared_ptr<GameObject> stun_obj = nullptr;
   shared_ptr<GameObject> created_obj = nullptr;
+  vector<shared_ptr<GameObject>> created_shadows;
 
   GameObject(Resources* resources) : resources_(resources) {}
   GameObject(Resources* resources, GameObjectType type) 
@@ -574,8 +575,9 @@ struct SpiderClimbAction : Action {
 struct SpiderEggAction : Action {
   bool created_particle_effect = false;
   float channel_end = 0.0f;
-  SpiderEggAction() 
-    : Action(ACTION_SPIDER_EGG) {}
+  vec3 target;
+  SpiderEggAction(vec3 target) 
+    : Action(ACTION_SPIDER_EGG), target(target) {}
 };
 
 struct WormBreedAction : Action {
@@ -632,8 +634,11 @@ struct RangedAttackAction : Action {
   bool damage_dealt = false;
   float until = 0.0f;
   vec3 target = vec3(0);
+  bool no_cooldown = false;
   RangedAttackAction(vec3 target=vec3(0)) : Action(ACTION_RANGED_ATTACK),  
     target(target) {}
+  RangedAttackAction(bool no_cooldown) : Action(ACTION_RANGED_ATTACK),  
+    no_cooldown(no_cooldown) {}
 };
 
 struct MeeleeAttackAction : Action {
@@ -647,6 +652,15 @@ struct ChargeAction : Action {
   float channel_until = 0.0f;
   bool damage_dealt = false;
   ChargeAction() : Action(ACTION_CHARGE) {}
+};
+
+struct TrampleAction : Action {
+  bool finished_rotating = false;
+  bool started = false;
+  float channel_until = 0.0f;
+  bool damage_dealt = false;
+  vec3 target;
+  TrampleAction() : Action(ACTION_TRAMPLE) {}
 };
 
 struct SweepAttackAction : Action {
@@ -727,6 +741,13 @@ struct DefendAction : Action {
     : Action(ACTION_DEFEND) {}
 };
 
+struct SideStepAction : Action {
+  bool started = false;
+  float until = 0;
+  SideStepAction() 
+    : Action(ACTION_SIDE_STEP) {}
+};
+
 struct TeleportAction : Action {
   bool started = false;
   bool channeling = true;
@@ -759,10 +780,25 @@ struct FlyLoopAction : Action {
   float circle_radius = 0.0f;
   vec3 circle_front;
   vec3 circle_center;
+  float duration = 6.0f;
   float until = 0.0f;
   bool right = false;
 
-  FlyLoopAction() : Action(ACTION_FLY_LOOP) {}
+  FlyLoopAction(float circle_radius, float duration) : Action(ACTION_FLY_LOOP),
+    circle_radius(circle_radius), duration(duration) {}
+};
+
+struct SpinAction : Action {
+  vec3 target;
+  SpinAction(vec3 target) 
+    : Action(ACTION_SPIN), target(target) {}
+};
+
+struct MirrorImageAction : Action {
+  bool started = false;
+  float until = 0.0f;
+  MirrorImageAction() 
+    : Action(ACTION_MIRROR_IMAGE) {}
 };
 
 shared_ptr<Player> CreatePlayer(Resources* resources);

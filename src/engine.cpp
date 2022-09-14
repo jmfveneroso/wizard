@@ -270,6 +270,7 @@ void Engine::RunCommand(string command) {
         resources_->SaveGame();
         resources_->CalculateCollisionData();
         resources_->GenerateOptimizedOctree();
+
         configs->update_renderer = true;
         configs->wave_monsters.clear();
         configs->current_wave = -1;
@@ -751,6 +752,36 @@ void Engine::Run() {
 
   shared_ptr<Configs> configs = resources_->GetConfigs();
   resources_->LoadGame("config.xml", false);
+
+  // Arena.
+  try {
+    const string& filename = "dungeons/dungeon1.txt";
+
+    Dungeon& dungeon = resources_->GetDungeon();
+    if (dungeon.LoadDungeonFromFile(filename)) {
+      resources_->ChangeDungeonLevel(0);
+      resources_->DeleteAllObjects();
+      resources_->CreateDungeon(false);
+      vec3 pos = dungeon.GetTilePosition(ivec2(6, 6));
+      configs->wave_reset_timer = glfwGetTime() + 5.0f;
+
+      resources_->GetPlayer()->ChangePosition(pos);
+      resources_->GetConfigs()->render_scene = "arena";
+      resources_->SaveGame();
+      resources_->CalculateCollisionData();
+      resources_->GenerateOptimizedOctree();
+
+      configs->update_renderer = true;
+      configs->wave_monsters.clear();
+      configs->current_wave = -1;
+
+      for (int i = 0; i < 11; i++) {
+        resources_->LearnSpell(i);
+      }
+    }
+  } catch(boost::bad_lexical_cast const& e) {
+  }
+  // Arena.
 
   int frames = 0;
   double next_print_time = glfwGetTime();

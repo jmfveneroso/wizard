@@ -2472,6 +2472,84 @@ void CollisionResolver::FrogJump(ColPtr c) {
   displacing_obj->cooldowns["frog-jump-dmg"] = glfwGetTime() + 2;
 }
 
+void CollisionResolver::WhiteSpineTrample(ColPtr c) {
+  ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
+
+  if (displaced_obj == nullptr || displacing_obj == nullptr) {
+    return;
+  }
+
+  if (!displaced_obj->IsPlayer()) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
+  }
+
+  if (!displaced_obj->IsPlayer()) return;
+
+  if (!displacing_obj->CanUseAbility("trample-dmg")) return;
+
+  // vec3 v = normalize(displaced_obj->position - displacing_obj->position);
+  vec3 v = normalize(displacing_obj->speed);
+  v.y = 0;
+  displaced_obj->speed += v * 5.0f;
+
+  displaced_obj->DealDamage(displacing_obj, 1.0f, -v, 
+    /*take_hit_animation=*/false);
+
+  displacing_obj->cooldowns["trample-dmg"] = glfwGetTime() + 2;
+}
+
+void CollisionResolver::BeholderEyeCollision(ColPtr c) {
+  ObjPtr displaced_obj = c->obj1;
+  ObjPtr displacing_obj = c->obj2;
+
+  if (displaced_obj == nullptr || displacing_obj == nullptr) {
+    return;
+  }
+
+  bool is_beholder_eye = false;
+  if (displacing_obj->asset_group && 
+    displacing_obj->GetAsset()->name == "beholder_eye") {
+    is_beholder_eye = true;
+  }
+
+  if (!is_beholder_eye) {
+    if (!c->obj2) return;
+    displaced_obj = c->obj2;
+    displacing_obj = c->obj1;
+  }
+
+  if (displaced_obj->asset_group && 
+    (displaced_obj->GetAsset()->name == "big_beholder" ||
+    displaced_obj->GetAsset()->name == "beholder_eye")) {
+    return;
+  }
+  
+  displacing_obj->life = -1.0f;
+  displacing_obj->status = STATUS_DEAD;
+  resources_->CreateParticleEffect(10, c->point_of_contact,
+    vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 1.0, 24.0f, 15.0f, 
+    "fireball");          
+
+  if (!displaced_obj->IsPlayer()) {
+    return;
+  }
+
+  if (!displacing_obj->CanUseAbility("trample-dmg")) return;
+
+  // vec3 v = normalize(displaced_obj->position - displacing_obj->position);
+  vec3 v = normalize(displacing_obj->speed);
+  v.y = 0;
+  displaced_obj->speed += v * 5.0f;
+
+  displaced_obj->DealDamage(displacing_obj, 1.0f, -v, 
+    /*take_hit_animation=*/false);
+
+  displacing_obj->cooldowns["trample-dmg"] = glfwGetTime() + 2;
+}
+
 void CollisionResolver::ResolveCollisions() {
   unordered_set<int> ids;
   while (!collisions_.empty()) {

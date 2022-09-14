@@ -4248,7 +4248,7 @@ void Resources::CreateDungeon(bool generate_dungeon) {
       char ascii_code = dungeon_tile.ascii_code;
       switch (ascii_code) { 
         case ' ': {
-          tile = CreateRoom(this, "dungeon_ceiling_hull", pos, 0);
+          // tile = CreateRoom(this, "dungeon_ceiling_hull", pos, 0);
           break;
         }
         case 'o': {
@@ -5213,7 +5213,9 @@ void Resources::CastFireExplosion(ObjPtr owner, const vec3& position,
 void Resources::CastParalysis(ObjPtr owner, const vec3& target) {
   shared_ptr<Missile> obj = GetUnusedMissile();
 
-  BoundingSphere s = owner->GetBoneBoundingSphere(0); 
+  shared_ptr<Mesh> mesh = GetMesh(owner);
+  int bone_id = mesh->bones_to_ids["head"];
+  BoundingSphere s = owner->GetBoneBoundingSphere(bone_id);
   obj->position = s.center;
 
   obj->UpdateAsset("imp_fire");
@@ -5224,7 +5226,7 @@ void Resources::CastParalysis(ObjPtr owner, const vec3& target) {
   obj->type = MISSILE_PARALYSIS;
   obj->physics_behavior = PHYSICS_UNDEFINED;
 
-  obj->speed = normalize(target - obj->position) * 1.0f;
+  obj->speed = normalize(target - obj->position) * 2.0f;
   UpdateObjectPosition(obj);
 
   shared_ptr<Particle> p = CreateOneParticle(obj->position, 2000.0f, 
@@ -6107,7 +6109,7 @@ void Resources::CastImpFire(ObjPtr owner, const vec3& pos,
   obj->associated_particles.push_back(p);
 }
 
-shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
+shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera, float speed) {
   shared_ptr<Missile> obj = GetUnusedMissile();
   
   configs_->attacked_at = glfwGetTime();
@@ -6153,7 +6155,7 @@ shared_ptr<Missile> Resources::CastSpellShot(const Camera& camera) {
   }
 
   vec3 p2 = camera.position + camera.direction * 200.0f;
-  obj->speed = normalize(p2 - obj->position) * 4.0f;
+  obj->speed = normalize(p2 - obj->position) * speed;
 
   mat4 rotation_matrix = rotate(
     mat4(1.0),
@@ -6190,6 +6192,46 @@ void Resources::CastShotgun(const Camera& camera) {
     shared_ptr<Missile> obj = CastSpellShot(Camera(camera.position, dir_, vec3(0, 1, 0)));
     obj->type = MISSILE_BOUNCYBALL;
     obj->life = 180.0f;
+  }
+}
+
+void Resources::CastShotgun(ObjPtr owner, const vec3& pos, 
+  const vec3& direction) {
+  const int num_missiles = 8;
+  const float missile_speed = 1.0f;
+  const float spread = 0.01f;
+
+  vec3 p2 = pos + direction * 200.0f;
+  vec3 dir = normalize(p2 - pos);
+  for (int i = 0; i < num_missiles; i++) {
+    vec3 dir_ = dir;
+    if (i > 0) {
+      float x_ang = (float) Random(-5, 6) * spread;
+      float y_ang = (float) Random(-3, 4) * spread;
+      vec3 right = cross(dir, vec3(0, 1, 0));
+      mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+      dir_ = vec3(rotate(m, y_ang, right) * vec4(dir, 1.0f));
+    }
+
+    shared_ptr<Missile> obj = GetUnusedMissile();
+    
+    configs_->attacked_at = glfwGetTime();
+    for (auto monster : configs_->wave_monsters) {
+      monster->saw_player_attack = true;
+    }
+
+    configs_->attacked_at = glfwGetTime();
+
+    obj->UpdateAsset("spell_shot");
+    obj->CalculateCollisionData();
+    obj->owner = owner;
+    obj->position = pos; 
+    obj->type = MISSILE_BOUNCYBALL;
+
+    vec3 p2 = pos + dir_ * 200.0f;
+    obj->speed = normalize(p2 - obj->position) * 2.0f;
+    obj->life = 180.0f;
+    UpdateObjectPosition(obj);
   }
 }
 
@@ -6672,7 +6714,7 @@ void Resources::CreateMonsters(const char code, int quantity) {
     { 'K', "lancet" },
     { 'S', "white_spine" },
     { 'w', "blood_worm" },
-    { 'V', "demon-vine" },
+    { 'V', "spinner" },
     { 'Y', "dragonfly" },
     { 'J', "speedling" },
     { 'W', "wraith" },
@@ -6689,11 +6731,13 @@ void Resources::CreateMonsters(const char code, int quantity) {
     { 'G', "glaive_master" },
     { 'M', "minotaur" },
     { 'B', "big_beholder" },
+    { 'l', "little_stag" },
+    { 'a', "baphomet" },
   };
 
   for (int i = 0; i < quantity; i++) {
-    float off_x = Random(1, 14);
-    float off_y = Random(1, 14);
+    float off_x = Random(2, 12);
+    float off_y = Random(2, 12);
     vec3 pos = kDungeonOffset + vec3(10.0 * off_x, 0, 
       10.0f * off_y);
 
@@ -6725,7 +6769,7 @@ void Resources::ProcessArenaEvents() {
     { 'K', "lancet" },
     { 'S', "white_spine" },
     { 'w', "blood_worm" },
-    { 'V', "demon-vine" },
+    { 'V', "spinner" },
     { 'Y', "dragonfly" },
     { 'J', "speedling" },
     { 'W', "wraith" },
@@ -6740,6 +6784,8 @@ void Resources::ProcessArenaEvents() {
     { 'G', "glaive_master" },
     { 'M', "minotaur" },
     { 'B', "big_beholder" },
+    { 'l', "little_stag" },
+    { 'a', "baphomet" },
   };
 
   if (configs_->render_scene != "arena") return;

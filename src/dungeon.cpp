@@ -3456,3 +3456,7 @@ void Dungeon::GenerateDungeon(int dungeon_level, int random_num) {
   CalculateRelevance();
 }
 
+bool Dungeon::IsTileBorder(const ivec2& tile) {
+  return (tile.x < 1 || tile.y < 1 ||
+      tile.x > 12 || tile.y > 12);
+}

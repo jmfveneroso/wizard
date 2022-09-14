@@ -52,10 +52,13 @@ class AI {
     shared_ptr<RangedAttackAction> action);
   bool BlackMageAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
-
   bool ImpAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
   bool BeholderAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+  bool BigBeholderAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
+  bool LittleStagAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
 
   bool WraithAttack(ObjPtr creature, shared_ptr<RangedAttackAction> action);
@@ -79,6 +82,7 @@ class AI {
   bool ProcessTalkAction(ObjPtr spider, shared_ptr<TalkAction> action);
   bool ProcessAnimationAction(ObjPtr spider, shared_ptr<AnimationAction> action);
   bool ProcessChargeAction(ObjPtr spider, shared_ptr<ChargeAction> action);
+  bool ProcessTrampleAction(ObjPtr spider, shared_ptr<TrampleAction> action);
   bool ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action);
   bool ProcessMoveToPlayerAction(ObjPtr spider, 
     shared_ptr<MoveToPlayerAction> action);
@@ -104,6 +108,8 @@ class AI {
     shared_ptr<SpiderWebAction> action);
   bool ProcessDefendAction(ObjPtr spider, 
     shared_ptr<DefendAction> action);
+  bool ProcessSideStepAction(ObjPtr spider, 
+    shared_ptr<SideStepAction> action);
   bool ProcessTeleportAction(ObjPtr creature, 
     shared_ptr<TeleportAction> action);
   bool ProcessFireballAction(ObjPtr creature, 
@@ -112,6 +118,10 @@ class AI {
     shared_ptr<ParalysisAction> action);
   bool ProcessFlyLoopAction(ObjPtr creature, 
     shared_ptr<FlyLoopAction> action);
+  bool ProcessSpinAction(ObjPtr creature, 
+    shared_ptr<SpinAction> action);
+  bool ProcessMirrorImageAction(ObjPtr creature, 
+    shared_ptr<MirrorImageAction> action);
 
   bool ProcessStatus(ObjPtr spider);
   void ProcessNextAction(ObjPtr spider);
@@ -120,6 +130,7 @@ class AI {
   void RunAiInOctreeNode(shared_ptr<OctreeNode> node);
   void ProcessUnitAiAsync();
   void CreateThreads();
+  vec3 FindSideMove(ObjPtr unit);
 
  public:
   AI(shared_ptr<Resources> resources, shared_ptr<Monsters> monsters);

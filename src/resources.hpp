@@ -815,7 +815,7 @@ class Resources {
     const string& type, float size);
 
   shared_ptr<Missile> GetUnusedMissile();
-  shared_ptr<Missile> CastSpellShot(const Camera& camera);
+  shared_ptr<Missile> CastSpellShot(const Camera& camera, float speed = 4.0f);
   void CreateDrops(ObjPtr obj, bool static_drops = false);
 
   void CastWindslash(const Camera& camera);
@@ -848,6 +848,7 @@ class Resources {
   bool CanRest();
   void CastFlashMissile(const Camera& camera);
   void CastShotgun(const Camera& camera);
+  void CastShotgun(ObjPtr owner, const vec3& pos, const vec3& direction);
   void CreateChestDrops(ObjPtr obj, int item_id);
   void ExplodeBarrel(ObjPtr obj);
   void CastDetectMonsters();

@@ -344,6 +344,8 @@ class CollisionResolver {
   void ApplySlowEffectOnCollision(ColPtr col);
   void RandomSpellPowerup(ColPtr col);
   void FrogJump(ColPtr col);
+  void WhiteSpineTrample(ColPtr col);
+  void BeholderEyeCollision(ColPtr col);
 
   unordered_map<string, void (CollisionResolver::*)(ColPtr)> 
     collision_effect_callbacks_ {
@@ -351,6 +353,8 @@ class CollisionResolver {
     { "pillar", &CollisionResolver::CreatePillarOnCollision },
     { "random_spell_powerup", &CollisionResolver::RandomSpellPowerup },
     { "frog_jump", &CollisionResolver::FrogJump },
+    { "white_spine_trample", &CollisionResolver::WhiteSpineTrample },
+    { "beholder_eye_collision", &CollisionResolver::BeholderEyeCollision },
   };
 
   vector<ColPtr> CollideObjects(ObjPtr obj1, ObjPtr obj2);
