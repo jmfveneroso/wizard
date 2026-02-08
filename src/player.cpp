@@ -1745,7 +1745,7 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       UseItem(2);
     }
     throttle_counter_ = 5;
-  } else if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+  } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
     if (throttle_counter_ < 0) {
       player->scepter = -1;
       player->charges = 0;
@@ -1759,16 +1759,16 @@ Camera PlayerInput::ProcessInput(GLFWwindow* window) {
       configs->selected_spell = 0;
     }
     throttle_counter_ = 5;
-  } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
-    if (throttle_counter_ < 0) {
-      player->scepter = -1;
-      player->charges = 0;
-      player->scepter_timeout = 0;
+  // } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+  //   if (throttle_counter_ < 0) {
+  //     player->scepter = -1;
+  //     player->charges = 0;
+  //     player->scepter_timeout = 0;
 
-      SelectSpell(1);
-      configs->selected_tile = 2;
-    }
-    throttle_counter_ = 5;
+  //     SelectSpell(1);
+  //     configs->selected_tile = 2;
+  //   }
+  //   throttle_counter_ = 5;
   } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
     if (throttle_counter_ < 0) {
       player->scepter = -1;

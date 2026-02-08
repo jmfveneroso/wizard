@@ -15,6 +15,7 @@ class Monsters {
   void Frog(ObjPtr unit);
   void RedFrog(ObjPtr unit);
   void Scorpion(ObjPtr unit);
+  void RedScorpion(ObjPtr unit);
   void ShooterBug(ObjPtr unit);
   void RedMetalEye(ObjPtr unit);
   void BlackMage(ObjPtr unit);
@@ -50,6 +51,8 @@ class Monsters {
   ivec2 FindChokepoint(ObjPtr unit);
   ivec2 FindRandomTile(ObjPtr unit, int max_k = 5);
   ivec2 GetFrogJumpTile(ObjPtr unit);
+  vec3 GetGoblinMove(ObjPtr unit);
+  vec3 GetElectricBallMove(ObjPtr unit);
   bool IsPlayerReachable(ObjPtr unit);
   ivec2 IsPlayerReachableThroughDoor(ObjPtr unit);
   bool CanDetectPlayer(ObjPtr unit);

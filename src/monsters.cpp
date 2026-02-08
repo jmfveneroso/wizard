@@ -788,6 +788,90 @@ ivec2 Monsters::GetBroodmotherMoveTile(ObjPtr unit) {
   return tile;
 }
 
+vec3 Monsters::GetElectricBallMove(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ivec2 origin = dungeon.GetDungeonTile(unit->position);
+  shared_ptr<Player> player = resources_->GetPlayer();
+  ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
+  vec3 monster_centroid = dungeon.GetTilePosition(ivec2(7, 7));
+  if (!configs->wave_monsters.empty()) {
+    monster_centroid = vec3(0.0f);
+    for (auto monster : configs->wave_monsters) {
+      if (monster->id == unit->id) continue;
+      monster_centroid += monster->position;
+    }
+    monster_centroid *= 1.0f / float(configs->wave_monsters.size() - 1);
+  }
+
+  vec3 bottom_left = dungeon.GetTilePosition(ivec2(0, 0));
+  vec3 top_right = dungeon.GetTilePosition(ivec2(13, 13));
+
+  // Top. 
+  float dist_to_bottom = std::abs(unit->position.z - bottom_left.z) / 70.0f;
+  dist_to_bottom = std::min(1.0f, dist_to_bottom);
+  float dist_to_top = std::abs(unit->position.z - top_right.z) / 70.0f;
+  dist_to_top = std::min(1.0f, dist_to_top);
+  float dist_to_left = std::abs(unit->position.x - bottom_left.x) / 70.0f;
+  dist_to_left = std::min(1.0f, dist_to_left);
+  float dist_to_right = std::abs(unit->position.x - top_right.x) / 70.0f;
+  dist_to_right = std::min(1.0f, dist_to_right);
+
+  vec3 speed = vec3(0);
+  speed += (1.0f - dist_to_top) * vec3(0, 0, -1);
+  speed += (1.0f - dist_to_bottom) * vec3(0, 0, 1);
+  speed += (1.0f - dist_to_left) * vec3(1, 0, 0);
+  speed += (1.0f - dist_to_right) * vec3(-1, 0, 0);
+
+  vec3 v_from_centroid = unit->position - monster_centroid;
+  float dist_from_centroid = length(v_from_centroid) / 70.0f;
+  dist_from_centroid = std::min(1.0f, dist_from_centroid);
+
+  speed += (1.0f - dist_from_centroid) * normalize(v_from_centroid);
+
+  cout << "dist_to_bottom: " << dist_to_bottom << endl;
+  cout << "dist_to_top: " << dist_to_top << endl;
+  cout << "dist_to_left: " << dist_to_left << endl;
+  cout << "dist_to_right: " << dist_to_right << endl;
+  cout << "monster_centroid: " << monster_centroid << endl;
+  cout << "monster_pos: " << unit->position << endl;
+  cout << "dist_from_centroid: " << dist_from_centroid << endl;
+  cout << "len: " << length(speed) << endl;
+  cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<" << endl;
+
+  unit->speed = speed * 0.5f;
+}
+
+vec3 Monsters::GetGoblinMove(ObjPtr unit) {
+  Dungeon& dungeon = resources_->GetDungeon();
+  ivec2 origin = dungeon.GetDungeonTile(unit->position);
+  shared_ptr<Player> player = resources_->GetPlayer();
+  ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+  ivec2 unit_tile = dungeon.GetDungeonTile(unit->position);
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+
+  ObjPtr closest_monster = nullptr;
+  float closest_dist = 99999999.9f;
+  for (auto monster : configs->wave_monsters) {
+    if (monster->id == unit->id) continue;
+
+    float dist = length(unit->position - monster->position);
+    if (!closest_monster || dist < closest_dist) {
+      closest_monster = monster;
+      closest_dist = dist;
+    }
+  }
+
+   
+  if (closest_dist < 20.0f) {
+    vec3 v = normalize(unit->position - closest_monster->position);
+    return unit->position + v * 5.0f;
+  }
+
+  return vec3(0);
+}
+
 void Monsters::Frog(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
@@ -873,6 +957,14 @@ void Monsters::RedFrog(ObjPtr unit) {
   return Frog(unit);
 }
 
+//
+//             _________
+//             <---- side vector
+//             _________
+//
+//                 P
+//
+//
 
 void Monsters::Goblin(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
@@ -885,7 +977,6 @@ void Monsters::Goblin(ObjPtr unit) {
 
   bool visible = dungeon.IsTileVisible(unit->position);
 
-  // TODO: change to function.
   bool player_reachable = IsPlayerReachable(unit);
 
   int unit_relevance = 
@@ -921,6 +1012,20 @@ void Monsters::Goblin(ObjPtr unit) {
     }
   }
 
+  ivec2 player_tile_pos = dungeon.GetDungeonTile(player->position);
+  ivec2 unit_tile_pos = dungeon.GetDungeonTile(unit->position);
+
+  ivec2 step;
+  float x = player_tile_pos.x - unit_tile_pos.x;
+  float y = player_tile_pos.y - unit_tile_pos.y;
+
+  float t;
+  bool can_hit_player = !dungeon.IsRayObstructed(unit->position, 
+    player->position, t);
+
+  // vec2 side_vector = normalize(vec2(y, -x));
+  // unit->speed += side_vector;
+
   switch (unit->ai_state) {
     case AI_ATTACK: {
       shared_ptr<Action> next_action = nullptr;
@@ -928,27 +1033,53 @@ void Monsters::Goblin(ObjPtr unit) {
         next_action = unit->actions.front();
       }
 
-      int r = Random(0, 100);
-      if (unit->actions.empty()) {
-        if (distance_to_player < 11.0f) {
-          unit->actions.push(make_shared<TakeAimAction>());
-          unit->actions.push(make_shared<MeeleeAttackAction>());
-        } else {
-          unit->actions.push(make_shared<MoveToPlayerAction>());
-        }
-      } else if (distance_to_player < 11.0f && !IsAttackAction(next_action)) {
-        unit->ClearActions();
-        unit->actions.push(make_shared<TakeAimAction>());
-        unit->actions.push(make_shared<MeeleeAttackAction>());
-      } else if (next_action->type == ACTION_MOVE) {
-        shared_ptr<MoveAction> move_action =  
-          static_pointer_cast<MoveAction>(next_action);
-        vec3 next_move = move_action->destination;
-        double distance = length(next_move - target->position);
-        if (distance > distance_to_player) {
-          unit->ClearActions();
-        }
+      // if (unit->actions.empty()) {
+      //   // vec3 goblin_move = GetGoblinMove(unit);
+      //   // if (length(goblin_move) > 0.001f) {
+      //   //   unit->actions.push(make_shared<MoveAction>(goblin_move));
+      //   // } else {
+      //   //   // vec3 pos = FindSideMove(unit);
+      //   //   // if (length2(pos) > 0.1f) {
+      //   //   //   unit->actions.push(make_shared<MoveAction>(pos));
+      //   //   // }
+      //   //   unit->actions.push(make_shared<SurroundAction>());
+      //   // }
+      //   unit->actions.push(make_shared<SurroundAction>());
+      // } else if (distance_to_player < 11.0f && !IsAttackAction(next_action)) {
+      //   unit->ClearActions();
+      //   unit->actions.push(make_shared<TakeAimAction>());
+      //   unit->actions.push(make_shared<MeeleeAttackAction>());
+      // // } else if (next_action->type == ACTION_MOVE) {
+      // //   shared_ptr<MoveAction> move_action =  
+      // //     static_pointer_cast<MoveAction>(next_action);
+      // //   vec3 next_move = move_action->destination;
+      // //   double distance = length(next_move - target->position);
+      // //   if (distance > distance_to_player) {
+      // //     unit->ClearActions();
+      // //   }
+      // }
+
+      if (!unit->CanUseAbility("ranged-attack") || !can_hit_player) {
+        unit->actions.push(make_shared<SurroundAction>());
+        // if (!IsPlayerReachable(unit)) { 
+        //   unit->actions.push(make_shared<ChangeStateAction>(IDLE));
+        // } else {
+        //   if (distance_to_player < 50.0f && visible) {
+        //     vec3 pos = FindSideMove(unit);
+        //     bool next_move_visible = dungeon.IsTileVisible(pos);
+        //     if (length2(pos) > 0.1f && next_move_visible) {
+        //       unit->actions.push(make_shared<MoveAction>(pos));
+        //     } else {
+        //       unit->actions.push(make_shared<MoveToPlayerAction>());
+        //     }
+        //   } else {
+        //     unit->actions.push(make_shared<MoveToPlayerAction>());
+        //   }
+        // }
+      } else {
+        unit->actions.push(make_shared<RangedAttackAction>());
       }
+      unit->actions.push(make_shared<RangedAttackAction>());
       break;
     } 
     case DEFEND: {
@@ -1647,9 +1778,45 @@ void Monsters::Broodmother(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   shared_ptr<Player> player = resources_->GetPlayer();
   ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+  double distance_to_player = length(player->position - unit->position);
+
+  shared_ptr<Action> next_action = nullptr;
+  if (!unit->actions.empty()) {
+    next_action = unit->actions.front();
+  }
+
+  if (distance_to_player < 21.0f && !IsAttackAction(next_action)) {
+    unit->ClearActions();
+    unit->actions.push(make_shared<TakeAimAction>());
+    unit->actions.push(make_shared<MeeleeAttackAction>());
+  }
 
   switch (unit->ai_state) {
     case AI_ATTACK: {
+      if (!unit->actions.empty()) {
+        break;
+      }
+
+      if (unit->CanUseAbility("create-spider")) {
+        resources_->CastSpiderEgg(unit);
+        if (Random(0, 5) == 0) {
+          resources_->CastSpiderEgg(unit);
+        }
+        unit->cooldowns["create-spider"] = glfwGetTime() + 9999;
+        break;
+      }
+
+      ivec2 far_tile = GetBroodmotherMoveTile(unit);
+      vec3 target_pos = dungeon.GetTilePosition(far_tile);
+
+      if (unit->CanUseAbility("spider-egg")) {
+        unit->actions.push(make_shared<SpiderEggAction>(target_pos));
+      } else {
+        unit->actions.push(make_shared<LongMoveAction>(target_pos, 5.0f));
+      }
+      break;
+    } 
+    case AMBUSH: {
       if (!unit->actions.empty()) {
         break;
       }
@@ -1668,6 +1835,7 @@ void Monsters::Broodmother(ObjPtr unit) {
       if (!unit->actions.empty()) {
         break;
       }
+      unit->cooldowns["create-spider"] = glfwGetTime() + 9999;
       unit->actions.push(make_shared<ChangeStateAction>(AI_ATTACK));
       break;
     }
@@ -1835,6 +2003,10 @@ void Monsters::Scorpion(ObjPtr unit) {
       break;
     }
   }
+}
+
+void Monsters::RedScorpion(ObjPtr unit) {
+  return Scorpion(unit);
 }
 
 void Monsters::BlackMage(ObjPtr unit) {
@@ -2601,6 +2773,7 @@ void Monsters::BeholderEye(ObjPtr unit) {
 void Monsters::Spinner(ObjPtr unit) {
   Dungeon& dungeon = resources_->GetDungeon();
   ivec2 unit_tile = dungeon.GetDungeonTile(unit->position);
+  ObjPtr player = resources_->GetPlayer();
 
   switch (unit->ai_state) {
     case AI_ATTACK: {
@@ -2608,24 +2781,32 @@ void Monsters::Spinner(ObjPtr unit) {
         break;
       }
 
-      static const vector<ivec2> tiles { 
-        { 0, 7 }, { 13, 7 }, { 7, 0 }, { 7, 13 },
-        { 13, 0 }, { 0, 13 }, { 0, 0 }, { 13, 13 }
-      };
-
-      int tile_index = 0;
-
-      string memory = unit->ReadMemory("spin_target");
-      if (memory.empty() || Random(0, 8) == 0) {
-        tile_index = Random(0, tiles.size());
+      vec3 target;
+      if (Random(0, 5) == 0) {
+        double distance_to_player = length(player->position - unit->position);
+        ivec2 player_tile = dungeon.GetDungeonTile(player->position);
+        target = dungeon.GetTilePosition(player_tile);
       } else {
-        tile_index = boost::lexical_cast<int>(memory);
-        tile_index++;
-        if (tile_index > tiles.size()) tile_index = 0;
+        static const vector<ivec2> tiles { 
+          { 0, 7 }, { 13, 7 }, { 7, 0 }, { 7, 13 },
+          { 13, 0 }, { 0, 13 }, { 0, 0 }, { 13, 13 }
+        };
+
+        int tile_index = 0;
+
+        string memory = unit->ReadMemory("spin_target");
+        if (memory.empty() || Random(0, 8) == 0) {
+          tile_index = Random(0, tiles.size());
+        } else {
+          tile_index = boost::lexical_cast<int>(memory);
+          tile_index++;
+          if (tile_index > tiles.size()) tile_index = 0;
+        }
+
+        ivec2 tile = tiles[tile_index];
+        target = dungeon.GetTilePosition(tile);
       }
 
-      ivec2 tile = tiles[tile_index];
-      vec3 target = dungeon.GetTilePosition(tile);
       unit->actions.push(make_shared<SpinAction>(target));
       break;
     }
@@ -2652,6 +2833,8 @@ void Monsters::RunMonsterAi(ObjPtr obj) {
     RedFrog(obj); 
   } else if (obj->GetAsset()->name == "scorpion") {
     Scorpion(obj); 
+  } else if (obj->GetAsset()->name == "red_scorpion") {
+    RedScorpion(obj); 
   } else if (obj->GetAsset()->name == "shooter_bug") {
     ShooterBug(obj); 
   } else if (obj->GetAsset()->name == "spinner") {

@@ -789,14 +789,18 @@ vector<shared_ptr<CollisionQB>> GetCollisionsQB(ObjPtr obj1, ObjPtr obj2) {
     for (const auto& [bone_id, bone] : obj2->bones) {
       if (bone.name == "ball1" ||
           bone.name == "ball2" ||
-          bone.name == "ball3") {
+          bone.name == "ball3" ||
+          bone.name == "ball4" ||
+          bone.name == "ball5") {
         collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
       }
     }
     for (const auto& [bone_id, bone] : obj2->bones) {
       if (bone.name != "ball1" &&
           bone.name != "ball2" &&
-          bone.name != "ball3") {
+          bone.name != "ball3" &&
+          bone.name != "ball4" &&
+          bone.name != "ball5") {
         collisions.push_back(make_shared<CollisionQB>(obj1, obj2, bone_id));
       }
     }
@@ -923,38 +927,38 @@ void CollisionResolver::FindCollisionsWithDungeon(
   ivec2 player_tile = dungeon.GetDungeonTile(player->position);
 
   ivec2 obj_tile = dungeon.GetDungeonTile(obj1->position);
-  if (abs(player_tile.x - obj_tile.x) > 10 || 
-      abs(player_tile.y - obj_tile.y) > 10) {
-    return;
-  }
+  // if (abs(player_tile.x - obj_tile.x) > 10 || 
+  //     abs(player_tile.y - obj_tile.y) > 10) {
+  //   return;
+  // }
 
-  if (resources_->GetConfigs()->render_scene == "arena") {
-    AABB aabb;
-    aabb.point = kDungeonOffset + vec3(-5, -100, -5);
-    // aabb.dimensions = vec3(400, 100, 400);
-    aabb.dimensions = vec3(140, 100, 140);
+  // if (resources_->GetConfigs()->render_scene == "arena") {
+  //   AABB aabb;
+  //   aabb.point = kDungeonOffset + vec3(-5, -100, -5);
+  //   // aabb.dimensions = vec3(400, 100, 400);
+  //   aabb.dimensions = vec3(140, 100, 140);
 
-    if (obj1->GetCollisionType() == COL_BONES) {
-      if (obj1->asset_group != nullptr && obj1->GetAsset()->name == "red_metal_eye") {
-        for (const auto& [bone_id, bone] : obj1->bones) {
-          if (bone.name != "muzzle_bone") {
-            if (!bone.collidable) continue;
-            collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
-          }
-        }
-      } else {
-        for (const auto& [bone_id, bone] : obj1->bones) {
-          if (!bone.collidable) continue;
-          collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
-        }
-      }
-    } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
-      collisions.push_back(make_shared<CollisionQA>(obj1, aabb));
-    } else if (obj1->GetCollisionType() == COL_OBB) {
-      collisions.push_back(make_shared<CollisionOA>(obj1, aabb));
-    }
-    return;
-  }
+  //   if (obj1->GetCollisionType() == COL_BONES) {
+  //     if (obj1->asset_group != nullptr && obj1->GetAsset()->name == "red_metal_eye") {
+  //       for (const auto& [bone_id, bone] : obj1->bones) {
+  //         if (bone.name != "muzzle_bone") {
+  //           if (!bone.collidable) continue;
+  //           collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+  //         }
+  //       }
+  //     } else {
+  //       for (const auto& [bone_id, bone] : obj1->bones) {
+  //         if (!bone.collidable) continue;
+  //         collisions.push_back(make_shared<CollisionBA>(obj1, aabb, bone_id));
+  //       }
+  //     }
+  //   } else if (obj1->GetCollisionType() == COL_QUICK_SPHERE) {
+  //     collisions.push_back(make_shared<CollisionQA>(obj1, aabb));
+  //   } else if (obj1->GetCollisionType() == COL_OBB) {
+  //     collisions.push_back(make_shared<CollisionOA>(obj1, aabb));
+  //   }
+  //   return;
+  // }
 
   for (int x = -1; x <= 1; x++) {
     for (int y = -1; y <= 1; y++) {
@@ -2116,6 +2120,12 @@ void CollisionResolver::ResolveMissileCollision(ColPtr c) {
               } else if (bone_name == "ball3" && obj2->memory.count("ball3") == 0) {
                 hit = true;
                 obj2->memory["ball3"] = "dead";
+              } else if (bone_name == "ball4" && obj2->memory.count("ball4") == 0) {
+                hit = true;
+                obj2->memory["ball4"] = "dead";
+              } else if (bone_name == "ball5" && obj2->memory.count("ball5") == 0) {
+                hit = true;
+                obj2->memory["ball5"] = "dead";
               }
 
               if (hit) {

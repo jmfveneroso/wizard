@@ -321,6 +321,8 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
     return WhiteSpineAttack(creature, action);
   } else if (creature->GetAsset()->name == "scorpion") {
     return ScorpionAttack(creature, action);
+  } else if (creature->GetAsset()->name == "red_scorpion") {
+    return RedScorpionAttack(creature, action);
   } else if (creature->GetAsset()->name == "shooter_bug") {
     return ShooterBugAttack(creature, action);
   } else if (creature->GetAsset()->name == "red_metal_eye") {
@@ -333,7 +335,8 @@ bool AI::ProcessRangedAttackAction(ObjPtr creature,
     return BeholderAttack(creature, action);
   } else if (creature->GetAsset()->name == "big_beholder") {
     return BigBeholderAttack(creature, action);
-  } else if (creature->GetAsset()->name == "skirmisher") {
+  } else if (creature->GetAsset()->name == "skirmisher" ||
+             creature->GetAsset()->name == "goblin") {
     return SkirmisherAttack(creature, action);
   } else if (creature->GetAsset()->name == "glaive_master") {
     return GlaiveMasterAttack(creature, action);
@@ -771,7 +774,8 @@ bool AI::WhiteSpineAttack(ObjPtr creature,
 
 bool AI::SkirmisherAttack(ObjPtr creature, 
   shared_ptr<RangedAttackAction> action) {
-  const float missile_speed = 3.0f;
+  // const float missile_speed = 3.0f;
+  const float missile_speed = 0.25f;
 
   resources_->ChangeObjectAnimation(creature, "Armature|attack");
 
@@ -954,8 +958,85 @@ bool AI::ScorpionAttack(ObjPtr creature,
   if (int(creature->frame) >= 41 && !action->damage_dealt) {
     action->damage_dealt = true;
     vec3 p2 = creature->position + dir * 200.0f;
+    // resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), 
+    //   MISSILE_BOUNCYBALL, dir, missile_speed);
     resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), 
-      MISSILE_BOUNCYBALL, dir, missile_speed);
+      MISSILE_BOUNCYBALL, dir, 0.5f);
+    creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
+
+    shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
+    int bone_id = mesh->bones_to_ids["muzzle_bone"];
+    BoundingSphere s = creature->GetBoneBoundingSphere(bone_id);
+    resources_->CreateParticleEffect(10, s.center,
+      vec3(0, 1, 0), vec3(1.0, 1.0, 1.0), 3.0, 24.0f, 15.0f, "fireball");          
+  }
+  return false;
+}
+
+bool AI::RedScorpionAttack(ObjPtr creature, 
+  shared_ptr<RangedAttackAction> action) {
+  const int num_missiles = 1;
+  const float missile_speed = 1.2f + Random(0, 5) * 0.3f;
+
+  ObjPtr target_unit = creature->GetCurrentTarget();
+
+  if (!action->initiated) {
+    action->initiated = true;
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+  }
+
+  bool is_rotating = RotateSpider(creature, target_unit->position, 0.8f);
+  if (is_rotating) {
+    resources_->ChangeObjectAnimation(creature, "Armature|idle", true,
+      TRANSITION_FINISH_ANIMATION);
+    return false;
+  }
+
+  resources_->ChangeObjectAnimation(creature, "Armature|attack", true, TRANSITION_NONE);
+
+  int num_frames = creature->GetNumFramesInCurrentAnimation();
+  if (int(creature->frame) >= num_frames - 3) {
+    return true;
+  }
+
+  ObjPtr player = resources_->GetPlayer();
+  vec3 target = player->position;
+
+  // Predict player pos.
+  if (length(player->speed) > 0.01) {
+    // vec2 target_pos = PredictMissileHitLocation(vec2(creature->position.x, creature->position.z), 
+    //   missile_speed, vec2(player->position.x, player->position.z), 
+    //   vec2(player->speed.x, player->speed.z), 
+    //   length(player->speed));
+    vec2 target_pos = vec2(player->position.x, player->position.z);
+    target = vec3(target_pos.x, player->position.y, target_pos.y);
+  }
+
+  RotateSpider(creature, target, 0.99f);
+
+  vec3 dir = normalize(target - creature->position);
+  dir.y = 0.1f;
+
+  if (int(creature->frame) >= 41 && !action->damage_dealt) {
+    action->damage_dealt = true;
+    vec3 p2 = creature->position + dir * 200.0f;
+    // resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), 
+    //   MISSILE_BOUNCYBALL, dir, missile_speed);
+
+    const float spread = 0.15;
+    for (int i = 0; i < 5; i++) {
+      vec3 p2 = creature->position + dir * 200.0f;
+      vec3 dir_ = dir;
+
+      float x_ang = (-2 + i) * spread;
+      mat4 m = rotate(mat4(1.0f), x_ang, vec3(0, 1, 0));
+      dir_ = vec3(m * vec4(dir, 1.0f));
+
+      resources_->CastMissile(creature, creature->position + vec3(0, 2, 0), 
+        MISSILE_BOUNCYBALL, dir_, 0.5f);
+    }
+
     creature->cooldowns["ranged-attack"] = glfwGetTime() + 1.5;
 
     shared_ptr<Mesh> mesh = resources_->GetMesh(creature);
@@ -1211,11 +1292,19 @@ bool AI::ProcessMeeleeAttackAction(ObjPtr spider,
 
     cout << "Attacking player" << endl;
     vec3 dir = target->position - spider->position;
-    if (length(dir) < 20.0f) {
+
+    float len = 20.0f;
+    float knockback = 0.3f;
+    if (spider->GetAsset()->name == "broodmother_body") {
+      len = 40.0f;
+      knockback = 1.0f;
+    }
+
+    if (length(dir) < len) {
       cout << "Meelee attack hit: " << length(dir) << endl;
       spider->MeeleeAttack(target, normalize(dir));
       action->damage_dealt = true;
-      target->speed += normalize(target->position - spider->position) * 0.3f;
+      target->speed += normalize(target->position - spider->position) * knockback;
     }
   }
   return false;
@@ -1505,8 +1594,99 @@ bool AI::ProcessMoveToPlayerAction(
   }
 
   next_pos.y = flight_height;
+
+  // vec2 side_vector = normalize(vec2(y, -x));
+  // unit->speed += side_vector;
+
+
   spider->actions.push(make_shared<MoveAction>(next_pos));
   return true;
+}
+
+bool AI::ProcessSurroundAction(
+  ObjPtr spider, shared_ptr<SurroundAction> action) {
+  if (!action->started) {
+    action->started = true;
+    // action->until = glfwGetTime() + 20.0f;
+    action->until = glfwGetTime() + 5.0f;
+    action->change_dir_in = glfwGetTime() + 5.0f;
+  }
+
+  Dungeon& dungeon = resources_->GetDungeon();
+  shared_ptr<Configs> configs = resources_->GetConfigs();
+  ObjPtr target = spider->GetCurrentTarget();
+  const vec3& player_pos = target->position;
+
+  float min_distance = 0.0f;
+
+  vec3 next_pos = vec3(0);
+  float t;
+  if (dungeon.IsMovementObstructed(spider->position, player_pos, t)) {
+    next_pos = dungeon.GetNextMove(spider->position, player_pos, 
+      min_distance);
+
+    // Use direct pathfinding when the monster is very close.
+    if (length2(next_pos) < 0.0001f) {
+      next_pos = spider->position + normalize(player_pos - spider->position) * 1.0f;
+    }
+  } else {
+    vec3 v = player_pos - spider->position;
+    if (length(v) < 3.0f) {
+      next_pos = player_pos;
+    } else {
+      next_pos = spider->position + normalize(v) * 3.0f;
+    }
+  }
+
+  shared_ptr<Player> player = resources_->GetPlayer();
+  vec3 to_player = player->position - spider->position;
+  float len = length(to_player);
+
+  vec3 side_vector = cross(vec3(0, 1, 0), normalize(to_player)) * len / 5.0f;
+  if (action->direction) {
+    side_vector = -side_vector;
+  }
+
+  if (glfwGetTime() > action->change_dir_in) {
+    action->change_dir_in = glfwGetTime() + 5.0f;
+    action->direction = !action->direction;
+  }
+
+  next_pos += side_vector;
+
+  ObjPtr closest_monster = nullptr;
+  float closest_dist = 99999999.9f;
+  for (auto monster : configs->wave_monsters) {
+    if (monster->id == spider->id) continue;
+
+    float dist = length(spider->position - monster->position);
+    if (!closest_monster || dist < closest_dist) {
+      closest_monster = monster;
+      closest_dist = dist;
+    }
+  }
+
+  if (closest_dist < 20.0f) {
+    vec3 v = normalize(spider->position - closest_monster->position);
+    next_pos += v * 1.0f;
+  }
+
+  if (len < 5.0f || glfwGetTime() > action->until) {
+    return true;
+  }
+
+  ivec2 next_tile = dungeon.GetDungeonTile(next_pos);
+  if (next_tile.x < 0 || next_tile.y < 0 || next_tile.x > 13 || next_tile.y > 13) {
+    vec3 v = player_pos - spider->position;
+    if (length(v) < 3.0f) {
+      next_pos = player_pos;
+    } else {
+      next_pos = spider->position + normalize(v) * 3.0f;
+    }
+  }
+
+  ProcessMoveAction(spider, next_pos);
+  return false;
 }
 
 bool AI::ProcessLongMoveAction(
@@ -1923,37 +2103,45 @@ bool AI::ProcessSpiderEggAction(ObjPtr spider,
 
     action->channel_end = glfwGetTime() + 4.0f;
     action->created_particle_effect = true;
-  }
-
-  if (glfwGetTime() > action->channel_end) {
-    resources_->CastSpiderEgg(spider);
-    spider->cooldowns["spider-egg"] = glfwGetTime() + 3;
+    spider->cooldowns["create-spider"] = glfwGetTime() + 4;
+    spider->cooldowns["spider-egg"] = glfwGetTime() + 7;
     return true;
   }
 
-  if (ProcessMoveAction(spider, action->target)) {
-    Dungeon& dungeon = resources_->GetDungeon();
-    ivec2 origin = dungeon.GetDungeonTile(spider->position);
-    ivec2 player_tile = dungeon.GetDungeonTile(resources_->GetPlayer()->position);
+  if (glfwGetTime() > action->channel_end) {
+    // resources_->CastSpiderEgg(spider);
 
-    int padding = 4;
-    bool move_to_center = origin.x < padding || origin.y < padding ||
-                          origin.x >= 14 - padding || origin.y >= 14 - padding;
-    if (move_to_center) { 
-      origin = ivec2(7, 7);
-    }    
+    // if (Random(0, 5) == 0) {
+    //   resources_->CastSpiderEgg(spider);
+    // }
 
-    ivec2 tile = ivec2(7, 7);
-    for (int tries = 0; tries < 10; tries++) {
-      int x = Random(1, 3);
-      int y = Random(1, 3);
-      ivec2 new_tile = origin + ivec2(x, y);
-      if (!dungeon.IsValidTile(new_tile)) continue;
-      if (length(vec2(player_tile) - vec2(new_tile)) < 5.0f) continue;
-      tile = new_tile;
-    }
-    action->target = dungeon.GetTilePosition(tile);
+    // spider->cooldowns["spider-egg"] = glfwGetTime() + 3;
+    return true;
   }
+
+  // if (ProcessMoveAction(spider, action->target)) {
+  //   Dungeon& dungeon = resources_->GetDungeon();
+  //   ivec2 origin = dungeon.GetDungeonTile(spider->position);
+  //   ivec2 player_tile = dungeon.GetDungeonTile(resources_->GetPlayer()->position);
+
+  //   int padding = 4;
+  //   bool move_to_center = origin.x < padding || origin.y < padding ||
+  //                         origin.x >= 14 - padding || origin.y >= 14 - padding;
+  //   if (move_to_center) { 
+  //     origin = ivec2(7, 7);
+  //   }    
+
+  //   ivec2 tile = ivec2(7, 7);
+  //   for (int tries = 0; tries < 10; tries++) {
+  //     int x = Random(1, 3);
+  //     int y = Random(1, 3);
+  //     ivec2 new_tile = origin + ivec2(x, y);
+  //     if (!dungeon.IsValidTile(new_tile)) continue;
+  //     if (length(vec2(player_tile) - vec2(new_tile)) < 5.0f) continue;
+  //     tile = new_tile;
+  //   }
+  //   action->target = dungeon.GetTilePosition(tile);
+  // }
 
   return false;
 }
@@ -2395,6 +2583,14 @@ void AI::ProcessNextAction(ObjPtr spider) {
       shared_ptr<MoveToPlayerAction> move_to_player_action =  
         static_pointer_cast<MoveToPlayerAction>(action);
       if (ProcessMoveToPlayerAction(spider, move_to_player_action)) {
+        spider->PopAction();
+      }
+      break;
+    }
+    case ACTION_SURROUND: {
+      shared_ptr<SurroundAction> surround_action =  
+        static_pointer_cast<SurroundAction>(action);
+      if (ProcessSurroundAction(spider, surround_action)) {
         spider->PopAction();
       }
       break;

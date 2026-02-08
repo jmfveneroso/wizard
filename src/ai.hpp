@@ -40,6 +40,8 @@ class AI {
     shared_ptr<RangedAttackAction> action);
   bool ScorpionAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
+  bool RedScorpionAttack(ObjPtr creature, 
+    shared_ptr<RangedAttackAction> action);
   bool ShooterBugAttack(ObjPtr creature, 
     shared_ptr<RangedAttackAction> action);
   bool RedMetalEyeAttack(ObjPtr creature, 
@@ -86,6 +88,8 @@ class AI {
   bool ProcessStandAction(ObjPtr spider, shared_ptr<StandAction> action);
   bool ProcessMoveToPlayerAction(ObjPtr spider, 
     shared_ptr<MoveToPlayerAction> action);
+  bool ProcessSurroundAction(ObjPtr spider, 
+    shared_ptr<SurroundAction> action);
   bool ProcessMoveAwayFromPlayerAction(ObjPtr spider, 
     shared_ptr<MoveAwayFromPlayerAction> action);
   bool ProcessUseAbilityAction(ObjPtr spider, 

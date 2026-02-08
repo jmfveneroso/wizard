@@ -5751,10 +5751,12 @@ shared_ptr<Missile> Resources::CastMissile(
     obj->owner = owner;
   } else if (missile_type == MISSILE_GLAIVE) {
     obj->UpdateAsset("glaive");
-    obj->life = 100.0f;
+    // obj->life = 100.0f;
+    obj->life = 2000.0f;
     obj->physics_behavior = PHYSICS_NO_FRICTION_FLY;
     obj->owner = owner;
-    obj->acceleration = -direction * velocity / 50.0f;
+    // obj->acceleration = -direction * velocity / 50.0f;
+    obj->direction = direction;
   } else if (missile_type == MISSILE_IMP_FIRE) {
     obj->UpdateAsset("black_mage_fireball");
     obj->life = 500.0f;
@@ -6733,6 +6735,7 @@ void Resources::CreateMonsters(const char code, int quantity) {
     { 'B', "big_beholder" },
     { 'l', "little_stag" },
     { 'a', "baphomet" },
+    { 'C', "red_scorpion" },
   };
 
   for (int i = 0; i < quantity; i++) {
@@ -6786,6 +6789,7 @@ void Resources::ProcessArenaEvents() {
     { 'B', "big_beholder" },
     { 'l', "little_stag" },
     { 'a', "baphomet" },
+    { 'C', "red_scorpion" },
   };
 
   if (configs_->render_scene != "arena") return;

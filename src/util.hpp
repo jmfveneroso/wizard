@@ -224,6 +224,7 @@ enum ActionType {
   ACTION_SIDE_STEP,
   ACTION_SPIN,
   ACTION_MIRROR_IMAGE,
+  ACTION_SURROUND,
 };
 
 enum ParticleBehavior {

@@ -97,6 +97,8 @@ class GameObject : public enable_shared_from_this<GameObject> {
   float current_speed = 0.0f;
   vec3 speed = vec3(0);
   vec3 acceleration = vec3(0);
+  vec3 wave_acceleration = vec3(0);
+  vec3 direction = vec3(0);
 
   bool can_jump = true;
   PhysicsBehavior physics_behavior = PHYSICS_UNDEFINED;
@@ -721,6 +723,15 @@ struct WaitAction : Action {
 struct MoveToPlayerAction : Action {
   MoveToPlayerAction() 
     : Action(ACTION_MOVE_TO_PLAYER) {}
+};
+
+struct SurroundAction : Action {
+  bool started = false;
+  bool direction = false;
+  float until = 0.0f;
+  float change_dir_in = 0.0f;
+  SurroundAction() 
+    : Action(ACTION_SURROUND), direction(Random(0, 2) == 0) {}
 };
 
 struct MoveAwayFromPlayerAction : Action {

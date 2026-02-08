@@ -816,6 +816,18 @@ void Renderer::DrawObject(shared_ptr<GameObject> obj, int mode) {
   }
 
   for (shared_ptr<GameAsset> asset : obj->asset_group->assets) {
+    if (asset->name == "broodmother_ball_1" && obj->memory.count("ball1") != 0) {
+      continue;
+    } else if (asset->name == "broodmother_ball_2" && obj->memory.count("ball2") != 0) {
+      continue;
+    } else if (asset->name == "broodmother_ball_3" && obj->memory.count("ball3") != 0) {
+      continue;
+    } else if (asset->name == "broodmother_ball_4" && obj->memory.count("ball4") != 0) {
+      continue;
+    } else if (asset->name == "broodmother_ball_5" && obj->memory.count("ball5") != 0) {
+      continue;
+    }
+
     int lod = glm::clamp(int(obj->distance / LOD_DISTANCE), 0, 4);
     for (; lod >= 0; lod--) {
       if (!asset->lod_meshes[lod].empty()) {

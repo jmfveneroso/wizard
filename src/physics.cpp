@@ -42,6 +42,17 @@ void Physics::RunPhysicsForObject(ObjPtr obj) {
     obj->speed += obj->acceleration;
   }
 
+  if (obj->IsMissile()) {
+    shared_ptr<Missile> missile = static_pointer_cast<Missile>(obj);
+    if (missile->type == MISSILE_GLAIVE) {
+      obj->wave_acceleration = vec3(0, sin(glfwGetTime() * 5), 0);
+
+      // vec3 side_speed = cross(obj->direction, obj->wave_acceleration);
+      vec3 side_speed = cross(vec3(1, 0, 0), obj->wave_acceleration);
+      obj->speed += side_speed * 0.03f;
+    }
+  }
+
   if (obj->freeze) {
     return;
   }
